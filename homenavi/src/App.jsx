@@ -25,9 +25,7 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'row', minHeight: '100vh', width: '100%', overflow: 'hidden' }}>
       {/* Only render sidebar and its space on desktop */}
       {!isMobile && (
-        <aside style={{ flex: '0 0 18rem', minWidth: '8rem', maxWidth: '8rem', maxHeight: 'fit-content', zIndex: 100, position: 'relative', display: 'block' }}>
-          <Sidebar menuOpen={true} setMenuOpen={setSidebarOpen} />
-        </aside>
+        <Sidebar menuOpen={true} setMenuOpen={setSidebarOpen} />
       )}
       {/* Hamburger button and overlay sidebar on mobile */}
       {isMobile && (
@@ -40,17 +38,7 @@ export default function App() {
         >
           <span style={{ fontSize: 28, color: '#2f3c49' }}>☰</span>
         </button>
-        <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
-          <button
-            className="close-btn"
-            style={{ position: 'fixed', top: 16, left: 16, zIndex: 350 }}
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close menu"
-          >
-            ✕
-          </button>
-          <Sidebar menuOpen={sidebarOpen} setMenuOpen={setSidebarOpen} />
-        </aside>
+        <Sidebar menuOpen={sidebarOpen} setMenuOpen={setSidebarOpen} />
       </>
     )}
       <main style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
