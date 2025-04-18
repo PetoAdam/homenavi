@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faBackwardStep, faForwardStep, faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
+import { faSpotify as faSpotifyBrand } from '@fortawesome/free-brands-svg-icons';
 import GlassCard from './GlassCard';
+import './SpotifyCard.css';
 
 export default function SpotifyCard() {
   // Mock song data
+  const [playing, setPlaying] = useState(true);
   const song = {
     title: 'Blinding Lights',
     artist: 'The Weeknd',
@@ -11,38 +16,28 @@ export default function SpotifyCard() {
   };
   return (
     <GlassCard className="spotify-card">
-      <div className="card-content-col">
-        <div className="card-content-icon">
-          <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="40" cy="40" r="40" fill="#1DB954" />
-            <path d="M25 55c10-5 30-5 40 0" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M30 40c8-3 24-3 32 0" stroke="white" strokeWidth="3" strokeLinecap="round"/>
-            <path d="M34 28c5-2 15-2 20 0" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
+      <div className="spotify-cc-vertical">
+        <div className="spotify-cc-header">
+          <FontAwesomeIcon icon={faSpotifyBrand} size="2x" className="spotify-cc-logo" />
+          <span className="spotify-cc-label">Spotify</span>
         </div>
-        <div className="card-content-details flex-1">
-          <span className="text-3xl font-extrabold text-white leading-tight mb-1">{song.title}</span>
-          <span className="text-lg text-white/80 mb-2">{song.artist}</span>
-          <div className="spotify-slider">
-            <div className="spotify-slider-bar" style={{ width: `${(song.progress / song.duration) * 100}%` }}></div>
-          </div>
-          <div className="spotify-controls mt-2">
-            <button className="spotify-btn" title="Shuffle">
-              <i className="fa fa-random" aria-hidden="true"></i>
-            </button>
-            <button className="spotify-btn" title="Previous">
-              <i className="fa fa-step-backward" aria-hidden="true"></i>
-            </button>
-            <button className="spotify-btn" title="Play/Pause">
-              <i className="fa fa-play" aria-hidden="true"></i>
-            </button>
-            <button className="spotify-btn" title="Next">
-              <i className="fa fa-step-forward" aria-hidden="true"></i>
-            </button>
-            <button className="spotify-btn" title="Volume">
-              <i className="fa fa-volume-up" aria-hidden="true"></i>
-            </button>
-          </div>
+        <div className="spotify-cc-songinfo">
+          <span className="spotify-cc-title">{song.title}</span>
+          <span className="spotify-cc-artist">{song.artist}</span>
+        </div>
+        <div className="spotify-cc-slider">
+          <div className="spotify-cc-slider-bar" style={{ width: `${(song.progress / song.duration) * 100}%` }}></div>
+        </div>
+        <div className="spotify-cc-controls">
+          <button className="spotify-cc-btn" title="Previous">
+            <FontAwesomeIcon icon={faBackwardStep} />
+          </button>
+          <button className="spotify-cc-btn play" title={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)}>
+            <FontAwesomeIcon icon={playing ? faPause : faPlay} />
+          </button>
+          <button className="spotify-cc-btn" title="Next">
+            <FontAwesomeIcon icon={faForwardStep} />
+          </button>
         </div>
       </div>
     </GlassCard>

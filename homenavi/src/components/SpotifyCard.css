@@ -1,2 +1,107 @@
 /* SpotifyCard styles extracted from App.css */
 .spotify-card { min-height: 380px; max-height: 420px; }
+
+/* Spotify iOS Control Center style */
+.spotify-cc-vertical {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  width: 100%;
+  height: 100%;
+}
+.spotify-cc-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.2rem;
+}
+.spotify-cc-logo {
+  color: #1DB954;
+  filter: drop-shadow(0 1px 4px #1db95444);
+}
+.spotify-cc-label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+.spotify-cc-songinfo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+.spotify-cc-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+  margin-bottom: 0.1em;
+  line-height: 1.1;
+  text-align: center;
+}
+.spotify-cc-artist {
+  font-size: 1rem;
+  color: #e5e4e3;
+  opacity: 0.7;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.spotify-cc-slider {
+  width: 90%;
+  height: 6px;
+  background: #fff3;
+  border-radius: 3px;
+  margin: 0.2rem auto 0.2rem auto;
+  position: relative;
+}
+.spotify-cc-slider-bar {
+  height: 100%;
+  background: #1DB954;
+  border-radius: 3px;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.spotify-cc-controls {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.2rem;
+}
+.spotify-cc-btn {
+  background: rgba(255,255,255,0.18);
+  border: 1.5px solid rgba(255,255,255,0.35);
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+  border-radius: 999px;
+  padding: 0.5em 0.9em;
+  color: #fff;
+  font-size: 1.3em;
+  transition: background 0.2s, border 0.2s, box-shadow 0.2s, color 0.2s;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spotify-cc-btn.play {
+  background: #1DB954;
+  color: #fff;
+  border: none;
+  font-size: 1.5em;
+  box-shadow: 0 2px 12px 0 #1db95444;
+}
+.spotify-cc-btn:hover, .spotify-cc-btn:focus {
+  background: rgba(255,255,255,0.28);
+  border-color: #fff;
+  color: #1DB954;
+}
+.spotify-cc-btn.play:hover, .spotify-cc-btn.play:focus {
+  background: #17a74a;
+  color: #fff;
+}
