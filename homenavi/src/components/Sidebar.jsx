@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import MenuItem from './MenuItem';
+import { BREAKPOINTS, isPermanentSidebarWidth } from '../breakpoints.js';
 
 const menuItems = [
   { name: 'Home', path: '/', icon: '🏠' },
@@ -13,15 +14,16 @@ const menuItems = [
 export default function Sidebar({ menuOpen, setMenuOpen }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const [windowWidth, setWindowWidth] = React.useState(window.innerWidth);
+  const isPermanentSidebar = isPermanentSidebarWidth(windowWidth);
 
   // Use flex layout, no fixed/absolute positioning
   return (
     <aside
-      className={`sidebar${isMobile && menuOpen ? ' open' : ''} flex flex-col justify-start`}
+      className={`sidebar${!isPermanentSidebar && menuOpen ? ' open' : ''} flex flex-col justify-start`}
       // Remove all inline positioning, let parent flexbox handle layout
     >
-      {isMobile && menuOpen && (
+      {!isPermanentSidebar && menuOpen && (
         <button
           className="close-btn md:hidden"
           style={{ zIndex: 350, top: 16, left: 16 }}
