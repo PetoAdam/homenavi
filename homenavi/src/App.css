@@ -340,20 +340,6 @@ main {
   }
 }
 
-/*
-  Fix grid layout so cards in the same column are stacked closely (masonry effect)
-*/
-.grid-dashboard {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 1.2rem;
-  align-items: start;
-  position: relative;
-  z-index: 1;
-  grid-auto-flow: row dense;
-  /* Remove grid-template-rows for natural stacking */
-}
-
 /* Masonry column layout for dashboard */
 .masonry-dashboard {
   column-count: 3;
