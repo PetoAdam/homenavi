@@ -1,0 +1,48 @@
+/* MapCard styles extracted from App.css */
+.map-card { min-height: 300px; max-height: 340px; }
+.map-card-svg {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 1.2rem 1.2rem 0 0;
+  margin-bottom: 0.5rem;
+}
+.map-card-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0.7rem 1.1rem;
+  background: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
+  border-radius: 0 0 1.2rem 1.2rem;
+}
+.map-card-label {
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: 0 2px 8px #040913;
+}
+.map-card-btn {
+  border: 1.5px solid #fff;
+  background: rgba(255,255,255,0.10);
+  color: #fff;
+  border-radius: 9999px;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  transition: background 0.2s, border 0.2s;
+}
+.map-card-btn:hover {
+  background: #fff;
+  color: #2f3c49;
+  border: 1.5px solid #39aa79;
+}
