@@ -342,7 +342,8 @@ main {
   padding: 0 1.5rem; /* small padding on both sides */
   max-width: 100%;   /* Prevent overflow */
   box-sizing: border-box;
-  margin-right: 30px;
+  margin-right: 10px;
+  margin-left: 10px;
 }
 @media (max-width: 1500px) {
   .masonry-dashboard {
@@ -407,6 +408,8 @@ main {
 }
 
 .dashboard-greeting {
+  padding-left: 1.5rem;
+  padding-right: 2.5rem;
   font-size: 2.4rem;
   font-weight: 900;
   color: #fff;
