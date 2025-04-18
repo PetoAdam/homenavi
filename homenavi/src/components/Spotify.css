@@ -1,0 +1,46 @@
+/* Spotify styles extracted from App.css */
+.spotify-controls {
+  display: flex;
+  gap: 1.2rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1.2rem;
+  flex-wrap: wrap;
+  overflow: visible;
+  flex-shrink: 0;
+}
+.spotify-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 2.1rem;
+  padding: 0.2em 0.4em;
+  cursor: pointer;
+  transition: color 0.2s;
+  outline: none;
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.spotify-btn:active, .spotify-btn:focus, .spotify-btn:hover {
+  color: #1DB954;
+}
+.spotify-slider {
+  width: 90%;
+  height: 6px;
+  background: #fff3;
+  border-radius: 3px;
+  margin: 1.1rem auto 0.2rem auto;
+  position: relative;
+}
+.spotify-slider-bar {
+  height: 100%;
+  background: #1DB954;
+  border-radius: 3px;
+  position: absolute;
+  left: 0;
+  top: 0;
+}

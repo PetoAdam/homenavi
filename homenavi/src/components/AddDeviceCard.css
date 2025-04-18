@@ -1,0 +1,18 @@
+/* AddDeviceCard styles extracted from App.css */
+.add-device-card { min-height: 160px; max-height: 200px; }
+.add-device-plus {
+  font-size: 4.5rem;
+  color: #fff;
+  margin: 0 auto;
+  margin-top: 1.2rem;
+  margin-bottom: 0.5rem;
+  filter: drop-shadow(0 2px 8px #fff8);
+}
+.add-device-label {
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: auto;
+  margin-bottom: 1.2rem;
+  letter-spacing: 0.08em;
+}
