@@ -1,14 +1,18 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faHouse, faLightbulb, faMap, faUser } from '@fortawesome/free-solid-svg-icons';
 import MenuItem from './MenuItem';
+import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import { BREAKPOINTS, isPermanentSidebarWidth } from '../breakpoints.js';
+import './Sidebar.css';
 
 const menuItems = [
-  { name: 'Home', path: '/', icon: '🏠' },
-  { name: 'Devices', path: '/devices', icon: '💡' },
-  { name: 'Map', path: '/map', icon: '🗺️' },
-  { name: 'Spotify', path: '/spotify', icon: '🎵' },
-  { name: 'Profile', path: '/profile', icon: '👤' },
+  { name: 'Home', path: '/', icon: <FontAwesomeIcon icon={faHouse} /> },
+  { name: 'Devices', path: '/devices', icon: <FontAwesomeIcon icon={faLightbulb} /> },
+  { name: 'Map', path: '/map', icon: <FontAwesomeIcon icon={faMap} /> },
+  { name: 'Spotify', path: '/spotify', icon: <FontAwesomeIcon icon={faSpotify} /> },
+  { name: 'Profile', path: '/profile', icon: <FontAwesomeIcon icon={faUser} /> },
 ];
 
 export default function Sidebar({ menuOpen, setMenuOpen }) {

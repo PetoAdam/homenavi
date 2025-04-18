@@ -1,102 +1,55 @@
-/* Sidebar styles extracted from App.css */
+/*
+  Sidebar.css - iOS Control Center glass style tweaks
+*/
 .sidebar {
-  background: rgba(255, 255, 255, 0.13);
-  border-radius: 1.5rem;
-  box-shadow: none;
-  backdrop-filter: blur(32px) saturate(120%);
-  -webkit-backdrop-filter: blur(32px) saturate(120%);
-  border: 1.2px solid rgba(255,255,255,0.32);
-  transition: box-shadow 0.7s cubic-bezier(.4,2,.6,1), border 0.7s, transform 0.6s cubic-bezier(.4,2,.6,1), filter 0.6s;
-  padding: 2.5rem 1.5rem;
-  width: 16rem;
-  min-width: 16rem;
-  max-width: 16rem;
-  height: calc(100vh - 10rem);
-  min-height: calc(100vh - 10rem);
-  position: fixed;
-  top: 1.2rem;
-  left: 1.2rem;
-  margin: 1.2rem 0 1.2rem 1.2rem;
-  margin-bottom: 2rem;
-  padding-bottom: 2rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  z-index: 100;
-  border-right: 1.5px solid rgba(255,255,255,0.32);
+  /* Already glassy, but add a subtle border and more blur for iOS feel */
+  background: rgba(255,255,255,0.16);
+  border-radius: 2rem;
+  box-shadow: 0 8px 32px 0 rgba(31,38,135,0.18);
+  border: 1.5px solid rgba(255,255,255,0.22);
+  backdrop-filter: blur(36px) saturate(120%);
+  -webkit-backdrop-filter: blur(36px) saturate(120%);
+  padding-top: 2.2rem;
+  padding-bottom: 2.2rem;
+  margin-top: 2.5rem;
+  margin-bottom: 2.5rem;
 }
 .sidebar nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-  overflow-y: auto;
-  scrollbar-width: none;
+  gap: 1.1rem;
 }
-.sidebar nav::-webkit-scrollbar {
-  display: none;
-}
-.sidebar.open {
-  transform: translateX(0);
-}
-@media (max-width: 767px) {
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100vh;
-    min-height: 100vh;
-    width: 80vw;
-    max-width: 20rem;
-    border-radius: 0 1.5rem 1.5rem 0;
-    padding: 1.5rem 1rem;
-    z-index: 300;
-    box-shadow: 2px 0 24px 0 rgba(0,0,0,0.22);
-    background: rgba(255,255,255,0.13);
-    transform: translateX(-100%);
-    transition: transform 0.35s cubic-bezier(.4,1.4,.6,1), box-shadow 0.3s;
-  }
-  .sidebar.open {
-    transform: translateX(0);
-    transition: transform 0.35s cubic-bezier(.4,1.4,.6,1), box-shadow 0.3s;
-    box-shadow: 2px 0 32px 0 rgba(44,54,67,0.22);
-  }
-}
-.glass-logo {
-  font-family: 'Segoe UI', 'Arial', sans-serif;
-  font-size: 1.3rem;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  color: #e5e4e3;
-  text-transform: uppercase;
-  background: none;
-  -webkit-background-clip: unset;
-  -webkit-text-fill-color: unset;
-  text-shadow: 0 1.5px 8px #e5e4e3;
-  filter: blur(0.1px) brightness(1.08);
-}
-.menu-btn, .close-btn {
+.menu-item {
   background: rgba(255,255,255,0.18);
-  border: none;
-  border-radius: 1.2rem;
-  color: #2f3c49;
-  font-size: 2rem;
-  padding: 0.4rem 0.9rem;
-  box-shadow: 0 2px 8px 0 rgba(44,54,67,0.10);
+  border-radius: 9999px;
+  border: 1.2px solid rgba(255,255,255,0.22);
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.10);
+  color: #fff;
+  font-size: 1.22rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  font-family: 'Segoe UI', 'Arial', sans-serif;
+  padding: 0.85rem 1.5rem;
+  margin-bottom: 0.1rem;
   transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-  cursor: pointer;
-  outline: none;
-  margin-left: 0;
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 50;
 }
-.menu-btn:hover, .close-btn:hover {
-  background: rgba(229,228,227,0.32);
-  color: #39aa79;
+.menu-item .menu-icon {
+  font-size: 1.7em;
+  color: #fff;
+  filter: drop-shadow(0 1px 4px #fff8);
 }
-.menu-btn:active, .close-btn:active {
-  background: #e5e4e3;
+.menu-item span:last-child {
+  color: #fff;
+  font-size: 1.22rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+.menu-item.active, .menu-item:hover, .menu-item:focus {
+  background: rgba(229,228,227,0.28);
   color: #39aa79;
+  box-shadow: 0 2px 12px 0 #39aa7933;
+}
+.menu-item.active .menu-icon,
+.menu-item:hover .menu-icon {
+  color: #39aa79;
+  filter: none;
 }
