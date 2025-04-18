@@ -41,20 +41,25 @@
 }
 @media (max-width: 767px) {
   .sidebar {
-    margin: 0;
-    left: 0;
+    position: fixed;
     top: 0;
+    left: 0;
     height: 100vh;
     min-height: 100vh;
+    width: 80vw;
+    max-width: 20rem;
     border-radius: 0 1.5rem 1.5rem 0;
     padding: 1.5rem 1rem;
-    z-index: 100;
+    z-index: 300;
+    box-shadow: 2px 0 24px 0 rgba(0,0,0,0.22);
+    background: rgba(255,255,255,0.13);
     transform: translateX(-100%);
-    transition: transform 0.3s;
-    box-shadow: 2px 0 16px 0 rgba(0,0,0,0.18);
+    transition: transform 0.35s cubic-bezier(.4,1.4,.6,1), box-shadow 0.3s;
   }
   .sidebar.open {
     transform: translateX(0);
+    transition: transform 0.35s cubic-bezier(.4,1.4,.6,1), box-shadow 0.3s;
+    box-shadow: 2px 0 32px 0 rgba(44,54,67,0.22);
   }
 }
 .glass-logo {
