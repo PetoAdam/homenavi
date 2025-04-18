@@ -1,0 +1,582 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;700;900&display=swap');
+
+#root {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+
+body, .glass-card, .sidebar {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/*
+  Blurry, smooth gradient background using your palette
+*/
+body {
+  min-height: 100vh;
+  background: linear-gradient(120deg, #242e3a 0%, #32404d 100%);
+  position: relative;
+}
+
+/* Blurry overlay for extra smoothness */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 60% 40%, #2f3c49 60%, transparent 100%),
+              radial-gradient(ellipse at 20% 80%, #57616d 40%, transparent 100%),
+              radial-gradient(ellipse at 80% 70%, #071324 30%, transparent 100%);
+  opacity: 0.7;
+  filter: blur(48px) saturate(120%);
+}
+
+/*
+  Apple-style glassmorphism for cards and sidebar (no base glow, modern font, whiter greeting)
+*/
+.glass-card, .sidebar {
+  background: rgba(255, 255, 255, 0.13);
+  border-radius: 1.5rem;
+  box-shadow: none;
+  backdrop-filter: blur(32px) saturate(120%);
+  -webkit-backdrop-filter: blur(32px) saturate(120%);
+  border: 1.2px solid rgba(255,255,255,0.32);
+  transition: box-shadow 0.7s cubic-bezier(.4,2,.6,1), border 0.7s, transform 0.6s cubic-bezier(.4,2,.6,1), filter 0.6s;
+}
+
+.glass-card {
+  min-width: clamp(180px, 30vw, 320px);
+  max-width: 100%; /* Prevent overflow in columns */
+  width: 100%;
+  font-weight: 700;
+  font-size: 1.18rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  margin: 0 auto;
+  border: 1.2px solid rgba(255,255,255,0.38);
+  color: #fff;
+  padding: clamp(1.2rem, 4vw, 2.2rem) clamp(1rem, 3vw, 2rem);
+  box-sizing: border-box;
+  position: relative;
+  z-index: 2;
+}
+.glass-card:hover {
+  box-shadow: 0 2px 12px 0 #e5e4e3;
+  border: 1.4px solid #fff;
+  transform: translateY(-1px) scale(1.004);
+  filter: brightness(1.11) saturate(1.13);
+}
+
+/* Sidebar glassmorphism and floating look */
+.sidebar {
+  padding: 2.5rem 1.5rem;
+  width: 16rem;
+  min-width: 16rem;
+  max-width: 16rem;
+  /* Reduce height for more bottom gap */
+  height: calc(100vh - 10rem); /* Increased gap at the bottom */
+  min-height: calc(100vh - 10rem);
+  position: fixed;
+  top: 1.2rem;
+  left: 1.2rem;
+  margin: 1.2rem 0 1.2rem 1.2rem;
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-radius: 1.5rem;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  z-index: 100;
+  border-right: 1.5px solid rgba(255,255,255,0.32);
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.sidebar nav::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .sidebar {
+    margin: 0;
+    left: 0;
+    top: 0;
+    height: 100vh; /* On mobile, sidebar can fill the screen */
+    min-height: 100vh;
+    border-radius: 0 1.5rem 1.5rem 0;
+    padding: 1.5rem 1rem;
+    z-index: 100;
+  }
+}
+
+/* Elegant pill-shaped menu items with white icons */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 1.2rem;
+  border-radius: 9999px;
+  font-size: 1.08rem;
+  font-weight: 500;
+  color: #2f3c49;
+  background: rgba(255,255,255,0.10);
+  border: none;
+  outline: none;
+  transition: background 0.3s, color 0.3s, box-shadow 0.3s;
+  box-shadow: none;
+  cursor: pointer;
+}
+.menu-item .menu-icon {
+  color: #fff !important;
+  font-size: 1.7em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 1px 2px #fff8);
+}
+.menu-item:hover, .menu-item:focus {
+  background: rgba(229,228,227,0.22);
+  color: #39aa79;
+  box-shadow: 0 2px 8px 0 rgba(44,54,67,0.10);
+}
+.menu-item.active {
+  background: rgba(229,228,227,0.28);
+  color: #39aa79;
+  font-weight: 700;
+  box-shadow: 0 2px 12px 0 #39aa79;
+}
+.menu-item.active .menu-icon,
+.menu-item:hover .menu-icon {
+  color: #39aa79 !important;
+  filter: none;
+}
+
+/* Glassy homenavi text: less vibrant, thin, all caps */
+.glass-logo {
+  font-family: 'Segoe UI', 'Arial', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  color: #e5e4e3;
+  text-transform: uppercase;
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: unset;
+  text-shadow: 0 1.5px 8px #e5e4e3;
+  filter: blur(0.1px) brightness(1.08);
+}
+
+/* Sidebar open/close buttons: top left on mobile */
+.menu-btn, .close-btn {
+  background: rgba(255,255,255,0.18);
+  border: none;
+  border-radius: 1.2rem;
+  color: #2f3c49;
+  font-size: 2rem;
+  padding: 0.4rem 0.9rem;
+  box-shadow: 0 2px 8px 0 rgba(44,54,67,0.10);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  outline: none;
+  margin-left: 0;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 50;
+};
+
+.menu-btn:hover, .close-btn:hover {
+  background: rgba(229,228,227,0.32);
+  color: #39aa79;
+}
+.menu-btn:active, .close-btn:active {
+  background: #e5e4e3;
+  color: #39aa79;
+}
+
+@media (max-width: 767px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s;
+    box-shadow: 2px 0 16px 0 rgba(0,0,0,0.18);
+    left: 0;
+    top: 0;
+    height: 100vh;
+    border-radius: 0 1.5rem 1.5rem 0;
+    padding: 1.5rem 1rem;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+}
+
+/*
+  Main content: always offset for sidebar, never under it, and always has padding
+*/
+main {
+  padding: 2rem 0 2rem 0 !important;
+  width: auto;
+  max-width: 100vw;
+  transition: margin 0.4s cubic-bezier(.4,2,.6,1), padding 0.4s;
+  min-height: 100vh;
+  z-index: 1;
+}
+
+@media (min-width: 768px) {
+  main {
+    margin-top: 3rem !important;
+    margin-left: 16rem !important; /* match sidebar width */
+    margin-right: 0 !important;
+    padding: 2rem 0 2rem 0 !important;
+    width: auto;
+    max-width: 100vw;
+    box-sizing: border-box;
+    transition: margin 0.4s cubic-bezier(.4,2,.6,1), padding 0.4s;
+    min-height: 100vh;
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/*
+  Dashboard flex layout for organized card placement
+*/
+.dashboard-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding-top: 0.5rem;
+}
+
+.dashboard-flex > * {
+  flex: 1 1 260px;
+  max-width: 320px;
+  min-width: 200px;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-flex {
+    gap: 1.2rem;
+    justify-content: center;
+  }
+}
+@media (max-width: 700px) {
+  .dashboard-flex {
+    flex-direction: column;
+    gap: 1.2rem;
+    align-items: stretch;
+  }
+  .dashboard-flex > * {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+/*
+  Fix grid layout so cards in the same column are stacked closely (masonry effect)
+*/
+.grid-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.2rem;
+  align-items: start;
+  position: relative;
+  z-index: 1;
+  grid-auto-flow: row dense;
+  /* Remove grid-template-rows for natural stacking */
+}
+
+/* Masonry column layout for dashboard */
+.masonry-dashboard {
+  column-count: 3;
+  column-gap: 2rem; /* Much larger gap between columns */
+  padding: 0 1.5rem; /* small padding on both sides */
+  max-width: 100%;   /* Prevent overflow */
+  box-sizing: border-box;
+  margin-right: 30px;
+}
+@media (max-width: 1500px) {
+  .masonry-dashboard {
+    column-count: 2;
+    column-gap: 2rem;
+  }
+}
+@media (max-width: 1200px) {
+  .masonry-dashboard {
+    column-count: 1;
+    column-gap: 0;
+  }
+}
+.masonry-dashboard > * {
+  break-inside: avoid;
+  margin-bottom: 1.8rem; /* Slightly more vertical space */
+  width: 100%;
+  max-width: 100%; /* Prevent overflow */
+  box-sizing: border-box;
+}
+
+/* Remove fixed heights for natural stacking, but keep min/max for variety */
+.weather-card { min-height: 320px; max-height: 360px; }
+.spotify-card { min-height: 380px; max-height: 420px; }
+.device-card { min-height: 240px; max-height: 280px; }
+.temp-humidity-card { min-height: 200px; max-height: 240px; }
+.map-card { min-height: 300px; max-height: 340px; }
+.add-device-card { min-height: 160px; max-height: 200px; }
+
+/*
+  Card content: more padding, elegant typography, subtle gradients
+*/
+.glass-card .card-content {
+  width: 100%;
+  height: 100%;
+  padding: 1.2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 1.25rem;
+  background: none;
+}
+.glass-card .card-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #2f3c49;
+  margin-bottom: 0.2rem;
+  letter-spacing: -0.5px;
+}
+.glass-card .card-value {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #39aa79;
+  margin-bottom: 0.2rem;
+  letter-spacing: -1px;
+}
+.glass-card .card-desc {
+  font-size: 1rem;
+  color: #7c848d;
+  font-weight: 400;
+}
+
+.dashboard-greeting {
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: #fff;
+  padding-left: 5.0rem;
+  padding-bottom: 0.5rem;
+  letter-spacing: -1px;
+  text-shadow: 0 2px 16px #fff, 0 2px 12px #040913;
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 1.2rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* Add Device Card: huge + icon, text at bottom */
+.add-device-plus {
+  font-size: 4.5rem;
+  color: #fff;
+  margin: 0 auto;
+  margin-top: 1.2rem;
+  margin-bottom: 0.5rem;
+  filter: drop-shadow(0 2px 8px #fff8);
+}
+.add-device-label {
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: auto;
+  margin-bottom: 1.2rem;
+  letter-spacing: 0.08em;
+}
+
+/* Map Card: modern, glassy, with overlay text/button */
+.map-card-svg {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 1.2rem 1.2rem 0 0;
+  margin-bottom: 0.5rem;
+}
+.map-card-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0.7rem 1.1rem;
+  background: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
+  border-radius: 0 0 1.2rem 1.2rem;
+}
+.map-card-label {
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: 0 2px 8px #040913;
+}
+.map-card-btn {
+  border: 1.5px solid #fff;
+  background: rgba(255,255,255,0.10);
+  color: #fff;
+  border-radius: 9999px;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  transition: background 0.2s, border 0.2s;
+}
+.map-card-btn:hover {
+  background: #fff;
+  color: #2f3c49;
+  border: 1.5px solid #39aa79;
+}
+
+.grid-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.2rem;
+  align-items: start;
+  position: relative;
+  z-index: 1;
+  grid-auto-flow: row dense;
+}
+
+/* Example: make card heights in the same row different for a more interesting layout */
+.weather-card { min-height: 320px; max-height: 360px; }
+.spotify-card { min-height: 380px; max-height: 420px; }
+.device-card { min-height: 240px; max-height: 280px; }
+.temp-humidity-card { min-height: 200px; max-height: 240px; }
+.map-card { min-height: 300px; max-height: 340px; }
+.add-device-card { min-height: 160px; max-height: 200px; }
+
+/* Card content: ensure vertical separation and readable layout */
+.card-content-col {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 100%;
+}
+.card-content-icon {
+  flex: 0 0 48%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.card-content-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-left: 0.5rem;
+}
+.card-content-details span {
+  display: block;
+  margin-bottom: 0.2em;
+}
+
+/* Spotify controls: icon-only, big, white, no background */
+.spotify-controls {
+  display: flex;
+  gap: 1.2rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1.2rem;
+  flex-wrap: wrap;
+  overflow: visible;
+  flex-shrink: 0;
+}
+.spotify-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 2.1rem;
+  padding: 0.2em 0.4em;
+  cursor: pointer;
+  transition: color 0.2s;
+  outline: none;
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.spotify-btn:active, .spotify-btn:focus, .spotify-btn:hover {
+  color: #1DB954;
+}
+
+.spotify-slider {
+  width: 90%;
+  height: 6px;
+  background: #fff3;
+  border-radius: 3px;
+  margin: 1.1rem auto 0.2rem auto;
+  position: relative;
+}
+.spotify-slider-bar {
+  height: 100%;
+  background: #1DB954;
+  border-radius: 3px;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
