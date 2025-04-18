@@ -125,14 +125,27 @@ body::before {
   justify-content: flex-start;
   border-right: 1.5px solid rgba(255,255,255,0.32);
 }
-@media (min-width: 768px) {
+@media (min-width: 1400px) {
   .sidebar {
     position: static !important;
     top: unset !important;
     left: unset !important;
-    margin: 2rem 2rem 2rem 2rem !important; /* Add equal margins on all sides */
+    margin: 2rem 2rem 2rem 2rem !important;
     z-index: auto !important;
     border-right: 1.5px solid rgba(255,255,255,0.32);
+  }
+}
+@media (min-width: 768px) and (max-width: 1399px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    min-height: 100vh;
+    border-radius: 0 1.5rem 1.5rem 0;
+    padding: 1.5rem 1rem;
+    z-index: 100;
+    margin: 0;
   }
 }
 @media (max-width: 767px) {
@@ -342,24 +355,30 @@ main {
 
 /* Masonry column layout for dashboard */
 .masonry-dashboard {
-  column-count: 3;
-  column-gap: 2rem; /* Much larger gap between columns */
+  column-count: 1;
+  column-gap: 1.2rem;
   padding: 0 0.5rem; /* small padding on both sides */
   max-width: 100%;   /* Prevent overflow */
   box-sizing: border-box;
   margin-right: 10px;
   margin-left: 10px;
 }
-@media (max-width: 1500px) {
+@media (min-width: 500px) {
   .masonry-dashboard {
     column-count: 2;
+    column-gap: 1.5rem;
+  }
+}
+@media (min-width: 1200px) {
+  .masonry-dashboard {
+    column-count: 3;
     column-gap: 2rem;
   }
 }
-@media (max-width: 1200px) {
+@media (min-width: 1800px) {
   .masonry-dashboard {
-    column-count: 1;
-    column-gap: 0;
+    column-count: 4;
+    column-gap: 2.5rem;
   }
 }
 .masonry-dashboard > * {
