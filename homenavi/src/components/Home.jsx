@@ -10,7 +10,7 @@ export default function Home() {
   return (
     <div className="p-6">
       <div className="dashboard-greeting">
-        Welcome back, Adam! <span className="text-[#39aa79]">👋</span>
+        Welcome back, Adam!👋
       </div>
       <div className="masonry-dashboard">
         <WeatherCard />

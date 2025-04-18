@@ -30,32 +30,28 @@ export default function App() {
         </aside>
       )}
       {/* Hamburger button and overlay sidebar on mobile */}
-      {isMobile && !sidebarOpen && (
-        <button
-          className="menu-btn"
-          style={{ position: 'fixed', top: 16, left: 16, zIndex: 200 }}
-          onClick={() => setSidebarOpen(true)}
-          aria-label="Open menu"
-        >
-          <span style={{ fontSize: 28, color: '#2f3c49' }}>☰</span>
-        </button>
-      )}
-      {isMobile && sidebarOpen && (
-        <aside
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            zIndex: 300,
-            display: 'block',
-            background: 'rgba(44,54,67,0.18)',
-            transition: 'all 0.3s',
-          }}
-        >
-          <Sidebar menuOpen={sidebarOpen} setMenuOpen={setSidebarOpen} />
-        </aside>
+      {isMobile && (
+        <>
+          <button
+            className="menu-btn"
+            style={{ position: 'fixed', top: 16, left: 16, zIndex: 200, display: sidebarOpen ? 'none' : 'block' }}
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
+          >
+            <span style={{ fontSize: 28, color: '#2f3c49' }}>☰</span>
+          </button>
+          <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+            <button
+              className="close-btn"
+              style={{ position: 'fixed', top: 16, left: 16, zIndex: 350 }}
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close menu"
+            >
+              ✕
+            </button>
+            <Sidebar menuOpen={sidebarOpen} setMenuOpen={setSidebarOpen} />
+          </aside>
+        </>
       )}
       <main style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
         <Routes>
