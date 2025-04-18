@@ -403,10 +403,10 @@ main {
 .glass-card .card-content {
   width: 100%;
   height: 100%;
-  padding: 1.2rem 1.5rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center; /* Center all card content horizontally */
   gap: 0.5rem;
   border-radius: 1.25rem;
   background: none;

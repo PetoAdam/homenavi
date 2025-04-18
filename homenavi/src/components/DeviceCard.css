@@ -1,2 +1,127 @@
 /* DeviceCard styles extracted from App.css */
 .device-card { min-height: 240px; max-height: 280px; }
+
+/* Glassy button for DeviceCard and other controls */
+.glass-btn {
+  background: rgba(255,255,255,0.18);
+  border: 1.5px solid rgba(255,255,255,0.35);
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.10);
+  border-radius: 999px;
+  padding: 0.5em 0.9em;
+  color: #fff;
+  transition: background 0.2s, border 0.2s, box-shadow 0.2s;
+  outline: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2em;
+}
+.glass-btn:hover, .glass-btn:focus {
+  background: rgba(255,255,255,0.28);
+  border-color: #fff;
+  box-shadow: 0 4px 16px 0 rgba(0,0,0,0.16);
+}
+
+.devicecard-row {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.2rem 0.1rem;
+}
+.devicecard-vertical {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  width: 100%;
+  height: 100%;
+  /* Fix centering issue */
+  margin: 0 auto;
+}
+.devicecard-toprow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  /* Remove width: 100% for natural centering */
+  margin-bottom: 0.5rem;
+}
+.devicecard-iconwrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  width: 48px;
+  background: rgba(255,255,255,0.10);
+  border-radius: 1.1rem;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.08);
+}
+.devicecard-icon {
+  filter: drop-shadow(0 1px 4px #fff6);
+}
+.devicecard-details {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center text horizontally */
+  justify-content: center;
+  gap: 0.1rem;
+  min-width: 0;
+  text-align: center; /* Center text horizontally */
+}
+.devicecard-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+  padding-bottom: 0.1em;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.devicecard-sub {
+  font-size: 1rem;
+  color: #e5e4e3;
+  opacity: 0.7;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.devicecard-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-left: auto;
+}
+.devicecard-controls-below {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  margin-top: 0.7rem;
+  /* Remove width: 100% for natural centering */
+}
+.glass-switch {
+  height: 30px;
+  min-width: 40px;
+  max-width: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.devicecard-btn {
+  padding: 0.4em 0.7em;
+  font-size: 1.1em;
+  height: 33px;
+  min-width: 40px;
+  max-width: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
