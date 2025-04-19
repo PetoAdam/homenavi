@@ -135,7 +135,8 @@ body::before {
     border-right: 1.5px solid rgba(255,255,255,0.32);
   }
 }
-@media (min-width: 768px) and (max-width: 1399px) {
+/* Unified sidebar hide/show for all screens below 1400px */
+@media (max-width: 1399px) {
   .sidebar {
     position: fixed;
     left: 0;
@@ -146,19 +147,16 @@ body::before {
     padding: 1.5rem 1rem;
     z-index: 100;
     margin: 0;
+    transform: translateX(-100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0.2, 0.2, 1), opacity 0.25s;
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 2px 0 16px 0 rgba(0,0,0,0.18);
   }
-}
-@media (max-width: 767px) {
-  .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    height: 100vh;
-    min-height: 100vh;
-    border-radius: 0 1.5rem 1.5rem 0;
-    padding: 1.5rem 1rem;
-    z-index: 100;
-    margin: 0;
+  .sidebar.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 .sidebar nav {
@@ -171,19 +169,6 @@ body::before {
 }
 .sidebar nav::-webkit-scrollbar {
   display: none;
-}
-
-@media (max-width: 767px) {
-  .sidebar {
-    margin: 0;
-    left: 0;
-    top: 0;
-    height: 100vh; /* On mobile, sidebar can fill the screen */
-    min-height: 100vh;
-    border-radius: 0 1.5rem 1.5rem 0;
-    padding: 1.5rem 1rem;
-    z-index: 100;
-  }
 }
 
 /* Elegant pill-shaped menu items with white icons */
@@ -269,22 +254,6 @@ body::before {
 .menu-btn:active, .close-btn:active {
   background: #e5e4e3;
   color: #39aa79;
-}
-
-@media (max-width: 767px) {
-  .sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.3s;
-    box-shadow: 2px 0 16px 0 rgba(0,0,0,0.18);
-    left: 0;
-    top: 0;
-    height: 100vh;
-    border-radius: 0 1.5rem 1.5rem 0;
-    padding: 1.5rem 1rem;
-  }
-  .sidebar.open {
-    transform: translateX(0);
-  }
 }
 
 /*
