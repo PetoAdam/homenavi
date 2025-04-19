@@ -4,7 +4,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faHouse, faLightbulb, faMap, faUser } from '@fortawesome/free-solid-svg-icons';
 import MenuItem from './MenuItem';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
-import { BREAKPOINTS, isPermanentSidebarWidth } from '../breakpoints.js';
 import './Sidebar.css';
 
 const menuItems = [
@@ -15,23 +14,25 @@ const menuItems = [
   { name: 'Profile', path: '/profile', icon: <FontAwesomeIcon icon={faUser} /> },
 ];
 
-export default function Sidebar({ menuOpen, setMenuOpen }) {
+export default function Sidebar({ menuOpen, setMenuOpen, isPermanentSidebar }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [windowWidth, setWindowWidth] = React.useState(window.innerWidth);
-  const isPermanentSidebar = isPermanentSidebarWidth(windowWidth);
 
-  // Use flex layout, no fixed/absolute positioning
   return (
     <aside
-      className={`sidebar${!isPermanentSidebar && menuOpen ? ' open' : ''} flex flex-col justify-start`}
-      // Remove all inline positioning, let parent flexbox handle layout
+      key={isPermanentSidebar ? 'permanent' : 'overlay'}
+      className={`sidebar${menuOpen ? ' open' : ''} flex flex-col justify-start`}
+      aria-hidden={!menuOpen && !isPermanentSidebar}
+      tabIndex={-1}
     >
-      {!isPermanentSidebar && menuOpen && (
+      {!isPermanentSidebar && (
         <button
           className="close-btn md:hidden"
           style={{ zIndex: 350, top: 16, left: 16 }}
-          onClick={() => setMenuOpen(false)}
+          onClick={e => {
+            e.stopPropagation();
+            setMenuOpen(false);
+          }}
           aria-label="Close menu"
         >
           ✕
