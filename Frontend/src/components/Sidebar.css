@@ -1,6 +1,3 @@
-/*
-  Sidebar.css - iOS Control Center glass style tweaks
-*/
 .sidebar {
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
   /* Already glassy, but add a subtle border and more blur for iOS feel */

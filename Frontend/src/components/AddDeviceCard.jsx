@@ -1,5 +1,6 @@
 import React from 'react';
 import GlassCard from './GlassCard';
+import './AddDeviceCard.css';
 
 export default function AddDeviceCard() {
   return (
