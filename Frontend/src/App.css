@@ -55,14 +55,16 @@ body {
   min-height: 100vh;
   background: var(--gradient-bg);
   position: relative;
+  overflow-x: hidden;
 }
 
 /* Blurry overlay for extra smoothness */
 body::before {
-  width:100%;
   content: '';
   position: fixed;
   inset: 0;
+  left: 0;
+  width: 100vw;
   z-index: 0;
   pointer-events: none;
   background: radial-gradient(ellipse at 60% 40%, var(--color-secondary) 60%, transparent 100%),
