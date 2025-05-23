@@ -21,7 +21,7 @@ export default function Sidebar({ menuOpen, setMenuOpen, isPermanentSidebar }) {
   return (
     <aside
       key={isPermanentSidebar ? 'permanent' : 'overlay'}
-      className={`sidebar${menuOpen ? ' open' : ''} flex flex-col justify-start${isPermanentSidebar ? ' sidebar-fixed' : ''}`}
+      className={`sidebar${menuOpen ? ' open' : ''} flex flex-col justify-start`}
       aria-hidden={!menuOpen && !isPermanentSidebar}
       tabIndex={-1}
     >
