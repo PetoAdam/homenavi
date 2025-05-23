@@ -9,6 +9,7 @@ This is the frontend for the Homenavi project, built with [React](https://react.
 - 🎨 Styled with Tailwind CSS
 - 🔄 Routing with React Router
 - 🎉 FontAwesome icon support
+- 📱 Installable as a Progressive Web App (PWA)
 
 ## Dependencies
 
@@ -62,6 +63,12 @@ npm run build
 ```bash
 npm run preview
 ```
+
+### Enable PWA (Installable Web App)
+
+This project uses [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) to enable installation as a web app. After building or running in dev, you can "Add to Home Screen" in Chrome, Safari, etc.
+
+To customize the app icon, name, or theme, edit `public/manifest.webmanifest` and `vite.config.js`.
 
 ## Docker Deployment
 
