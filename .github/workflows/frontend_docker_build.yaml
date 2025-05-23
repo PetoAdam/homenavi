@@ -1,0 +1,28 @@
+name: Build Frontend Docker Image
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./Frontend  # Set the context to the Frontend folder
+          file: ./Frontend/Dockerfile  # Specify the path to the Dockerfile
+          push: false
+          tags: homenavi-frontend:latest
+          
+      - name: Save Docker image as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: homenavi-frontend-image
