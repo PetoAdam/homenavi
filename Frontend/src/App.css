@@ -71,78 +71,6 @@ body::before {
   filter: blur(48px) saturate(120%);
 }
 
-/*
-  Dashboard flex layout for organized card placement
-*/
-.dashboard-flex {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-  justify-content: flex-start;
-  align-items: flex-start;
-  padding-top: 0.5rem;
-}
-
-.dashboard-flex > * {
-  flex: 1 1 260px;
-  max-width: 320px;
-  min-width: 200px;
-}
-
-@media (max-width: 1200px) {
-  .dashboard-flex {
-    gap: 1.2rem;
-    justify-content: center;
-  }
-}
-@media (max-width: 700px) {
-  .dashboard-flex {
-    flex-direction: column;
-    gap: 1.2rem;
-    align-items: stretch;
-  }
-  .dashboard-flex > * {
-    max-width: 100%;
-    min-width: 0;
-  }
-}
-
-/* Masonry column layout for dashboard */
-.masonry-dashboard {
-  column-count: 1;
-  column-gap: 1.2rem;
-  padding: 0 0.5rem; /* small padding on both sides */
-  max-width: 100%;   /* Prevent overflow */
-  box-sizing: border-box;
-  margin-right: 10px;
-  margin-left: 10px;
-}
-@media (min-width: 500px) {
-  .masonry-dashboard {
-    column-count: 2;
-    column-gap: 1.5rem;
-  }
-}
-@media (min-width: 1200px) {
-  .masonry-dashboard {
-    column-count: 3;
-    column-gap: 2rem;
-  }
-}
-@media (min-width: 1800px) {
-  .masonry-dashboard {
-    column-count: 4;
-    column-gap: 2.5rem;
-  }
-}
-.masonry-dashboard > * {
-  break-inside: avoid;
-  margin-bottom: 1.8rem; /* Slightly more vertical space */
-  width: 100%;
-  max-width: 100%; /* Prevent overflow */
-  box-sizing: border-box;
-}
-
 /* Remove fixed heights for natural stacking, but keep min/max for variety */
 .weather-card { min-height: 320px; max-height: 360px; }
 .spotify-card { min-height: 380px; max-height: 420px; }
@@ -150,23 +78,6 @@ body::before {
 .temp-humidity-card { min-height: 200px; max-height: 240px; }
 .map-card { min-height: 300px; max-height: 340px; }
 .add-device-card { min-height: 160px; max-height: 200px; }
-
-.dashboard-greeting {
-  padding-left: 1.5rem;
-  padding-right: 2.5rem;
-  font-size: 2.4rem;
-  font-weight: 900;
-  color: var(--color-white);
-  padding-left: 5.0rem;
-  padding-bottom: 0.5rem;
-  letter-spacing: -1px;
-  text-shadow: 0 2px 16px var(--color-white), 0 2px 12px var(--color-shadow-dark);
-  display: flex;
-  align-items: flex-end;
-  margin-bottom: 1.2rem;
-  position: relative;
-  z-index: 2;
-}
 
 /* Add Device Card: huge + icon, text at bottom */
 .add-device-plus {
