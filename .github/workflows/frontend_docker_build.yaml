@@ -21,3 +21,12 @@ jobs:
           file: ./Frontend/Dockerfile  # Specify the path to the Dockerfile
           push: false
           tags: homenavi-frontend:latest
+
+      - name: Save Docker image to tarball
+        run: docker save homenavi-frontend:latest | gzip > homenavi-frontend-latest.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homenavi-frontend-latest
+          path: homenavi-frontend-latest.tar.gz
