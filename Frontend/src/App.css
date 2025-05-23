@@ -63,7 +63,8 @@ body::before {
   position: fixed;
   inset: 0;
   left: 0;
-  width: 100vw;
+  right: 0;
+  width: 100%;
   z-index: 0;
   pointer-events: none;
   background: radial-gradient(ellipse at 60% 40%, var(--color-secondary) 60%, transparent 100%),
