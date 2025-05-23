@@ -128,9 +128,6 @@ body::before {
 }
 @media (min-width: 1400px) {
   .sidebar {
-    position: static !important;
-    top: unset !important;
-    left: unset !important;
     margin: 2rem 2rem 2rem 2rem !important;
     z-index: auto !important;
     border-right: 1.5px solid var(--color-glass-border);

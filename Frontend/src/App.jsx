@@ -30,7 +30,7 @@ export default function App() {
 
   // Only pass what Sidebar needs; let Sidebar handle remounting if needed
   return (
-    <div style={{ display: 'flex', flexDirection: 'row', minHeight: '100vh', width: '100%', overflow: 'hidden' }}>
+    <div>
       <Sidebar
         menuOpen={isPermanentSidebar || sidebarOpen}
         setMenuOpen={setSidebarOpen}
@@ -46,7 +46,16 @@ export default function App() {
           <span style={{ fontSize: 28, color: '#2f3c49' }}>☰</span>
         </button>
       )}
-      <main style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
+      <main
+        style={{
+          flex: 1,
+          minWidth: 0,
+          position: 'relative',
+          zIndex: 1,
+          marginLeft: isPermanentSidebar ? 'calc(320px + 2.5rem)' : 0,
+          transition: 'margin-left 0.3s cubic-bezier(.4,2,.6,1)',
+        }}
+      >
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/devices" element={<Devices />} />
