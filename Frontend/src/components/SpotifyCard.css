@@ -1,7 +1,6 @@
-/* SpotifyCard styles extracted from App.css */
+
 .spotify-card { min-height: 380px; max-height: 420px; }
 
-/* Spotify iOS Control Center style */
 .spotify-cc-vertical {
   display: flex;
   flex-direction: column;
@@ -96,7 +95,7 @@
   font-size: 1.5em;
   box-shadow: 0 2px 12px 0 var(--color-shadow-spotify);
 }
-.spotify-cc-btn:hover, .spotify-cc-btn:focus {
+.spotify-cc-btn:hover, .spotify-cc-btn:active {
   background: rgba(255,255,255,0.28);
   border-color: var(--color-white);
   color: var(--color-spotify);
