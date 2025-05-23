@@ -1,12 +1,108 @@
-# React + Vite
+# Homenavi Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the frontend for the Homenavi project, built with [React](https://react.dev/) and [Vite](https://vitejs.dev/). It provides a fast, modern, and maintainable UI for the Homenavi platform.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- ⚡️ Fast development with Vite
+- 🧩 Component-based architecture using React
+- 🎨 Styled with Tailwind CSS
+- 🔄 Routing with React Router
+- 🎉 FontAwesome icon support
 
-## Expanding the ESLint configuration
+## Dependencies
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **react** `^19.0.0`
+- **react-dom** `^19.0.0`
+- **react-router-dom** `^7.5.1`
+- **@fortawesome/fontawesome-svg-core** `^6.7.2`
+- **@fortawesome/free-brands-svg-icons** `^6.7.2`
+- **@fortawesome/free-regular-svg-icons** `^6.7.2`
+- **@fortawesome/free-solid-svg-icons** `^6.7.2`
+- **@fortawesome/react-fontawesome** `^0.2.2`
+- **tailwindcss** `^4.1.4`
+- **vite** `^6.3.1`
+
+## Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or newer recommended)
+- [npm](https://www.npmjs.com/) (comes with Node.js)
+
+### Install dependencies
+
+```bash
+cd Frontend
+npm install
+```
+
+### Start local development server
+
+```bash
+npm run dev
+```
+
+The app will be available at [http://localhost:5173](http://localhost:5173).
+
+### Lint the code
+
+```bash
+npm run lint
+```
+
+### Build for production
+
+```bash
+npm run build
+```
+
+### Preview production build locally
+
+```bash
+npm run preview
+```
+
+## Docker Deployment
+
+The project includes a Dockerfile and can be built and run using Docker and Docker Compose.
+
+### Build and run with Docker Compose
+
+From the project root:
+
+```bash
+docker-compose up --build
+```
+
+This will:
+
+- Build the frontend using Node.js and Vite
+- Serve the static files using Nginx
+- Expose the app at [http://localhost:5173](http://localhost:5173)
+
+### Manual Docker build
+
+```bash
+docker build -t homenavi-frontend .
+docker run -p 5173:80 homenavi-frontend
+```
+
+## Project Structure
+
+```
+Frontend/
+├── public/         # Static assets
+├── src/            # React source code
+├── dist/           # Production build output
+├── package.json
+├── tailwind.config.js
+├── vite.config.js
+└── ...
+```
+
+## License
+
+This project is licensed under the MIT License.
+
+---
