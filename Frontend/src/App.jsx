@@ -48,6 +48,8 @@ export default function App() {
       )}
       <main
         style={{
+          marginTop: '2rem',
+          padding: '2rem 0 2rem 0',
           flex: 1,
           minWidth: 0,
           position: 'relative',
