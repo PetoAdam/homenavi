@@ -52,6 +52,7 @@ export default function App() {
           padding: '2rem 0 2rem 0',
           flex: 1,
           minWidth: 0,
+          width: 'calc(100% - 320px - 2.5rem)',
           position: 'relative',
           zIndex: 1,
           marginLeft: isPermanentSidebar ? 'calc(320px + 2.5rem)' : 0,
