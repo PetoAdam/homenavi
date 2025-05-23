@@ -59,6 +59,7 @@ body {
 
 /* Blurry overlay for extra smoothness */
 body::before {
+  width:100%;
   content: '';
   position: fixed;
   inset: 0;
