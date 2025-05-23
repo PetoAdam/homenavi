@@ -149,6 +149,7 @@
 }
 .weather-cc-tabs button {
   background: rgba(255,255,255,0.13);
+  border: none;
   color: var(--color-white);
   font-weight: 600;
   font-size: 1rem;
