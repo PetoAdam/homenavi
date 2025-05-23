@@ -18,13 +18,13 @@
   margin-bottom: 0.2rem;
 }
 .spotify-cc-logo {
-  color: #1DB954;
-  filter: drop-shadow(0 1px 4px #1db95444);
+  color: var(--color-spotify);
+  filter: drop-shadow(0 1px 4px var(--color-shadow-spotify));
 }
 .spotify-cc-label {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--color-white);
   letter-spacing: 0.08em;
   opacity: 0.85;
 }
@@ -37,7 +37,7 @@
 .spotify-cc-title {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--color-white);
   letter-spacing: -0.5px;
   margin-bottom: 0.1em;
   line-height: 1.1;
@@ -45,7 +45,7 @@
 }
 .spotify-cc-artist {
   font-size: 1rem;
-  color: #e5e4e3;
+  color: var(--color-secondary-xlight);
   opacity: 0.7;
   font-weight: 500;
   letter-spacing: 0.04em;
@@ -54,14 +54,14 @@
 .spotify-cc-slider {
   width: 90%;
   height: 6px;
-  background: #fff3;
+  background: var(--color-shadow-card);
   border-radius: 3px;
   margin: 0.2rem auto 0.2rem auto;
   position: relative;
 }
 .spotify-cc-slider-bar {
   height: 100%;
-  background: #1DB954;
+  background: var(--color-spotify);
   border-radius: 3px;
   position: absolute;
   left: 0;
@@ -75,12 +75,9 @@
   margin-top: 0.2rem;
 }
 .spotify-cc-btn {
-  background: rgba(255,255,255,0.18);
-  border: 1.5px solid rgba(255,255,255,0.35);
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
-  border-radius: 999px;
-  padding: 0.5em 0.9em;
-  color: #fff;
+  background: var(--color-glass-bg-strong);
+  border: 1.5px solid var(--color-glass-border);
+  color: var(--color-white);
   font-size: 1.3em;
   transition: background 0.2s, border 0.2s, box-shadow 0.2s, color 0.2s;
   outline: none;
@@ -88,20 +85,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 999px;
+  padding: 0.5em 0.9em;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
 }
 .spotify-cc-btn.play {
-  background: #1DB954;
-  color: #fff;
+  background: var(--color-spotify);
+  color: var(--color-white);
   border: none;
   font-size: 1.5em;
-  box-shadow: 0 2px 12px 0 #1db95444;
+  box-shadow: 0 2px 12px 0 var(--color-shadow-spotify);
 }
 .spotify-cc-btn:hover, .spotify-cc-btn:focus {
   background: rgba(255,255,255,0.28);
-  border-color: #fff;
-  color: #1DB954;
+  border-color: var(--color-white);
+  color: var(--color-spotify);
 }
 .spotify-cc-btn.play:hover, .spotify-cc-btn.play:focus {
-  background: #17a74a;
-  color: #fff;
+  background: var(--color-primary-dark);
+  color: var(--color-white);
 }

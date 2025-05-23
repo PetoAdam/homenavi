@@ -17,20 +17,20 @@
   justify-content: space-between;
   align-items: flex-end;
   padding: 0.7rem 1.1rem;
-  background: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
+  background: var(--gradient-map-card);
   border-radius: 0 0 1.2rem 1.2rem;
 }
 .map-card-label {
-  color: #fff;
+  color: var(--color-white);
   font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  text-shadow: 0 2px 8px #040913;
+  text-shadow: 0 2px 8px var(--color-shadow-dark);
 }
 .map-card-btn {
-  border: 1.5px solid #fff;
-  background: rgba(255,255,255,0.10);
-  color: #fff;
+  border: 1.5px solid var(--color-white);
+  background: var(--color-glass-bg-light);
+  color: var(--color-white);
   border-radius: 9999px;
   width: 2.5rem;
   height: 2.5rem;
@@ -42,7 +42,7 @@
   transition: background 0.2s, border 0.2s;
 }
 .map-card-btn:hover {
-  background: #fff;
-  color: #2f3c49;
-  border: 1.5px solid #39aa79;
+  background: var(--color-white);
+  color: var(--color-secondary);
+  border: 1.5px solid var(--color-primary);
 }

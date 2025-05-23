@@ -1,0 +1,50 @@
+/* Default color palette for homenavi */
+
+:root {
+  /* Basic colors */
+  --color-white: #fff;
+  --color-black: #000;
+  --color-bg: #242e3a;
+  --color-bg-secondary: #32404d;
+  --color-glass-bg: rgba(255,255,255,0.13);
+  --color-glass-bg-strong: rgba(255,255,255,0.18);
+  --color-glass-bg-light: rgba(255,255,255,0.10);
+  --color-glass-border: rgba(255,255,255,0.32);
+  --color-glass-border-strong: rgba(255,255,255,0.38);
+  --color-glass-border-light: rgba(255,255,255,0.22);
+  --color-glass-border-xlight: rgba(255,255,255,0.12);
+  --color-shadow: #e5e4e3;
+  --color-shadow-dark: #040913;
+  --color-shadow-spotify: #1db95444;
+  --color-shadow-weather: #FFD93B66;
+  --color-shadow-weather-light: #FFD93B33;
+  --color-shadow-menu: #fff8;
+  --color-shadow-device: #fff6;
+  --color-shadow-card: #fff3;
+
+  /* Primary/Accent colors */
+  --color-primary: #39aa79;
+  --color-primary-light: #b6f7c1;
+  --color-primary-dark: #17a74a;
+  --color-secondary: #2f3c49;
+  --color-secondary-light: #7c848d;
+  --color-secondary-xlight: #e5e4e3;
+  --color-secondary-dark: #57616d;
+
+  /* Spotify */
+  --color-spotify: #1DB954;
+
+  /* Weather */
+  --color-weather-sun: #FFD93B;
+
+  /* Misc */
+  --color-link: #646cff;
+  --color-link-hover: #535bf2;
+  --color-profile-btn: #2563eb;
+  --color-profile-btn-hover: #1d4ed8;
+
+  /* Gradients and overlays */
+  --gradient-bg: linear-gradient(120deg, var(--color-bg) 0%, var(--color-bg-secondary) 100%);
+  --gradient-map-card: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
+  --gradient-weather-cc-checked: linear-gradient(90deg, #4cd964 60%, var(--color-primary-light) 100%);
+}

@@ -3,10 +3,10 @@
 */
 .sidebar {
   /* Already glassy, but add a subtle border and more blur for iOS feel */
-  background: rgba(255,255,255,0.16);
+  background: var(--color-glass-bg-strong);
   border-radius: 2rem;
   box-shadow: 0 8px 32px 0 rgba(31,38,135,0.18);
-  border: 1.5px solid rgba(255,255,255,0.22);
+  border: 1.5px solid var(--color-glass-border-light);
   backdrop-filter: blur(36px) saturate(120%);
   -webkit-backdrop-filter: blur(36px) saturate(120%);
   padding-top: 2.2rem;
@@ -18,11 +18,11 @@
   gap: 1.1rem;
 }
 .menu-item {
-  background: rgba(255,255,255,0.18);
+  background: var(--color-glass-bg-strong);
   border-radius: 9999px;
-  border: 1.2px solid rgba(255,255,255,0.22);
+  border: 1.2px solid var(--color-glass-border-light);
   box-shadow: 0 2px 12px 0 rgba(0,0,0,0.10);
-  color: #fff;
+  color: var(--color-white);
   font-size: 1.22rem;
   font-weight: 800;
   letter-spacing: 0.01em;
@@ -33,11 +33,11 @@
 }
 .menu-item .menu-icon {
   font-size: 1.7em;
-  color: #fff;
-  filter: drop-shadow(0 1px 4px #fff8);
+  color: var(--color-white);
+  filter: drop-shadow(0 1px 4px var(--color-shadow-menu));
 }
 .menu-item span:last-child {
-  color: #fff;
+  color: var(--color-white);
   font-size: 1.22rem;
   font-weight: 800;
   letter-spacing: 0.01em;
@@ -45,11 +45,11 @@
 }
 .menu-item.active, .menu-item:hover, .menu-item:focus {
   background: rgba(229,228,227,0.28);
-  color: #39aa79;
-  box-shadow: 0 2px 12px 0 #39aa7933;
+  color: var(--color-primary);
+  box-shadow: 0 2px 12px 0 var(--color-primary)33;
 }
 .menu-item.active .menu-icon,
 .menu-item:hover .menu-icon {
-  color: #39aa79;
+  color: var(--color-primary);
   filter: none;
 }

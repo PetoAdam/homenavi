@@ -12,7 +12,7 @@
 .spotify-btn {
   background: none;
   border: none;
-  color: #fff;
+  color: var(--color-white);
   font-size: 2.1rem;
   padding: 0.2em 0.4em;
   cursor: pointer;
@@ -26,19 +26,19 @@
   flex-shrink: 0;
 }
 .spotify-btn:active, .spotify-btn:focus, .spotify-btn:hover {
-  color: #1DB954;
+  color: var(--color-spotify);
 }
 .spotify-slider {
   width: 90%;
   height: 6px;
-  background: #fff3;
+  background: var(--color-shadow-card);
   border-radius: 3px;
   margin: 1.1rem auto 0.2rem auto;
   position: relative;
 }
 .spotify-slider-bar {
   height: 100%;
-  background: #1DB954;
+  background: var(--color-spotify);
   border-radius: 3px;
   position: absolute;
   left: 0;

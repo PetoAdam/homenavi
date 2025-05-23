@@ -3,12 +3,11 @@
 
 /* Glassy button for DeviceCard and other controls */
 .glass-btn {
-  background: rgba(255,255,255,0.18);
-  border: 1.5px solid rgba(255,255,255,0.35);
+  background: var(--color-glass-bg-strong);
+  border: 1.5px solid var(--color-glass-border);
   box-shadow: 0 2px 12px 0 rgba(0,0,0,0.10);
   border-radius: 999px;
-  padding: 0.5em 0.9em;
-  color: #fff;
+  color: var(--color-white);
   transition: background 0.2s, border 0.2s, box-shadow 0.2s;
   outline: none;
   cursor: pointer;
@@ -19,7 +18,7 @@
 }
 .glass-btn:hover, .glass-btn:focus {
   background: rgba(255,255,255,0.28);
-  border-color: #fff;
+  border-color: var(--color-white);
   box-shadow: 0 4px 16px 0 rgba(0,0,0,0.16);
 }
 
@@ -57,12 +56,12 @@
   justify-content: center;
   height: 48px;
   width: 48px;
-  background: rgba(255,255,255,0.10);
+  background: var(--color-glass-bg-light);
   border-radius: 1.1rem;
   box-shadow: 0 2px 8px 0 rgba(0,0,0,0.08);
 }
 .devicecard-icon {
-  filter: drop-shadow(0 1px 4px #fff6);
+  filter: drop-shadow(0 1px 4px var(--color-shadow-device));
 }
 .devicecard-details {
   display: flex;
@@ -76,7 +75,7 @@
 .devicecard-title {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--color-white);
   letter-spacing: -0.5px;
   padding-bottom: 0.1em;
   line-height: 1.1;
@@ -86,7 +85,7 @@
 }
 .devicecard-sub {
   font-size: 1rem;
-  color: #e5e4e3;
+  color: var(--color-secondary-xlight);
   opacity: 0.7;
   font-weight: 500;
   letter-spacing: 0.04em;
