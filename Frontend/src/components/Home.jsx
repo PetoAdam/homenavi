@@ -6,13 +6,14 @@ import TempHumidityCard from './TempHumidityCard';
 import MapCard from './MapCard';
 import AddDeviceCard from './AddDeviceCard';
 import MasonryDashboard from './MasonryDashboard';
+import Greeting from './Greeting';
 
 export default function Home() {
   return (
     <div className="p-6">
-      <div className="dashboard-greeting">
+      <Greeting>
         Welcome back, Adam!👋
-      </div>
+      </Greeting>
       <MasonryDashboard>
         <WeatherCard />
         <SpotifyCard />
