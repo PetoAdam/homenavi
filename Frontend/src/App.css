@@ -55,7 +55,6 @@ body {
   min-height: 100vh;
   background: var(--gradient-bg);
   position: relative;
-  overflow-x: hidden;
 }
 
 /* Blurry overlay for extra smoothness */
