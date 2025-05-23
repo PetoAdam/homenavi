@@ -5,6 +5,7 @@ import SpotifyCard from './SpotifyCard';
 import TempHumidityCard from './TempHumidityCard';
 import MapCard from './MapCard';
 import AddDeviceCard from './AddDeviceCard';
+import MasonryDashboard from './MasonryDashboard';
 
 export default function Home() {
   return (
@@ -12,14 +13,14 @@ export default function Home() {
       <div className="dashboard-greeting">
         Welcome back, Adam!👋
       </div>
-      <div className="masonry-dashboard">
+      <MasonryDashboard>
         <WeatherCard />
         <SpotifyCard />
         <DeviceCard />
         <TempHumidityCard />
         <MapCard />
         <AddDeviceCard />
-      </div>
+      </MasonryDashboard>
     </div>
   );
 }
