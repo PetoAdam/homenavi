@@ -30,7 +30,6 @@
   top: 2.5rem;
   left: 1.5rem;
   width: 320px; /* Set your sidebar width */
-  flex-shrink: 0;
   height: 100vh;
   z-index: 200; /* ensure above main content but below overlays */
   /* Prevents double margin on top/bottom when fixed */
@@ -50,7 +49,6 @@
     position: fixed;
     left: 0;
     top: 0;
-    width: 50vw;
     height: 100vh;
     min-height: 100vh;
     border-radius: 0 1.5rem 1.5rem 0;
