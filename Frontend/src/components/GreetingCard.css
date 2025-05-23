@@ -2,11 +2,11 @@
 .dashboard-greeting {
   font-size: 2.4rem;
   font-weight: 900;
-  color: #fff;
+  color: var(--color-white);
   padding-left: 5.0rem;
   padding-bottom: 0.5rem;
   letter-spacing: -1px;
-  text-shadow: 0 2px 16px #fff, 0 2px 12px #040913;
+  text-shadow: 0 2px 16px var(--color-white), 0 2px 12px var(--color-shadow-dark);
   display: flex;
   align-items: flex-end;
   margin-bottom: 1.2rem;

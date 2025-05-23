@@ -7,8 +7,8 @@
   border-radius: 9999px;
   font-size: 1.08rem;
   font-weight: 500;
-  color: #2f3c49;
-  background: rgba(255,255,255,0.10);
+  color: var(--color-secondary);
+  background: var(--color-glass-bg-light);
   border: none;
   outline: none;
   transition: background 0.3s, color 0.3s, box-shadow 0.3s;
@@ -16,26 +16,26 @@
   cursor: pointer;
 }
 .menu-item .menu-icon {
-  color: #fff !important;
+  color: var(--color-white) !important;
   font-size: 1.7em;
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 1px 2px #fff8);
+  filter: drop-shadow(0 1px 2px var(--color-shadow-menu));
 }
 .menu-item:hover, .menu-item:focus {
   background: rgba(229,228,227,0.22);
-  color: #39aa79;
+  color: var(--color-primary);
   box-shadow: 0 2px 8px 0 rgba(44,54,67,0.10);
 }
 .menu-item.active {
   background: rgba(229,228,227,0.28);
-  color: #39aa79;
+  color: var(--color-primary);
   font-weight: 700;
-  box-shadow: 0 2px 12px 0 #39aa79;
+  box-shadow: 0 2px 12px 0 var(--color-primary);
 }
 .menu-item.active .menu-icon,
 .menu-item:hover .menu-icon {
-  color: #39aa79 !important;
+  color: var(--color-primary) !important;
   filter: none;
 }

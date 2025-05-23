@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;700;900&display=swap');
+@import './colors.css';
 
 #root {
   max-width: none;
@@ -52,7 +53,7 @@ body, .glass-card, .sidebar {
 */
 body {
   min-height: 100vh;
-  background: linear-gradient(120deg, #242e3a 0%, #32404d 100%);
+  background: var(--gradient-bg);
   position: relative;
 }
 
@@ -63,8 +64,8 @@ body::before {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at 60% 40%, #2f3c49 60%, transparent 100%),
-              radial-gradient(ellipse at 20% 80%, #57616d 40%, transparent 100%),
+  background: radial-gradient(ellipse at 60% 40%, var(--color-secondary) 60%, transparent 100%),
+              radial-gradient(ellipse at 20% 80%, var(--color-secondary-dark) 40%, transparent 100%),
               radial-gradient(ellipse at 80% 70%, #071324 30%, transparent 100%);
   opacity: 0.7;
   filter: blur(48px) saturate(120%);
@@ -74,12 +75,12 @@ body::before {
   Apple-style glassmorphism for cards and sidebar (no base glow, modern font, whiter greeting)
 */
 .glass-card, .sidebar {
-  background: rgba(255, 255, 255, 0.13);
+  background: var(--color-glass-bg);
   border-radius: 1.5rem;
   box-shadow: none;
   backdrop-filter: blur(32px) saturate(120%);
   -webkit-backdrop-filter: blur(32px) saturate(120%);
-  border: 1.2px solid rgba(255,255,255,0.32);
+  border: 1.2px solid var(--color-glass-border);
   transition: box-shadow 0.7s cubic-bezier(.4,2,.6,1), border 0.7s, transform 0.6s cubic-bezier(.4,2,.6,1), filter 0.6s;
 }
 
@@ -94,16 +95,16 @@ body::before {
   justify-content: center;
   align-items: stretch;
   margin: 0 auto;
-  border: 1.2px solid rgba(255,255,255,0.38);
-  color: #fff;
+  border: 1.2px solid var(--color-glass-border-strong);
+  color: var(--color-white);
   padding: clamp(1.2rem, 4vw, 2.2rem) clamp(1rem, 3vw, 2rem);
   box-sizing: border-box;
   position: relative;
   z-index: 2;
 }
 .glass-card:hover {
-  box-shadow: 0 2px 12px 0 #e5e4e3;
-  border: 1.4px solid #fff;
+  box-shadow: 0 2px 12px 0 var(--color-shadow);
+  border: 1.4px solid var(--color-white);
   transform: translateY(-1px) scale(1.004);
   filter: brightness(1.11) saturate(1.13);
 }
@@ -123,7 +124,7 @@ body::before {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  border-right: 1.5px solid rgba(255,255,255,0.32);
+  border-right: 1.5px solid var(--color-glass-border);
 }
 @media (min-width: 1400px) {
   .sidebar {
@@ -132,7 +133,7 @@ body::before {
     left: unset !important;
     margin: 2rem 2rem 2rem 2rem !important;
     z-index: auto !important;
-    border-right: 1.5px solid rgba(255,255,255,0.32);
+    border-right: 1.5px solid var(--color-glass-border);
   }
 }
 /* Unified sidebar hide/show for all screens below 1400px */
@@ -180,8 +181,8 @@ body::before {
   border-radius: 9999px;
   font-size: 1.08rem;
   font-weight: 500;
-  color: #2f3c49;
-  background: rgba(255,255,255,0.10);
+  color: var(--color-secondary);
+  background: var(--color-glass-bg-light);
   border: none;
   outline: none;
   transition: background 0.3s, color 0.3s, box-shadow 0.3s;
@@ -189,27 +190,27 @@ body::before {
   cursor: pointer;
 }
 .menu-item .menu-icon {
-  color: #fff !important;
+  color: var(--color-white) !important;
   font-size: 1.7em;
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 1px 2px #fff8);
+  filter: drop-shadow(0 1px 2px var(--color-shadow-menu));
 }
 .menu-item:hover, .menu-item:focus {
   background: rgba(229,228,227,0.22);
-  color: #39aa79;
+  color: var(--color-primary);
   box-shadow: 0 2px 8px 0 rgba(44,54,67,0.10);
 }
 .menu-item.active {
   background: rgba(229,228,227,0.28);
-  color: #39aa79;
+  color: var(--color-primary);
   font-weight: 700;
-  box-shadow: 0 2px 12px 0 #39aa79;
+  box-shadow: 0 2px 12px 0 var(--color-primary);
 }
 .menu-item.active .menu-icon,
 .menu-item:hover .menu-icon {
-  color: #39aa79 !important;
+  color: var(--color-primary) !important;
   filter: none;
 }
 
@@ -219,21 +220,21 @@ body::before {
   font-size: 1.3rem;
   font-weight: 400;
   letter-spacing: 0.18em;
-  color: #e5e4e3;
+  color: var(--color-secondary-xlight);
   text-transform: uppercase;
   background: none;
   -webkit-background-clip: unset;
   -webkit-text-fill-color: unset;
-  text-shadow: 0 1.5px 8px #e5e4e3;
+  text-shadow: 0 1.5px 8px var(--color-secondary-xlight);
   filter: blur(0.1px) brightness(1.08);
 }
 
 /* Sidebar open/close buttons: top left on mobile */
 .menu-btn, .close-btn {
-  background: rgba(255,255,255,0.18);
+  background: var(--color-glass-bg-strong);
   border: none;
   border-radius: 1.2rem;
-  color: #2f3c49;
+  color: var(--color-secondary);
   font-size: 2rem;
   padding: 0.4rem 0.9rem;
   box-shadow: 0 2px 8px 0 rgba(44,54,67,0.10);
@@ -249,11 +250,11 @@ body::before {
 
 .menu-btn:hover, .close-btn:hover {
   background: rgba(229,228,227,0.32);
-  color: #39aa79;
+  color: var(--color-primary);
 }
 .menu-btn:active, .close-btn:active {
-  background: #e5e4e3;
-  color: #39aa79;
+  background: var(--color-secondary-xlight);
+  color: var(--color-primary);
 }
 
 /*
@@ -383,20 +384,20 @@ main {
 .glass-card .card-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #2f3c49;
+  color: var(--color-secondary);
   margin-bottom: 0.2rem;
   letter-spacing: -0.5px;
 }
 .glass-card .card-value {
   font-size: 2.2rem;
   font-weight: 700;
-  color: #39aa79;
+  color: var(--color-primary);
   margin-bottom: 0.2rem;
   letter-spacing: -1px;
 }
 .glass-card .card-desc {
   font-size: 1rem;
-  color: #7c848d;
+  color: var(--color-secondary-light);
   font-weight: 400;
 }
 
@@ -405,11 +406,11 @@ main {
   padding-right: 2.5rem;
   font-size: 2.4rem;
   font-weight: 900;
-  color: #fff;
+  color: var(--color-white);
   padding-left: 5.0rem;
   padding-bottom: 0.5rem;
   letter-spacing: -1px;
-  text-shadow: 0 2px 16px #fff, 0 2px 12px #040913;
+  text-shadow: 0 2px 16px var(--color-white), 0 2px 12px var(--color-shadow-dark);
   display: flex;
   align-items: flex-end;
   margin-bottom: 1.2rem;
@@ -420,14 +421,14 @@ main {
 /* Add Device Card: huge + icon, text at bottom */
 .add-device-plus {
   font-size: 4.5rem;
-  color: #fff;
+  color: var(--color-white);
   margin: 0 auto;
   margin-top: 1.2rem;
   margin-bottom: 0.5rem;
-  filter: drop-shadow(0 2px 8px #fff8);
+  filter: drop-shadow(0 2px 8px var(--color-shadow-menu));
 }
 .add-device-label {
-  color: #fff;
+  color: var(--color-white);
   font-size: 1.1rem;
   font-weight: 600;
   margin-top: auto;
@@ -453,20 +454,20 @@ main {
   justify-content: space-between;
   align-items: flex-end;
   padding: 0.7rem 1.1rem;
-  background: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
+  background: var(--gradient-map-card);
   border-radius: 0 0 1.2rem 1.2rem;
 }
 .map-card-label {
-  color: #fff;
+  color: var(--color-white);
   font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  text-shadow: 0 2px 8px #040913;
+  text-shadow: 0 2px 8px var(--color-shadow-dark);
 }
 .map-card-btn {
-  border: 1.5px solid #fff;
-  background: rgba(255,255,255,0.10);
-  color: #fff;
+  border: 1.5px solid var(--color-white);
+  background: var(--color-glass-bg-light);
+  color: var(--color-white);
   border-radius: 9999px;
   width: 2.5rem;
   height: 2.5rem;
@@ -478,9 +479,9 @@ main {
   transition: background 0.2s, border 0.2s;
 }
 .map-card-btn:hover {
-  background: #fff;
-  color: #2f3c49;
-  border: 1.5px solid #39aa79;
+  background: var(--color-white);
+  color: var(--color-secondary);
+  border: 1.5px solid var(--color-primary);
 }
 
 .grid-dashboard {
@@ -543,7 +544,7 @@ main {
 .spotify-btn {
   background: none;
   border: none;
-  color: #fff;
+  color: var(--color-white);
   font-size: 2.1rem;
   padding: 0.2em 0.4em;
   cursor: pointer;
@@ -557,20 +558,20 @@ main {
   flex-shrink: 0;
 }
 .spotify-btn:active, .spotify-btn:focus, .spotify-btn:hover {
-  color: #1DB954;
+  color: var(--color-spotify);
 }
 
 .spotify-slider {
   width: 90%;
   height: 6px;
-  background: #fff3;
+  background: var(--color-shadow-card);
   border-radius: 3px;
   margin: 1.1rem auto 0.2rem auto;
   position: relative;
 }
 .spotify-slider-bar {
   height: 100%;
-  background: #1DB954;
+  background: var(--color-spotify);
   border-radius: 3px;
   position: absolute;
   left: 0;
