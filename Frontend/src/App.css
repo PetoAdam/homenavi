@@ -71,14 +71,6 @@ body::before {
   filter: blur(48px) saturate(120%);
 }
 
-/* Remove fixed heights for natural stacking, but keep min/max for variety */
-.weather-card { min-height: 320px; max-height: 360px; }
-.spotify-card { min-height: 380px; max-height: 420px; }
-.device-card { min-height: 240px; max-height: 280px; }
-.temp-humidity-card { min-height: 200px; max-height: 240px; }
-.map-card { min-height: 300px; max-height: 340px; }
-.add-device-card { min-height: 160px; max-height: 200px; }
-
 /* Add Device Card: huge + icon, text at bottom */
 .add-device-plus {
   font-size: 4.5rem;
