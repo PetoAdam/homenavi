@@ -21,8 +21,3 @@ jobs:
           file: ./Frontend/Dockerfile  # Specify the path to the Dockerfile
           push: false
           tags: homenavi-frontend:latest
-          
-      - name: Save Docker image as artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: homenavi-frontend-image
