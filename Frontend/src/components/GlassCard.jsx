@@ -1,4 +1,5 @@
 import React from 'react';
+import './GlassCard.css';
 
 export default function GlassCard({ children, className = '' }) {
   return (
