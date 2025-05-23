@@ -1,14 +1,13 @@
-# syntax=docker/dockerfile:1
 FROM node:18-alpine AS builder
 WORKDIR /app
-COPY homenavi/package.json homenavi/package-lock.json ./homenavi/
-WORKDIR /app/homenavi
+COPY Frontend/package.json Frontend/package-lock.json ./Frontend/
+WORKDIR /app/Frontend
 RUN npm install
-COPY homenavi .
+COPY Frontend .
 RUN npm run build
 
 FROM nginx:alpine
-COPY --from=builder /app/homenavi/dist /usr/share/nginx/html
-COPY homenavi/public /usr/share/nginx/html
+COPY --from=builder /app/Frontend/dist /usr/share/nginx/html
+COPY Frontend/public /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
