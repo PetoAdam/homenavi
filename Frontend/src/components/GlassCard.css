@@ -5,7 +5,7 @@
   backdrop-filter: blur(32px) saturate(120%);
   -webkit-backdrop-filter: blur(32px) saturate(120%);
   border: 1.2px solid var(--color-glass-border);
-  transition: box-shadow 0.7s cubic-bezier(.4,2,.6,1), border 0.7s, transform 0.6s cubic-bezier(.4,2,.6,1), filter 0.6s;
+  transition: box-shadow 0.7s cubic-bezier(0.4, 0, 0.2, 1), border 0.7s, transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), filter 0.6s;
   min-width: clamp(180px, 30vw, 320px);
   max-width: 100%; /* Prevent overflow in columns */
   width: 100%;
@@ -27,7 +27,7 @@
 
 .glass-card:hover {
   border: 1.4px solid var(--color-white);
-  transform: translateY(-1px) scale(1.004);
+  transform: translateY(-1px) scale(1.01);
   filter: brightness(1.11) saturate(1.13);
 }
 
