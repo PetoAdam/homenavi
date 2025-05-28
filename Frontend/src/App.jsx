@@ -6,6 +6,7 @@ import Devices from './components/Devices';
 import Map from './components/Map';
 import Spotify from './components/Spotify';
 import Profile from './components/Profile';
+import ProfileButton from './components/ProfileButton';
 import './App.css';
 import { isPermanentSidebarWidth } from './breakpoints.js';
 
@@ -14,6 +15,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isPermanentSidebar = isPermanentSidebarWidth(windowWidth);
   const prevIsPermanent = useRef(isPermanentSidebar);
+  const sidebarRef = useRef();
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -28,6 +30,20 @@ export default function App() {
     prevIsPermanent.current = isPermanentSidebar;
   }, [isPermanentSidebar]);
 
+  useEffect(() => {
+    if (!sidebarOpen || isPermanentSidebar) return;
+    function handle(e) {
+      if (
+        sidebarRef.current &&
+        !sidebarRef.current.contains(e.target)
+      ) {
+        setSidebarOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [sidebarOpen, isPermanentSidebar]);
+
   // Only pass what Sidebar needs; let Sidebar handle remounting if needed
   return (
     <div>
@@ -35,15 +51,41 @@ export default function App() {
         menuOpen={isPermanentSidebar || sidebarOpen}
         setMenuOpen={setSidebarOpen}
         isPermanentSidebar={isPermanentSidebar}
+        ref={sidebarRef}
       />
+      {/* Profile button in top right */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 24,
+          right: 36,
+          zIndex: 300,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.7rem',
+        }}
+      >
+        <ProfileButton />
+      </div>
       {!isPermanentSidebar && !sidebarOpen && (
         <button
           className="menu-btn"
-          style={{ position: 'fixed', top: 16, left: 16, zIndex: 200 }}
-          onClick={() => setSidebarOpen(true)}
           aria-label="Open menu"
+          onClick={() => setSidebarOpen(true)}
         >
-          <span style={{ fontSize: 28, color: '#2f3c49' }}>☰</span>
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              height: '100%',
+              fontSize: 28,
+              color: 'var(--color-glass-border)',
+            }}
+          >
+            ☰
+          </span>
         </button>
       )}
       <main

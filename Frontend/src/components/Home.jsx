@@ -7,13 +7,12 @@ import MapCard from './MapCard';
 import AddDeviceCard from './AddDeviceCard';
 import MasonryDashboard from './MasonryDashboard';
 import Greeting from './Greeting';
+import ProfileButton from './ProfileButton';
 
 export default function Home() {
   return (
     <div className="p-6">
-      <Greeting>
-        Welcome back, Adam!👋
-      </Greeting>
+        <Greeting showProfileTextButton />
       <MasonryDashboard>
         <WeatherCard />
         <SpotifyCard />
