@@ -14,3 +14,17 @@
   position: relative;
   z-index: 2;
 }
+
+.dashboard-greeting--with-profile-btn {
+  margin-right: 7.5rem; /* enough space for profile button + text */
+}
+
+@media (max-width: 700px) {
+  .dashboard-greeting {
+    font-size: 2rem;
+    min-height: 2.2rem;
+  }
+  .dashboard-greeting--with-profile-btn {
+    margin-right: 3.5rem; /* only avatar button on mobile */
+  }
+}
