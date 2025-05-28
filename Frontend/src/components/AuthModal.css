@@ -43,6 +43,17 @@
     margin: 0 2vw;
     padding: 1.2rem 0 1.2rem 0;
   }
+  /* keep forms side by side and only show one at a time */
+  .auth-modal-content-inner {
+    flex-direction: row !important;
+    width: 200%;
+    transform: none;
+  }
+  .auth-modal-form {
+    max-width: 100%;
+    min-width: 100%;
+    padding: 0 0.7rem;
+  }
 }
 .auth-modal-glass.open {
   opacity: 1;
@@ -138,9 +149,9 @@
     padding: 0 0.7rem;
   }
   .auth-modal-content-inner {
-    flex-direction: column;
-    width: 100%;
-    transform: none !important;
+    flex-direction: row !important;
+    width: 200%;
+    transform: none;
   }
 }
 
