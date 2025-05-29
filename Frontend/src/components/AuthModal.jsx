@@ -21,6 +21,19 @@ export default function AuthModal({ open, onClose, login }) {
     return () => document.removeEventListener('mousedown', handle);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (open) {
+      // Prevent background scroll
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    // Clean up on unmount
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [open]);
+
   // Animate scroll between login/signup
   const contentClass = `auth-modal-content-inner${tab === 'login' ? ' login' : ' signup'}`;
 
