@@ -9,6 +9,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.28s cubic-bezier(.4,2,.6,1);
+  touch-action: none;
   overscroll-behavior: contain;
 }
 .auth-modal-backdrop.open {
