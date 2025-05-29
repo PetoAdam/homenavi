@@ -38,9 +38,9 @@
 @media (max-width: 700px) {
   .auth-modal-glass {
     min-width: unset;
-    width: 86vw;
+    width: 90vw;
     max-width: 420px;
-    margin: 0 7vw;
+    margin: 0 5vw;
     padding: 1.2rem 0 1.2rem 0;
   }
   /* keep forms side by side and only show one at a time */
