@@ -35,7 +35,7 @@
   align-items: center;
   box-sizing: border-box;
 }
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .auth-modal-glass {
     min-width: unset;
     width: 98vw;
@@ -142,7 +142,7 @@
   padding: 0 2.2rem;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .auth-modal-form {
     max-width: 100%;
     min-width: 100%;
