@@ -10,7 +10,6 @@
   pointer-events: none;
   transition: opacity 0.28s cubic-bezier(.4,2,.6,1);
   touch-action: none;
-  overscroll-behavior: contain;
 }
 .auth-modal-backdrop.open {
   opacity: 1;
@@ -36,12 +35,6 @@
   flex-direction: column;
   align-items: center;
   box-sizing: border-box;
-  max-height: 90vh;
-  overflow-y: auto;
-  height: 100%; /* allow to fill parent */
-  justify-content: flex-start;
-  margin-top: 5vh; /* center vertically with some top margin */
-  margin-bottom: 5vh; /* center vertically with some bottom margin */
 }
 @media (max-width: 700px) {
   .auth-modal-glass {
@@ -148,8 +141,6 @@
   box-sizing: border-box;
   flex-shrink: 0;
   padding: 0 2.2rem;
-  min-height: 0;
-  flex: 1 1 auto; /* allow form to grow/shrink */
 }
 
 @media (max-width: 700px) {
@@ -307,15 +298,12 @@
 /* Modal content scroll animation */
 .auth-modal-content-outer {
   width: 100%;
-  overflow-y: auto; /* allow vertical scroll */
-  overflow-x: hidden;
+  overflow: hidden;
   position: relative;
   min-height: 320px;
   display: flex;
   justify-content: center;
   align-items: stretch;
-  flex: 1 1 auto; /* grow to fill modal */
-  max-height: 100%;
 }
 
 .auth-modal-content-inner {
