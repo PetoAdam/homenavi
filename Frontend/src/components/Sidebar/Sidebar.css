@@ -1,6 +1,6 @@
 .sidebar {
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-  /* Already glassy, but add a subtle border and more blur for iOS feel */
+  /* Already glassy, but add a subtle border and more blur for glassy feel */
   background: var(--color-glass-bg);
   border-radius: 1.5rem;
   box-shadow: none;

@@ -1,5 +1,5 @@
 import React from 'react';
-import GlassCard from './GlassCard';
+import GlassCard from '../common/GlassCard/GlassCard';
 
 export default function Map() {
   return (

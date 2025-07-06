@@ -1,5 +1,5 @@
 import React from 'react';
-import GlassCard from './GlassCard';
+import GlassCard from '../../common/GlassCard/GlassCard';
 import './MapCard.css';
 
 export default function MapCard() {

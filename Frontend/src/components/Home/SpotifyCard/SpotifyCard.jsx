@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBackwardStep, faForwardStep, faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify as faSpotifyBrand } from '@fortawesome/free-brands-svg-icons';
-import GlassCard from './GlassCard';
+import GlassCard from '../../common/GlassCard/GlassCard';
 import './SpotifyCard.css';
 
 export default function SpotifyCard() {

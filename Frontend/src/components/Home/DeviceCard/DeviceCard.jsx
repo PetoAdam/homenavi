@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLightbulb, faCog } from '@fortawesome/free-solid-svg-icons';
-import GlassCard from './GlassCard';
-import GlassSwitch from './GlassSwitch';
+import GlassCard from '../../common/GlassCard/GlassCard';
+import GlassSwitch from '../../common/GlassSwitch/GlassSwitch';
 import './DeviceCard.css';
 
 export default function DeviceCard() {
