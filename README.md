@@ -4,7 +4,7 @@
 
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
-[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml)
+[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml) [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml) [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml) [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml)
 
 ---
 
@@ -90,15 +90,13 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
 
 ## 🌐 Community & Support
 
-- [GitHub Discussions](https://github.com/yourorg/homenavi/discussions)
-- [Issues](https://github.com/yourorg/homenavi/issues)
+- [Issues](https://github.com/PetoAdam/homenavi/issues)
 - [Discord](https://discord.gg/your-invite) (coming soon)
 
 ---
 
 ## 📚 Docs
 - [Local Build Guide](doc/local_build.md)
-- [Local Testing Guide](doc/local_test.md)
 
 ---
 
