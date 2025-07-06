@@ -55,7 +55,7 @@ export default function ProfileButton() {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  // Show logout message for 2.5 seconds
+  // Show toast message for 2.5 seconds
   useEffect(() => {
     if (logoutMsg) {
       const timer = setTimeout(() => setLogoutMsg(""), 2500);
@@ -69,9 +69,19 @@ export default function ProfileButton() {
     setLogoutMsg("Logged out successfully");
   };
 
+  // Handle login with toast
+  const handleLogin = async (email, password) => {
+    const success = await login(email, password);
+    if (success) {
+      setShowAuthModal(false);
+      setLogoutMsg("Logged in successfully");
+    }
+    return success;
+  };
+
   return (
     <div className="profile-btn-wrap" ref={btnRef}>
-      {/* Toast notification for logout */}
+      {/* Toast notification for login/logout */}
       <div className={`profile-toast${logoutMsg ? ' profile-toast--show' : ''}`}>{logoutMsg}</div>
       {!user.isLoggedIn && (
         <button
@@ -111,7 +121,7 @@ export default function ProfileButton() {
       <AuthModal
         open={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        login={login}
+        login={handleLogin}
       />
     </div>
   );
