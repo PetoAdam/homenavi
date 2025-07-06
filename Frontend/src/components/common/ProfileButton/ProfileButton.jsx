@@ -42,6 +42,7 @@ export default function ProfileButton() {
   const { user, login, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [logoutMsg, setLogoutMsg] = useState("");
   const btnRef = useRef();
 
   // Close popover on outside click
@@ -54,9 +55,24 @@ export default function ProfileButton() {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  // Only show "Log in" text on md+ screens
+  // Show logout message for 2.5 seconds
+  useEffect(() => {
+    if (logoutMsg) {
+      const timer = setTimeout(() => setLogoutMsg(""), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [logoutMsg]);
+
+  const handleLogout = () => {
+    logout();
+    setOpen(false);
+    setLogoutMsg("Logged out successfully");
+  };
+
   return (
     <div className="profile-btn-wrap" ref={btnRef}>
+      {/* Toast notification for logout */}
+      <div className={`profile-toast${logoutMsg ? ' profile-toast--show' : ''}`}>{logoutMsg}</div>
       {!user.isLoggedIn && (
         <button
           className="profile-login-text hide-on-mobile"
@@ -86,7 +102,7 @@ export default function ProfileButton() {
             <button className="profile-menu-item" onClick={() => { /* settings */ }}>
               <FontAwesomeIcon icon={faCog} className="profile-menu-icon" /> Settings
             </button>
-            <button className="profile-menu-item" onClick={logout}>
+            <button className="profile-menu-item" onClick={handleLogout}>
               <FontAwesomeIcon icon={faSignOutAlt} className="profile-menu-icon" /> Logout
             </button>
           </div>
