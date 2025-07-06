@@ -1,4 +1,4 @@
-name: Build Frontend Docker Image
+name: Build frontend Docker Image
 
 on:
   push:
@@ -17,8 +17,8 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./Frontend  # Set the context to the Frontend folder
-          file: ./Frontend/Dockerfile  # Specify the path to the Dockerfile
+          context: ./frontend  # Set the context to the frontend folder
+          file: ./frontend/Dockerfile  # Specify the path to the Dockerfile
           push: false
           tags: homenavi-frontend:latest
 
