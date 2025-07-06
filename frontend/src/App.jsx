@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Sidebar from './components/Sidebar/Sidebar';
-import Home from './components/Home/Home';
-import Devices from './components/Devices/Devices';
-import Map from './components/Map/Map';
-import Spotify from './components/Spotify/Spotify';
-import Profile from './components/Profile/Profile';
-import ProfileButton from './components/common/ProfileButton/ProfileButton';
+import Sidebar from './components/Sidebar/Sidebar.jsx';
+import Home from './components/Home/Home.jsx';
+import Devices from './components/Devices/Devices.jsx';
+import Map from './components/Map/Map.jsx';
+import Spotify from './components/Spotify/Spotify.jsx';
+import Profile from './components/Profile/Profile.jsx';
+import ProfileButton from './components/common/ProfileButton/ProfileButton.jsx';
 import './App.css';
 import { isPermanentSidebarWidth } from './breakpoints.js';
 
