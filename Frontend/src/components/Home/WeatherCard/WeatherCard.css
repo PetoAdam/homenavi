@@ -1,7 +1,5 @@
-/* WeatherCard styles extracted from App.css */
 .weather-card { min-height: 320px; max-height: 360px; }
 
-/* iOS Control Center style for WeatherCard */
 .weather-cc-vertical {
   display: flex;
   flex-direction: column;

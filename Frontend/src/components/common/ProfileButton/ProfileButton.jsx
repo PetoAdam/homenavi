@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { faUserCircle, faSignOutAlt, faCog } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import './ProfileButton.css';
-import { loginTestUser } from '../services/authService';
-import AuthModal from './AuthModal';
+import { loginTestUser } from '../../../services/authService';
+import AuthModal from '../../Auth/AuthModal/AuthModal';
 
 // Mock auth hook using test login
 function useAuth() {

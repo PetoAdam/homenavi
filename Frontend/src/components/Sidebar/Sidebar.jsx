@@ -2,7 +2,7 @@ import React, { forwardRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faHouse, faLightbulb, faMap } from '@fortawesome/free-solid-svg-icons';
-import MenuItem from './MenuItem';
+import MenuItem from '../common/MenuItem/MenuItem';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import './Sidebar.css';
 

@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSun, faCloudSun, faCloudRain, faCloud, faLocationDot, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import React, { useRef, useState } from 'react';
-import GlassCard from './GlassCard';
+import GlassCard from '../../common/GlassCard/GlassCard';
 import './WeatherCard.css';
 
 export default function WeatherCard() {
