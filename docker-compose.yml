@@ -15,6 +15,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8000
       - USER_SERVICE_URL=http://user-service:8001
       - JWT_SECRET=supersecretkey
+      - REDIS_ADDR=redis:6379
     depends_on:
       - auth-service
       - user-service
@@ -33,3 +34,9 @@ services:
     build: ./user-service
     ports:
       - "8001:8001"
+  
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
