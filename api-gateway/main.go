@@ -11,9 +11,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/redis/go-redis/v9"
+	"github.com/google/uuid"
 
 	"api-gateway/internal/config"
 	"api-gateway/internal/router"
+	"api-gateway/internal/observability"
 )
 
 func main() {
@@ -28,11 +30,37 @@ func main() {
 	}
 	fmt.Printf("Loaded config: %+v\n", cfg)
 
+	// Observability setup
+	shutdown, promHandler, tracer := observability.SetupObservability()
+	defer shutdown()
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	// Per-endpoint metrics and tracing middleware
+	r.Use(observability.MetricsAndTracingMiddleware(tracer))
+	// Correlation ID middleware
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			corrID := r.Header.Get("X-Correlation-ID")
+			if corrID == "" {
+				corrID = uuid.New().String()
+			}
+			w.Header().Set("X-Correlation-ID", corrID)
+			r = r.WithContext(context.WithValue(r.Context(), "correlation_id", corrID))
+			next.ServeHTTP(w, r)
+		})
+	})
+
+	// Prometheus metrics endpoint
+	r.Handle("/metrics", promHandler)
+	// Healthcheck endpoint
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDIS_ADDR"),
