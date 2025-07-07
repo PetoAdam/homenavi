@@ -1,9 +1,35 @@
 version: '3.8'
 services:
-  homenavi:
+  frontend:
     build:
-      context: ./Frontend
+      context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "5173:80"
     restart: unless-stopped
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - USER_SERVICE_URL=http://user-service:8001
+      - JWT_SECRET=supersecretkey
+    depends_on:
+      - auth-service
+      - user-service
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8000:8000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8001
+      - JWT_SECRET=supersecretkey
+    depends_on:
+      - user-service
+
+  user-service:
+    build: ./user-service
+    ports:
+      - "8001:8001"
