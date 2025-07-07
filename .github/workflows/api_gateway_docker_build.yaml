@@ -1,4 +1,4 @@
-name: Build frontend Docker Image
+name: Build API Gateway Docker Image
 
 on:
   push:
@@ -17,16 +17,16 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./frontend  # Set the context to the frontend folder
-          file: ./frontend/Dockerfile  # Specify the path to the Dockerfile
+          context: ./api-gateway
+          file: ./api-gateway/Dockerfile
           push: false
-          tags: homenavi-frontend:latest
+          tags: homenavi-api-gateway:latest
 
       - name: Save Docker image to tarball
-        run: docker save homenavi-frontend:latest | gzip > homenavi-frontend-latest.tar.gz
+        run: docker save homenavi-api-gateway:latest | gzip > homenavi-api-gateway-latest.tar.gz
 
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: homenavi-frontend-latest
-          path: homenavi-frontend-latest.tar.gz
+          name: homenavi-api-gateway-latest
+          path: homenavi-api-gateway-latest.tar.gz
