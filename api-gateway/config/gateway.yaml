@@ -1,0 +1,8 @@
+listen_addr: ":8080"
+jwt_secret: "changeme"
+log_level: "info"
+rate_limit:
+  enabled: true
+  rps: 10
+  burst: 15
+routes: []

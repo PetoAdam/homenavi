@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -35,6 +36,7 @@ func main() {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received login request")
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", 400)
