@@ -14,6 +14,7 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 - **Dev-friendly:** Easy to run, hack, and contribute.
 - **Open & Transparent:** 100% open source, MIT licensed.
 - **Cloud or Home:** Run it on your Raspberry Pi, your server, or in the cloud.
+- **Observability built-in:** Prometheus metrics, Jaeger tracing, and request/correlation IDs for easy debugging and monitoring.
 
 ---
 
@@ -25,6 +26,7 @@ api-gateway/        # Go API gateway
 auth-service/       # Go authentication service
 user-service/       # Go user service
 .github/workflows/  # GitHub Actions workflows
+prometheus/         # Prometheus config
 ```
 
 ---
@@ -33,11 +35,35 @@ user-service/       # Go user service
 
 Homenavi is built as a set of loosely coupled microservices:
 - **Frontend:** Modern React SPA, served by Nginx.
-- **API Gateway:** Central entrypoint, JWT auth, request routing.
+- **API Gateway:** Central entrypoint, JWT auth, request routing, rate limiting, observability (metrics/tracing).
 - **Auth Service:** Handles authentication, issues JWTs.
 - **User Service:** Manages user data and validation.
+- **Observability Stack:** Prometheus, Grafana, and Jaeger for monitoring and tracing.
 
 All services communicate via HTTP/REST. Add your own services and plug them into the gateway!
+
+---
+
+## 📊 Observability & Monitoring
+
+- **Prometheus metrics:**
+  - API Gateway exposes `/metrics` for Prometheus scraping.
+  - Per-endpoint request counts (`api_gateway_requests_total`).
+  - Go runtime/process metrics.
+- **Distributed tracing:**
+  - Jaeger integration via OpenTelemetry.
+  - All requests are traced; spans include HTTP method, path, and response code.
+- **Correlation/Request IDs:**
+  - Every request gets a unique `X-Request-ID` and `X-Correlation-ID` for easy tracking across logs and traces.
+- **Grafana dashboards:**
+  - Visualize metrics from Prometheus.
+- **Healthcheck:**
+  - `/healthz` endpoint for liveness/readiness checks.
+
+### How to use
+- Prometheus: [http://localhost:9090](http://localhost:9090)
+- Grafana: [http://localhost:3000](http://localhost:3000) (add Prometheus as a data source, URL: `http://prometheus:9090`)
+- Jaeger: [http://localhost:16686](http://localhost:16686)
 
 ---
 
@@ -48,12 +74,12 @@ The fastest way to get Homenavi running is with Docker Compose. Just clone, conf
 ```sh
 git clone https://github.com/PetoAdam/homenavi.git
 cd homenavi
-cp .env.example .env  # Edit as needed
+cp .env.example .env  # Edit as needed for secrets and service URLs
 # Then:
 docker compose up --build
 ```
 
-- All services will be built and started automatically.
+- All services (including Prometheus, Grafana, Jaeger, Redis) will be built and started automatically.
 - Edit `.env` for secrets and service URLs.
 - See [`/doc/local_build.md`](doc/local_build.md) for advanced/local development.
 
@@ -66,6 +92,7 @@ Want to add a new service? Just drop it in, add to `docker-compose.yml`, and go!
 - Use Go, Python, Node.js, or any language you like.
 - Register new routes in the API Gateway.
 - Share authentication via JWT.
+- Add your own metrics and traces for observability.
 - Check out the [Extending Guide](doc/extending.md) (coming soon!)
 
 ---
@@ -106,6 +133,8 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
   - Forwards to Auth Service, returns JWT on success
 - **GET /api/user/{id}** (API Gateway):
   - Requires JWT, fetches user info from User Service
+- **GET /metrics**: Prometheus metrics endpoint
+- **GET /healthz**: Healthcheck endpoint
 
 ---
 
@@ -119,6 +148,9 @@ A: Build a new microservice, register it in the API Gateway, and add it to Docke
 
 **Q: Is it production-ready?**
 A: Homenavi is under active development. Contributions and feedback are welcome!
+
+**Q: How do I monitor and trace requests?**
+A: Use Prometheus and Grafana for metrics, and Jaeger for distributed tracing. All are included in the default Docker Compose stack.
 
 ---
 
