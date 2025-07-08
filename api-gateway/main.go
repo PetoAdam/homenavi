@@ -10,12 +10,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"api-gateway/internal/config"
-	"api-gateway/internal/router"
 	"api-gateway/internal/observability"
+	"api-gateway/internal/router"
 )
 
 func main() {
