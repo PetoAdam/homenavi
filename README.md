@@ -27,6 +27,7 @@ auth-service/       # Go authentication service
 user-service/       # Go user service
 .github/workflows/  # GitHub Actions workflows
 prometheus/         # Prometheus config
+nginx/              # Nginx config
 ```
 
 ---
@@ -41,6 +42,47 @@ Homenavi is built as a set of loosely coupled microservices:
 - **Observability Stack:** Prometheus, Grafana, and Jaeger for monitoring and tracing.
 
 All services communicate via HTTP/REST. Add your own services and plug them into the gateway!
+
+---
+
+## 🐳 Quickstart (Recommended)
+
+The fastest way to get Homenavi running is with Docker Compose. Just clone, configure, and launch:
+
+```sh
+git clone https://github.com/PetoAdam/homenavi.git
+cd homenavi
+cp .env.example .env  # Edit as needed for secrets and service URLs
+# Then:
+docker compose up --build
+```
+
+- All services (including Prometheus, Grafana, Jaeger, Redis, and Nginx) will be built and started automatically.
+- Nginx is the public entrypoint and routes `/api` to the API Gateway and `/` to the frontend.
+  - For detailed Nginx configuration and security best practices, see [`doc/nginx_guide.md`](doc/nginx_guide.md).
+- Edit `.env` for secrets and service URLs.
+- See [`/doc/local_build.md`](doc/local_build.md) for advanced/local development.
+
+---
+
+## 🛠️ Extending Homenavi
+
+Want to add a new service? Just drop it in, add to `docker-compose.yml`, and go! The API Gateway makes integration easy.
+
+- Use Go, Python, Node.js, or any language you like.
+- Register new routes in the API Gateway.
+- Share authentication via JWT.
+- Add your own metrics and traces for observability.
+- Check out the [Extending Guide](doc/extending.md) (coming soon!)
+
+---
+
+## 📦 CI/CD
+
+- All services are built and tested via GitHub Actions on every push/PR.
+- Docker images are saved as artifacts for easy deployment.
+- Workflows for each service live in `.github/workflows/`.
+- Add your own workflow for new services!
 
 ---
 
@@ -65,44 +107,6 @@ All services communicate via HTTP/REST. Add your own services and plug them into
 - Grafana: [http://localhost:3000](http://localhost:3000) (add Prometheus as a data source, URL: `http://prometheus:9090`)
 - Jaeger: [http://localhost:16686](http://localhost:16686)
 
----
-
-## 🐳 Quickstart (Recommended)
-
-The fastest way to get Homenavi running is with Docker Compose. Just clone, configure, and launch:
-
-```sh
-git clone https://github.com/PetoAdam/homenavi.git
-cd homenavi
-cp .env.example .env  # Edit as needed for secrets and service URLs
-# Then:
-docker compose up --build
-```
-
-- All services (including Prometheus, Grafana, Jaeger, Redis) will be built and started automatically.
-- Edit `.env` for secrets and service URLs.
-- See [`/doc/local_build.md`](doc/local_build.md) for advanced/local development.
-
----
-
-## 🛠️ Extending Homenavi
-
-Want to add a new service? Just drop it in, add to `docker-compose.yml`, and go! The API Gateway makes integration easy.
-
-- Use Go, Python, Node.js, or any language you like.
-- Register new routes in the API Gateway.
-- Share authentication via JWT.
-- Add your own metrics and traces for observability.
-- Check out the [Extending Guide](doc/extending.md) (coming soon!)
-
----
-
-## 📦 CI/CD
-
-- All services are built and tested via GitHub Actions on every push/PR.
-- Docker images are saved as artifacts for easy deployment.
-- Workflows for each service live in `.github/workflows/`.
-- Add your own workflow for new services!
 
 ---
 
