@@ -2,7 +2,7 @@ import requests
 import yaml
 import time
 
-GATEWAY_URL = "http://localhost:8080"
+GATEWAY_URL = "http://localhost"
 ROUTES_CONFIG = "api-gateway/config/routes/routes.yaml"
 LOGIN_EMAIL = "test@example.com"
 LOGIN_PASSWORD = "password"

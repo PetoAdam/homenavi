@@ -67,3 +67,22 @@ services:
       - "16686:16686"
       - "14268:14268"
     restart: unless-stopped
+
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf.dev.template:/etc/nginx/nginx.conf.dev.template:ro
+      - ./nginx/nginx.conf.prod.template:/etc/nginx/nginx.conf.prod.template:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    environment:
+      - NGINX_MODE=dev
+      - SSL_CERT_PATH=/etc/nginx/certs/nginx.crt
+      - SSL_KEY_PATH=/etc/nginx/certs/nginx.key
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      - frontend
+      - api-gateway
+    restart: unless-stopped
