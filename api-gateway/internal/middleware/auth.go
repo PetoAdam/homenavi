@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"crypto/rsa"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -17,6 +19,14 @@ type claimsKeyType struct{}
 
 var claimsKey claimsKeyType
 
+func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
+	keyData, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return jwt.ParseRSAPublicKeyFromPEM(keyData)
+}
+
 func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +37,32 @@ func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 			}
 			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 				return []byte(secret), nil
+			})
+			if err != nil || !token.Valid {
+				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				return
+			}
+			claims, ok := token.Claims.(*Claims)
+			if !ok {
+				http.Error(w, "Invalid claims", http.StatusUnauthorized)
+				return
+			}
+			ctx := context.WithValue(r.Context(), claimsKey, claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenStr := extractToken(r)
+			if tokenStr == "" {
+				http.Error(w, "Missing token", http.StatusUnauthorized)
+				return
+			}
+			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+				return pubKey, nil
 			})
 			if err != nil || !token.Valid {
 				http.Error(w, "Invalid token", http.StatusUnauthorized)

@@ -2,3 +2,4 @@ node_modules
 test_api.py
 nginx/certs/
 .env
+keys/
