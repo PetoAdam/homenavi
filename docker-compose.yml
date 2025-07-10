@@ -15,10 +15,12 @@ services:
     environment:
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
       - USER_SERVICE_URL=${USER_SERVICE_URL}
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_PUBLIC_KEY_PATH=${JWT_PUBLIC_KEY_PATH}
       - REDIS_ADDR=${REDIS_ADDR}
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
       - LOG_LEVEL=${LOG_LEVEL}
+    volumes:
+      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
     depends_on:
       - auth-service
       - user-service
@@ -30,7 +32,9 @@ services:
     restart: unless-stopped
     environment:
       - USER_SERVICE_URL=${USER_SERVICE_URL}
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
+    volumes:
+      - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
     depends_on:
       - user-service
 
@@ -84,4 +88,5 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
       - api-gateway
+      - frontend
     restart: unless-stopped

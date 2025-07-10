@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -12,8 +14,8 @@ import (
 )
 
 var (
-	userServiceURL = os.Getenv("USER_SERVICE_URL")
-	jwtSecret      = []byte(os.Getenv("JWT_SECRET"))
+	userServiceURL    = os.Getenv("USER_SERVICE_URL")
+	jwtPrivateKeyPath = os.Getenv("JWT_PRIVATE_KEY_PATH")
 )
 
 type LoginRequest struct {
@@ -31,11 +33,25 @@ type UserValidateResponse struct {
 }
 
 func main() {
-	http.HandleFunc("/login", handleLogin)
+	privateKey, err := loadPrivateKey(jwtPrivateKeyPath)
+	if err != nil {
+		log.Fatalf("Failed to load private key: %v", err)
+	}
+	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		handleLogin(w, r, privateKey)
+	})
 	http.ListenAndServe(":8000", nil)
 }
 
-func handleLogin(w http.ResponseWriter, r *http.Request) {
+func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
+	keyData, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return jwt.ParseRSAPrivateKeyFromPEM(keyData)
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request, privateKey *rsa.PrivateKey) {
 	log.Println("Received login request")
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -64,13 +80,18 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().Unix()
 	exp := time.Now().Add(time.Hour * 1).Unix()
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"sub":  userResp.UserID,
 		"role": role,
 		"name": name,
 		"iat":  now,
 		"exp":  exp,
-	})
-	tokenStr, _ := token.SignedString(jwtSecret)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenStr, err := token.SignedString(privateKey)
+	if err != nil {
+		http.Error(w, "Token signing error", 500)
+		return
+	}
 	json.NewEncoder(w).Encode(LoginResponse{Token: tokenStr})
 }

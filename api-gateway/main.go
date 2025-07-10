@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"api-gateway/internal/config"
+	apiMiddleware "api-gateway/internal/middleware"
 	"api-gateway/internal/observability"
 	"api-gateway/internal/router"
 )
@@ -33,6 +34,16 @@ func main() {
 	// Observability setup
 	shutdown, promHandler, tracer := observability.SetupObservability()
 	defer shutdown()
+
+	// Load JWT public key for RS256
+	pubKeyPath := os.Getenv("JWT_PUBLIC_KEY_PATH")
+	if pubKeyPath == "" {
+		log.Fatal("JWT_PUBLIC_KEY_PATH not set")
+	}
+	pubKey, err := apiMiddleware.LoadRSAPublicKey(pubKeyPath)
+	if err != nil {
+		log.Fatalf("Failed to load JWT public key: %v", err)
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -75,7 +86,7 @@ func main() {
 		log.Printf("Connected to Redis: %s", pong)
 	}
 
-	router.RegisterRoutes(r, cfg, redisClient)
+	router.RegisterRoutes(r, cfg, redisClient, pubKey)
 
 	for _, route := range cfg.Routes {
 		for _, method := range route.Methods {

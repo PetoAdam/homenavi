@@ -20,11 +20,13 @@ type RouteConfig struct {
 }
 
 type GatewayConfig struct {
-	ListenAddr string        `mapstructure:"listen_addr"`
-	Routes     []RouteConfig `mapstructure:"routes"`
-	JWTSecret  string        `mapstructure:"jwt_secret"`
-	LogLevel   string        `mapstructure:"log_level"`
-	RateLimit  struct {
+	ListenAddr      string        `mapstructure:"listen_addr"`
+	Routes          []RouteConfig `mapstructure:"routes"`
+	JWTSecret       string        `mapstructure:"jwt_secret"`
+	JWTPrivateKeyPath string      `mapstructure:"jwt_private_key_path"`
+	JWTPublicKeyPath  string      `mapstructure:"jwt_public_key_path"`
+	LogLevel        string        `mapstructure:"log_level"`
+	RateLimit       struct {
 		Enabled bool `mapstructure:"enabled"`
 		RPS     int  `mapstructure:"rps"`
 		Burst   int  `mapstructure:"burst"`
@@ -68,9 +70,15 @@ func LoadConfig(configPath, routesDir string) (*GatewayConfig, error) {
 		}
 	}
 
-	// Allow env override for JWT secret
+	// Allow env override for JWT secret and key paths
 	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
 		cfg.JWTSecret = envSecret
+	}
+	if envPriv := os.Getenv("JWT_PRIVATE_KEY_PATH"); envPriv != "" {
+		cfg.JWTPrivateKeyPath = envPriv
+	}
+	if envPub := os.Getenv("JWT_PUBLIC_KEY_PATH"); envPub != "" {
+		cfg.JWTPublicKeyPath = envPub
 	}
 
 	return &cfg, nil

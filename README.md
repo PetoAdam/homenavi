@@ -63,6 +63,21 @@ docker compose up --build
 - Edit `.env` for secrets and service URLs.
 - See [`/doc/local_build.md`](doc/local_build.md) for advanced/local development.
 
+### 🔑 JWT Key Generation (RS256)
+
+Homenavi uses asymmetric JWT signing (RS256) for secure authentication:
+- The **Auth Service** signs tokens with a private key.
+- The **API Gateway** and other services validate tokens using the public key only.
+
+### Generate a key pair for development/testing:
+```sh
+mkdir -p ./keys
+openssl genpkey -algorithm RSA -out ./keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
+openssl rsa -pubout -in ./keys/jwt_private.pem -out ./keys/jwt_public.pem
+```
+- Set `JWT_PRIVATE_KEY_PATH` and `JWT_PUBLIC_KEY_PATH` in your `.env` to point to these files.
+- **Never commit your private key to version control!**
+
 ---
 
 ## 🛠️ Extending Homenavi

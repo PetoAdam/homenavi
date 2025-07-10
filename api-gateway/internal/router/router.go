@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"strings"
 
+	"crypto/rsa"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 )
 
-func RegisterRoutes(r chi.Router, cfg *config.GatewayConfig, redisClient *redis.Client) {
+func RegisterRoutes(r chi.Router, cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey) {
 	for _, route := range cfg.Routes {
 		handler := proxy.MakeProxyHandler(route)
 		var h http.Handler = handler
@@ -20,9 +22,9 @@ func RegisterRoutes(r chi.Router, cfg *config.GatewayConfig, redisClient *redis.
 		case "public":
 			// No auth
 		case "auth":
-			h = middleware.JWTAuthMiddleware(cfg.JWTSecret)(h)
+			h = middleware.JWTAuthMiddlewareRS256(pubKey)(h)
 		case "admin":
-			h = middleware.JWTAuthMiddleware(cfg.JWTSecret)(middleware.AdminOnlyMiddleware(h))
+			h = middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.AdminOnlyMiddleware(h))
 		}
 		if route.RateLimit != nil {
 			limiter := ratelimit.New(redisClient, route.Path, ratelimit.LimiterConfig{RPS: route.RateLimit.RPS, Burst: route.RateLimit.Burst})
