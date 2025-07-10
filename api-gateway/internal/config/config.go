@@ -13,6 +13,7 @@ type RouteConfig struct {
 	Upstream  string   `mapstructure:"upstream"`
 	Methods   []string `mapstructure:"methods"`
 	Access    string   `mapstructure:"access"` // "public", "auth", "admin"
+	Type      string   `mapstructure:"type"`   // "rest" (default) or "websocket"
 	RateLimit *struct {
 		RPS   int `mapstructure:"rps"`
 		Burst int `mapstructure:"burst"`

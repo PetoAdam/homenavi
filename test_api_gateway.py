@@ -70,3 +70,27 @@ for i in range(35):
     resp = requests.post(GATEWAY_URL + "/api/login", json={"email": LOGIN_EMAIL, "password": LOGIN_PASSWORD})
     print(f"Attempt {i+1}: Status {resp.status_code}")
     time.sleep(0.1)
+
+# 5. Test WebSocket echo endpoint with JWT
+try:
+    import asyncio
+    import websockets
+except ImportError:
+    print("websockets library not installed, skipping WebSocket test. Run 'pip install websockets' to enable.")
+else:
+    async def test_ws_echo():
+        if not jwt_token:
+            print("No JWT available, skipping WebSocket test.")
+            return
+        ws_url = "ws://localhost/ws/echo"
+        print(f"\nTesting WebSocket echo at {ws_url} with Authorization header")
+        try:
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            async with websockets.connect(ws_url, extra_headers=headers) as websocket:
+                await websocket.send("hello via ws")
+                response = await websocket.recv()
+                print(f"WebSocket response: {response}")
+        except Exception as e:
+            print(f"WebSocket test failed: {e}")
+
+    asyncio.run(test_ws_echo())

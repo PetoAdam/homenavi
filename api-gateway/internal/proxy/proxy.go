@@ -9,9 +9,10 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/koding/websocketproxy"
 )
 
-func MakeProxyHandler(route config.RouteConfig) http.HandlerFunc {
+func MakeRestProxyHandler(route config.RouteConfig) http.HandlerFunc {
 	upstreamURL, err := url.Parse(route.Upstream)
 	if err != nil {
 		panic("Invalid upstream URL: " + route.Upstream)
@@ -38,5 +39,16 @@ func MakeProxyHandler(route config.RouteConfig) http.HandlerFunc {
 			http.Error(rw, "Upstream error: "+err.Error(), http.StatusBadGateway)
 		}
 		proxy.ServeHTTP(w, r)
+	}
+}
+
+func MakeWebSocketProxyHandler(route config.RouteConfig) http.HandlerFunc {
+	upstreamURL, err := url.Parse(route.Upstream)
+	if err != nil {
+		panic("Invalid upstream URL: " + route.Upstream)
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Proxying WebSocket %s to %s", r.URL.Path, upstreamURL)
+		websocketproxy.ProxyHandler(upstreamURL).ServeHTTP(w, r)
 	}
 }
