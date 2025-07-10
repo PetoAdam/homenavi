@@ -13,11 +13,12 @@ services:
       - "8080:8080"
     restart: unless-stopped
     environment:
-      - AUTH_SERVICE_URL=http://auth-service:8000
-      - USER_SERVICE_URL=http://user-service:8001
-      - JWT_SECRET=supersecretkey
-      - REDIS_ADDR=redis:6379
-      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_ADDR=${REDIS_ADDR}
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - LOG_LEVEL=${LOG_LEVEL}
     depends_on:
       - auth-service
       - user-service
@@ -28,8 +29,8 @@ services:
       - "8000:8000"
     restart: unless-stopped
     environment:
-      - USER_SERVICE_URL=http://user-service:8001
-      - JWT_SECRET=supersecretkey
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - user-service
 
@@ -76,13 +77,11 @@ services:
       - ./nginx/nginx.conf.dev.template:/etc/nginx/nginx.conf.dev.template:ro
       - ./nginx/nginx.conf.prod.template:/etc/nginx/nginx.conf.prod.template:ro
       - ./nginx/entrypoint.sh:/entrypoint.sh:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
+      - ${NGINX_CERT_ORIGIN}:/etc/nginx/certs/nginx.crt:ro
+      - ${NGINX_KEY_ORIGIN}:/etc/nginx/certs/nginx.key:ro
     environment:
-      - NGINX_MODE=dev
-      - SSL_CERT_PATH=/etc/nginx/certs/nginx.crt
-      - SSL_KEY_PATH=/etc/nginx/certs/nginx.key
+      - NGINX_MODE=${NGINX_MODE}
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
-      - frontend
       - api-gateway
     restart: unless-stopped
