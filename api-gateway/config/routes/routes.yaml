@@ -3,14 +3,22 @@ routes:
     upstream: http://auth-service:8000/login
     methods: [POST]
     access: public
+    type: rest
   - path: /api/user/{id}
     upstream: http://user-service:8001/user/{id}
     methods: [GET]
     access: auth
+    type: rest
   - path: /api/admin/stats
     upstream: http://admin-service:8002/stats
     methods: [GET]
     access: admin
+    type: rest
     rate_limit:
       rps: 2
       burst: 5
+  - path: /ws/echo
+    upstream: ws://echo-service:9000/echo
+    methods: [GET]
+    access: auth
+    type: websocket

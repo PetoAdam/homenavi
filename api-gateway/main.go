@@ -17,6 +17,9 @@ import (
 	apiMiddleware "api-gateway/internal/middleware"
 	"api-gateway/internal/observability"
 	"api-gateway/internal/router"
+	"crypto/rsa"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -31,11 +34,25 @@ func main() {
 	}
 	fmt.Printf("Loaded config: %+v\n", cfg)
 
-	// Observability setup
 	shutdown, promHandler, tracer := observability.SetupObservability()
 	defer shutdown()
 
-	// Load JWT public key for RS256
+	pubKey := setupJWTKey()
+	redisClient := setupRedisClient()
+	defer redisClient.Close()
+
+	wsRouter := setupWebSocketRouter(cfg, redisClient, pubKey)
+	mainRouter := setupMainRouter(cfg, redisClient, pubKey, promHandler, tracer)
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws/", wsRouter)
+	mux.Handle("/", mainRouter)
+
+	log.Printf("API Gateway running on %s", cfg.ListenAddr)
+	http.ListenAndServe(cfg.ListenAddr, mux)
+}
+
+func setupJWTKey() *rsa.PublicKey {
 	pubKeyPath := os.Getenv("JWT_PUBLIC_KEY_PATH")
 	if pubKeyPath == "" {
 		log.Fatal("JWT_PUBLIC_KEY_PATH not set")
@@ -44,15 +61,36 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load JWT public key: %v", err)
 	}
+	return pubKey
+}
 
+func setupRedisClient() *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDIS_ADDR"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       0,
+	})
+	if pong, err := client.Ping(context.Background()).Result(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	} else {
+		log.Printf("Connected to Redis: %s", pong)
+	}
+	return client
+}
+
+func setupWebSocketRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey) http.Handler {
+	r := chi.NewRouter()
+	router.RegisterRoutes(r, cfg, redisClient, pubKey)
+	return r
+}
+
+func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey, promHandler http.Handler, tracer interface{}) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	// Per-endpoint metrics and tracing middleware
-	r.Use(observability.MetricsAndTracingMiddleware(tracer))
-	// Correlation ID middleware
+	r.Use(observability.MetricsAndTracingMiddleware(tracer.(trace.Tracer)))
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			corrID := r.Header.Get("X-Correlation-ID")
@@ -60,39 +98,18 @@ func main() {
 				corrID = uuid.New().String()
 			}
 			w.Header().Set("X-Correlation-ID", corrID)
-			r = r.WithContext(context.WithValue(r.Context(), "correlation_id", corrID))
+			r = r.WithContext(context.WithValue(r.Context(), struct{ name string }{"correlation_id"}, corrID))
 			next.ServeHTTP(w, r)
 		})
 	})
 
-	// Prometheus metrics endpoint
 	r.Handle("/metrics", promHandler)
-	// Healthcheck endpoint
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_ADDR"),
-		Password: os.Getenv("REDIS_PASSWORD"),
-		DB:       0,
-	})
-	defer redisClient.Close()
-
-	if pong, err := redisClient.Ping(context.Background()).Result(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	} else {
-		log.Printf("Connected to Redis: %s", pong)
-	}
-
 	router.RegisterRoutes(r, cfg, redisClient, pubKey)
-
-	for _, route := range cfg.Routes {
-		for _, method := range route.Methods {
-			log.Printf("Registered route: %s %s (access: %s)", method, route.Path, route.Access)
-		}
-	}
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Not found: %s %s", r.Method, r.URL.Path)
@@ -103,6 +120,5 @@ func main() {
 		json.NewEncoder(w).Encode(cfg.Routes)
 	})
 
-	log.Printf("API Gateway running on %s", cfg.ListenAddr)
-	http.ListenAndServe(cfg.ListenAddr, r)
+	return r
 }
