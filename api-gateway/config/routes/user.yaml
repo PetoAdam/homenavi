@@ -1,0 +1,11 @@
+routes:
+  - path: /api/users/{id}
+    upstream: http://user-service:8001/user/{id}
+    methods: [GET]
+    access: auth
+    type: rest
+  - path: /api/users/*
+    upstream: http://user-service:8001
+    methods: [GET]
+    access: auth
+    type: rest

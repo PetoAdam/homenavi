@@ -1,0 +1,6 @@
+routes:
+  - path: /ws/echo
+    upstream: ws://echo-service:9000/echo
+    methods: [GET]
+    access: auth
+    type: websocket

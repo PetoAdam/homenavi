@@ -32,11 +32,14 @@ func RegisterRoutes(r chi.Router, cfg *config.GatewayConfig, redisClient *redis.
 			limiter := ratelimit.New(redisClient, "global", ratelimit.LimiterConfig{RPS: cfg.RateLimit.RPS, Burst: cfg.RateLimit.Burst})
 			h = limiter.Middleware(ratelimit.KeyByUserOrIP)(h)
 		}
+
+		// Always remove trailing slash before registering route
+		path := route.Path
+		if len(path) > 1 && strings.HasSuffix(path, "/") {
+			path = strings.TrimRight(path, "/")
+		}
 		for _, method := range route.Methods {
-			r.Method(method, route.Path, h)
-			if !strings.HasSuffix(route.Path, "/") {
-				r.Method(method, route.Path+"/", h)
-			}
+			r.Method(method, path, h)
 		}
 	}
 }

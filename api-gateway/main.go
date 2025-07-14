@@ -111,13 +111,13 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 
 	router.RegisterRoutes(r, cfg, redisClient, pubKey)
 
+	r.Get("/api/gateway/routes", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(cfg.Routes)
+	})
+
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Not found: %s %s", r.Method, r.URL.Path)
 		http.Error(w, "Not found", http.StatusNotFound)
-	})
-
-	r.Get("/api/gateway/routes", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(cfg.Routes)
 	})
 
 	return r
