@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"user-service/db"
+	"user-service/middleware"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 )
 
 func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
+	// Signup should be public, no JWT required
 	// TODO: Add input validation for production?
 	if r.Method != http.MethodPost {
 		log.Printf("[WARN] Invalid method for /user: %s", r.Method)
@@ -22,9 +24,12 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		UserName string `json:"user_name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		UserName  string `json:"user_name"`
+		Email     string `json:"email"`
+		Password  string `json:"password"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Role      string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[ERROR] Invalid user create request: %v", err)
@@ -34,17 +39,15 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	normUser := strings.ToUpper(req.UserName)
 	normEmail := strings.ToUpper(req.Email)
 	var existing db.User
-	if err := db.DB.Where("email = ?", req.Email).Or("user_name = ?", req.UserName).First(&existing).Error; err == nil {
-		if existing.Email == req.Email {
-			log.Printf("[ERROR] Duplicate email: %s", req.Email)
-			http.Error(w, "User with this email already exists", http.StatusConflict)
-			return
-		}
-		if existing.UserName == req.UserName {
-			log.Printf("[ERROR] Duplicate username: %s", req.UserName)
-			http.Error(w, "User with this username already exists", http.StatusConflict)
-			return
-		}
+	if err := db.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
+		log.Printf("[ERROR] Duplicate email: %s", req.Email)
+		http.Error(w, "User with this email already exists", http.StatusConflict)
+		return
+	}
+	if err := db.DB.Where("user_name = ?", req.UserName).First(&existing).Error; err == nil {
+		log.Printf("[ERROR] Duplicate username: %s", req.UserName)
+		http.Error(w, "User with this username already exists", http.StatusConflict)
+		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -53,12 +56,19 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ph := string(hash)
+	role := req.Role
+	if role == "" {
+		role = "user"
+	}
 	user := db.User{
 		ID:                 uuid.New(),
 		UserName:           req.UserName,
 		NormalizedUserName: normUser,
 		Email:              req.Email,
 		NormalizedEmail:    normEmail,
+		FirstName:          req.FirstName,
+		LastName:           req.LastName,
+		Role:               role,
 		EmailConfirmed:     false,
 		PasswordHash:       &ph,
 		TwoFactorEnabled:   false,
@@ -75,22 +85,37 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
+func authorizeUserOrAdmin(r *http.Request, userID string) bool {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		return false
+	}
+	// Only allow if sub matches userID or role is admin
+	log.Printf("[DEBUG] Authorizing user %s with role %s for user ID %s", claims.Sub, claims.Role, userID)
+	return claims.Role == "admin" || claims.Sub == userID
+}
+
+func authorizeAnyValidJWT(r *http.Request) bool {
+	claims := middleware.GetClaims(r)
+	return claims != nil
+}
+
 func HandleUserGet(w http.ResponseWriter, r *http.Request) {
-	// TODO: Add authentication/authorization for production
-	idStr := r.URL.Path[len("/user/"):]
+	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		log.Printf("[WARN] Invalid UUID for user: %s", idStr)
 		http.Error(w, "Invalid user id", 400)
+		return
+	}
+	if !authorizeAnyValidJWT(r) {
+		http.Error(w, "Forbidden", 403)
 		return
 	}
 	var u db.User
 	if err := db.DB.First(&u, "id = ?", id).Error; err != nil {
-		log.Printf("[WARN] User not found: id=%s", idStr)
 		http.Error(w, "User not found", 404)
 		return
 	}
-	log.Printf("[INFO] User retrieved: id=%s, email=%s", u.ID, u.Email)
 	json.NewEncoder(w).Encode(u)
 }
 
@@ -109,6 +134,9 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 		ID               string `json:"id"`
 		UserName         string `json:"user_name"`
 		Email            string `json:"email"`
+		FirstName        string `json:"first_name"`
+		LastName         string `json:"last_name"`
+		Role             string `json:"role"`
 		TwoFactorEnabled bool   `json:"two_factor_enabled"`
 		TwoFactorType    string `json:"two_factor_type"`
 		TwoFactorSecret  string `json:"two_factor_secret"`
@@ -116,6 +144,9 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 		ID:               user.ID.String(),
 		UserName:         user.UserName,
 		Email:            user.Email,
+		FirstName:        user.FirstName,
+		LastName:         user.LastName,
+		Role:             user.Role,
 		TwoFactorEnabled: user.TwoFactorEnabled,
 		TwoFactorType:    user.TwoFactorType,
 		TwoFactorSecret:  user.TwoFactorSecret,
@@ -124,12 +155,16 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleLockout(w http.ResponseWriter, r *http.Request) {
-	// TODO: Add authentication/authorization for production
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		log.Printf("[ERROR] Invalid UUID for lockout: %s", idStr)
-		http.Error(w, "Invalid user id", 400)
+		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		return
+	}
+	claims := middleware.GetClaims(r)
+	if claims == nil || claims.Role != "admin" {
+		http.Error(w, "Only admins can lockout accounts", http.StatusForbidden)
 		return
 	}
 	var req struct {
@@ -137,16 +172,16 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[ERROR] Invalid lockout request: %v", err)
-		http.Error(w, "Invalid request", 400)
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Update("lockout_enabled", req.Lock).Error; err != nil {
 		log.Printf("[ERROR] DB error on lockout: %v", err)
-		http.Error(w, "DB error", 500)
+		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
 	log.Printf("[INFO] Lockout updated for user_id=%s, lock=%v", idStr, req.Lock)
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Lockout updated"))
 }
 
@@ -159,6 +194,10 @@ func HandleUserDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid user id", 400)
 		return
 	}
+	if !authorizeUserOrAdmin(r, id.String()) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
 	if err := db.DB.Delete(&db.User{}, "id = ?", id).Error; err != nil {
 		log.Printf("[ERROR] DB error on user delete: %v", err)
 		http.Error(w, "DB error", 500)
@@ -169,19 +208,25 @@ func HandleUserDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
-	// TODO: Enforce JWT authentication and admin/self authorization for production
-	// For development, allow delete without JWT check
+	log.Printf("[DEBUG] HandleUserPatch called. Headers: %v", r.Header)
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		http.Error(w, "Invalid user id", 400)
 		return
 	}
+	if !authorizeUserOrAdmin(r, id.String()) {
+		log.Printf("[DEBUG] Forbidden: not authorized for user id %s", idStr)
+		http.Error(w, "Forbidden", 403)
+		return
+	}
 	var req map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[DEBUG] Invalid request body: %v", err)
 		http.Error(w, "Invalid request", 400)
 		return
 	}
+	log.Printf("[DEBUG] Patch request body: %v", req)
 	// Only allow certain fields to be patched
 	allowed := map[string]bool{
 		"email_confirmed":     true,
@@ -191,18 +236,30 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		"lockout_enabled":     true,
 		"access_failed_count": true,
 		"password":            true, // allow password patch
+		"first_name":          true,
+		"last_name":           true,
+		"role":                true, // will check admin below
 	}
 	update := make(map[string]interface{})
 	for k, v := range req {
 		if allowed[k] {
-			if k == "password" {
+			switch k {
+			case "password":
 				hash, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("%v", v)), bcrypt.DefaultCost)
 				if err != nil {
 					http.Error(w, "Password hash error", 500)
 					return
 				}
 				update["password_hash"] = string(hash)
-			} else {
+			case "role":
+				// Only allow admins to change role
+				claims := middleware.GetClaims(r)
+				if claims == nil || claims.Role != "admin" {
+					http.Error(w, "Only admins can change user role", 403)
+					return
+				}
+				update[k] = v
+			default:
 				update[k] = v
 			}
 		}
@@ -222,6 +279,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
+	// Login/validate should be public, no JWT required
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -233,6 +291,10 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 	var user db.User
 	if err := db.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		http.Error(w, "Invalid credentials", 401)
+		return
+	}
+	if user.LockoutEnabled {
+		http.Error(w, "Account is locked", http.StatusForbidden)
 		return
 	}
 	if user.PasswordHash == nil {
@@ -247,6 +309,9 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		ID               string `json:"id"`
 		UserName         string `json:"user_name"`
 		Email            string `json:"email"`
+		FirstName        string `json:"first_name"`
+		LastName         string `json:"last_name"`
+		Role             string `json:"role"`
 		TwoFactorEnabled bool   `json:"two_factor_enabled"`
 		TwoFactorType    string `json:"two_factor_type"`
 		TwoFactorSecret  string `json:"two_factor_secret"`
@@ -254,9 +319,18 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		ID:               user.ID.String(),
 		UserName:         user.UserName,
 		Email:            user.Email,
+		FirstName:        user.FirstName,
+		LastName:         user.LastName,
+		Role:             user.Role,
 		TwoFactorEnabled: user.TwoFactorEnabled,
 		TwoFactorType:    user.TwoFactorType,
 		TwoFactorSecret:  user.TwoFactorSecret,
 	}
 	json.NewEncoder(w).Encode(resp)
+}
+
+// Helper to extract claims from context (assumes JWT middleware sets it)
+func GetClaims(r *http.Request) *struct{ Role string } {
+	claims, _ := r.Context().Value("claims").(*struct{ Role string })
+	return claims
 }

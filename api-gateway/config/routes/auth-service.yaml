@@ -1,56 +1,81 @@
 routes:
-  - path: /api/signup
-    upstream: http://auth-service:8000/signup
+  - path: /api/auth/signup
+    upstream: http://auth-service:8000/api/auth/signup
     methods: [POST]
     access: public
     type: rest
-  - path: /api/login
-    upstream: http://auth-service:8000/login
+  - path: /api/auth/login/start
+    upstream: http://auth-service:8000/api/auth/login/start
     methods: [POST]
     access: public
     type: rest
-  - path: /api/password/reset/request
-    upstream: http://auth-service:8000/password/reset/request
+  - path: /api/auth/login/finish
+    upstream: http://auth-service:8000/api/auth/login/finish
     methods: [POST]
     access: public
     type: rest
-  - path: /api/password/reset/confirm
-    upstream: http://auth-service:8000/password/reset/confirm
+  - path: /api/auth/password/reset/request
+    upstream: http://auth-service:8000/api/auth/password/reset/request
     methods: [POST]
     access: public
     type: rest
-  - path: /api/email/verify/request
-    upstream: http://auth-service:8000/email/verify/request
+  - path: /api/auth/password/reset/confirm
+    upstream: http://auth-service:8000/api/auth/password/reset/confirm
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/email/verify/request
+    upstream: http://auth-service:8000/api/auth/email/verify/request
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/email/verify/confirm
+    upstream: http://auth-service:8000/api/auth/email/verify/confirm
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/2fa/setup
+    upstream: http://auth-service:8000/api/auth/2fa/setup
     methods: [POST]
     access: auth
     type: rest
-  - path: /api/email/verify/confirm
-    upstream: http://auth-service:8000/email/verify/confirm
+  - path: /api/auth/2fa/verify
+    upstream: http://auth-service:8000/api/auth/2fa/verify
     methods: [POST]
     access: auth
     type: rest
-  - path: /api/2fa/setup
-    upstream: http://auth-service:8000/2fa/setup
+  - path: /api/auth/2fa/email/request
+    upstream: http://auth-service:8000/api/auth/2fa/email/request
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/2fa/email/verify
+    upstream: http://auth-service:8000/api/auth/2fa/email/verify
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/delete
+    upstream: http://auth-service:8000/api/auth/delete
     methods: [POST]
     access: auth
     type: rest
-  - path: /api/2fa/verify
-    upstream: http://auth-service:8000/2fa/verify
+  - path: /api/auth/refresh
+    upstream: http://auth-service:8000/api/auth/refresh
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/logout
+    upstream: http://auth-service:8000/api/auth/logout
     methods: [POST]
     access: auth
     type: rest
-  - path: /api/2fa/email/request
-    upstream: http://auth-service:8000/2fa/email/request
+  - path: /api/auth/oauth/google
+    upstream: http://auth-service:8000/api/auth/oauth/google
     methods: [POST]
-    access: auth
+    access: public
     type: rest
-  - path: /api/2fa/email/verify
-    upstream: http://auth-service:8000/2fa/email/verify
-    methods: [POST]
-    access: auth
-    type: rest
-  - path: /api/delete
-    upstream: http://auth-service:8000/delete
-    methods: [POST]
+  - path: /api/auth/me
+    upstream: http://auth-service:8000/api/auth/me
+    methods: [GET]
     access: auth
     type: rest

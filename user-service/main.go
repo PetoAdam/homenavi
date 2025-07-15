@@ -17,11 +17,11 @@ func main() {
 
 	r.Post("/users", handlers.HandleUserCreate)
 	r.Get("/users/{id}", handlers.HandleUserGet)
-	r.Delete("/users/{id}", handlers.HandleUserDelete)
+	r.Get("/users", handlers.HandleUserGetByEmail)
 	r.Patch("/users/{id}", handlers.HandleUserPatch)
 	r.Post("/users/{id}/lockout", handlers.HandleLockout)
+	r.Delete("/users/{id}", handlers.HandleUserDelete)
 	r.Post("/users/validate", handlers.HandleUserValidate)
-	r.Get("/users", handlers.HandleUserGetByEmail)
 
 	log.Println("User service started on :8001")
 	http.ListenAndServe(":8001", r)

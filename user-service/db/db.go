@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -27,6 +29,37 @@ func MustInitDB() {
 		if err == nil {
 			if err = DB.AutoMigrate(&User{}, &EmailVerification{}); err == nil {
 				log.Println("Connected to Postgres and migrated schema")
+				// Create default admin user if not exists
+				adminEmail := "admin@example.com"
+				adminUser := "admin"
+				var existing User
+				resp := DB.Where("email = ?", adminEmail).Or("user_name = ?", adminUser).First(&existing)
+				if resp.Error == nil {
+					log.Printf("[INFO] Default admin user already exists: %s", existing.Email)
+				} else {
+					hash, _ := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+					ph := string(hash)
+					user := User{
+						ID:                 uuid.New(),
+						UserName:           adminUser,
+						NormalizedUserName: strings.ToUpper(adminUser),
+						Email:              adminEmail,
+						NormalizedEmail:    strings.ToUpper(adminEmail),
+						FirstName:          "",
+						LastName:           "",
+						Role:               "admin",
+						EmailConfirmed:     false,
+						PasswordHash:       &ph,
+						TwoFactorEnabled:   false,
+						LockoutEnabled:     false,
+						AccessFailedCount:  0,
+					}
+					if err := DB.Create(&user).Error; err != nil {
+						log.Printf("[ERROR] Failed to create default admin user: %v", err)
+					} else {
+						log.Printf("[INFO] Default admin user created: %s", adminEmail)
+					}
+				}
 				return
 			}
 		}
@@ -44,6 +77,9 @@ type User struct {
 	NormalizedUserName string     `json:"normalized_user_name"`
 	Email              string     `gorm:"uniqueIndex" json:"email"`
 	NormalizedEmail    string     `json:"normalized_email"`
+	FirstName          string     `json:"first_name"`
+	LastName           string     `json:"last_name"`
+	Role               string     `json:"role" gorm:"type:varchar(16);default:'user'"`
 	EmailConfirmed     bool       `json:"email_confirmed"`
 	PasswordHash       *string    `json:"password_hash"`
 	TwoFactorEnabled   bool       `json:"two_factor_enabled"`
