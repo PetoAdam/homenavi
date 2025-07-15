@@ -223,7 +223,7 @@ else:
     
 # Delete user at the end (should fail as non-admin)
 print("\nDeleting test user (should fail as non-admin)...")
-r = requests.post(f"{AUTH_SERVICE_URL}/delete", json={"user_id": user_id}, headers=headers)
+r = requests.post(f"{AUTH_SERVICE_URL}/delete", json={"user_id": user2_id}, headers=headers)
 print_result(r)
 
 # --- Admin login and delete test user ---
