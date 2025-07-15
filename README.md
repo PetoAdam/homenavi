@@ -69,7 +69,7 @@ Homenavi uses asymmetric JWT signing (RS256) for secure authentication:
 - The **Auth Service** signs tokens with a private key.
 - The **API Gateway** and other services validate tokens using the public key only.
 
-### Generate a key pair for development/testing:
+### Generate a key pair:
 ```sh
 mkdir -p ./keys
 openssl genpkey -algorithm RSA -out ./keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
@@ -148,12 +148,61 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
 
 ## 🔌 API Overview
 
+- **POST /api/signup** (API Gateway):
+  - Forwards to Auth Service, creates a new user
 - **POST /api/login** (API Gateway):
   - Forwards to Auth Service, returns JWT on success
-- **GET /api/user/{id}** (API Gateway):
+  - Enforces lockout: If a user is locked out, login is rejected
+- **POST /api/password/reset/request** (API Gateway):
+  - Forwards to Auth Service, requests password reset code
+- **POST /api/password/reset/confirm** (API Gateway):
+  - Forwards to Auth Service, confirms password reset
+- **POST /api/email/verify/request** (API Gateway):
+  - Forwards to Auth Service, requests email verification code (rate-limited)
+- **POST /api/email/verify/confirm** (API Gateway):
+  - Forwards to Auth Service, confirms email verification (rate-limited)
+- **POST /api/2fa/setup** (API Gateway):
+  - Forwards to Auth Service, sets up TOTP 2FA
+- **POST /api/2fa/verify** (API Gateway):
+  - Forwards to Auth Service, verifies TOTP 2FA code (rate-limited)
+- **POST /api/2fa/email/request** (API Gateway):
+  - Forwards to Auth Service, requests email 2FA code (rate-limited)
+- **POST /api/2fa/email/verify** (API Gateway):
+  - Forwards to Auth Service, verifies email 2FA code (rate-limited)
+- **POST /api/delete** (API Gateway):
+  - Forwards to Auth Service, deletes a user
+- **GET /api/users/{id}** (API Gateway):
   - Requires JWT, fetches user info from User Service
+- **DELETE /api/users/{id}** (API Gateway):
+  - Requires JWT, deletes user from User Service
+- **PATCH /api/users/{id}** (API Gateway):
+  - Requires JWT, updates user info
+- **POST /api/users** (API Gateway):
+  - Creates a new user in User Service
+- **POST /api/users/validate** (API Gateway):
+  - Validates user credentials in User Service
+- **GET /api/users?email={email}** (API Gateway):
+  - Fetches user by email from User Service
+- **POST /api/users/{id}/lockout** (API Gateway):
+  - Locks out a user in User Service
 - **GET /metrics**: Prometheus metrics endpoint
 - **GET /healthz**: Healthcheck endpoint
+
+---
+
+## 🔒 Security Features
+
+- **JWT authentication:** RS256 signed access tokens, public key validation in API Gateway
+- **Planned:** Refresh token rotation and revocation, token event tracking
+- **Rate-limited verification/2FA attempts:** Prevent brute-force attacks on codes
+- **Account lockout:** Login is blocked for locked users
+
+---
+
+## 🧑‍💻 2FA Support
+
+- **Email 2FA:** Request and verify codes via Auth Service
+- **TOTP 2FA:** Setup and verify using standard authenticator apps
 
 ---
 
