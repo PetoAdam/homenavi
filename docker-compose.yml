@@ -33,17 +33,13 @@ services:
     environment:
       - USER_SERVICE_URL=${USER_SERVICE_URL}
       - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
+      - REDIS_ADDR=${REDIS_ADDR}
     volumes:
       - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
     depends_on:
       - user-service
+      - redis
 
-  user-service:
-    build: ./user-service
-    ports:
-      - "8001:8001"
-    restart: unless-stopped
-  
   redis:
     image: redis:7-alpine
     ports:
@@ -90,3 +86,29 @@ services:
       - api-gateway
       - frontend
     restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  user-service:
+    build: ./user-service
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+    depends_on:
+      - postgres

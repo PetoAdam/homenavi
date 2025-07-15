@@ -1,6 +1,0 @@
-routes:
-  - path: /api/login
-    upstream: http://auth-service:8000/login
-    methods: [POST]
-    access: public
-    type: rest
