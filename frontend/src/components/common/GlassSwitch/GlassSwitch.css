@@ -5,7 +5,7 @@
   --glass-bg: rgba(255,255,255,0.18);
   --glass-border: rgba(255,255,255,0.35);
   --glass-shadow: 0 4px 24px 0 rgba(0,0,0,0.12);
-  --active-color: #4cd964;
+  --active-color: var(--color-primary);
   width: var(--switch-width);
   height: var(--switch-height);
   border: none;

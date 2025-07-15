@@ -1,7 +1,7 @@
 .profile-btn-wrap {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.2rem; /* reduced gap for closer login text */
   position: relative;
   z-index: 400;
 }
@@ -12,10 +12,11 @@
   color: var(--color-white);
   font-size: 1.1rem;
   font-weight: 600;
-  margin-right: 0.2rem;
+  margin-right: 0.1rem;
   cursor: pointer;
   opacity: 0.85;
   transition: color 0.2s;
+  padding: 0 0.2rem 0 0.2rem;
 }
 .profile-login-text:hover {
   color: var(--color-primary);
@@ -31,8 +32,8 @@
 }
 
 .profile-avatar-btn {
-  background: var(--color-glass-bg-strong);
-  border: 2px solid var(--color-glass-border);
+  background: rgba(28,34,44,0.72); /* new dark glass */
+  border: 2px solid rgba(60,70,90,0.32);
   border-radius: 50%;
   width: 48px;
   height: 48px;
@@ -40,10 +41,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+  box-shadow: 0 8px 32px 0 rgba(0,0,0,0.18);
   cursor: pointer;
   transition: border 0.2s, box-shadow 0.2s;
   outline: none;
+  backdrop-filter: blur(32px) saturate(120%);
+  -webkit-backdrop-filter: blur(32px) saturate(120%);
 }
 .profile-avatar-btn:hover, .profile-avatar-btn:focus {
   border: 2px solid var(--color-primary);
@@ -68,8 +71,8 @@
   top: 54px;
   right: 0;
   min-width: 210px;
-  background: var(--color-glass-bg);
-  border: 1.5px solid var(--color-glass-border);
+  background: rgba(28,34,44,0.92); /* new dark glass */
+  border: 1.5px solid rgba(60,70,90,0.38);
   border-radius: 1.2rem;
   box-shadow: 0 8px 32px 0 rgba(0,0,0,0.18);
   padding: 1.1rem 1.2rem 1.2rem 1.2rem;
@@ -78,6 +81,8 @@
   flex-direction: column;
   gap: 0.5rem;
   animation: profile-popover-in 0.18s cubic-bezier(.4,2,.6,1);
+  backdrop-filter: blur(36px) saturate(120%);
+  -webkit-backdrop-filter: blur(36px) saturate(120%);
 }
 
 @keyframes profile-popover-in {
@@ -86,8 +91,8 @@
 }
 
 .profile-popover-solid {
-  background: var(--color-glass-bg-strong);
-  border: 1.5px solid var(--color-glass-border-strong);
+  background: rgba(28,34,44,0.92);
+  border: 1.5px solid rgba(60,70,90,0.38);
   backdrop-filter: blur(36px) saturate(120%);
   -webkit-backdrop-filter: blur(36px) saturate(120%);
 }
