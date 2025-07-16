@@ -27,6 +27,7 @@ func main() {
 	http.HandleFunc("/api/auth/logout", handlers.HandleLogout)
 	http.HandleFunc("/api/auth/oauth/google", handlers.HandleOAuthGoogle)
 	http.HandleFunc("/api/auth/me", handlers.HandleMe)
+	http.HandleFunc("/api/auth/password/change", handlers.HandleChangePassword)
 
 	http.ListenAndServe(":8000", nil)
 }

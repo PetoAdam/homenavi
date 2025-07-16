@@ -35,9 +35,15 @@ export async function finish2FA(userId, code) {
   }
 }
 
-export async function signup(userName, email, password) {
+export async function signup(firstName, lastName, userName, email, password) {
   try {
-    const resp = await axios.post(`${API_URL}/signup`, { user_name: userName, email, password });
+    const resp = await axios.post(`${API_URL}/signup`, {
+      first_name: firstName,
+      last_name: lastName,
+      user_name: userName,
+      email,
+      password
+    });
     return { success: true, user: resp.data };
   } catch (err) {
     return { success: false, error: err.response?.data || 'Signup failed' };
@@ -165,19 +171,40 @@ export async function deleteUser(userId, accessToken) {
 
 export async function requestPasswordReset(email) {
   try {
-    await axios.post(`${API_URL}/password/reset/request`, { email });
-    return { success: true };
+    const resp = await axios.post(`${API_URL}/password/reset/request`, { email });
+    return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Password reset request failed' };
+    return { success: false, error: err.response?.data || 'Failed to send reset code' };
   }
 }
 
 export async function confirmPasswordReset(email, code, newPassword) {
   try {
-    await axios.post(`${API_URL}/password/reset/confirm`, { email, code, new_password: newPassword });
-    return { success: true };
+    const resp = await axios.post(`${API_URL}/password/reset/confirm`, {
+      email,
+      code,
+      new_password: newPassword
+    });
+    return { success: true, data: resp.data };
   } catch (err) {
     return { success: false, error: err.response?.data || 'Password reset failed' };
+  }
+}
+
+export async function changePassword(currentPassword, newPassword, accessToken) {
+  try {
+    const resp = await axios.post(`${API_URL}/password/change`, 
+      { current_password: currentPassword, new_password: newPassword },
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return { success: true, data: resp.data };
+  } catch (err) {
+    return { success: false, error: err.response?.data || 'Password change failed' };
   }
 }
 

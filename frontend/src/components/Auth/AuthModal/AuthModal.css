@@ -206,15 +206,14 @@
 }
 .auth-modal-input:focus + .auth-modal-label,
 .auth-modal-input:not(:placeholder-shown) + .auth-modal-label {
-  top: -0.7em;
+  top: 0.1em;
   left: 1.1em;
   font-size: 0.93rem;
   color: var(--color-primary);
   opacity: 1;
-  background: rgba(28,34,44,0.92);
+  background: var(--color-glass-bg-light);
   padding: 0 0.2em;
   border-radius: 0.5em;
-  line-height: 1.1;
 }
 
 .auth-modal-btn {
@@ -365,4 +364,41 @@
   height: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
+}
+
+/* Forgot Password Overlay */
+.auth-modal-forgot-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(28,34,44,0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.auth-modal-forgot-content {
+  width: 100%;
+  max-width: 340px;
+  padding: 0 2.2rem;
+  box-sizing: border-box;
+}
+
+.auth-modal-forgot-content .auth-modal-btn {
+  margin-bottom: 0.7rem;
+}
+
+.auth-modal-forgot-content .auth-modal-btn:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .auth-modal-forgot-content {
+    padding: 0 0.7rem;
+  }
 }

@@ -230,7 +230,6 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", 400)
 		return
 	}
-	log.Printf("[DEBUG] Patch request body: %v", req)
 	// Only allow certain fields to be patched
 	allowed := map[string]bool{
 		"email_confirmed":     true,
