@@ -5,7 +5,7 @@ const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
   const [accessToken, setAccessToken] = useState(null);
-  const [refreshTokenValue, setRefreshTokenValue] = useState(() => sessionStorage.getItem('refreshToken') || null);
+  const [refreshTokenValue, setRefreshTokenValue] = useState(() => localStorage.getItem('refreshToken') || null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [pendingUserId, setPendingUserId] = useState(null); // Store userId during 2FA flow
@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
     }
   }, [accessToken]);
 
-  // On mount, try to refresh access token if refresh token exists in sessionStorage
+  // On mount, try to refresh access token if refresh token exists in localStorage
   useEffect(() => {
     if (!accessToken && refreshTokenValue) {
       (async () => {
@@ -33,11 +33,11 @@ export function AuthProvider({ children }) {
         if (res.success) {
           setAccessToken(res.accessToken);
           setRefreshTokenValue(res.refreshToken);
-          sessionStorage.setItem('refreshToken', res.refreshToken);
+          localStorage.setItem('refreshToken', res.refreshToken);
         } else {
           setAccessToken(null);
           setRefreshTokenValue(null);
-          sessionStorage.removeItem('refreshToken');
+          localStorage.removeItem('refreshToken');
         }
       })();
     }
@@ -46,13 +46,13 @@ export function AuthProvider({ children }) {
   // Auto-refresh access token
   useEffect(() => {
     if (!refreshTokenValue) return;
-    sessionStorage.setItem('refreshToken', refreshTokenValue);
+    localStorage.setItem('refreshToken', refreshTokenValue);
     const interval = setInterval(async () => {
       const res = await refreshToken(refreshTokenValue);
       if (res.success) {
         setAccessToken(res.accessToken);
         setRefreshTokenValue(res.refreshToken);
-        sessionStorage.setItem('refreshToken', res.refreshToken);
+        localStorage.setItem('refreshToken', res.refreshToken);
       }
     }, 13 * 60 * 1000); // every 13 min
     return () => clearInterval(interval);
@@ -79,7 +79,7 @@ export function AuthProvider({ children }) {
     if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
-      sessionStorage.setItem('refreshToken', resp.refreshToken);
+      localStorage.setItem('refreshToken', resp.refreshToken);
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
       const me = await getMe(resp.accessToken);
@@ -105,7 +105,7 @@ export function AuthProvider({ children }) {
     if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
-      sessionStorage.setItem('refreshToken', resp.refreshToken);
+      localStorage.setItem('refreshToken', resp.refreshToken);
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
       const me = await getMe(resp.accessToken);
@@ -150,7 +150,7 @@ export function AuthProvider({ children }) {
     await logout(refreshTokenValue);
     setAccessToken(null);
     setRefreshTokenValue(null);
-    sessionStorage.removeItem('refreshToken');
+    localStorage.removeItem('refreshToken');
     setUser(null);
     setPendingUserId(null); // Clear pending userId
     setLoading(false);
