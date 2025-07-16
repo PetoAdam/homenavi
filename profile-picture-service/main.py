@@ -94,17 +94,25 @@ async def upload_profile_picture(
 ):
     """Upload a custom profile picture"""
     try:
-        # Validate file type
-        if not file.content_type or not file.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
+        # Validate file type by content type and extension
+        allowed_types = {"image/jpeg", "image/png", "image/jpg", "image/gif", "image/webp"}
+        allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+        ext = os.path.splitext(file.filename)[1].lower()
+        if file.content_type not in allowed_types and ext not in allowed_exts:
+            raise HTTPException(status_code=400, detail=f"File must be an image (got content_type={file.content_type}, ext={ext})")
         
         # Validate file size (max 5MB)
         content = await file.read()
         if len(content) > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large (max 5MB)")
         
-        # Process image
-        image = Image.open(io.BytesIO(content))
+        # Try to open with PIL to confirm it's a valid image
+        try:
+            image = Image.open(io.BytesIO(content))
+            image.verify()  # Will raise if not a valid image
+            image = Image.open(io.BytesIO(content))  # Reopen for actual processing
+        except Exception:
+            raise HTTPException(status_code=400, detail="File is not a valid image")
         
         # Convert to RGB if necessary
         if image.mode != 'RGB':
