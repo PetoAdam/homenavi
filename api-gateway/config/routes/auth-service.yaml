@@ -79,3 +79,8 @@ routes:
     methods: [GET]
     access: auth
     type: rest
+  - path: /api/auth/password/change
+    upstream: http://auth-service:8000/api/auth/password/change
+    methods: [POST]
+    access: auth
+    type: rest

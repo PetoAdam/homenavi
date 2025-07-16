@@ -141,9 +141,11 @@ func isValidPassword(password string) bool {
 func HandleSignup(w http.ResponseWriter, r *http.Request) {
 	logReq(r, "Signup request received")
 	var req struct {
-		UserName string `json:"user_name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		UserName  string `json:"user_name"`
+		Email     string `json:"email"`
+		Password  string `json:"password"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[ERROR] Invalid signup request: %v", err)
@@ -161,9 +163,11 @@ func HandleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userReq := map[string]interface{}{
-		"user_name": req.UserName,
-		"email":     req.Email,
-		"password":  req.Password,
+		"user_name":  req.UserName,
+		"email":      req.Email,
+		"password":   req.Password,
+		"first_name": req.FirstName,
+		"last_name":  req.LastName,
 	}
 	user, status, msg := internalUserCreate(userReq, extractJWTFromRequest(r))
 	if status != 201 {
@@ -820,4 +824,77 @@ func issueShortLivedJWT(userID string) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(jwtPrivateKey)
+}
+
+// --- CHANGE PASSWORD ---
+func HandleChangePassword(w http.ResponseWriter, r *http.Request) {
+	logReq(r, "Change password request received")
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[ERROR] Invalid change password request: %v", err)
+		http.Error(w, "Invalid request", 400)
+		return
+	}
+	// Extract JWT to get user ID
+	token := extractJWT(r)
+	if token == "" {
+		http.Error(w, "Missing or invalid JWT token", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse JWT to get user ID
+	parsedToken, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return &jwtPrivateKey.PublicKey, nil
+	})
+
+	if err != nil || !parsedToken.Valid {
+		http.Error(w, "Invalid JWT token", http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, "Invalid JWT claims", http.StatusUnauthorized)
+		return
+	}
+
+	userID, ok := claims["sub"].(string)
+	if !ok {
+		http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
+		return
+	}
+
+	// Get user details to validate current password
+	user, err := internalUserGet(userID, token)
+	if err != nil {
+		log.Printf("[ERROR] Failed to get user for password change: %v", err)
+		http.Error(w, "User not found", 404)
+		return
+	}
+
+	// Validate current password first
+	body, _ := json.Marshal(map[string]string{"email": user.Email, "password": req.CurrentPassword})
+	resp, err := internalUserRequest("POST", "/users/validate", body, "")
+	if err != nil || resp.StatusCode != 200 {
+		log.Printf("[ERROR] Current password validation failed")
+		http.Error(w, "Current password is incorrect", 400)
+		return
+	}
+
+	// Update password in user-service
+	patch := UserPatchRequest{"password": req.NewPassword}
+	if err := internalUserPatch(userID, patch, token); err != nil {
+		log.Printf("[ERROR] Failed to patch user password: %v", err)
+		http.Error(w, "Failed to update password", 500)
+		return
+	}
+
+	log.Printf("[INFO] Password changed for user_id=%s", userID)
+	w.Write([]byte("Password changed successfully"))
 }

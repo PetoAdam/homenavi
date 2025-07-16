@@ -76,9 +76,9 @@ export function AuthProvider({ children }) {
     return { success: false, error: resp.error };
   };
 
-  const handleSignup = async (userName, email, password) => {
+  const handleSignup = async (firstName, lastName, userName, email, password) => {
     setLoading(true);
-    const resp = await signup(userName, email, password);
+    const resp = await signup(firstName, lastName, userName, email, password);
     setLoading(false);
     return resp;
   };

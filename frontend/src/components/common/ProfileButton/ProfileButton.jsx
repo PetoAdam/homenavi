@@ -55,13 +55,14 @@ export default function ProfileButton() {
     return false;
   };
 
-  const doSignup = async (userName, email, password) => {
-    const resp = await handleSignup(userName, email, password);
-    if (resp.success) {
-      setToastMsg("Account created successfully! Please log in.");
-      return true;
+  const doSignup = async (firstName, lastName, userName, email, password) => {
+    setTwoFAState(null);
+    const result = await handleSignup(firstName, lastName, userName, email, password);
+    if (result.success) {
+      setShowAuthModal(false);
+      setToastMsg("Account created successfully!");
     }
-    return false;
+    return result;
   };
 
   const do2FA = async (code) => {
