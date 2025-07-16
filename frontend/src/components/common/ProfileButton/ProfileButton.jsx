@@ -5,6 +5,7 @@ import './ProfileButton.css';
 import AuthModal from '../../Auth/AuthModal/AuthModal';
 import UserSettings from '../../UserSettings/UserSettings';
 import { useAuth } from '../../../context/AuthContext';
+import UserAvatar from '../../common/UserAvatar/UserAvatar';
 
 export default function ProfileButton() {
   const { user, handleLogin, handleLogout, handle2FA, handleSignup, cancelLogin: authCancelLogin, requestNew2FACode } = useAuth();
@@ -106,17 +107,13 @@ export default function ProfileButton() {
         onClick={() => user ? setOpen(o => !o) : setShowAuthModal(true)}
         aria-label="Profile"
       >
-        {user && user.avatar ? (
-          <img src={user.avatar} alt="Profile" className="profile-avatar-img" />
-        ) : (
-          <FontAwesomeIcon icon={faUserCircle} className="profile-avatar-icon" />
-        )}
+        <UserAvatar user={user} size={36} />
       </button>
       {open && user && (
         <div className="profile-popover profile-popover-solid">
           <div className="profile-menu">
             <div className="profile-menu-header">
-              {user.avatar && <img src={user.avatar} alt="Profile" className="profile-menu-avatar" />}
+              <UserAvatar user={user} size={36} />
               <span className="profile-menu-name">{user.user_name || user.name}</span>
             </div>
             <button className="profile-menu-item" onClick={() => { setShowSettings(true); setOpen(false); }}>
