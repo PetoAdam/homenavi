@@ -53,13 +53,18 @@ export function AuthProvider({ children }) {
       
       return resp;
     }
-    if (resp.success && resp.user) {
-      resp.user.avatar = resp.user.profile_picture_url || null;
+    if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
-      setUser(resp.user);
       setPendingUserId(null); // Clear pending userId
-      return { success: true };
+      // Fetch user profile after login
+      const me = await getMe(resp.accessToken);
+      if (me.success && me.user) {
+        me.user.avatar = me.user.profile_picture_url || null;
+        setUser(me.user);
+        return { success: true };
+      }
+      return { success: false, error: me.error };
     }
     return { success: false, error: resp.error };
   };
@@ -73,13 +78,18 @@ export function AuthProvider({ children }) {
     }
     const resp = await finish2FA(userId, code);
     setLoading(false);
-    if (resp.success && resp.user) {
-      resp.user.avatar = resp.user.profile_picture_url || null;
+    if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
-      setUser(resp.user);
       setPendingUserId(null); // Clear pending userId
-      return { success: true };
+      // Fetch user profile after login
+      const me = await getMe(resp.accessToken);
+      if (me.success && me.user) {
+        me.user.avatar = me.user.profile_picture_url || null;
+        setUser(me.user);
+        return { success: true };
+      }
+      return { success: false, error: me.error };
     }
     return { success: false, error: resp.error };
   };

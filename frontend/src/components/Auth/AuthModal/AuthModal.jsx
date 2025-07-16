@@ -42,9 +42,11 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    const success = await onAuth(loginForm.email, loginForm.password);
-    if (success) {
+    const result = await onAuth(loginForm.email, loginForm.password);
+    if (result && result.success) {
       onClose();
+    } else if (result && result.error) {
+      setLoginError(result.error);
     }
   };
 
