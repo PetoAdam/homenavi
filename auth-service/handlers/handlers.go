@@ -418,7 +418,7 @@ func HandleEmailVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid or expired code", 400)
 		return
 	}
-	
+
 	// Extract JWT from frontend request and forward it to user-service
 	jwt := extractJWT(r)
 	patch := UserPatchRequest{"email_confirmed": true}
@@ -427,7 +427,7 @@ func HandleEmailVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update user-service", 500)
 		return
 	}
-	
+
 	log.Printf("[INFO] Email verified for user_id=%s", req.UserID)
 	w.Write([]byte("Email verified"))
 }
