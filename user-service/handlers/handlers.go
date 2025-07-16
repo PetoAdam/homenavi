@@ -104,18 +104,22 @@ func HandleUserGet(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "Invalid user id", 400)
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
+
 	if !authorizeAnyValidJWT(r) {
-		http.Error(w, "Forbidden", 403)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
 	var u db.User
-	if err := db.DB.First(&u, "id = ?", id).Error; err != nil {
-		http.Error(w, "User not found", 404)
+	if err := db.DB.Where("id = ?", id).First(&u).Error; err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(u)
 }
 
@@ -327,10 +331,4 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		TwoFactorSecret:  user.TwoFactorSecret,
 	}
 	json.NewEncoder(w).Encode(resp)
-}
-
-// Helper to extract claims from context (assumes JWT middleware sets it)
-func GetClaims(r *http.Request) *struct{ Role string } {
-	claims, _ := r.Context().Value("claims").(*struct{ Role string })
-	return claims
 }

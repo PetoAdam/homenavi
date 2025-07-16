@@ -131,6 +131,14 @@
   letter-spacing: 0.01em;
 }
 
+.auth-modal-subtitle {
+  font-size: 0.9rem;
+  color: var(--color-secondary-light);
+  margin-top: 0.5rem;
+  text-align: center;
+  line-height: 1.4;
+}
+
 .auth-modal-form {
   width: 100%;
   max-width: 340px;
