@@ -13,6 +13,7 @@ import {
 } from '../../services/authService';
 import './UserSettings.css';
 import axios from 'axios';
+import UserAvatar from '../common/UserAvatar/UserAvatar';
 
 export default function UserSettings({ onClose }) {
   const { user, accessToken, handleLogout, refreshUser } = useAuth();
@@ -230,17 +231,7 @@ export default function UserSettings({ onClose }) {
                 onClick={() => setShowProfilePictureModal(true)}
               >
                 <div className="profile-avatar">
-                  {user?.avatar ? (
-                    <img 
-                      src={user.avatar} 
-                      alt="Profile" 
-                      className="profile-avatar-image"
-                    />
-                  ) : (
-                    <span>
-                      {user?.first_name?.[0]?.toUpperCase()}{user?.last_name?.[0]?.toUpperCase()}
-                    </span>
-                  )}
+                  <UserAvatar user={user} size={64} />
                 </div>
                 <div className="profile-avatar-overlay">
                   <span>📷</span>
