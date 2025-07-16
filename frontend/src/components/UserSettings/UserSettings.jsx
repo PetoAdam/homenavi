@@ -191,18 +191,26 @@ export default function UserSettings({ onClose }) {
             {editingProfile ? (
               <div className="edit-profile-form">
                 <div className="name-inputs">
-                  <input
-                    type="text"
-                    placeholder="First Name"
-                    value={profileForm.firstName}
-                    onChange={e => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Last Name"
-                    value={profileForm.lastName}
-                    onChange={e => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
-                  />
+                  <div className="user-settings-field-input">
+                    <input
+                      type="text"
+                      placeholder=" "
+                      value={profileForm.firstName}
+                      onChange={e => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
+                      id="edit-firstname"
+                    />
+                    <label htmlFor="edit-firstname">First Name</label>
+                  </div>
+                  <div className="user-settings-field-input">
+                    <input
+                      type="text"
+                      placeholder=" "
+                      value={profileForm.lastName}
+                      onChange={e => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
+                      id="edit-lastname"
+                    />
+                    <label htmlFor="edit-lastname">Last Name</label>
+                  </div>
                 </div>
                 <div className="button-group">
                   <button onClick={handleProfileSave}>Save Changes</button>
@@ -313,24 +321,36 @@ export default function UserSettings({ onClose }) {
               
               {showPasswordReset && (
                 <div className="user-settings-input-group">
-                  <input
-                    type="password"
-                    placeholder="Current Password"
-                    value={passwordForm.currentPassword}
-                    onChange={e => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
-                  />
-                  <input
-                    type="password"
-                    placeholder="New Password"
-                    value={passwordForm.newPassword}
-                    onChange={e => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                  />
-                  <input
-                    type="password"
-                    placeholder="Confirm New Password"
-                    value={passwordForm.confirmPassword}
-                    onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                  />
+                  <div className="user-settings-field-input">
+                    <input
+                      type="password"
+                      placeholder=" "
+                      value={passwordForm.currentPassword}
+                      onChange={e => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      id="current-password"
+                    />
+                    <label htmlFor="current-password">Current Password</label>
+                  </div>
+                  <div className="user-settings-field-input">
+                    <input
+                      type="password"
+                      placeholder=" "
+                      value={passwordForm.newPassword}
+                      onChange={e => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      id="new-password"
+                    />
+                    <label htmlFor="new-password">New Password</label>
+                  </div>
+                  <div className="user-settings-field-input">
+                    <input
+                      type="password"
+                      placeholder=" "
+                      value={passwordForm.confirmPassword}
+                      onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      id="confirm-password"
+                    />
+                    <label htmlFor="confirm-password">Confirm New Password</label>
+                  </div>
                   <button onClick={handlePasswordReset} disabled={!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}>
                     Update Password
                   </button>
