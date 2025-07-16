@@ -337,7 +337,7 @@
   width: 100%;
 }
 
-.edit-profile-form .name-inputs input {
+.edit-profile-form .name-inputs .user-settings-field-input {
   flex: 1;
 }
 
@@ -358,6 +358,60 @@
 .edit-profile-form input:focus {
   border: 1.2px solid var(--color-primary);
   background: rgba(40,48,60,0.38);
+}
+
+/* Floating labels for edit forms - Match AuthModal */
+.user-settings-field-input {
+  position: relative;
+  width: 100%;
+  flex: 1;
+}
+
+.user-settings-field-input input {
+  width: 100%;
+  padding: 1.1em 1.1em 0.7em 1.1em;
+  border-radius: 0.9rem;
+  border: 1.2px solid var(--color-glass-border);
+  background: rgba(40,48,60,0.32);
+  color: var(--color-white);
+  font-size: 1.08rem;
+  font-weight: 500;
+  outline: none;
+  transition: border 0.2s, background 0.2s;
+  box-sizing: border-box;
+}
+
+.user-settings-field-input input:focus {
+  border: 1.2px solid var(--color-primary);
+  background: rgba(40,48,60,0.38);
+}
+
+.user-settings-field-input label {
+  position: absolute;
+  left: 1.1em;
+  top: 1.05em;
+  font-size: 1.08rem;
+  color: var(--color-secondary-xlight);
+  font-weight: 600;
+  pointer-events: none;
+  transition: all 0.18s cubic-bezier(.4,2,.6,1);
+  opacity: 0.85;
+  background: transparent;
+  z-index: 2;
+  line-height: 1.2;
+}
+
+.user-settings-field-input input:focus + label,
+.user-settings-field-input input:not(:placeholder-shown) + label {
+  top: 0.1em;
+  left: 1.1em;
+  font-size: 0.93rem;
+  color: var(--color-primary);
+  opacity: 1;
+  background: var(--color-glass-bg-light);
+  padding: 0 0.2em;
+  border-radius: 0.5em;
+  line-height: 1.1;
 }
 
 /* Content wrapper - Match AuthModal */
