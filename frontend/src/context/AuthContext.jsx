@@ -13,8 +13,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (accessToken) {
       getMe(accessToken).then(res => {
-        if (res.success) setUser(res.user);
-        else setUser(null);
+        if (res.success && res.user) {
+          res.user.avatar = res.user.profile_picture_url || null;
+          setUser(res.user);
+        } else {
+          setUser(null);
+        }
       });
     } else {
       setUser(null);
@@ -49,9 +53,11 @@ export function AuthProvider({ children }) {
       
       return resp;
     }
-    if (resp.success) {
+    if (resp.success && resp.user) {
+      resp.user.avatar = resp.user.profile_picture_url || null;
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
+      setUser(resp.user);
       setPendingUserId(null); // Clear pending userId
       return { success: true };
     }
@@ -67,9 +73,11 @@ export function AuthProvider({ children }) {
     }
     const resp = await finish2FA(userId, code);
     setLoading(false);
-    if (resp.success) {
+    if (resp.success && resp.user) {
+      resp.user.avatar = resp.user.profile_picture_url || null;
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
+      setUser(resp.user);
       setPendingUserId(null); // Clear pending userId
       return { success: true };
     }
@@ -117,6 +125,7 @@ export function AuthProvider({ children }) {
     if (accessToken) {
       const res = await getMe(accessToken);
       if (res.success && res.user) {
+        res.user.avatar = res.user.profile_picture_url || null; // Ensure avatar is set
         setUser(res.user);
         return res.user;
       }

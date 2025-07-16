@@ -208,4 +208,39 @@ export async function changePassword(currentPassword, newPassword, accessToken) 
   }
 }
 
-// ...add more if needed
+// Profile picture service functions
+export const generateAvatar = async (accessToken) => {
+  try {
+    const resp = await axios.post('/api/auth/profile/generate-avatar', {}, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    return { success: true, data: resp.data };
+  } catch (err) {
+    return { success: false, error: err.response?.data || 'Avatar generation failed' };
+  }
+};
+
+export const uploadProfilePicture = async (file, accessToken, userId = null) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    let url = '/api/auth/profile/upload';
+    if (userId) {
+      url += `?user_id=${userId}`;
+    }
+    
+    const resp = await axios.post(url, formData, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return { success: true, data: resp.data };
+  } catch (err) {
+    return { success: false, error: err.response?.data || 'Upload failed' };
+  }
+};

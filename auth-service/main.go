@@ -29,5 +29,9 @@ func main() {
 	http.HandleFunc("/api/auth/me", handlers.HandleMe)
 	http.HandleFunc("/api/auth/password/change", handlers.HandleChangePassword)
 
+	// Profile picture routes
+	http.HandleFunc("/api/auth/profile/generate-avatar", handlers.HandleGenerateAvatar)
+	http.HandleFunc("/api/auth/profile/upload", handlers.HandleUploadProfilePicture)
+
 	http.ListenAndServe(":8000", nil)
 }

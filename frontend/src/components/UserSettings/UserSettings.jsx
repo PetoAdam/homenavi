@@ -7,7 +7,9 @@ import {
   request2FAEmail,
   verify2FAEmail,
   changePassword,
-  patchUser as patchUserService
+  patchUser as patchUserService,
+  generateAvatar,
+  uploadProfilePicture
 } from '../../services/authService';
 import './UserSettings.css';
 import axios from 'axios';
@@ -36,6 +38,10 @@ export default function UserSettings({ onClose }) {
     newPassword: '',
     confirmPassword: ''
   });
+
+  // Profile picture states
+  const [showProfilePictureModal, setShowProfilePictureModal] = useState(false);
+  const [profilePictureFile, setProfilePictureFile] = useState(null);
 
   // Sync local state with user data from AuthContext
   useEffect(() => {
@@ -153,6 +159,53 @@ export default function UserSettings({ onClose }) {
     }
   };
 
+  const handleGenerateAvatar = async () => {
+    setStatus('Generating avatar...');
+    const resp = await generateAvatar(accessToken);
+    if (resp.success) {
+      setStatus('✅ Avatar generated successfully!');
+      await refreshUser();
+      setShowProfilePictureModal(false);
+    } else {
+      setStatus('❌ ' + (resp.error || 'Avatar generation failed'));
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!profilePictureFile) {
+      setStatus('❌ Please select a file first');
+      return;
+    }
+    setStatus('Uploading profile picture...');
+    const resp = await uploadProfilePicture(profilePictureFile, accessToken);
+    if (resp.success) {
+      setStatus('✅ Profile picture updated successfully!');
+      await refreshUser();
+      setShowProfilePictureModal(false);
+      setProfilePictureFile(null);
+    } else {
+      setStatus('❌ ' + (resp.error || 'Upload failed'));
+    }
+  };
+
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setStatus('❌ Please select an image file');
+        return;
+      }
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setStatus('❌ File too large (max 5MB)');
+        return;
+      }
+      setProfilePictureFile(file);
+      setStatus('');
+    }
+  };
+
   return (
     <div className="user-settings-backdrop" onClick={onClose}>
       <div className="user-settings" onClick={e => e.stopPropagation()}>
@@ -170,8 +223,29 @@ export default function UserSettings({ onClose }) {
             </h3>
             
             <div className="profile-header">
-              <div className="profile-avatar">
-                {user?.first_name?.[0]?.toUpperCase()}{user?.last_name?.[0]?.toUpperCase()}
+              <div 
+                className="profile-avatar-container"
+                onMouseEnter={() => {}}
+                onMouseLeave={() => {}}
+                onClick={() => setShowProfilePictureModal(true)}
+              >
+                <div className="profile-avatar">
+                  {user?.avatar ? (
+                    <img 
+                      src={user.avatar} 
+                      alt="Profile" 
+                      className="profile-avatar-image"
+                    />
+                  ) : (
+                    <span>
+                      {user?.first_name?.[0]?.toUpperCase()}{user?.last_name?.[0]?.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="profile-avatar-overlay">
+                  <span>📷</span>
+                  <div>Change Photo</div>
+                </div>
               </div>
               <div className="profile-info">
                 <div className="profile-name">
@@ -381,6 +455,57 @@ export default function UserSettings({ onClose }) {
           </div>
         </div>
         </div>
+        
+        {/* Profile Picture Modal */}
+        {showProfilePictureModal && (
+          <div className="profile-picture-modal">
+            <div className="profile-picture-modal-content">
+              <h3>Change Profile Picture</h3>
+              
+              <div className="profile-picture-options">
+                <div className="profile-picture-option">
+                  <button onClick={handleGenerateAvatar} className="secondary">
+                    🎨 Generate Pixel Avatar
+                  </button>
+                  <p>Create a unique pixel art avatar</p>
+                </div>
+                
+                <div className="profile-picture-divider">or</div>
+                
+                <div className="profile-picture-option">
+                  <input
+                    type="file"
+                    id="profile-picture-upload"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    style={{ display: 'none' }}
+                  />
+                  <label htmlFor="profile-picture-upload" className="upload-label">
+                    📁 Choose Image
+                  </label>
+                  {profilePictureFile && (
+                    <div className="file-selected">
+                      <span>Selected: {profilePictureFile.name}</span>
+                      <button onClick={handleFileUpload}>Upload</button>
+                    </div>
+                  )}
+                  <p>Upload your own image (max 5MB)</p>
+                </div>
+              </div>
+              
+              <button 
+                onClick={() => {
+                  setShowProfilePictureModal(false);
+                  setProfilePictureFile(null);
+                  setStatus('');
+                }} 
+                className="secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         
         <button className="user-settings-close" onClick={onClose} aria-label="Close">&times;</button>
       </div>
