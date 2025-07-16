@@ -7,6 +7,8 @@ services:
     ports:
       - "5173:80"
     restart: unless-stopped
+    networks:
+      - homenavi-network
   api-gateway:
     build: ./api-gateway
     ports:
@@ -24,6 +26,8 @@ services:
     depends_on:
       - auth-service
       - user-service
+    networks:
+      - homenavi-network
 
   auth-service:
     build: ./auth-service
@@ -34,17 +38,23 @@ services:
       - USER_SERVICE_URL=${USER_SERVICE_URL}
       - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
       - REDIS_ADDR=${REDIS_ADDR}
+      - PROFILE_PICTURE_SERVICE_URL=http://profile-picture-service:8000
     volumes:
       - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
     depends_on:
       - user-service
       - redis
+      - profile-picture-service
+    networks:
+      - homenavi-network
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     restart: unless-stopped
+    networks:
+      - homenavi-network
 
   prometheus:
     image: prom/prometheus
@@ -53,12 +63,16 @@ services:
     restart: unless-stopped
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - homenavi-network
 
   grafana:
     image: grafana/grafana
     ports:
       - "3000:3000"
     restart: unless-stopped
+    networks:
+      - homenavi-network
     depends_on:
       - prometheus
 
@@ -79,6 +93,7 @@ services:
       - ./nginx/entrypoint.sh:/entrypoint.sh:ro
       - ${NGINX_CERT_ORIGIN}:/etc/nginx/certs/nginx.crt:ro
       - ${NGINX_KEY_ORIGIN}:/etc/nginx/certs/nginx.key:ro
+      - profile-pictures:/uploads
     environment:
       - NGINX_MODE=${NGINX_MODE}
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
@@ -86,6 +101,8 @@ services:
       - api-gateway
       - frontend
     restart: unless-stopped
+    networks:
+      - homenavi-network
 
   postgres:
     image: postgres:15-alpine
@@ -98,9 +115,13 @@ services:
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - homenavi-network
 
   user-service:
-    build: ./user-service
+    build: 
+      context: ./user-service
+      no_cache: true
     ports:
       - "8001:8001"
     restart: unless-stopped
@@ -112,3 +133,24 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
     depends_on:
       - postgres
+    networks:
+      - homenavi-network
+
+  profile-picture-service:
+    build: ./profile-picture-service
+    ports:
+      - "8086:8000"
+    restart: unless-stopped
+    volumes:
+      - profile-pictures:/uploads
+    networks:
+      - homenavi-network
+
+volumes:
+  postgres_data:
+  auth_postgres_data:
+  profile-pictures:
+
+networks:
+  homenavi-network:
+    driver: bridge

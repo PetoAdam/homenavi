@@ -84,3 +84,13 @@ routes:
     methods: [POST]
     access: auth
     type: rest
+  - path: /api/auth/profile/generate-avatar
+    upstream: http://auth-service:8000/api/auth/profile/generate-avatar
+    methods: [POST]
+    access: auth
+    type: rest
+  - path: /api/auth/profile/upload
+    upstream: http://auth-service:8000/api/auth/profile/upload
+    methods: [POST]
+    access: auth
+    type: rest

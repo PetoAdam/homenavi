@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"regexp"
@@ -65,16 +66,17 @@ func init() {
 var jwtPrivateKey *rsa.PrivateKey
 
 type User struct {
-	ID               string `json:"id"`
-	UserName         string `json:"user_name"`
-	Email            string `json:"email"`
-	FirstName        string `json:"first_name"`
-	LastName         string `json:"last_name"`
-	Role             string `json:"role"`
-	EmailConfirmed   bool   `json:"email_confirmed"`
-	TwoFactorEnabled bool   `json:"two_factor_enabled"`
-	TwoFactorType    string `json:"two_factor_type"`
-	TwoFactorSecret  string `json:"two_factor_secret"`
+	ID                string `json:"id"`
+	UserName          string `json:"user_name"`
+	Email             string `json:"email"`
+	FirstName         string `json:"first_name"`
+	LastName          string `json:"last_name"`
+	Role              string `json:"role"`
+	EmailConfirmed    bool   `json:"email_confirmed"`
+	TwoFactorEnabled  bool   `json:"two_factor_enabled"`
+	TwoFactorType     string `json:"two_factor_type"`
+	ProfilePictureURL string `json:"profile_picture_url"`
+	TwoFactorSecret   string `json:"-"` // never serialized
 }
 
 func logReq(r *http.Request, msg string) {
@@ -690,6 +692,191 @@ func HandleMe(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
+}
+
+// --- PROFILE PICTURE ENDPOINTS ---
+func HandleGenerateAvatar(w http.ResponseWriter, r *http.Request) {
+	logReq(r, "Generate avatar request received")
+
+	// Extract JWT to get user ID
+	token := extractJWT(r)
+	if token == "" {
+		http.Error(w, "Missing or invalid JWT token", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse JWT to get user ID
+	userID, err := getUserIDFromToken(token)
+	if err != nil {
+		http.Error(w, "Invalid JWT token", http.StatusUnauthorized)
+		return
+	}
+
+	// Call profile picture service to generate avatar
+	resp, err := http.Get(fmt.Sprintf("%s/generate/%s", os.Getenv("PROFILE_PICTURE_SERVICE_URL"), userID))
+	if err != nil {
+		log.Printf("[ERROR] Failed to call profile picture service: %v", err)
+		http.Error(w, "Failed to generate avatar", 500)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("[ERROR] Profile picture service returned status %d", resp.StatusCode)
+		http.Error(w, "Avatar generation failed", 500)
+		return
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[ERROR] Failed to parse avatar generation response: %v", err)
+		http.Error(w, "Failed to process avatar", 500)
+		return
+	}
+
+	// Update user profile picture URL in user-service
+	avatarURL := result["url"].(string)
+	patch := UserPatchRequest{"profile_picture_url": avatarURL}
+	if err := internalUserPatch(userID, patch, token); err != nil {
+		log.Printf("[ERROR] Failed to update user profile picture URL: %v", err)
+		http.Error(w, "Failed to save avatar URL", 500)
+		return
+	}
+
+	log.Printf("[INFO] Avatar generated for user_id=%s", userID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func HandleUploadProfilePicture(w http.ResponseWriter, r *http.Request) {
+	logReq(r, "Upload profile picture request received")
+
+	// Extract JWT to get user ID
+	token := extractJWT(r)
+	if token == "" {
+		http.Error(w, "Missing or invalid JWT token", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse JWT to get user ID and role
+	userID, err := getUserIDFromToken(token)
+	if err != nil {
+		http.Error(w, "Invalid JWT token", http.StatusUnauthorized)
+		return
+	}
+
+	// Get target user ID from URL path
+	targetUserID := r.URL.Query().Get("user_id")
+	if targetUserID == "" {
+		targetUserID = userID // Default to current user
+	}
+
+	// Check authorization (user can only upload their own picture, unless admin)
+	if targetUserID != userID {
+		user, err := internalUserGet(userID, token)
+		if err != nil || user.Role != "admin" {
+			http.Error(w, "Unauthorized: can only change your own profile picture", http.StatusForbidden)
+			return
+		}
+	}
+
+	// Parse multipart form
+	err = r.ParseMultipartForm(10 << 20) // 10MB max
+	if err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "No file provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Create multipart form for profile picture service
+	var b bytes.Buffer
+	writer := multipart.NewWriter(&b)
+
+	// Add user_id field
+	userIDField, _ := writer.CreateFormField("user_id")
+	userIDField.Write([]byte(targetUserID))
+
+	// Add file field
+	fileField, _ := writer.CreateFormFile("file", header.Filename)
+	io.Copy(fileField, file)
+	writer.Close()
+
+	// Send to profile picture service
+	req, err := http.NewRequest("POST", os.Getenv("PROFILE_PICTURE_SERVICE_URL")+"/upload", &b)
+	if err != nil {
+		http.Error(w, "Failed to create request", 500)
+		return
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[ERROR] Failed to call profile picture service: %v", err)
+		http.Error(w, "Failed to upload image", 500)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[ERROR] Profile picture service returned status %d: %s", resp.StatusCode, string(body))
+		http.Error(w, "Image upload failed", 500)
+		return
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[ERROR] Failed to parse upload response: %v", err)
+		http.Error(w, "Failed to process upload", 500)
+		return
+	}
+
+	// Update user profile picture URL in user-service
+	avatarURL := result["primary_url"].(string)
+	patch := UserPatchRequest{"profile_picture_url": avatarURL}
+	if err := internalUserPatch(targetUserID, patch, token); err != nil {
+		log.Printf("[ERROR] Failed to update user profile picture URL: %v", err)
+		http.Error(w, "Failed to save image URL", 500)
+		return
+	}
+
+	log.Printf("[INFO] Profile picture uploaded for user_id=%s", targetUserID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func getUserIDFromToken(token string) (string, error) {
+	parsedToken, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return &jwtPrivateKey.PublicKey, nil
+	})
+
+	if err != nil || !parsedToken.Valid {
+		return "", fmt.Errorf("invalid token")
+	}
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid claims")
+	}
+
+	userID, ok := claims["sub"].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid user ID")
+	}
+
+	return userID, nil
 }
 
 // Helper for internal user-service requests with internal auth header and optional JWT

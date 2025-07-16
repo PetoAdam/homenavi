@@ -113,14 +113,45 @@ func HandleUserGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var u db.User
-	if err := db.DB.Where("id = ?", id).First(&u).Error; err != nil {
+	var user db.User
+	if err := db.DB.Where("id = ?", id).First(&user).Error; err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
+	log.Printf("[DEBUG] User %s profile picture URL: %v", user.ID, user.ProfilePictureURL)
+
+	resp := struct {
+		ID                string `json:"id"`
+		UserName          string `json:"user_name"`
+		Email             string `json:"email"`
+		FirstName         string `json:"first_name"`
+		LastName          string `json:"last_name"`
+		Role              string `json:"role"`
+		EmailConfirmed    bool   `json:"email_confirmed"`
+		TwoFactorEnabled  bool   `json:"two_factor_enabled"`
+		TwoFactorType     string `json:"two_factor_type"`
+		ProfilePictureURL string `json:"profile_picture_url"`
+	}{
+		ID:               user.ID.String(),
+		UserName:         user.UserName,
+		Email:            user.Email,
+		FirstName:        user.FirstName,
+		LastName:         user.LastName,
+		Role:             user.Role,
+		EmailConfirmed:   user.EmailConfirmed,
+		TwoFactorEnabled: user.TwoFactorEnabled,
+		TwoFactorType:    user.TwoFactorType,
+		ProfilePictureURL: func() string {
+			if user.ProfilePictureURL != nil {
+				return *user.ProfilePictureURL
+			}
+			return ""
+		}(),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(u)
+	json.NewEncoder(w).Encode(resp)
 }
 
 func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
@@ -135,25 +166,27 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := struct {
-		ID               string `json:"id"`
-		UserName         string `json:"user_name"`
-		Email            string `json:"email"`
-		FirstName        string `json:"first_name"`
-		LastName         string `json:"last_name"`
-		Role             string `json:"role"`
-		TwoFactorEnabled bool   `json:"two_factor_enabled"`
-		TwoFactorType    string `json:"two_factor_type"`
-		TwoFactorSecret  string `json:"two_factor_secret"`
+		ID                string  `json:"id"`
+		UserName          string  `json:"user_name"`
+		Email             string  `json:"email"`
+		FirstName         string  `json:"first_name"`
+		LastName          string  `json:"last_name"`
+		Role              string  `json:"role"`
+		EmailConfirmed    bool    `json:"email_confirmed"`
+		TwoFactorEnabled  bool    `json:"two_factor_enabled"`
+		TwoFactorType     string  `json:"two_factor_type"`
+		ProfilePictureURL *string `json:"profile_picture_url"`
 	}{
-		ID:               user.ID.String(),
-		UserName:         user.UserName,
-		Email:            user.Email,
-		FirstName:        user.FirstName,
-		LastName:         user.LastName,
-		Role:             user.Role,
-		TwoFactorEnabled: user.TwoFactorEnabled,
-		TwoFactorType:    user.TwoFactorType,
-		TwoFactorSecret:  user.TwoFactorSecret,
+		ID:                user.ID.String(),
+		UserName:          user.UserName,
+		Email:             user.Email,
+		FirstName:         user.FirstName,
+		LastName:          user.LastName,
+		Role:              user.Role,
+		EmailConfirmed:    user.EmailConfirmed,
+		TwoFactorEnabled:  user.TwoFactorEnabled,
+		TwoFactorType:     user.TwoFactorType,
+		ProfilePictureURL: user.ProfilePictureURL,
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -242,6 +275,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		"first_name":          true,
 		"last_name":           true,
 		"role":                true, // will check admin below
+		"profile_picture_url": true, // allow profile picture URL updates
 	}
 	update := make(map[string]interface{})
 	for k, v := range req {
@@ -309,15 +343,15 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := struct {
-		ID               string `json:"id"`
-		UserName         string `json:"user_name"`
-		Email            string `json:"email"`
-		FirstName        string `json:"first_name"`
-		LastName         string `json:"last_name"`
-		Role             string `json:"role"`
-		TwoFactorEnabled bool   `json:"two_factor_enabled"`
-		TwoFactorType    string `json:"two_factor_type"`
-		TwoFactorSecret  string `json:"two_factor_secret"`
+		ID                string `json:"id"`
+		UserName          string `json:"user_name"`
+		Email             string `json:"email"`
+		FirstName         string `json:"first_name"`
+		LastName          string `json:"last_name"`
+		Role              string `json:"role"`
+		TwoFactorEnabled  bool   `json:"two_factor_enabled"`
+		TwoFactorType     string `json:"two_factor_type"`
+		ProfilePictureURL string `json:"profile_picture_url"`
 	}{
 		ID:               user.ID.String(),
 		UserName:         user.UserName,
@@ -327,7 +361,12 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		Role:             user.Role,
 		TwoFactorEnabled: user.TwoFactorEnabled,
 		TwoFactorType:    user.TwoFactorType,
-		TwoFactorSecret:  user.TwoFactorSecret,
+		ProfilePictureURL: func() string {
+			if user.ProfilePictureURL != nil {
+				return *user.ProfilePictureURL
+			}
+			return ""
+		}(),
 	}
 	json.NewEncoder(w).Encode(resp)
 }

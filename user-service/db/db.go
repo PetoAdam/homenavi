@@ -81,6 +81,7 @@ type User struct {
 	LastName           string     `json:"last_name"`
 	Role               string     `json:"role" gorm:"type:varchar(16);default:'user'"`
 	EmailConfirmed     bool       `json:"email_confirmed"`
+	ProfilePictureURL  *string    `json:"profile_picture_url" gorm:"type:varchar(255)"`
 	PasswordHash       *string    `json:"password_hash"`
 	TwoFactorEnabled   bool       `json:"two_factor_enabled"`
 	TwoFactorType      string     `json:"two_factor_type" gorm:"type:varchar(16)"`
