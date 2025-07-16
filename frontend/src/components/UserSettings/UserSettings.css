@@ -1,0 +1,186 @@
+.user-settings-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(44,54,67,0.28); /* Match auth modal backdrop */
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-settings {
+  background: rgba(28,34,44,0.92); /* Match auth modal dark glass */
+  border-radius: 2rem;
+  box-shadow: 0 8px 48px 0 rgba(0,0,0,0.22);
+  border: 1.5px solid rgba(60,70,90,0.38);
+  backdrop-filter: blur(36px) saturate(120%);
+  -webkit-backdrop-filter: blur(36px) saturate(120%);
+  padding: 2.2rem;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 9999;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.user-settings h2 {
+  margin: 0 0 1.5rem 0;
+  color: var(--color-white);
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.user-settings-section {
+  margin-bottom: 1.5rem;
+  padding: 1.2rem;
+  background: rgba(40,48,60,0.32);
+  border-radius: 1rem;
+  border: 1px solid rgba(60,70,90,0.25);
+}
+
+.user-settings-field {
+  margin-bottom: 0.8rem;
+  color: var(--color-secondary-xlight);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.user-settings-field strong {
+  color: var(--color-white);
+  font-weight: 600;
+}
+
+.user-settings button {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border: none;
+  padding: 0.7rem 1.5rem;
+  border-radius: 0.9rem;
+  cursor: pointer;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+  outline: none;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.15);
+}
+
+.user-settings button:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px 0 rgba(57,170,121,0.3);
+}
+
+.user-settings button:disabled {
+  background: rgba(124,132,141,0.5);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.user-settings button.secondary {
+  background: rgba(255,255,255,0.13);
+  color: var(--color-white);
+  border: 1px solid var(--color-glass-border);
+}
+
+.user-settings button.secondary:hover:not(:disabled) {
+  background: rgba(255,255,255,0.18);
+  border-color: var(--color-white);
+}
+
+.user-settings button.close-btn {
+  background: none;
+  border: none;
+  color: var(--color-secondary-xlight);
+  font-size: 1.5rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  opacity: 0.7;
+  transition: color 0.2s, opacity 0.2s;
+  box-shadow: none;
+}
+
+.user-settings button.close-btn:hover {
+  color: var(--color-primary);
+  opacity: 1;
+  transform: none;
+  box-shadow: none;
+}
+
+.user-settings input {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border-radius: 0.7rem;
+  border: 1.2px solid var(--color-glass-border);
+  background: rgba(40,48,60,0.32);
+  color: var(--color-white);
+  font-size: 1rem;
+  font-weight: 500;
+  outline: none;
+  transition: border 0.2s, background 0.2s;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+}
+
+.user-settings input:focus {
+  border: 1.2px solid var(--color-primary);
+  background: rgba(40,48,60,0.38);
+}
+
+.user-settings input::placeholder {
+  color: var(--color-secondary-light);
+  opacity: 0.8;
+}
+
+.user-settings-input-group {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-top: 0.5rem;
+}
+
+.user-settings-input-group input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.user-settings-status {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.7rem;
+  background: rgba(40,48,60,0.25);
+  color: var(--color-secondary-xlight);
+  font-size: 0.9rem;
+  border: 1px solid rgba(60,70,90,0.2);
+  text-align: center;
+  font-weight: 500;
+}
+
+.user-settings-status.success {
+  background: rgba(57,170,121,0.15);
+  border-color: rgba(57,170,121,0.3);
+  color: var(--color-primary-light);
+}
+
+.user-settings-status.error {
+  background: rgba(239,68,68,0.15);
+  border-color: rgba(239,68,68,0.3);
+  color: #fca5a5;
+}
+
+.user-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}

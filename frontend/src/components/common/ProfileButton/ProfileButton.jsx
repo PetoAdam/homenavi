@@ -2,50 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import { faUserCircle, faSignOutAlt, faCog } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import './ProfileButton.css';
-import { loginTestUser } from '../../../services/authService';
 import AuthModal from '../../Auth/AuthModal/AuthModal';
-
-// Mock auth hook using test login
-function useAuth() {
-  const [user, setUser] = useState({
-    isLoggedIn: false,
-    name: '',
-    avatar: '',
-    email: '',
-  });
-
-  const login = async (email, password) => {
-    const result = await loginTestUser(email, password);
-    if (result.success) {
-      setUser({
-        isLoggedIn: true,
-        name: result.name,
-        avatar: result.avatar,
-        email: result.email,
-      });
-      return true;
-    }
-    return false;
-  };
-
-  const logout = () => setUser({
-    isLoggedIn: false,
-    name: '',
-    avatar: '',
-    email: '',
-  });
-
-  return { user, login, logout };
-}
+import UserSettings from '../../UserSettings/UserSettings';
+import { useAuth } from '../../../context/AuthContext';
 
 export default function ProfileButton() {
-  const { user, login, logout } = useAuth();
+  const { user, handleLogin, handleLogout, handle2FA, handleSignup, cancelLogin: authCancelLogin, requestNew2FACode } = useAuth();
+  const [twoFAState, setTwoFAState] = useState(null);
   const [open, setOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [logoutMsg, setLogoutMsg] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
   const btnRef = useRef();
 
-  // Close popover on outside click
   useEffect(() => {
     if (!open) return;
     function handle(e) {
@@ -55,64 +24,104 @@ export default function ProfileButton() {
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
-  // Show toast message for 2.5 seconds
   useEffect(() => {
-    if (logoutMsg) {
-      const timer = setTimeout(() => setLogoutMsg(""), 2500);
+    if (toastMsg) {
+      const timer = setTimeout(() => setToastMsg(""), 2500);
       return () => clearTimeout(timer);
     }
-  }, [logoutMsg]);
+  }, [toastMsg]);
 
-  const handleLogout = () => {
-    logout();
+  useEffect(() => {
+    if (user && showAuthModal) setShowAuthModal(false);
+  }, [user, showAuthModal]);
+
+  const doLogout = async () => {
+    await handleLogout();
     setOpen(false);
-    setLogoutMsg("Logged out successfully");
+    setToastMsg("Logged out successfully");
   };
 
-  // Handle login with toast
-  const handleLogin = async (email, password) => {
-    const success = await login(email, password);
-    if (success) {
-      setShowAuthModal(false);
-      setLogoutMsg("Logged in successfully");
+  const doLogin = async (email, password) => {
+    const resp = await handleLogin(email, password);
+    if (resp.twoFA) {
+      setTwoFAState({ userId: resp.userId, type: resp.type });
+      return false;
     }
-    return success;
+    if (resp.success) {
+      setToastMsg("Logged in successfully");
+      setTwoFAState(null);
+      return true;
+    }
+    return false;
+  };
+
+  const doSignup = async (userName, email, password) => {
+    const resp = await handleSignup(userName, email, password);
+    if (resp.success) {
+      setToastMsg("Account created successfully! Please log in.");
+      return true;
+    }
+    return false;
+  };
+
+  const do2FA = async (code) => {
+    if (!twoFAState) return false;
+    const resp = await handle2FA(code);
+    if (resp.success) {
+      setToastMsg("Logged in successfully");
+      setTwoFAState(null);
+      return true;
+    }
+    setToastMsg(resp.error || "2FA failed");
+    return false;
+  };
+
+  const requestNewCode = async () => {
+    const resp = await requestNew2FACode();
+    if (resp.success) {
+      setToastMsg("New code sent to your email");
+    } else {
+      setToastMsg(resp.error || "Failed to send new code");
+    }
+  };
+
+  const cancelLogin = () => {
+    authCancelLogin();
+    setTwoFAState(null);
+    setShowAuthModal(false);
+    setToastMsg("Login cancelled");
   };
 
   return (
     <div className="profile-btn-wrap" ref={btnRef}>
-      {/* Toast notification for login/logout */}
-      <div className={`profile-toast${logoutMsg ? ' profile-toast--show' : ''}`}>{logoutMsg}</div>
-      {!user.isLoggedIn && (
-        <button
-          className="profile-login-text hide-on-mobile"
-          onClick={() => setShowAuthModal(true)}
-        >
+      <div className={`profile-toast${toastMsg ? ' profile-toast--show' : ''}`}>{toastMsg}</div>
+      {!user && (
+        <button className="profile-login-text hide-on-mobile" onClick={() => setShowAuthModal(true)}>
           Log in
         </button>
       )}
       <button
         className="profile-avatar-btn"
-        onClick={() => user.isLoggedIn ? setOpen(o => !o) : setShowAuthModal(true)}
+        onClick={() => user ? setOpen(o => !o) : setShowAuthModal(true)}
         aria-label="Profile"
       >
-        {user.isLoggedIn && user.avatar ? (
+        {user && user.avatar ? (
           <img src={user.avatar} alt="Profile" className="profile-avatar-img" />
         ) : (
           <FontAwesomeIcon icon={faUserCircle} className="profile-avatar-icon" />
         )}
       </button>
-      {open && user.isLoggedIn && (
+      {open && user && (
         <div className="profile-popover profile-popover-solid">
           <div className="profile-menu">
             <div className="profile-menu-header">
-              <img src={user.avatar} alt="Profile" className="profile-menu-avatar" />
-              <span className="profile-menu-name">{user.name}</span>
+              {user.avatar && <img src={user.avatar} alt="Profile" className="profile-menu-avatar" />}
+              <span className="profile-menu-name">{user.user_name || user.name}</span>
             </div>
-            <button className="profile-menu-item" onClick={() => { /* settings */ }}>
+            <button className="profile-menu-item" onClick={() => { setShowSettings(true); setOpen(false); }}>
               <FontAwesomeIcon icon={faCog} className="profile-menu-icon" /> Settings
             </button>
-            <button className="profile-menu-item" onClick={handleLogout}>
+            <button className="profile-menu-item" onClick={doLogout}>
               <FontAwesomeIcon icon={faSignOutAlt} className="profile-menu-icon" /> Logout
             </button>
           </div>
@@ -121,8 +130,16 @@ export default function ProfileButton() {
       <AuthModal
         open={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        login={handleLogin}
+        twoFAState={twoFAState}
+        onAuth={doLogin}
+        on2FA={do2FA}
+        onSignup={doSignup}
+        onCancel={cancelLogin}
+        onRequestNewCode={requestNewCode}
       />
+      {showSettings && (
+        <UserSettings onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 }

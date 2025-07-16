@@ -71,6 +71,7 @@ type User struct {
 	FirstName        string `json:"first_name"`
 	LastName         string `json:"last_name"`
 	Role             string `json:"role"`
+	EmailConfirmed   bool   `json:"email_confirmed"`
 	TwoFactorEnabled bool   `json:"two_factor_enabled"`
 	TwoFactorType    string `json:"two_factor_type"`
 	TwoFactorSecret  string `json:"two_factor_secret"`
@@ -417,12 +418,16 @@ func HandleEmailVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid or expired code", 400)
 		return
 	}
+	
+	// Extract JWT from frontend request and forward it to user-service
+	jwt := extractJWT(r)
 	patch := UserPatchRequest{"email_confirmed": true}
-	patchBody, _ := json.Marshal(patch)
-	reqPatch, _ := http.NewRequest(http.MethodPatch, userServiceURL+"/users/"+req.UserID, bytes.NewReader(patchBody))
-	reqPatch.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 5 * time.Second}
-	client.Do(reqPatch)
+	if err := internalUserPatch(req.UserID, patch, jwt); err != nil {
+		log.Printf("[ERROR] Failed to patch user for email confirmation: %v", err)
+		http.Error(w, "Failed to update user-service", 500)
+		return
+	}
+	
 	log.Printf("[INFO] Email verified for user_id=%s", req.UserID)
 	w.Write([]byte("Email verified"))
 }
@@ -533,15 +538,10 @@ func Handle2FAEmailVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid or expired code", 400)
 		return
 	}
-	// Set 2FA enabled and type in user-service
+	// Set 2FA enabled and type in user-service using JWT from frontend
+	jwt := extractJWT(r)
 	patch := UserPatchRequest{"two_factor_enabled": true, "two_factor_type": "email"}
-	jwtForPatch, err := issueShortLivedJWT(req.UserID)
-	if err != nil {
-		log.Printf("[ERROR] Failed to issue short-lived JWT for 2FA email verify: %v", err)
-		http.Error(w, "Failed to authorize 2FA update", 500)
-		return
-	}
-	if err := internalUserPatch(req.UserID, patch, jwtForPatch); err != nil {
+	if err := internalUserPatch(req.UserID, patch, jwt); err != nil {
 		log.Printf("[ERROR] Failed to patch user for email 2FA enable: %v", err)
 		http.Error(w, "Failed to update user-service", 500)
 		return
@@ -642,31 +642,48 @@ func HandleOAuthGoogle(w http.ResponseWriter, r *http.Request) {
 
 // --- ME (CURRENT USER PROFILE) ---
 func HandleMe(w http.ResponseWriter, r *http.Request) {
-	// Extract JWT from Authorization header
-	auth := r.Header.Get("Authorization")
-	if len(auth) < 8 || auth[:7] != "Bearer " {
-		http.Error(w, "Missing token", 401)
+	logReq(r, "HandleMe")
+
+	// Extract JWT token from request
+	token := extractJWT(r)
+	if token == "" {
+		http.Error(w, "Missing or invalid JWT token", http.StatusUnauthorized)
 		return
 	}
-	tokenStr := auth[7:]
-	claims := jwt.MapClaims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+
+	// Parse and validate JWT to get user ID
+	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return &jwtPrivateKey.PublicKey, nil
 	})
-	if err != nil || !token.Valid {
-		http.Error(w, "Invalid token", 401)
+
+	if err != nil || !parsedToken.Valid {
+		http.Error(w, "Invalid JWT token", http.StatusUnauthorized)
 		return
 	}
-	sub, ok := claims["sub"].(string)
-	if !ok || sub == "" {
-		http.Error(w, "Invalid token claims", 401)
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, "Invalid JWT claims", http.StatusUnauthorized)
 		return
 	}
-	user, err := internalUserGet(sub, tokenStr)
+
+	userID, ok := claims["sub"].(string)
+	if !ok {
+		http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
+		return
+	}
+
+	// Fetch user from user-service
+	user, err := getUserWithJWT(userID, token)
 	if err != nil {
-		http.Error(w, "User not found", 404)
+		log.Printf("[ERROR] Failed to fetch user %s: %v", userID, err)
+		http.Error(w, "Failed to fetch user data", http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
@@ -689,12 +706,54 @@ func internalUserRequest(method, path string, body []byte, jwtToken string) (*ht
 }
 
 // Helper to extract JWT from incoming request
-func extractJWTFromRequest(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if len(auth) > 7 && auth[:7] == "Bearer " {
-		return auth[7:]
+func extractJWT(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
 	}
+
+	// Check for "Bearer " prefix
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		return authHeader[7:]
+	}
+
 	return ""
+}
+
+// Alias for compatibility with existing code
+func extractJWTFromRequest(r *http.Request) string {
+	return extractJWT(r)
+}
+
+// Helper for GET user (with JWT)
+func getUserWithJWT(userID, jwt string) (*User, error) {
+	url := fmt.Sprintf("%s/users/%s", userServiceURL, userID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add JWT token for authorization
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("user service returned status %d", resp.StatusCode)
+	}
+
+	var user User
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
 
 // Helper for PATCH user (with JWT)
