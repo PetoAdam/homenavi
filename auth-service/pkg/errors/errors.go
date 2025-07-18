@@ -50,7 +50,7 @@ func WriteError(w http.ResponseWriter, err *AppError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(err.Code)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":   err.Message,
-		"code":    err.Code,
+		"error": err.Message,
+		"code":  err.Code,
 	})
 }

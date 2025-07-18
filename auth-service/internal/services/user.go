@@ -206,12 +206,12 @@ func (s *UserService) DeleteUser(userID string, jwtToken string) error {
 
 func (s *UserService) CreateGoogleUser(userInfo *GoogleUserInfo) (*entities.User, error) {
 	userReq := map[string]interface{}{
-		"user_name":  userInfo.Email, // Use email as username for Google OAuth users
-		"email":      userInfo.Email,
-		"first_name": userInfo.FirstName,
-		"last_name":  userInfo.LastName,
-		"role":       "user",
-		"email_confirmed": true, // Google users are already verified
+		"user_name":           userInfo.Email, // Use email as username for Google OAuth users
+		"email":               userInfo.Email,
+		"first_name":          userInfo.FirstName,
+		"last_name":           userInfo.LastName,
+		"role":                "user",
+		"email_confirmed":     true, // Google users are already verified
 		"profile_picture_url": userInfo.Picture,
 	}
 

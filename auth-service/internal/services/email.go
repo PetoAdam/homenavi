@@ -10,9 +10,9 @@ import (
 )
 
 type EmailService struct {
-	config           *config.Config
-	emailServiceURL  string
-	httpClient       *http.Client
+	config          *config.Config
+	emailServiceURL string
+	httpClient      *http.Client
 }
 
 func NewEmailService(cfg *config.Config) *EmailService {

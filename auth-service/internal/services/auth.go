@@ -48,7 +48,7 @@ func (s *AuthService) IssueAccessToken(user *entities.User) (string, error) {
 func (s *AuthService) IssueRefreshToken(userID string) (string, error) {
 	tokenID := fmt.Sprintf("rt_%s_%d_%d", userID, rand.Int63(), time.Now().UnixNano())
 	ctx := context.Background()
-	
+
 	key := "refresh_token:" + tokenID
 	err := s.redisClient.Set(ctx, key, userID, s.config.RefreshTokenTTL).Err()
 	if err != nil {
@@ -61,7 +61,7 @@ func (s *AuthService) IssueRefreshToken(userID string) (string, error) {
 func (s *AuthService) ValidateRefreshToken(token string) (string, error) {
 	ctx := context.Background()
 	key := "refresh_token:" + token
-	
+
 	userID, err := s.redisClient.Get(ctx, key).Result()
 	if err != nil {
 		return "", errors.Unauthorized("invalid or expired refresh token")
@@ -79,7 +79,7 @@ func (s *AuthService) RevokeRefreshToken(token string) error {
 func (s *AuthService) StoreVerificationCode(codeType, userID, code string) error {
 	ctx := context.Background()
 	key := fmt.Sprintf("%s:%s", codeType, userID)
-	
+
 	var ttl time.Duration
 	switch codeType {
 	case "email_verify":
@@ -98,7 +98,7 @@ func (s *AuthService) StoreVerificationCode(codeType, userID, code string) error
 func (s *AuthService) ValidateVerificationCode(codeType, userID, code string) error {
 	ctx := context.Background()
 	key := fmt.Sprintf("%s:%s", codeType, userID)
-	
+
 	storedCode, err := s.redisClient.Get(ctx, key).Result()
 	if err != nil {
 		return errors.BadRequest("invalid or expired verification code")
@@ -173,7 +173,7 @@ func (s *AuthService) ExchangeGoogleOAuthCode(code, redirectURI string) (*Google
 	// 1. Exchange the code for an access token with Google
 	// 2. Use the access token to get user info from Google
 	// 3. Return the user info
-	
+
 	// For now, return an error indicating this needs to be implemented
 	return nil, errors.BadRequest("Google OAuth integration not configured")
 }
