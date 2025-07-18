@@ -67,15 +67,18 @@ export default function ProfileButton() {
   };
 
   const do2FA = async (code) => {
-    if (!twoFAState) return false;
+    if (!twoFAState) return { success: false, error: "No 2FA state" };
     const resp = await handle2FA(code);
     if (resp.success) {
       setToastMsg("Logged in successfully");
       setTwoFAState(null);
-      return true;
+      return { success: true };
     }
-    setToastMsg(resp.error || "2FA failed");
-    return false;
+    // Make sure error is always a string
+    const errorMessage = typeof resp.error === 'string' ? resp.error : 
+                        (resp.error?.message || resp.error?.error || "2FA verification failed");
+    setToastMsg(errorMessage);
+    return { success: false, error: errorMessage };
   };
 
   const requestNewCode = async () => {
@@ -90,7 +93,7 @@ export default function ProfileButton() {
   const cancelLogin = () => {
     authCancelLogin();
     setTwoFAState(null);
-    setShowAuthModal(false);
+    // Don't close the modal - just reset to login state
     setToastMsg("Login cancelled");
   };
 
