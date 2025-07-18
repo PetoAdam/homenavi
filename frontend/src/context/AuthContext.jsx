@@ -62,6 +62,8 @@ export function AuthProvider({ children }) {
     setLoading(true);
     const resp = await login(email, password);
     setLoading(false);
+    
+    // Handle 2FA flow
     if (resp.twoFA) {
       setPendingUserId(resp.userId); // Store userId for 2FA
       
@@ -76,6 +78,8 @@ export function AuthProvider({ children }) {
       
       return resp;
     }
+    
+    // Handle successful login
     if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
@@ -88,9 +92,11 @@ export function AuthProvider({ children }) {
         setUser(me.user);
         return { success: true };
       }
-      return { success: false, error: me.error };
+      return { success: false, error: me.error || "Failed to fetch user profile" };
     }
-    return { success: false, error: resp.error };
+    
+    // Handle login failure - make sure to return the error
+    return { success: false, error: resp.error || "Login failed" };
   };
 
   const handle2FA = async (code) => {
@@ -102,6 +108,7 @@ export function AuthProvider({ children }) {
     }
     const resp = await finish2FA(userId, code);
     setLoading(false);
+    
     if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
@@ -114,9 +121,14 @@ export function AuthProvider({ children }) {
         setUser(me.user);
         return { success: true };
       }
-      return { success: false, error: me.error };
+      return { success: false, error: me.error || "Failed to fetch user profile" };
     }
-    return { success: false, error: resp.error };
+    
+    // Make sure error is always a string
+    const errorMessage = typeof resp.error === 'string' ? resp.error : 
+                        (resp.error?.message || resp.error?.error || "2FA verification failed");
+    console.error('2FA failed:', errorMessage);
+    return { success: false, error: errorMessage };
   };
 
   const handleSignup = async (firstName, lastName, userName, email, password) => {
@@ -147,7 +159,7 @@ export function AuthProvider({ children }) {
 
   const handleLogout = async () => {
     setLoading(true);
-    await logout(refreshTokenValue);
+    await logout(refreshTokenValue, accessToken);
     setAccessToken(null);
     setRefreshTokenValue(null);
     localStorage.removeItem('refreshToken');

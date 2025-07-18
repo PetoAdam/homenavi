@@ -37,6 +37,15 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     };
   }, [open]);
 
+  const handleCancel = () => {
+    // Reset form state
+    setLoginForm({ email: '', password: '', twofa: '' });
+    setLoginError('');
+    setTab('login');
+    // Call the parent cancel function
+    onCancel();
+  };
+
   const contentClass = `auth-modal-content-inner${tab === 'login' ? ' login' : ' signup'}`;
 
   const handleLogin = async (e) => {
@@ -47,6 +56,8 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
       onClose();
     } else if (result && result.error) {
       setLoginError(result.error);
+    } else if (result && !result.twoFA) {
+      setLoginError('Login failed. Please check your credentials.');
     }
   };
 
@@ -54,9 +65,16 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     e.preventDefault();
     setLoginError('');
     if (!twoFAState) return;
-    const success = await on2FA(loginForm.twofa);
-    if (success) {
+    const result = await on2FA(loginForm.twofa);
+    if (result && result.success) {
       onClose();
+    } else if (result && result.error) {
+      // Make sure error is always a string
+      const errorMessage = typeof result.error === 'string' ? result.error : 
+                          (result.error?.message || result.error?.error || "2FA verification failed");
+      setLoginError(errorMessage);
+    } else {
+      setLoginError("2FA verification failed");
     }
   };
 
@@ -216,7 +234,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
                 <button 
                   className="auth-modal-btn secondary" 
                   type="button" 
-                  onClick={onCancel}
+                  onClick={handleCancel}
                 >
                   Cancel Login
                 </button>

@@ -18,7 +18,9 @@ export async function login(email, password, twoFACode = null) {
       refreshToken: resp.data.refresh_token,
     };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Login failed' };
+    console.error('Login error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Login failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -31,7 +33,23 @@ export async function finish2FA(userId, code) {
       refreshToken: resp.data.refresh_token,
     };
   } catch (err) {
-    return { success: false, error: err.response?.data || '2FA failed' };
+    console.error('2FA error:', err);
+    console.error('2FA error response:', err.response?.data);
+    let errorMessage = '2FA verification failed';
+    
+    if (err.response?.data) {
+      if (typeof err.response.data === 'string') {
+        errorMessage = err.response.data;
+      } else if (err.response.data.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.response.data.error) {
+        errorMessage = err.response.data.error;
+      }
+    } else if (err.message) {
+      errorMessage = err.message;
+    }
+    
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -46,7 +64,9 @@ export async function signup(firstName, lastName, userName, email, password) {
     });
     return { success: true, user: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Signup failed' };
+    console.error('Signup error:', err);
+    const errorMessage = err.response?.data?.message || err.response?.data?.error || err.message || 'Signup failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -59,16 +79,24 @@ export async function refreshToken(refreshToken) {
       refreshToken: resp.data.refresh_token,
     };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Refresh failed' };
+    console.error('Refresh token error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Refresh failed';
+    return { success: false, error: errorMessage };
   }
 }
 
-export async function logout(refreshToken) {
+export async function logout(refreshToken, accessToken) {
   try {
-    await axios.post(`${API_URL}/logout`, { refresh_token: refreshToken });
+    // Only call logout endpoint if we have a refresh token
+    if (refreshToken) {
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      await axios.post(`${API_URL}/logout`, { refresh_token: refreshToken }, { headers });
+    }
     return { success: true };
   } catch (err) {
-    return { success: false };
+    console.error('Logout error:', err);
+    // Even if logout fails, we still want to clear local storage
+    return { success: true };
   }
 }
 
@@ -77,7 +105,8 @@ export async function getMe(accessToken) {
     const resp = await axios.get(`${API_URL}/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
     return { success: true, user: resp.data };
   } catch (err) {
-    return { success: false };
+    console.error('GetMe error:', err);
+    return { success: false, error: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to fetch user' };
   }
 }
 
@@ -86,7 +115,9 @@ export async function requestEmailVerify(userId, accessToken) {
     await axios.post(`${API_URL}/email/verify/request`, { user_id: userId }, { headers: { Authorization: `Bearer ${accessToken}` } });
     return { success: true };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Email verify request failed' };
+    console.error('Email verify request error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Email verify request failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -103,16 +134,21 @@ export async function confirmEmailVerify(userId, code, accessToken) {
     );
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Email verification failed' };
+    console.error('Email verification error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Email verification failed';
+    return { success: false, error: errorMessage };
   }
 }
 
 export async function request2FAEmail(userId, accessToken) {
   try {
-    await axios.post(`${API_URL}/2fa/email/request`, { user_id: userId }, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+    await axios.post(`${API_URL}/2fa/email/request`, { user_id: userId }, { headers });
     return { success: true };
   } catch (err) {
-    return { success: false, error: err.response?.data || '2FA email request failed' };
+    console.error('2FA email request error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || '2FA email request failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -129,7 +165,9 @@ export async function verify2FAEmail(userId, code, accessToken) {
     );
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || '2FA verification failed' };
+    console.error('2FA verification error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || '2FA verification failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -138,7 +176,7 @@ export async function setup2FATOTP(userId, accessToken) {
     const resp = await axios.post(`${API_URL}/2fa/setup?user_id=${userId}`, {}, { headers: { Authorization: `Bearer ${accessToken}` } });
     return { success: true, secret: resp.data.secret, otpauthUrl: resp.data.otpauth_url };
   } catch (err) {
-    return { success: false, error: err.response?.data || '2FA TOTP setup failed' };
+    return { success: false, error: err.response?.data?.error || err.response?.data?.message || err.message || '2FA TOTP setup failed' };
   }
 }
 
@@ -147,7 +185,7 @@ export async function verify2FATOTP(userId, code, accessToken) {
     await axios.post(`${API_URL}/2fa/verify`, { user_id: userId, code }, { headers: { Authorization: `Bearer ${accessToken}` } });
     return { success: true };
   } catch (err) {
-    return { success: false, error: err.response?.data || '2FA TOTP verify failed' };
+    return { success: false, error: err.response?.data?.error || err.response?.data?.message || err.message || '2FA TOTP verify failed' };
   }
 }
 
@@ -156,7 +194,9 @@ export async function patchUser(userId, patch, accessToken) {
     await axios.patch(`/api/users/${userId}`, patch, { headers: { Authorization: `Bearer ${accessToken}` } });
     return { success: true };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Patch user failed' };
+    console.error('Patch user error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Patch user failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -165,7 +205,9 @@ export async function deleteUser(userId, accessToken) {
     await axios.post(`${API_URL}/delete`, { user_id: userId }, { headers: { Authorization: `Bearer ${accessToken}` } });
     return { success: true };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Delete user failed' };
+    console.error('Delete user error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Delete user failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -174,7 +216,9 @@ export async function requestPasswordReset(email) {
     const resp = await axios.post(`${API_URL}/password/reset/request`, { email });
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Failed to send reset code' };
+    console.error('Password reset request error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to send reset code';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -187,7 +231,9 @@ export async function confirmPasswordReset(email, code, newPassword) {
     });
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Password reset failed' };
+    console.error('Password reset confirm error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Password reset failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -204,7 +250,9 @@ export async function changePassword(currentPassword, newPassword, accessToken) 
     );
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Password change failed' };
+    console.error('Password change error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Password change failed';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -219,7 +267,9 @@ export const generateAvatar = async (accessToken) => {
     });
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Avatar generation failed' };
+    console.error('Avatar generation error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Avatar generation failed';
+    return { success: false, error: errorMessage };
   }
 };
 
@@ -241,6 +291,8 @@ export const uploadProfilePicture = async (file, accessToken, userId = null) => 
     });
     return { success: true, data: resp.data };
   } catch (err) {
-    return { success: false, error: err.response?.data || 'Upload failed' };
+    console.error('Upload profile picture error:', err);
+    const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Upload failed';
+    return { success: false, error: errorMessage };
   }
 };
