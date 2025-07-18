@@ -64,9 +64,9 @@ func (h *ProfileHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type AvatarHandler struct {
-	authService            *services.AuthService
-	userService            *services.UserService
-	profilePictureService  *services.ProfilePictureService
+	authService           *services.AuthService
+	userService           *services.UserService
+	profilePictureService *services.ProfilePictureService
 }
 
 func NewAvatarHandler(authService *services.AuthService, userService *services.UserService, profilePictureService *services.ProfilePictureService) *AvatarHandler {

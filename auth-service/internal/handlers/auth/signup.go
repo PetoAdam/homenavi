@@ -39,7 +39,7 @@ func (h *SignupHandler) HandleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[INFO] User created successfully: %s", user.ID)
-	
+
 	response := responses.UserResponse{
 		ID:                user.ID,
 		UserName:          user.UserName,

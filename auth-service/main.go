@@ -41,21 +41,21 @@ func main() {
 	loginHandler := auth.NewLoginHandler(authService, userService, emailService)
 	refreshHandler := auth.NewRefreshHandler(authService, userService)
 	logoutHandler := auth.NewLogoutHandler(authService)
-	
+
 	passwordResetHandler := password.NewResetHandler(authService, userService, emailService)
 	passwordChangeHandler := password.NewChangeHandler(authService, userService)
-	
+
 	emailVerifyHandler := email.NewVerificationHandler(authService, userService, emailService)
-	
+
 	twoFactorSetupHandler := twofactor.NewSetupHandler(authService, userService)
 	twoFactorVerifyHandler := twofactor.NewVerifyHandler(authService, userService)
 	twoFactorEmailHandler := twofactor.NewEmailHandler(authService, userService, emailService)
-	
+
 	profileHandler := profile.NewProfileHandler(authService, userService)
 	avatarHandler := profile.NewAvatarHandler(authService, userService, profilePictureService)
-	
+
 	userDeleteHandler := user.NewDeleteHandler(authService, userService)
-	
+
 	googleOAuthHandler := oauth.NewGoogleHandler(authService, userService)
 
 	// Setup router
@@ -80,30 +80,30 @@ func main() {
 		r.Post("/login/finish", loginHandler.HandleLoginFinish)
 		r.Post("/refresh", refreshHandler.HandleRefresh)
 		r.Post("/logout", logoutHandler.HandleLogout)
-		
+
 		// Password management
 		r.Post("/password/reset/request", passwordResetHandler.HandlePasswordResetRequest)
 		r.Post("/password/reset/confirm", passwordResetHandler.HandlePasswordResetConfirm)
 		r.Post("/password/change", passwordChangeHandler.HandleChangePassword)
-		
+
 		// Email verification
 		r.Post("/email/verify/request", emailVerifyHandler.HandleEmailVerifyRequest)
 		r.Post("/email/verify/confirm", emailVerifyHandler.HandleEmailVerifyConfirm)
-		
+
 		// 2FA
 		r.Post("/2fa/setup", twoFactorSetupHandler.Handle2FASetup)
 		r.Post("/2fa/verify", twoFactorVerifyHandler.Handle2FAVerify)
 		r.Post("/2fa/email/request", twoFactorEmailHandler.Handle2FAEmailRequest)
 		r.Post("/2fa/email/verify", twoFactorEmailHandler.Handle2FAEmailVerify)
-		
+
 		// Profile
 		r.Get("/me", profileHandler.HandleMe)
 		r.Delete("/delete", userDeleteHandler.HandleDeleteUser)
-		
+
 		// Profile pictures
 		r.Post("/profile/generate-avatar", avatarHandler.HandleGenerateAvatar)
 		r.Post("/profile/upload", avatarHandler.HandleUploadProfilePicture)
-		
+
 		// OAuth
 		r.Post("/oauth/google", googleOAuthHandler.HandleOAuthGoogle)
 	})

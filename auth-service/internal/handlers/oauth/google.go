@@ -54,7 +54,7 @@ func (h *GoogleHandler) HandleOAuthGoogle(w http.ResponseWriter, r *http.Request
 			"email_confirmed":     true,
 			"profile_picture_url": userInfo.Picture,
 		}
-		
+
 		user, err = h.userService.CreateUserFromMap(userReq)
 		if err != nil {
 			errors.WriteError(w, errors.InternalServerError("failed to create user", err))
