@@ -66,7 +66,7 @@ def generate_pixel_avatar(seed: str, size: int = 256) -> Image.Image:
 async def root():
     return {"message": "Profile Picture Generator Service", "version": "1.0.0"}
 
-@app.get("/generate/{user_id}")
+@app.post("/generate/{user_id}")
 async def generate_avatar(user_id: str, size: int = 256):
     """Generate a pixel art avatar for a user"""
     try:
