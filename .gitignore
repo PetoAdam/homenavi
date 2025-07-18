@@ -3,3 +3,4 @@ test_api.py
 nginx/certs/
 .env
 keys/
+postgres-data/

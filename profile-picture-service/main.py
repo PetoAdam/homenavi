@@ -70,11 +70,12 @@ async def root():
 async def generate_avatar(user_id: str, size: int = 256):
     """Generate a pixel art avatar for a user"""
     try:
-        # Generate deterministic avatar based on user_id
-        avatar = generate_pixel_avatar(user_id, size)
+        # Add random seed for uniqueness
+        random_part = uuid.uuid4().hex
+        avatar = generate_pixel_avatar(f"{user_id}_{random_part}", size)
         
         # Save to uploads directory
-        filename = f"avatar_{user_id}_{size}.png"
+        filename = f"avatar_{user_id}_{size}_{random_part}.png"
         filepath = os.path.join(UPLOAD_DIR, filename)
         avatar.save(filepath, "PNG")
         
