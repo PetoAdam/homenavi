@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
-	"math/rand"
+	mathrand "math/rand"
 	"time"
 
 	"auth-service/internal/config"
@@ -46,7 +48,14 @@ func (s *AuthService) IssueAccessToken(user *entities.User) (string, error) {
 }
 
 func (s *AuthService) IssueRefreshToken(userID string) (string, error) {
-	tokenID := fmt.Sprintf("rt_%s_%d_%d", userID, rand.Int63(), time.Now().UnixNano())
+	// Generate a secure random token
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random token: %v", err)
+	}
+
+	// Create a base64 URL-safe encoded token
+	tokenID := base64.URLEncoding.EncodeToString(tokenBytes)
 	ctx := context.Background()
 
 	key := "refresh_token:" + tokenID
@@ -114,7 +123,7 @@ func (s *AuthService) ValidateVerificationCode(codeType, userID, code string) er
 }
 
 func (s *AuthService) GenerateVerificationCode() string {
-	return fmt.Sprintf("%06d", rand.Intn(1000000))
+	return fmt.Sprintf("%06d", mathrand.Intn(1000000))
 }
 
 func (s *AuthService) IssueShortLivedToken(userID string) (string, error) {
