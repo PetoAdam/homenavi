@@ -259,7 +259,7 @@ export async function changePassword(currentPassword, newPassword, accessToken) 
 // Profile picture service functions
 export const generateAvatar = async (accessToken) => {
   try {
-    const resp = await axios.post('/api/auth/profile/generate-avatar', {}, {
+    const resp = await axios.post(`${API_URL}/profile/generate-avatar`, {}, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
@@ -278,7 +278,7 @@ export const uploadProfilePicture = async (file, accessToken, userId = null) => 
     const formData = new FormData();
     formData.append('file', file);
     
-    let url = '/api/auth/profile/upload';
+    let url = `${API_URL}/profile/upload`;
     if (userId) {
       url += `?user_id=${userId}`;
     }
