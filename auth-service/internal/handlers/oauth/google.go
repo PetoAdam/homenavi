@@ -1,13 +1,9 @@
 package oauth
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"auth-service/internal/models/requests"
-	"auth-service/internal/models/responses"
 	"auth-service/internal/services"
-	"auth-service/pkg/errors"
 )
 
 type GoogleHandler struct {
@@ -22,60 +18,114 @@ func NewGoogleHandler(authService *services.AuthService, userService *services.U
 	}
 }
 
-func (h *GoogleHandler) HandleOAuthGoogle(w http.ResponseWriter, r *http.Request) {
-	var req requests.GoogleOAuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errors.WriteError(w, errors.BadRequest("invalid JSON"))
+func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	// Get code from query parameters (this is how Google sends it)
+	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
+
+	if code == "" {
+		// Check for error from Google
+		if errorParam := r.URL.Query().Get("error"); errorParam != "" {
+			// Redirect back to frontend with error
+			http.Redirect(w, r, "/?error=oauth_cancelled", http.StatusTemporaryRedirect)
+			return
+		}
+		http.Redirect(w, r, "/?error=oauth_failed", http.StatusTemporaryRedirect)
 		return
 	}
 
-	if err := req.Validate(); err != nil {
-		errors.WriteError(w, errors.BadRequest(err.Error()))
+	// Validate OAuth state parameter for security (CSRF protection)
+	if err := h.authService.ValidateOAuthState(state); err != nil {
+		http.Redirect(w, r, "/?error=invalid_state", http.StatusTemporaryRedirect)
 		return
 	}
 
 	// Exchange Google OAuth code for user information
-	userInfo, err := h.authService.ExchangeGoogleOAuthCode(req.Code, req.RedirectURI)
+	userInfo, err := h.authService.ExchangeGoogleOAuthCode(code, "/api/auth/oauth/google/callback")
 	if err != nil {
-		errors.WriteError(w, errors.BadRequest("failed to exchange OAuth code"))
+		http.Redirect(w, r, "/?error=oauth_exchange_failed", http.StatusTemporaryRedirect)
 		return
 	}
 
-	// Check if user exists or create new user
-	user, err := h.userService.GetUserByEmail(userInfo.Email)
-	if err != nil {
-		// User doesn't exist, create new user using a map instead of the struct
-		userReq := map[string]interface{}{
-			"user_name":           userInfo.Email,
-			"email":               userInfo.Email,
-			"first_name":          userInfo.FirstName,
-			"last_name":           userInfo.LastName,
-			"role":                "user",
-			"email_confirmed":     true,
-			"profile_picture_url": userInfo.Picture,
-		}
-
-		user, err = h.userService.CreateUserFromMap(userReq)
+	// Try to find user by Google ID first
+	user, err := h.userService.GetUserByGoogleID(userInfo.ID)
+	if err == nil && user != nil {
+		// User exists with this Google ID, log them in
+		accessToken, err := h.authService.IssueAccessToken(user)
 		if err != nil {
-			errors.WriteError(w, errors.InternalServerError("failed to create user", err))
+			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
 			return
 		}
-	}
 
-	// Generate JWT tokens
-	accessToken, refreshToken, err := h.authService.GenerateTokens(user.ID)
-	if err != nil {
-		errors.WriteError(w, errors.InternalServerError("failed to generate tokens", err))
+		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
+		if err != nil {
+			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+			return
+		}
+
+		// Redirect back to frontend with tokens
+		redirectURL := "/?access_token=" + accessToken + "&refresh_token=" + refreshToken
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		return
 	}
 
-	// Return tokens and user info
-	response := responses.LoginResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		UserID:       user.ID,
+	// Try to find user by email
+	user, err = h.userService.GetUserByEmail(userInfo.Email)
+	if err == nil && user != nil {
+		// User exists with this email
+		if user.GoogleID == "" {
+			// Link Google ID to existing user
+			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
+				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
+				return
+			}
+			user.GoogleID = userInfo.ID // Update local copy
+		} else if user.GoogleID != userInfo.ID {
+			// Conflict: email used by different Google account
+			http.Redirect(w, r, "/?error=email_conflict", http.StatusTemporaryRedirect)
+			return
+		}
+
+		// Issue tokens
+		accessToken, err := h.authService.IssueAccessToken(user)
+		if err != nil {
+			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+			return
+		}
+
+		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
+		if err != nil {
+			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+			return
+		}
+
+		// Redirect back to frontend with tokens
+		redirectURL := "/?access_token=" + accessToken + "&refresh_token=" + refreshToken
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	// User doesn't exist, create new user
+	user, err = h.userService.CreateGoogleUser(userInfo)
+	if err != nil {
+		http.Redirect(w, r, "/?error=user_creation_failed", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Issue tokens for new user
+	accessToken, err := h.authService.IssueAccessToken(user)
+	if err != nil {
+		http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+		return
+	}
+
+	refreshToken, err := h.authService.IssueRefreshToken(user.ID)
+	if err != nil {
+		http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Redirect back to frontend with tokens
+	redirectURL := "/?access_token=" + accessToken + "&refresh_token=" + refreshToken
+	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }

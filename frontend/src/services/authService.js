@@ -1,4 +1,3 @@
-// Professional auth service for real backend integration
 import axios from 'axios';
 
 const API_URL = '/api/auth'; // Use gateway path
@@ -241,3 +240,29 @@ export const uploadProfilePicture = async (file, accessToken, userId = null) => 
     return handleError(err, 'Upload failed');
   }
 };
+
+// Google OAuth functions
+export async function initiateGoogleLogin() {
+  try {
+    // Redirect to Google OAuth login endpoint
+    window.location.href = `${API_URL}/oauth/google/login`;
+  } catch (err) {
+    return handleError(err, 'Failed to initiate Google login');
+  }
+}
+
+export async function handleGoogleCallback(code, redirectURI) {
+  try {
+    const resp = await axios.post(`${API_URL}/oauth/google/callback`, {
+      code,
+      redirect_uri: redirectURI
+    });
+    return {
+      success: true,
+      accessToken: resp.data.access_token,
+      refreshToken: resp.data.refresh_token,
+    };
+  } catch (err) {
+    return handleError(err, 'Google OAuth callback failed');
+  }
+}

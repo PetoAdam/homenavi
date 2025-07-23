@@ -26,7 +26,62 @@ export function AuthProvider({ children }) {
   }, [accessToken]);
 
   // On mount, try to refresh access token if refresh token exists in localStorage
+  // Also check for Google OAuth callback
   useEffect(() => {
+    // Check for Google OAuth callback with tokens in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const accessTokenFromUrl = urlParams.get('access_token');
+    const refreshTokenFromUrl = urlParams.get('refresh_token');
+    const error = urlParams.get('error');
+    
+    if (accessTokenFromUrl && refreshTokenFromUrl) {
+      // Handle successful Google OAuth callback
+      setAccessToken(accessTokenFromUrl);
+      setRefreshTokenValue(refreshTokenFromUrl);
+      localStorage.setItem('refreshToken', refreshTokenFromUrl);
+      
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+    
+    if (error) {
+      // Handle OAuth error
+      console.error('OAuth error:', error);
+      let errorMessage = 'Authentication failed';
+      switch (error) {
+        case 'oauth_cancelled':
+          errorMessage = 'Google login was cancelled';
+          break;
+        case 'oauth_failed':
+          errorMessage = 'Google login failed';
+          break;
+        case 'oauth_exchange_failed':
+          errorMessage = 'Failed to exchange OAuth code';
+          break;
+        case 'email_conflict':
+          errorMessage = 'Email already registered with different Google account';
+          break;
+        case 'token_failed':
+          errorMessage = 'Failed to generate authentication tokens';
+          break;
+        case 'user_creation_failed':
+          errorMessage = 'Failed to create user account';
+          break;
+        case 'link_failed':
+          errorMessage = 'Failed to link Google account';
+          break;
+      }
+      
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // You might want to show this error to the user
+      console.error('OAuth Error:', errorMessage);
+      return;
+    }
+
+    // Regular token refresh logic
     if (!accessToken && refreshTokenValue) {
       (async () => {
         const res = await refreshToken(refreshTokenValue);

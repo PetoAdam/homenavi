@@ -50,7 +50,11 @@ func (s *UserService) CreateUser(req *requests.SignupRequest) (*entities.User, e
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 400 {
-		return nil, errors.BadRequest("user already exists or invalid data")
+		return nil, errors.BadRequest("invalid user data")
+	}
+
+	if resp.StatusCode == 409 {
+		return nil, errors.BadRequest("user already exists with this email or username")
 	}
 
 	if resp.StatusCode != 201 {
@@ -204,30 +208,19 @@ func (s *UserService) DeleteUser(userID string, jwtToken string) error {
 	return nil
 }
 
-func (s *UserService) CreateGoogleUser(userInfo *GoogleUserInfo) (*entities.User, error) {
-	userReq := map[string]interface{}{
-		"user_name":           userInfo.Email, // Use email as username for Google OAuth users
-		"email":               userInfo.Email,
-		"first_name":          userInfo.FirstName,
-		"last_name":           userInfo.LastName,
-		"role":                "user",
-		"email_confirmed":     true, // Google users are already verified
-		"profile_picture_url": userInfo.Picture,
-	}
-
-	body, err := json.Marshal(userReq)
+func (s *UserService) GetUserByGoogleID(googleID string) (*entities.User, error) {
+	resp, err := s.makeRequest("GET", "/users?google_id="+googleID, nil, "")
 	if err != nil {
-		return nil, errors.InternalServerError("failed to marshal user request", err)
-	}
-
-	resp, err := s.makeRequest("POST", "/users", body, "")
-	if err != nil {
-		return nil, errors.InternalServerError("failed to create Google user", err)
+		return nil, errors.InternalServerError("failed to get user by google_id", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
-		return nil, errors.InternalServerError("user service returned error", nil)
+	if resp.StatusCode == 404 {
+		return nil, errors.NotFound("user not found")
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.InternalServerError("user service returned unexpected status", nil)
 	}
 
 	var user entities.User
@@ -236,6 +229,33 @@ func (s *UserService) CreateGoogleUser(userInfo *GoogleUserInfo) (*entities.User
 	}
 
 	return &user, nil
+}
+
+func (s *UserService) LinkGoogleID(userID, googleID string) error {
+	updates := map[string]interface{}{
+		"google_id": googleID,
+	}
+
+	token, err := s.issueInternalToken(userID)
+	if err != nil {
+		return errors.InternalServerError("failed to issue internal token", err)
+	}
+
+	return s.UpdateUser(userID, updates, token)
+}
+
+func (s *UserService) CreateGoogleUser(userInfo *GoogleUserInfo) (*entities.User, error) {
+	userReq := map[string]interface{}{
+		"user_name":           userInfo.Email, // Use email as username for Google OAuth users
+		"email":               userInfo.Email,
+		"first_name":          userInfo.FirstName,
+		"last_name":           userInfo.LastName,
+		"role":                "user",
+		"google_id":           userInfo.ID,
+		"profile_picture_url": userInfo.Picture,
+	}
+
+	return s.CreateUserFromMap(userReq)
 }
 
 func (s *UserService) CreateUserFromMap(userReq map[string]interface{}) (*entities.User, error) {
@@ -250,8 +270,16 @@ func (s *UserService) CreateUserFromMap(userReq map[string]interface{}) (*entiti
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
-		return nil, errors.InternalServerError("user service returned error", nil)
+	if resp.StatusCode == 400 {
+		return nil, errors.BadRequest("invalid user data")
+	}
+
+	if resp.StatusCode == 409 {
+		return nil, errors.BadRequest("user already exists with this email or username")
+	}
+
+	if resp.StatusCode != 201 {
+		return nil, errors.InternalServerError("user service returned unexpected status", nil)
 	}
 
 	var user entities.User
@@ -263,19 +291,19 @@ func (s *UserService) CreateUserFromMap(userReq map[string]interface{}) (*entiti
 }
 
 func (s *UserService) makeRequest(method, path string, body []byte, jwtToken string) (*http.Response, error) {
-	var bodyReader io.Reader
+	url := s.userServiceURL + path
+
+	var reqBody io.Reader
 	if body != nil {
-		bodyReader = bytes.NewReader(body)
+		reqBody = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, s.userServiceURL+path, bodyReader)
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Internal-Service", "auth-service")
-
 	if jwtToken != "" {
 		req.Header.Set("Authorization", "Bearer "+jwtToken)
 	}
@@ -288,7 +316,7 @@ func (s *UserService) issueInternalToken(userID string) (string, error) {
 		"sub":  userID,
 		"exp":  time.Now().Add(2 * time.Minute).Unix(),
 		"iat":  time.Now().Unix(),
-		"role": "user",
+		"role": "service",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

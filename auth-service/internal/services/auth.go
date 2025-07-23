@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	mathrand "math/rand"
+	"net/http"
 	"time"
 
 	"auth-service/internal/config"
@@ -14,23 +16,35 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 type AuthService struct {
-	config      *config.Config
-	redisClient *redis.Client
+	config            *config.Config
+	redisClient       *redis.Client
+	googleOAuthConfig *oauth2.Config
 }
 
 func NewAuthService(cfg *config.Config) *AuthService {
-	rdb := redis.NewClient(&redis.Options{
+	googleOAuthConfig := &oauth2.Config{
+		RedirectURL:  cfg.GoogleOAuthRedirectURL,
+		ClientID:     cfg.GoogleOAuthClientID,
+		ClientSecret: cfg.GoogleOAuthClientSecret,
+		Scopes:       []string{"openid", "email", "profile"},
+		Endpoint:     google.Endpoint,
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
 		DB:       0,
 	})
 
 	return &AuthService{
-		config:      cfg,
-		redisClient: rdb,
+		config:            cfg,
+		redisClient:       redisClient,
+		googleOAuthConfig: googleOAuthConfig,
 	}
 }
 
@@ -126,6 +140,39 @@ func (s *AuthService) GenerateVerificationCode() string {
 	return fmt.Sprintf("%06d", mathrand.Intn(1000000))
 }
 
+func (s *AuthService) GenerateOAuthState() (string, error) {
+	// Generate a cryptographically secure random state
+	stateBytes := make([]byte, 32)
+	if _, err := rand.Read(stateBytes); err != nil {
+		return "", fmt.Errorf("failed to generate OAuth state: %v", err)
+	}
+	
+	state := base64.URLEncoding.EncodeToString(stateBytes)
+	
+	// Store the state in Redis with a short TTL for validation
+	ctx := context.Background()
+	key := "oauth_state:" + state
+	err := s.redisClient.Set(ctx, key, "valid", 10*time.Minute).Err()
+	if err != nil {
+		return "", fmt.Errorf("failed to store OAuth state: %v", err)
+	}
+	
+	return state, nil
+}
+
+func (s *AuthService) ValidateOAuthState(state string) error {
+	ctx := context.Background()
+	key := "oauth_state:" + state
+	
+	// Check if state exists and delete it (one-time use)
+	result := s.redisClient.GetDel(ctx, key)
+	if result.Err() != nil {
+		return errors.BadRequest("invalid or expired OAuth state")
+	}
+	
+	return nil
+}
+
 func (s *AuthService) IssueShortLivedToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":  userID,
@@ -177,35 +224,65 @@ type GoogleUserInfo struct {
 }
 
 func (s *AuthService) ExchangeGoogleOAuthCode(code, redirectURI string) (*GoogleUserInfo, error) {
-	// This is a placeholder implementation
-	// In a real implementation, you would:
-	// 1. Exchange the code for an access token with Google
-	// 2. Use the access token to get user info from Google
-	// 3. Return the user info
+	// Exchange the authorization code for an access token
+	token, err := s.googleOAuthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		return nil, errors.BadRequest("failed to exchange OAuth code")
+	}
 
-	// For now, return an error indicating this needs to be implemented
-	return nil, errors.BadRequest("Google OAuth integration not configured")
+	// Use the access token to get user info from Google
+	client := s.googleOAuthConfig.Client(context.Background(), token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		return nil, errors.InternalServerError("failed to get user info from Google", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.InternalServerError("Google API returned error", nil)
+	}
+
+	var userInfo GoogleUserInfo
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		return nil, errors.InternalServerError("failed to decode user info", err)
+	}
+
+	return &userInfo, nil
 }
 
-func (s *AuthService) GenerateTokens(userID string) (string, string, error) {
-	// This would typically require the user entity to generate proper claims
-	// For now, generate basic tokens
-	claims := jwt.MapClaims{
-		"sub": userID,
-		"exp": time.Now().Add(s.config.AccessTokenTTL).Unix(),
-		"iat": time.Now().Unix(),
-	}
+func (s *AuthService) GetGoogleAuthURL(state string) string {
+	return s.googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	accessToken, err := token.SignedString(s.config.JWTPrivateKey)
+func (s *AuthService) GoogleLoginURL(state string) string {
+	return s.googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+}
+
+func (s *AuthService) HandleGoogleCallback(code string) (*GoogleUserInfo, error) {
+	ctx := context.Background()
+
+	// Exchange the authorization code for an access token
+	token, err := s.googleOAuthConfig.Exchange(ctx, code)
 	if err != nil {
-		return "", "", err
+		return nil, fmt.Errorf("failed to exchange token: %v", err)
 	}
 
-	refreshToken, err := s.IssueRefreshToken(userID)
+	// Use the access token to get user info from Google
+	client := s.googleOAuthConfig.Client(ctx, token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		return "", "", err
+		return nil, fmt.Errorf("failed to get user info: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get user info: %v", resp.Status)
 	}
 
-	return accessToken, refreshToken, nil
+	var userInfo GoogleUserInfo
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		return nil, fmt.Errorf("failed to decode user info: %v", err)
+	}
+
+	return &userInfo, nil
 }

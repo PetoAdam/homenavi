@@ -69,6 +69,16 @@ routes:
     methods: [POST]
     access: auth
     type: rest
+  - path: /api/auth/oauth/google/login
+    upstream: http://auth-service:8000/api/auth/oauth/google/login
+    methods: [GET]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/google/callback
+    upstream: http://auth-service:8000/api/auth/oauth/google/callback
+    methods: [GET]
+    access: public
+    type: rest
   - path: /api/auth/oauth/google
     upstream: http://auth-service:8000/api/auth/oauth/google
     methods: [POST]
