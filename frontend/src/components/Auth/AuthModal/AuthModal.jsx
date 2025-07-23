@@ -46,6 +46,11 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     onCancel();
   };
 
+  const handleGoogleLogin = () => {
+    // Redirect to backend OAuth endpoint which will redirect to Google
+    window.location.href = '/api/auth/oauth/google/login';
+  };
+
   const contentClass = `auth-modal-content-inner${tab === 'login' ? ' login' : ' signup'}`;
 
   const handleLogin = async (e) => {
@@ -191,7 +196,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
                 <div className="auth-modal-divider" />
                 <div className="auth-modal-oauth-label">Continue with</div>
                 <div className="auth-modal-oauth-btns">
-                  <button className="auth-modal-oauth-btn google" type="button" disabled>
+                  <button className="auth-modal-oauth-btn google" type="button" onClick={handleGoogleLogin}>
                     <span className="oauth-icon">
                       <FontAwesomeIcon icon={faGoogleBrand} />
                     </span>
@@ -317,7 +322,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
               <div className="auth-modal-divider" />
               <div className="auth-modal-oauth-label">Continue with</div>
               <div className="auth-modal-oauth-btns">
-                <button className="auth-modal-oauth-btn google" type="button" disabled>
+                <button className="auth-modal-oauth-btn google" type="button" onClick={handleGoogleLogin}>
                   <span className="oauth-icon">
                     <FontAwesomeIcon icon={faGoogleBrand} />
                   </span>

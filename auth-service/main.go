@@ -105,7 +105,16 @@ func main() {
 		r.Post("/profile/upload", avatarHandler.HandleUploadProfilePicture)
 
 		// OAuth
-		r.Post("/oauth/google", googleOAuthHandler.HandleOAuthGoogle)
+		r.Get("/oauth/google/login", func(w http.ResponseWriter, r *http.Request) {
+			state, err := authService.GenerateOAuthState()
+			if err != nil {
+				http.Error(w, "Failed to generate OAuth state", http.StatusInternalServerError)
+				return
+			}
+			url := authService.GetGoogleAuthURL(state)
+			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		})
+		r.Get("/oauth/google/callback", googleOAuthHandler.HandleOAuthGoogleCallback)
 	})
 
 	// Start server
