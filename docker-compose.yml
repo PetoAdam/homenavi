@@ -50,6 +50,7 @@ services:
     depends_on:
       - user-service
       - redis
+      - email-service
       - profile-picture-service
     networks:
       - homenavi-network
@@ -151,6 +152,22 @@ services:
     restart: unless-stopped
     volumes:
       - profile-pictures:/uploads
+    networks:
+      - homenavi-network
+
+  email-service:
+    build: ./email-service
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    environment:
+      - EMAIL_SERVICE_PORT=8002
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL:-noreply@homenavi.org}
+      - FROM_NAME=${FROM_NAME:-Homenavi}
     networks:
       - homenavi-network
 
