@@ -121,16 +121,7 @@ export function AuthProvider({ children }) {
     // Handle 2FA flow
     if (resp.twoFA) {
       setPendingUserId(resp.userId); // Store userId for 2FA
-      
-      // Auto-request 2FA code if it's email-based
-      if (resp.type === 'email') {
-        try {
-          await request2FAEmail(resp.userId, null); // No access token needed for this endpoint
-        } catch (error) {
-          console.warn('Failed to auto-request 2FA email:', error);
-        }
-      }
-      
+      // Don't auto-request 2FA email here - let the backend handle it during login
       return resp;
     }
     
@@ -195,6 +186,9 @@ export function AuthProvider({ children }) {
 
   const requestNew2FACode = async () => {
     if (!pendingUserId) return { success: false, error: "No pending 2FA request" };
+    
+    // Prevent multiple simultaneous requests
+    if (loading) return { success: false, error: "Request already in progress" };
     
     setLoading(true);
     try {
