@@ -89,10 +89,16 @@ export function AuthProvider({ children }) {
           setAccessToken(res.accessToken);
           setRefreshTokenValue(res.refreshToken);
           localStorage.setItem('refreshToken', res.refreshToken);
+          
+          // Update cookie with new access token
+          document.cookie = `auth_token=${res.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
         } else {
           setAccessToken(null);
           setRefreshTokenValue(null);
           localStorage.removeItem('refreshToken');
+          
+          // Clear cookie
+          document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         }
       })();
     }
@@ -108,6 +114,9 @@ export function AuthProvider({ children }) {
         setAccessToken(res.accessToken);
         setRefreshTokenValue(res.refreshToken);
         localStorage.setItem('refreshToken', res.refreshToken);
+        
+        // Update cookie with new access token
+        document.cookie = `auth_token=${res.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
       }
     }, 13 * 60 * 1000); // every 13 min
     return () => clearInterval(interval);
@@ -130,6 +139,10 @@ export function AuthProvider({ children }) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
       localStorage.setItem('refreshToken', resp.refreshToken);
+      
+      // Set cookie for WebSocket authentication
+      document.cookie = `auth_token=${resp.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+      
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
       const me = await getMe(resp.accessToken);
@@ -159,6 +172,10 @@ export function AuthProvider({ children }) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
       localStorage.setItem('refreshToken', resp.refreshToken);
+      
+      // Set cookie for WebSocket authentication
+      document.cookie = `auth_token=${resp.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+      
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
       const me = await getMe(resp.accessToken);
@@ -212,6 +229,10 @@ export function AuthProvider({ children }) {
     setAccessToken(null);
     setRefreshTokenValue(null);
     localStorage.removeItem('refreshToken');
+    
+    // Clear cookie
+    document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    
     setUser(null);
     setPendingUserId(null); // Clear pending userId
     setLoading(false);
