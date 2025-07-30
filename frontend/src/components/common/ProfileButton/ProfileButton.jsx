@@ -8,12 +8,13 @@ import { useAuth } from '../../../context/AuthContext';
 import UserAvatar from '../../common/UserAvatar/UserAvatar';
 
 export default function ProfileButton() {
-  const { user, handleLogin, handleLogout, handle2FA, handleSignup, cancelLogin: authCancelLogin, requestNew2FACode } = useAuth();
+  const { user, handleLogin, handleLogout, handle2FA, handleSignup, cancelLogin: authCancelLogin, requestNew2FACode, loading } = useAuth();
   const [twoFAState, setTwoFAState] = useState(null);
   const [open, setOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+  const [lastRequestTime, setLastRequestTime] = useState(0);
   const btnRef = useRef();
 
   useEffect(() => {
@@ -67,18 +68,38 @@ export default function ProfileButton() {
   };
 
   const do2FA = async (code) => {
-    if (!twoFAState) return false;
+    if (!twoFAState) return { success: false, error: "No 2FA state" };
     const resp = await handle2FA(code);
     if (resp.success) {
       setToastMsg("Logged in successfully");
       setTwoFAState(null);
-      return true;
+      return { success: true };
     }
-    setToastMsg(resp.error || "2FA failed");
-    return false;
+    // Make sure error is always a string
+    const errorMessage = typeof resp.error === 'string' ? resp.error : 
+                        (resp.error?.message || resp.error?.error || "2FA verification failed");
+    setToastMsg(errorMessage);
+    return { success: false, error: errorMessage };
   };
 
   const requestNewCode = async () => {
+    const now = Date.now();
+    const cooldownMs = 30000; // 30 seconds cooldown
+    
+    // Check if we're in cooldown period
+    if (now - lastRequestTime < cooldownMs) {
+      const remainingSeconds = Math.ceil((cooldownMs - (now - lastRequestTime)) / 1000);
+      setToastMsg(`Please wait ${remainingSeconds}s before requesting another code`);
+      return;
+    }
+    
+    // Check if already loading to prevent double-clicking
+    if (loading) {
+      setToastMsg("Request already in progress...");
+      return;
+    }
+    
+    setLastRequestTime(now);
     const resp = await requestNew2FACode();
     if (resp.success) {
       setToastMsg("New code sent to your email");
@@ -90,7 +111,7 @@ export default function ProfileButton() {
   const cancelLogin = () => {
     authCancelLogin();
     setTwoFAState(null);
-    setShowAuthModal(false);
+    // Don't close the modal - just reset to login state
     setToastMsg("Login cancelled");
   };
 
@@ -134,6 +155,7 @@ export default function ProfileButton() {
         onSignup={doSignup}
         onCancel={cancelLogin}
         onRequestNewCode={requestNewCode}
+        loading={loading}
       />
       {showSettings && (
         <UserSettings onClose={() => setShowSettings(false)} />
