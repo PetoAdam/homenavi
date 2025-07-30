@@ -1,0 +1,32 @@
+name: Build Profile Picture Service Docker Image
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./profile-picture-service
+          file: ./profile-picture-service/Dockerfile
+          push: false
+          tags: homenavi-profile-picture-service:latest
+
+      - name: Save Docker image to tarball
+        run: docker save homenavi-profile-picture-service:latest | gzip > homenavi-profile-picture-service-latest.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homenavi-profile-picture-service-latest
+          path: homenavi-profile-picture-service-latest.tar.gz
