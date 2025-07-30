@@ -2,7 +2,25 @@
 
 **A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.**
 
-## 🏗️ Architecture & Technology Stack
+
+Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
+
+[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml) [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml) [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml) [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml) [![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml) [![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml) [![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
+
+---
+
+## 🚀 Why Homenavi?
+- **Microservice-first:** Each core feature is its own service – scale, swap, or extend as you like.
+- **Modern stack:** Go, React, Python, Docker, and more.
+- **Dev-friendly:** Easy to run, hack, and contribute.
+- **Open & Transparent:** 100% open source, MIT licensed.
+- **Cloud or Home:** Run it on your Raspberry Pi, your server, or in the cloud.
+- **Observability built-in:** Prometheus metrics, Jaeger tracing, and request/correlation IDs for easy debugging and monitoring.
+- **WebSocket support:** Real-time communication with cookie-based JWT authentication.
+
+---
+
+## 🧩 Architecture
 
 Homenavi follows a **microservices architecture** designed for scalability and modularity:
 
@@ -28,52 +46,7 @@ Homenavi follows a **microservices architecture** designed for scalability and m
 - **Rate Limiting**: Protection against brute force and abuse
 - **Account Lockout**: Automatic protection against repeated failed attempts
 
----
-
-Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
-
-[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml) [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml) [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml) [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml) [![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml) [![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml) [![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
-
----
-
-## 🚀 Why Homenavi?
-- **Microservice-first:** Each core feature is its own service – scale, swap, or extend as you like.
-- **Modern stack:** Go, React, Python, Docker, and more.
-- **Dev-friendly:** Easy to run, hack, and contribute.
-- **Open & Transparent:** 100% open source, MIT licensed.
-- **Cloud or Home:** Run it on your Raspberry Pi, your server, or in the cloud.
-- **Observability built-in:** Prometheus metrics, Jaeger tracing, and request/correlation IDs for easy debugging and monitoring.
-- **WebSocket support:** Real-time communication with cookie-based JWT authentication.
-
----
-
-## 🏗️ Project Structure
-
-```
-frontend/                    # React frontend (Vite + PWA)
-api-gateway/                 # Go API gateway with JWT auth & WebSocket support
-auth-service/                # Go authentication service with 2FA
-user-service/                # Go user management service
-email-service/               # Go email notification service
-profile-picture-service/     # Python image/avatar management service
-echo-service/                # Python WebSocket testing service
-.github/workflows/           # GitHub Actions CI/CD workflows
-prometheus/                  # Prometheus monitoring config
-nginx/                       # Nginx reverse proxy config
-```
-
----
-
-## 🧩 Architecture
-
-Homenavi is built as a set of loosely coupled microservices:
-- **Frontend:** Modern React SPA, served by Nginx.
-- **API Gateway:** Central entrypoint, JWT auth, request routing, rate limiting, observability (metrics/tracing).
-- **Auth Service:** Handles authentication, issues JWTs.
-- **User Service:** Manages user data and validation.
-- **Observability Stack:** Prometheus, Grafana, and Jaeger for monitoring and tracing.
-
-All services communicate via HTTP/REST and Websockets. Add your own services and plug them into the gateway!
+Add your own services and plug them into the gateway!
 
 ---
 
@@ -208,7 +181,7 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
 
 ## 🔌 WebSocket Support
 
-HomeNavi includes full WebSocket support for real-time communication:
+Homenavi includes full WebSocket support for real-time communication:
 
 - **Cookie-based authentication:** WebSockets authenticate using the same JWT tokens as REST APIs
 - **Echo Service:** Python WebSocket service for testing and demonstration
