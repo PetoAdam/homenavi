@@ -163,7 +163,7 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
 
 ---
 
-## � Security Features
+## 🔒 Security Features
 
 - **JWT authentication:** RS256 signed access tokens, public key validation in API Gateway
 - **Cookie-based WebSocket auth:** Seamless real-time communication authentication
