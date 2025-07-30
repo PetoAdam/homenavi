@@ -2,32 +2,64 @@
 
 **A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.**
 
+## 🏗️ Architecture & Technology Stack
+
+Homenavi follows a **microservices architecture** designed for scalability and modularity:
+
+### Core Services
+- **API Gateway** (Go + Chi): JWT authentication, WebSocket support, rate limiting, request routing
+- **Auth Service** (Go): User authentication, JWT tokens, 2FA (TOTP/Email), OAuth integration
+- **User Service** (Go): Profile management, user data storage
+- **Email Service** (Go): Email notifications and verification codes
+- **Profile Picture Service** (Python): Image processing and avatar management
+- **Echo Service** (Python): WebSocket testing and real-time communication demo
+
+### Frontend & Infrastructure
+- **Frontend** (React + Vite): Modern SPA with PWA capabilities, cookie-based auth
+- **Database**: PostgreSQL for persistent data storage
+- **Cache**: Redis for sessions and temporary data
+- **Proxy**: Nginx for load balancing and SSL termination
+- **Monitoring**: Prometheus metrics + Grafana dashboards + Jaeger tracing
+
+### Authentication & Security
+- **JWT RS256**: Cryptographically signed tokens with public/private key pairs
+- **Cookie-based WebSocket auth**: Seamless authentication for real-time features
+- **2FA Support**: TOTP (Google Authenticator) and Email-based verification
+- **Rate Limiting**: Protection against brute force and abuse
+- **Account Lockout**: Automatic protection against repeated failed attempts
+
+---
+
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
-[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml) [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml) [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml) [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml)
+[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml) [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml) [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml) [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml) [![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml) [![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml) [![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
 
 ---
 
 ## 🚀 Why Homenavi?
 - **Microservice-first:** Each core feature is its own service – scale, swap, or extend as you like.
-- **Modern stack:** Go, React, Docker, and more.
+- **Modern stack:** Go, React, Python, Docker, and more.
 - **Dev-friendly:** Easy to run, hack, and contribute.
 - **Open & Transparent:** 100% open source, MIT licensed.
 - **Cloud or Home:** Run it on your Raspberry Pi, your server, or in the cloud.
 - **Observability built-in:** Prometheus metrics, Jaeger tracing, and request/correlation IDs for easy debugging and monitoring.
+- **WebSocket support:** Real-time communication with cookie-based JWT authentication.
 
 ---
 
 ## 🏗️ Project Structure
 
 ```
-frontend/           # React frontend
-api-gateway/        # Go API gateway
-auth-service/       # Go authentication service
-user-service/       # Go user service
-.github/workflows/  # GitHub Actions workflows
-prometheus/         # Prometheus config
-nginx/              # Nginx config
+frontend/                    # React frontend (Vite + PWA)
+api-gateway/                 # Go API gateway with JWT auth & WebSocket support
+auth-service/                # Go authentication service with 2FA
+user-service/                # Go user management service
+email-service/               # Go email notification service
+profile-picture-service/     # Python image/avatar management service
+echo-service/                # Python WebSocket testing service
+.github/workflows/           # GitHub Actions CI/CD workflows
+prometheus/                  # Prometheus monitoring config
+nginx/                       # Nginx reverse proxy config
 ```
 
 ---
@@ -41,7 +73,7 @@ Homenavi is built as a set of loosely coupled microservices:
 - **User Service:** Manages user data and validation.
 - **Observability Stack:** Prometheus, Grafana, and Jaeger for monitoring and tracing.
 
-All services communicate via HTTP/REST. Add your own services and plug them into the gateway!
+All services communicate via HTTP/REST and Websockets. Add your own services and plug them into the gateway!
 
 ---
 
@@ -62,6 +94,18 @@ docker compose up --build
   - For detailed Nginx configuration and security best practices, see [`doc/nginx_guide.md`](doc/nginx_guide.md).
 - Edit `.env` for secrets and service URLs.
 - See [`/doc/local_build.md`](doc/local_build.md) for advanced/local development.
+
+**Services Overview:**
+- **Frontend**: React app with authentication and PWA features
+- **API Gateway**: Central routing with JWT authentication (REST + WebSocket)
+- **Auth Service**: User authentication, 2FA, password management
+- **User Service**: User profile and data management
+- **Email Service**: Email notifications and verification
+- **Profile Picture Service**: Avatar and image handling
+- **Echo Service**: WebSocket testing and demonstration
+- **Monitoring**: Prometheus (`:9090`), Grafana (`:3000`), Jaeger (`:16686`)
+
+---
 
 ### 🔑 JWT Key Generation (RS256)
 
@@ -146,54 +190,10 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
 
 ---
 
-## 🔌 API Overview
-
-- **POST /api/signup** (API Gateway):
-  - Forwards to Auth Service, creates a new user
-- **POST /api/login** (API Gateway):
-  - Forwards to Auth Service, returns JWT on success
-  - Enforces lockout: If a user is locked out, login is rejected
-- **POST /api/password/reset/request** (API Gateway):
-  - Forwards to Auth Service, requests password reset code
-- **POST /api/password/reset/confirm** (API Gateway):
-  - Forwards to Auth Service, confirms password reset
-- **POST /api/email/verify/request** (API Gateway):
-  - Forwards to Auth Service, requests email verification code (rate-limited)
-- **POST /api/email/verify/confirm** (API Gateway):
-  - Forwards to Auth Service, confirms email verification (rate-limited)
-- **POST /api/2fa/setup** (API Gateway):
-  - Forwards to Auth Service, sets up TOTP 2FA
-- **POST /api/2fa/verify** (API Gateway):
-  - Forwards to Auth Service, verifies TOTP 2FA code (rate-limited)
-- **POST /api/2fa/email/request** (API Gateway):
-  - Forwards to Auth Service, requests email 2FA code (rate-limited)
-- **POST /api/2fa/email/verify** (API Gateway):
-  - Forwards to Auth Service, verifies email 2FA code (rate-limited)
-- **POST /api/delete** (API Gateway):
-  - Forwards to Auth Service, deletes a user
-- **GET /api/users/{id}** (API Gateway):
-  - Requires JWT, fetches user info from User Service
-- **DELETE /api/users/{id}** (API Gateway):
-  - Requires JWT, deletes user from User Service
-- **PATCH /api/users/{id}** (API Gateway):
-  - Requires JWT, updates user info
-- **POST /api/users** (API Gateway):
-  - Creates a new user in User Service
-- **POST /api/users/validate** (API Gateway):
-  - Validates user credentials in User Service
-- **GET /api/users?email={email}** (API Gateway):
-  - Fetches user by email from User Service
-- **POST /api/users/{id}/lockout** (API Gateway):
-  - Locks out a user in User Service
-- **GET /metrics**: Prometheus metrics endpoint
-- **GET /healthz**: Healthcheck endpoint
-
----
-
-## 🔒 Security Features
+## � Security Features
 
 - **JWT authentication:** RS256 signed access tokens, public key validation in API Gateway
-- **Planned:** Refresh token rotation and revocation, token event tracking
+- **Cookie-based WebSocket auth:** Seamless real-time communication authentication
 - **Rate-limited verification/2FA attempts:** Prevent brute-force attacks on codes
 - **Account lockout:** Login is blocked for locked users
 
@@ -202,7 +202,17 @@ We love contributions! Whether it's a bugfix, new feature, or documentation impr
 ## 🧑‍💻 2FA Support
 
 - **Email 2FA:** Request and verify codes via Auth Service
-- **TOTP 2FA:** Setup and verify using standard authenticator apps
+- **TOTP 2FA:** Setup and verify using standard authenticator apps (coming soon!)
+
+---
+
+## 🔌 WebSocket Support
+
+HomeNavi includes full WebSocket support for real-time communication:
+
+- **Cookie-based authentication:** WebSockets authenticate using the same JWT tokens as REST APIs
+- **Echo Service:** Python WebSocket service for testing and demonstration
+- **Test Script:** `test-websocket.py` provides comprehensive WebSocket testing capabilities
 
 ---
 
@@ -215,10 +225,13 @@ A: Yes! All services are built for multi-arch Docker images.
 A: Build a new microservice, register it in the API Gateway, and add it to Docker Compose.
 
 **Q: Is it production-ready?**
-A: Homenavi is under active development. Contributions and feedback are welcome!
+A: Homenavi is under active development. The core authentication and user management features are stable, but always review the code for your specific use case.
 
 **Q: How do I monitor and trace requests?**
 A: Use Prometheus and Grafana for metrics, and Jaeger for distributed tracing. All are included in the default Docker Compose stack.
+
+**Q: Does it support real-time communication?**
+A: Yes! WebSocket support is built-in with cookie-based JWT authentication. See the echo service for examples.
 
 ---
 
