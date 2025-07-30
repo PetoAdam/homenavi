@@ -83,6 +83,7 @@ type User struct {
 	EmailConfirmed     bool       `json:"email_confirmed"`
 	ProfilePictureURL  *string    `json:"profile_picture_url" gorm:"type:varchar(255)"`
 	PasswordHash       *string    `json:"password_hash"`
+	GoogleID           *string    `gorm:"uniqueIndex" json:"google_id"`
 	TwoFactorEnabled   bool       `json:"two_factor_enabled"`
 	TwoFactorType      string     `json:"two_factor_type" gorm:"type:varchar(16)"`
 	TwoFactorSecret    string     `json:"two_factor_secret" gorm:"type:varchar(64)"` // TOTP secret for 2FA

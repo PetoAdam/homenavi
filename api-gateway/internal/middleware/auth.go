@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 	"crypto/rsa"
-	"io/ioutil"
 	"net/http"
+	"os"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -20,7 +20,7 @@ type claimsKeyType struct{}
 var claimsKey claimsKeyType
 
 func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
-	keyData, err := ioutil.ReadFile(path)
+	keyData, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +92,17 @@ func AdminOnlyMiddleware(next http.Handler) http.Handler {
 }
 
 func extractToken(r *http.Request) string {
+	// First, try Authorization header (for API calls)
 	auth := r.Header.Get("Authorization")
 	if len(auth) > 7 && auth[:7] == "Bearer " {
 		return auth[7:]
 	}
+
+	// Try cookie (for WebSocket connections)
+	if cookie, err := r.Cookie("auth_token"); err == nil {
+		return cookie.Value
+	}
+
 	return ""
 }
 

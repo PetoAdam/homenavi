@@ -26,7 +26,62 @@ export function AuthProvider({ children }) {
   }, [accessToken]);
 
   // On mount, try to refresh access token if refresh token exists in localStorage
+  // Also check for Google OAuth callback
   useEffect(() => {
+    // Check for Google OAuth callback with tokens in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const accessTokenFromUrl = urlParams.get('access_token');
+    const refreshTokenFromUrl = urlParams.get('refresh_token');
+    const error = urlParams.get('error');
+    
+    if (accessTokenFromUrl && refreshTokenFromUrl) {
+      // Handle successful Google OAuth callback
+      setAccessToken(accessTokenFromUrl);
+      setRefreshTokenValue(refreshTokenFromUrl);
+      localStorage.setItem('refreshToken', refreshTokenFromUrl);
+      
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+    
+    if (error) {
+      // Handle OAuth error
+      console.error('OAuth error:', error);
+      let errorMessage = 'Authentication failed';
+      switch (error) {
+        case 'oauth_cancelled':
+          errorMessage = 'Google login was cancelled';
+          break;
+        case 'oauth_failed':
+          errorMessage = 'Google login failed';
+          break;
+        case 'oauth_exchange_failed':
+          errorMessage = 'Failed to exchange OAuth code';
+          break;
+        case 'email_conflict':
+          errorMessage = 'Email already registered with different Google account';
+          break;
+        case 'token_failed':
+          errorMessage = 'Failed to generate authentication tokens';
+          break;
+        case 'user_creation_failed':
+          errorMessage = 'Failed to create user account';
+          break;
+        case 'link_failed':
+          errorMessage = 'Failed to link Google account';
+          break;
+      }
+      
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // You might want to show this error to the user
+      console.error('OAuth Error:', errorMessage);
+      return;
+    }
+
+    // Regular token refresh logic
     if (!accessToken && refreshTokenValue) {
       (async () => {
         const res = await refreshToken(refreshTokenValue);
@@ -34,10 +89,16 @@ export function AuthProvider({ children }) {
           setAccessToken(res.accessToken);
           setRefreshTokenValue(res.refreshToken);
           localStorage.setItem('refreshToken', res.refreshToken);
+          
+          // Update cookie with new access token
+          document.cookie = `auth_token=${res.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
         } else {
           setAccessToken(null);
           setRefreshTokenValue(null);
           localStorage.removeItem('refreshToken');
+          
+          // Clear cookie
+          document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         }
       })();
     }
@@ -53,6 +114,9 @@ export function AuthProvider({ children }) {
         setAccessToken(res.accessToken);
         setRefreshTokenValue(res.refreshToken);
         localStorage.setItem('refreshToken', res.refreshToken);
+        
+        // Update cookie with new access token
+        document.cookie = `auth_token=${res.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
       }
     }, 13 * 60 * 1000); // every 13 min
     return () => clearInterval(interval);
@@ -62,24 +126,23 @@ export function AuthProvider({ children }) {
     setLoading(true);
     const resp = await login(email, password);
     setLoading(false);
+    
+    // Handle 2FA flow
     if (resp.twoFA) {
       setPendingUserId(resp.userId); // Store userId for 2FA
-      
-      // Auto-request 2FA code if it's email-based
-      if (resp.type === 'email') {
-        try {
-          await request2FAEmail(resp.userId, null); // No access token needed for this endpoint
-        } catch (error) {
-          console.warn('Failed to auto-request 2FA email:', error);
-        }
-      }
-      
+      // Don't auto-request 2FA email here - let the backend handle it during login
       return resp;
     }
+    
+    // Handle successful login
     if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
       localStorage.setItem('refreshToken', resp.refreshToken);
+      
+      // Set cookie for WebSocket authentication
+      document.cookie = `auth_token=${resp.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+      
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
       const me = await getMe(resp.accessToken);
@@ -88,9 +151,11 @@ export function AuthProvider({ children }) {
         setUser(me.user);
         return { success: true };
       }
-      return { success: false, error: me.error };
+      return { success: false, error: me.error || "Failed to fetch user profile" };
     }
-    return { success: false, error: resp.error };
+    
+    // Handle login failure - make sure to return the error
+    return { success: false, error: resp.error || "Login failed" };
   };
 
   const handle2FA = async (code) => {
@@ -102,10 +167,15 @@ export function AuthProvider({ children }) {
     }
     const resp = await finish2FA(userId, code);
     setLoading(false);
+    
     if (resp.success && resp.accessToken) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
       localStorage.setItem('refreshToken', resp.refreshToken);
+      
+      // Set cookie for WebSocket authentication
+      document.cookie = `auth_token=${resp.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+      
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
       const me = await getMe(resp.accessToken);
@@ -114,9 +184,14 @@ export function AuthProvider({ children }) {
         setUser(me.user);
         return { success: true };
       }
-      return { success: false, error: me.error };
+      return { success: false, error: me.error || "Failed to fetch user profile" };
     }
-    return { success: false, error: resp.error };
+    
+    // Make sure error is always a string
+    const errorMessage = typeof resp.error === 'string' ? resp.error : 
+                        (resp.error?.message || resp.error?.error || "2FA verification failed");
+    console.error('2FA failed:', errorMessage);
+    return { success: false, error: errorMessage };
   };
 
   const handleSignup = async (firstName, lastName, userName, email, password) => {
@@ -128,6 +203,9 @@ export function AuthProvider({ children }) {
 
   const requestNew2FACode = async () => {
     if (!pendingUserId) return { success: false, error: "No pending 2FA request" };
+    
+    // Prevent multiple simultaneous requests
+    if (loading) return { success: false, error: "Request already in progress" };
     
     setLoading(true);
     try {
@@ -147,10 +225,14 @@ export function AuthProvider({ children }) {
 
   const handleLogout = async () => {
     setLoading(true);
-    await logout(refreshTokenValue);
+    await logout(refreshTokenValue, accessToken);
     setAccessToken(null);
     setRefreshTokenValue(null);
     localStorage.removeItem('refreshToken');
+    
+    // Clear cookie
+    document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    
     setUser(null);
     setPendingUserId(null); // Clear pending userId
     setLoading(false);

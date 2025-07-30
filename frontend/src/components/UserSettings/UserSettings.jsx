@@ -143,6 +143,10 @@ export default function UserSettings({ onClose }) {
       setStatus('❌ New passwords do not match');
       return;
     }
+    if (passwordForm.currentPassword === passwordForm.newPassword) {
+      setStatus('❌ New password must be different from current password');
+      return;
+    }
     if (passwordForm.newPassword.length < 8) {
       setStatus('❌ New password must be at least 8 characters');
       return;

@@ -35,15 +35,22 @@ services:
       - "8000:8000"
     restart: unless-stopped
     environment:
+      - AUTH_SERVICE_PORT=8000
       - USER_SERVICE_URL=${USER_SERVICE_URL}
       - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
       - REDIS_ADDR=${REDIS_ADDR}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - EMAIL_SERVICE_URL=http://email-service:8002
       - PROFILE_PICTURE_SERVICE_URL=http://profile-picture-service:8000
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - GOOGLE_OAUTH_REDIRECT_URL=${GOOGLE_OAUTH_REDIRECT_URL}
     volumes:
       - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
     depends_on:
       - user-service
       - redis
+      - email-service
       - profile-picture-service
     networks:
       - homenavi-network
@@ -145,6 +152,30 @@ services:
     restart: unless-stopped
     volumes:
       - profile-pictures:/uploads
+    networks:
+      - homenavi-network
+
+  email-service:
+    build: ./email-service
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    environment:
+      - EMAIL_SERVICE_PORT=8002
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL:-noreply@homenavi.org}
+      - FROM_NAME=${FROM_NAME:-Homenavi}
+    networks:
+      - homenavi-network
+
+  echo-service:
+    build: ./echo-service
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
     networks:
       - homenavi-network
 

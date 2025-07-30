@@ -5,7 +5,7 @@ import { faGoogle as faGoogleBrand } from '@fortawesome/free-brands-svg-icons';
 import { requestPasswordReset, confirmPasswordReset } from '../../../services/authService';
 import './AuthModal.css';
 
-export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, onSignup, onCancel, onRequestNewCode }) {
+export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, onSignup, onCancel, onRequestNewCode, loading = false }) {
   const [tab, setTab] = useState('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '', twofa: '' });
   const [signupForm, setSignupForm] = useState({ firstName: '', lastName: '', userName: '', email: '', password: '' });
@@ -15,6 +15,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const [forgotPasswordForm, setForgotPasswordForm] = useState({ email: '', code: '', newPassword: '', confirmPassword: '' });
   const [forgotPasswordStep, setForgotPasswordStep] = useState(1); // 1: email, 2: code + password
   const [forgotPasswordError, setForgotPasswordError] = useState('');
+  const [formLoading, setFormLoading] = useState(false); // Local loading state for form submissions
   const modalRef = useRef();
 
   useEffect(() => {
@@ -37,16 +38,37 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     };
   }, [open]);
 
+  const handleCancel = () => {
+    // Reset form state
+    setLoginForm({ email: '', password: '', twofa: '' });
+    setLoginError('');
+    setTab('login');
+    // Call the parent cancel function
+    onCancel();
+  };
+
+  const handleGoogleLogin = () => {
+    // Redirect to backend OAuth endpoint which will redirect to Google
+    window.location.href = '/api/auth/oauth/google/login';
+  };
+
   const contentClass = `auth-modal-content-inner${tab === 'login' ? ' login' : ' signup'}`;
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    const result = await onAuth(loginForm.email, loginForm.password);
-    if (result && result.success) {
-      onClose();
-    } else if (result && result.error) {
-      setLoginError(result.error);
+    setFormLoading(true);
+    try {
+      const result = await onAuth(loginForm.email, loginForm.password);
+      if (result && result.success) {
+        onClose();
+      } else if (result && result.error) {
+        setLoginError(result.error);
+      } else if (result && !result.twoFA) {
+        setLoginError('Login failed. Please check your credentials.');
+      }
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -54,9 +76,21 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     e.preventDefault();
     setLoginError('');
     if (!twoFAState) return;
-    const success = await on2FA(loginForm.twofa);
-    if (success) {
-      onClose();
+    setFormLoading(true);
+    try {
+      const result = await on2FA(loginForm.twofa);
+      if (result && result.success) {
+        onClose();
+      } else if (result && result.error) {
+        // Make sure error is always a string
+        const errorMessage = typeof result.error === 'string' ? result.error : 
+                            (result.error?.message || result.error?.error || "2FA verification failed");
+        setLoginError(errorMessage);
+      } else {
+        setLoginError("2FA verification failed");
+      }
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -67,9 +101,14 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
       return;
     }
     setSignupError('');
-    const result = await onSignup(signupForm.firstName, signupForm.lastName, signupForm.userName, signupForm.email, signupForm.password);
-    if (!result.success) {
-      setSignupError(result.error || 'Signup failed');
+    setFormLoading(true);
+    try {
+      const result = await onSignup(signupForm.firstName, signupForm.lastName, signupForm.userName, signupForm.email, signupForm.password);
+      if (!result.success) {
+        setSignupError(result.error || 'Signup failed');
+      }
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -169,11 +208,17 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
                     Forgot password?
                   </button>
                 </div>
-                <button className="auth-modal-btn" type="submit">Log In</button>
+                <button 
+                  className="auth-modal-btn" 
+                  type="submit" 
+                  disabled={formLoading || loading}
+                >
+                  {formLoading ? 'Logging in...' : 'Log In'}
+                </button>
                 <div className="auth-modal-divider" />
                 <div className="auth-modal-oauth-label">Continue with</div>
                 <div className="auth-modal-oauth-btns">
-                  <button className="auth-modal-oauth-btn google" type="button" disabled>
+                  <button className="auth-modal-oauth-btn google" type="button" onClick={handleGoogleLogin}>
                     <span className="oauth-icon">
                       <FontAwesomeIcon icon={faGoogleBrand} />
                     </span>
@@ -203,20 +248,27 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
                   <label className="auth-modal-label" htmlFor="login-2fa">2FA Code</label>
                 </div>
                 {loginError && <div className="auth-modal-error">{loginError}</div>}
-                <button className="auth-modal-btn" type="submit">Verify</button>
+                <button 
+                  className="auth-modal-btn" 
+                  type="submit"
+                  disabled={formLoading || loading}
+                >
+                  {formLoading ? 'Verifying...' : 'Verify'}
+                </button>
                 {twoFAState?.type === 'email' && (
                   <button 
                     className="auth-modal-btn secondary" 
                     type="button" 
                     onClick={onRequestNewCode}
+                    disabled={loading || formLoading}
                   >
-                    Request New Code
+                    {loading ? 'Sending...' : 'Request New Code'}
                   </button>
                 )}
                 <button 
                   className="auth-modal-btn secondary" 
                   type="button" 
-                  onClick={onCancel}
+                  onClick={handleCancel}
                 >
                   Cancel Login
                 </button>
@@ -295,11 +347,17 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
                 <label className="auth-modal-label" htmlFor="signup-password">Password</label>
               </div>
               {signupError && <div className="auth-modal-error">{signupError}</div>}
-              <button className="auth-modal-btn" type="submit">Sign Up</button>
+              <button 
+                className="auth-modal-btn" 
+                type="submit"
+                disabled={formLoading || loading}
+              >
+                {formLoading ? 'Creating Account...' : 'Sign Up'}
+              </button>
               <div className="auth-modal-divider" />
               <div className="auth-modal-oauth-label">Continue with</div>
               <div className="auth-modal-oauth-btns">
-                <button className="auth-modal-oauth-btn google" type="button" disabled>
+                <button className="auth-modal-oauth-btn google" type="button" onClick={handleGoogleLogin}>
                   <span className="oauth-icon">
                     <FontAwesomeIcon icon={faGoogleBrand} />
                   </span>

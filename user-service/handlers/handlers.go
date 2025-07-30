@@ -24,12 +24,13 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		UserName  string `json:"user_name"`
-		Email     string `json:"email"`
-		Password  string `json:"password"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Role      string `json:"role"`
+		UserName  string  `json:"user_name"`
+		Email     string  `json:"email"`
+		Password  string  `json:"password"`
+		FirstName string  `json:"first_name"`
+		LastName  string  `json:"last_name"`
+		Role      string  `json:"role"`
+		GoogleID  *string `json:"google_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[ERROR] Invalid user create request: %v", err)
@@ -49,13 +50,24 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User with this username already exists", http.StatusConflict)
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("[ERROR] Password hash error: %v", err)
-		http.Error(w, "Password hash error", 500)
+
+	var passwordHash *string
+	// Only hash password if provided (not for Google OAuth users)
+	if req.Password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			log.Printf("[ERROR] Password hash error: %v", err)
+			http.Error(w, "Password hash error", 500)
+			return
+		}
+		ph := string(hash)
+		passwordHash = &ph
+	} else if req.GoogleID == nil || *req.GoogleID == "" {
+		// If no password and no GoogleID, reject the request
+		log.Printf("[ERROR] No password or GoogleID provided")
+		http.Error(w, "Password or GoogleID required", 400)
 		return
 	}
-	ph := string(hash)
 	role := req.Role
 	if role == "" {
 		role = "user"
@@ -69,8 +81,9 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		FirstName:          req.FirstName,
 		LastName:           req.LastName,
 		Role:               role,
-		EmailConfirmed:     false,
-		PasswordHash:       &ph,
+		EmailConfirmed:     req.GoogleID != nil, // Google users are email confirmed
+		PasswordHash:       passwordHash,
+		GoogleID:           req.GoogleID,
 		TwoFactorEnabled:   false,
 		LockoutEnabled:     false,
 		AccessFailedCount:  0,
@@ -156,12 +169,23 @@ func HandleUserGet(w http.ResponseWriter, r *http.Request) {
 
 func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
-	if email == "" {
-		http.Error(w, "Missing email", http.StatusBadRequest)
+	googleID := r.URL.Query().Get("google_id")
+	
+	if email == "" && googleID == "" {
+		http.Error(w, "Missing email or google_id", http.StatusBadRequest)
 		return
 	}
+	
 	var user db.User
-	if err := db.DB.Where("email = ?", email).First(&user).Error; err != nil {
+	var err error
+	
+	if googleID != "" {
+		err = db.DB.Where("google_id = ?", googleID).First(&user).Error
+	} else {
+		err = db.DB.Where("email = ?", email).First(&user).Error
+	}
+	
+	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
@@ -176,6 +200,7 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 		TwoFactorEnabled  bool    `json:"two_factor_enabled"`
 		TwoFactorType     string  `json:"two_factor_type"`
 		ProfilePictureURL *string `json:"profile_picture_url"`
+		GoogleID          *string `json:"google_id"`
 	}{
 		ID:                user.ID.String(),
 		UserName:          user.UserName,
@@ -187,6 +212,7 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 		TwoFactorEnabled:  user.TwoFactorEnabled,
 		TwoFactorType:     user.TwoFactorType,
 		ProfilePictureURL: user.ProfilePictureURL,
+		GoogleID:          user.GoogleID,
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -276,6 +302,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		"last_name":           true,
 		"role":                true, // will check admin below
 		"profile_picture_url": true, // allow profile picture URL updates
+		"google_id":           true, // allow linking Google ID
 	}
 	update := make(map[string]interface{})
 	for k, v := range req {
