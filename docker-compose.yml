@@ -171,6 +171,14 @@ services:
     networks:
       - homenavi-network
 
+  echo-service:
+    build: ./echo-service
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    networks:
+      - homenavi-network
+
 volumes:
   postgres_data:
   auth_postgres_data:
