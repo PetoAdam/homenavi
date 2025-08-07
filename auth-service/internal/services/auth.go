@@ -13,6 +13,7 @@ import (
 	"auth-service/internal/config"
 	"auth-service/internal/models/entities"
 	"auth-service/pkg/errors"
+	"auth-service/pkg/roles"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
@@ -178,7 +179,7 @@ func (s *AuthService) IssueShortLivedToken(userID string) (string, error) {
 		"sub":  userID,
 		"exp":  time.Now().Add(2 * time.Minute).Unix(),
 		"iat":  time.Now().Unix(),
-		"role": "user",
+		"role": roles.User,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

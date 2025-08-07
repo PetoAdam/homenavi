@@ -11,6 +11,7 @@ import (
 	"auth-service/internal/models/entities"
 	"auth-service/internal/models/requests"
 	"auth-service/pkg/errors"
+	"auth-service/pkg/roles"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -250,7 +251,7 @@ func (s *UserService) CreateGoogleUser(userInfo *GoogleUserInfo) (*entities.User
 		"email":               userInfo.Email,
 		"first_name":          userInfo.FirstName,
 		"last_name":           userInfo.LastName,
-		"role":                "user",
+		"role":                roles.User,
 		"google_id":           userInfo.ID,
 		"profile_picture_url": userInfo.Picture,
 	}

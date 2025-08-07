@@ -45,10 +45,10 @@ func MustInitDB() {
 						NormalizedUserName: strings.ToUpper(adminUser),
 						Email:              adminEmail,
 						NormalizedEmail:    strings.ToUpper(adminEmail),
-						FirstName:          "",
-						LastName:           "",
+						FirstName:          "System",
+						LastName:           "Administrator",
 						Role:               "admin",
-						EmailConfirmed:     false,
+						EmailConfirmed:     true,
 						PasswordHash:       &ph,
 						TwoFactorEnabled:   false,
 						LockoutEnabled:     false,
@@ -58,6 +58,38 @@ func MustInitDB() {
 						log.Printf("[ERROR] Failed to create default admin user: %v", err)
 					} else {
 						log.Printf("[INFO] Default admin user created: %s", adminEmail)
+					}
+				}
+				
+				// Create default resident user if not exists
+				residentEmail := "resident@example.com"
+				residentUser := "resident"
+				var existingResident User
+				resp = DB.Where("email = ?", residentEmail).Or("user_name = ?", residentUser).First(&existingResident)
+				if resp.Error == nil {
+					log.Printf("[INFO] Default resident user already exists: %s", existingResident.Email)
+				} else {
+					hash, _ := bcrypt.GenerateFromPassword([]byte("resident"), bcrypt.DefaultCost)
+					ph := string(hash)
+					residentUserObj := User{
+						ID:                 uuid.New(),
+						UserName:           residentUser,
+						NormalizedUserName: strings.ToUpper(residentUser),
+						Email:              residentEmail,
+						NormalizedEmail:    strings.ToUpper(residentEmail),
+						FirstName:          "House",
+						LastName:           "Resident",
+						Role:               "resident",
+						EmailConfirmed:     true,
+						PasswordHash:       &ph,
+						TwoFactorEnabled:   false,
+						LockoutEnabled:     false,
+						AccessFailedCount:  0,
+					}
+					if err := DB.Create(&residentUserObj).Error; err != nil {
+						log.Printf("[ERROR] Failed to create default resident user: %v", err)
+					} else {
+						log.Printf("[INFO] Default resident user created: %s", residentEmail)
 					}
 				}
 				return

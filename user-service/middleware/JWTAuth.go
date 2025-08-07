@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -13,7 +14,17 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+type claimsKeyType struct{}
+
+var claimsKey claimsKeyType
+
 func GetClaims(r *http.Request) *Claims {
+	// First try to get claims from context (for tests)
+	if claims, ok := r.Context().Value(claimsKey).(*Claims); ok {
+		return claims
+	}
+	
+	// Fall back to parsing from Authorization header
 	auth := r.Header.Get("Authorization")
 	log.Printf("[DEBUG] Extracting claims from request with Authorization header: %s", auth)
 	if len(auth) < 8 || auth[:7] != "Bearer " {
@@ -28,4 +39,9 @@ func GetClaims(r *http.Request) *Claims {
 		return claims
 	}
 	return nil
+}
+
+// SetTestClaims is a helper function for testing to set claims in context
+func SetTestClaims(ctx context.Context, claims *Claims) context.Context {
+	return context.WithValue(ctx, claimsKey, claims)
 }

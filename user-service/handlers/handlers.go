@@ -9,6 +9,7 @@ import (
 
 	"user-service/db"
 	"user-service/middleware"
+	"user-service/pkg/roles"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -70,7 +71,13 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	role := req.Role
 	if role == "" {
-		role = "user"
+		role = roles.User
+	}
+	// Validate role
+	if !roles.IsValidRole(role) {
+		log.Printf("[ERROR] Invalid role: %s", role)
+		http.Error(w, "Invalid role", http.StatusBadRequest)
+		return
 	}
 	user := db.User{
 		ID:                 uuid.New(),
@@ -106,6 +113,16 @@ func authorizeUserOrAdmin(r *http.Request, userID string) bool {
 	// Only allow if sub matches userID or role is admin
 	log.Printf("[DEBUG] Authorizing user %s with role %s for user ID %s", claims.Sub, claims.Role, userID)
 	return claims.Role == "admin" || claims.Sub == userID
+}
+
+func authorizeUserOrResidentOrAdmin(r *http.Request, userID string) bool {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		return false
+	}
+	// Allow if sub matches userID or role is resident/admin
+	log.Printf("[DEBUG] Authorizing user %s with role %s for user ID %s", claims.Sub, claims.Role, userID)
+	return roles.HasPermission(claims.Role, roles.Resident) || claims.Sub == userID
 }
 
 func authorizeAnyValidJWT(r *http.Request) bool {
@@ -226,8 +243,8 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	claims := middleware.GetClaims(r)
-	if claims == nil || claims.Role != "admin" {
-		http.Error(w, "Only admins can lockout accounts", http.StatusForbidden)
+	if claims == nil || !roles.HasPermission(claims.Role, roles.Resident) {
+		http.Error(w, "Insufficient permissions", http.StatusForbidden)
 		return
 	}
 	var req struct {
@@ -278,16 +295,29 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid user id", 400)
 		return
 	}
-	if !authorizeUserOrAdmin(r, id.String()) {
-		log.Printf("[DEBUG] Forbidden: not authorized for user id %s", idStr)
-		http.Error(w, "Forbidden", 403)
-		return
-	}
+	
 	var req map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[DEBUG] Invalid request body: %v", err)
 		http.Error(w, "Invalid request", 400)
 		return
+	}
+	
+	// Check authorization based on what's being updated
+	if _, hasRole := req["role"]; hasRole {
+		// For role changes, use different authorization logic
+		if !authorizeUserOrResidentOrAdmin(r, id.String()) {
+			log.Printf("[DEBUG] Forbidden: not authorized for user id %s", idStr)
+			http.Error(w, "Forbidden", 403)
+			return
+		}
+	} else {
+		// For other changes, use standard authorization
+		if !authorizeUserOrAdmin(r, id.String()) {
+			log.Printf("[DEBUG] Forbidden: not authorized for user id %s", idStr)
+			http.Error(w, "Forbidden", 403)
+			return
+		}
 	}
 	// Only allow certain fields to be patched
 	allowed := map[string]bool{
@@ -316,13 +346,28 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 				}
 				update["password_hash"] = string(hash)
 			case "role":
-				// Only allow admins to change role
+				// Check if user is authorized to change roles
 				claims := middleware.GetClaims(r)
-				if claims == nil || claims.Role != "admin" {
-					http.Error(w, "Only admins can change user role", 403)
+				if claims == nil {
+					http.Error(w, "Unauthorized", 401)
 					return
 				}
-				update[k] = v
+				
+				newRole := fmt.Sprintf("%v", v)
+				
+				// Validate the new role
+				if !roles.IsValidRole(newRole) {
+					http.Error(w, "Invalid role", 400)
+					return
+				}
+				
+				// Check if the requesting user can assign this role
+				if !roles.CanAssignRole(claims.Role, newRole) {
+					http.Error(w, "Insufficient permissions to assign this role", 403)
+					return
+				}
+				
+				update[k] = newRole
 			default:
 				update[k] = v
 			}

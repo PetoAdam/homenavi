@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 
+	"api-gateway/pkg/roles"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -82,13 +84,41 @@ func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handl
 func AdminOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := r.Context().Value(claimsKey).(*Claims)
-		if !ok || claims.Role != "admin" {
+		if !ok || !roles.HasPermission(claims.Role, roles.Admin) {
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("Admin only"))
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ResidentOrAboveMiddleware restricts access to resident level and above
+func ResidentOrAboveMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := r.Context().Value(claimsKey).(*Claims)
+		if !ok || !roles.HasPermission(claims.Role, roles.Resident) {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Resident access required"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RoleMiddleware creates middleware that requires a specific minimum role
+func RoleMiddleware(requiredRole string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := r.Context().Value(claimsKey).(*Claims)
+			if !ok || !roles.HasPermission(claims.Role, requiredRole) {
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte("Insufficient permissions"))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func extractToken(r *http.Request) string {
