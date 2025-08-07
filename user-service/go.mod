@@ -4,7 +4,6 @@ go 1.22
 
 require (
 	github.com/go-chi/chi/v5 v5.0.10
-	github.com/lib/pq v1.10.9 // for Postgres
 	gorm.io/driver/postgres v1.5.2
 	gorm.io/gorm v1.25.6
 )
