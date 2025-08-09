@@ -120,7 +120,8 @@ function Users() {
                     <th>User</th>
                     <th>Email</th>
                     <th>Role</th>
-                    <th>Status</th>
+                    <th>Verified</th>
+                    <th>Active</th>
                     <th style={{width: 220}}>Actions</th>
                   </tr>
                 </thead>
@@ -155,7 +156,8 @@ function Users() {
                         </td>
                         <td>
                           <span className={`badge ${u.email_confirmed ? 'success' : 'muted'}`}>{u.email_confirmed ? 'Verified' : 'Unverified'}</span>
-                          {' '}
+                        </td>
+                        <td>
                           <span className={`badge ${u.lockout_enabled ? 'error' : 'success'}`}>{u.lockout_enabled ? 'Locked' : 'Active'}</span>
                         </td>
                         <td>

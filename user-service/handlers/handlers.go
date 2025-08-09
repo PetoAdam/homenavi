@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"user-service/db"
 	"user-service/middleware"
@@ -19,20 +20,20 @@ import (
 
 func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	// Signup should be public, no JWT required
-	// TODO: Add input validation for production?
 	if r.Method != http.MethodPost {
 		log.Printf("[WARN] Invalid method for /user: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
-		UserName  string  `json:"user_name"`
-		Email     string  `json:"email"`
-		Password  string  `json:"password"`
-		FirstName string  `json:"first_name"`
-		LastName  string  `json:"last_name"`
-		Role      string  `json:"role"`
-		GoogleID  *string `json:"google_id"`
+		UserName  string `json:"user_name"`
+		Email     string `json:"email"`
+		Password  string `json:"password"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		// Role intentionally ignored for security; public signup cannot set privileged roles
+		Role     string  `json:"role"`
+		GoogleID *string `json:"google_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[ERROR] Invalid user create request: %v", err)
@@ -66,14 +67,15 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		passwordHash = &ph
 	} else if req.GoogleID == nil || *req.GoogleID == "" {
 		// If no password and no GoogleID, reject the request
-	log.Printf("[ERROR] No password or GoogleID provided")
-	http.Error(w, "Password or GoogleID required", http.StatusBadRequest)
+		log.Printf("[ERROR] No password or GoogleID provided")
+		http.Error(w, "Password or GoogleID required", http.StatusBadRequest)
 		return
 	}
-	role := req.Role
-	if role == "" {
-		role = "user"
+	// Force role to standard user regardless of client-provided value to prevent privilege escalation
+	if req.Role != "" && req.Role != "user" {
+		log.Printf("[WARN] Ignoring attempted elevated role '%s' on public signup for email=%s", req.Role, req.Email)
 	}
+	role := "user"
 	user := db.User{
 		ID:                 uuid.New(),
 		UserName:           req.UserName,
@@ -171,17 +173,20 @@ func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type userOut struct {
-		ID                string  `json:"id"`
-		UserName          string  `json:"user_name"`
-		Email             string  `json:"email"`
-		FirstName         string  `json:"first_name"`
-		LastName          string  `json:"last_name"`
-		Role              string  `json:"role"`
-		EmailConfirmed    bool    `json:"email_confirmed"`
-		TwoFactorEnabled  bool    `json:"two_factor_enabled"`
-		TwoFactorType     string  `json:"two_factor_type"`
-		ProfilePictureURL *string `json:"profile_picture_url"`
-		GoogleID          *string `json:"google_id"`
+		ID                string     `json:"id"`
+		UserName          string     `json:"user_name"`
+		Email             string     `json:"email"`
+		FirstName         string     `json:"first_name"`
+		LastName          string     `json:"last_name"`
+		Role              string     `json:"role"`
+		EmailConfirmed    bool       `json:"email_confirmed"`
+		TwoFactorEnabled  bool       `json:"two_factor_enabled"`
+		TwoFactorType     string     `json:"two_factor_type"`
+		ProfilePictureURL *string    `json:"profile_picture_url"`
+		GoogleID          *string    `json:"google_id"`
+		LockoutEnabled    bool       `json:"lockout_enabled"`
+		CreatedAt         time.Time  `json:"created_at"`
+		UpdatedAt         time.Time  `json:"updated_at"`
 	}
 
 	out := make([]userOut, 0, len(users))
@@ -198,6 +203,9 @@ func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 			TwoFactorType:     u.TwoFactorType,
 			ProfilePictureURL: u.ProfilePictureURL,
 			GoogleID:          u.GoogleID,
+			LockoutEnabled:    u.LockoutEnabled,
+			CreatedAt:         u.CreatedAt,
+			UpdatedAt:         u.UpdatedAt,
 		})
 	}
 
@@ -362,17 +370,20 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type userOut struct {
-		ID                string  `json:"id"`
-		UserName          string  `json:"user_name"`
-		Email             string  `json:"email"`
-		FirstName         string  `json:"first_name"`
-		LastName          string  `json:"last_name"`
-		Role              string  `json:"role"`
-		EmailConfirmed    bool    `json:"email_confirmed"`
-		TwoFactorEnabled  bool    `json:"two_factor_enabled"`
-		TwoFactorType     string  `json:"two_factor_type"`
-		ProfilePictureURL *string `json:"profile_picture_url"`
-		GoogleID          *string `json:"google_id"`
+		ID                string     `json:"id"`
+		UserName          string     `json:"user_name"`
+		Email             string     `json:"email"`
+		FirstName         string     `json:"first_name"`
+		LastName          string     `json:"last_name"`
+		Role              string     `json:"role"`
+		EmailConfirmed    bool       `json:"email_confirmed"`
+		TwoFactorEnabled  bool       `json:"two_factor_enabled"`
+		TwoFactorType     string     `json:"two_factor_type"`
+		ProfilePictureURL *string    `json:"profile_picture_url"`
+		GoogleID          *string    `json:"google_id"`
+		LockoutEnabled    bool       `json:"lockout_enabled"`
+		CreatedAt         time.Time  `json:"created_at"`
+		UpdatedAt         time.Time  `json:"updated_at"`
 	}
 
 	out := make([]userOut, 0, len(users))
@@ -389,6 +400,9 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 			TwoFactorType:     u.TwoFactorType,
 			ProfilePictureURL: u.ProfilePictureURL,
 			GoogleID:          u.GoogleID,
+			LockoutEnabled:    u.LockoutEnabled,
+			CreatedAt:         u.CreatedAt,
+			UpdatedAt:         u.UpdatedAt,
 		})
 	}
 
@@ -502,12 +516,12 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 	}
 	update := make(map[string]interface{})
 	for k, v := range req {
-	if allowed[k] {
+		if allowed[k] {
 			switch k {
 			case "password":
 				hash, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("%v", v)), bcrypt.DefaultCost)
 				if err != nil {
-		    http.Error(w, "Password hash error", http.StatusInternalServerError)
+					http.Error(w, "Password hash error", http.StatusInternalServerError)
 					return
 				}
 				update["password_hash"] = string(hash)

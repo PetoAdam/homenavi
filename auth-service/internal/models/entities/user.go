@@ -15,6 +15,7 @@ type User struct {
 	TwoFactorSecret   string    `json:"-"` // never serialized
 	ProfilePictureURL string    `json:"profile_picture_url"`
 	GoogleID          string    `json:"google_id,omitempty"`
+	LockoutEnabled    bool      `json:"lockout_enabled"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }

@@ -1,5 +1,8 @@
 version: '3.8'
 services:
+  # NOTE: Only frontend, api-gateway and nginx expose host ports in this hardened config.
+  # For local debugging you can temporarily uncomment the 'ports' blocks (marked DEV) below.
+  # DO NOT commit uncommented internal service ports to main.
   frontend:
     build:
       context: ./frontend
@@ -31,9 +34,10 @@ services:
 
   auth-service:
     build: ./auth-service
-    ports:
-      - "8000:8000"
     restart: unless-stopped
+  # DEV: expose directly (e.g. curl localhost:8000)
+  # ports:
+  #   - "8000:8000"
     environment:
       - AUTH_SERVICE_PORT=8000
       - USER_SERVICE_URL=${USER_SERVICE_URL}
@@ -57,40 +61,44 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     restart: unless-stopped
+  # DEV:
+  # ports:
+  #   - "6379:6379"
     networks:
       - homenavi-network
 
   prometheus:
     image: prom/prometheus
-    ports:
-      - "9090:9090"
     restart: unless-stopped
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - homenavi-network
+  # DEV:
+  # ports:
+  #   - "9090:9090"
 
   grafana:
     image: grafana/grafana
-    ports:
-      - "3000:3000"
     restart: unless-stopped
     networks:
       - homenavi-network
     depends_on:
       - prometheus
+  # DEV:
+  # ports:
+  #   - "3000:3000"
 
   jaeger:
     image: jaegertracing/all-in-one
-    ports:
-      - "16686:16686"
-      - "14268:14268"
     restart: unless-stopped
     networks:
       - homenavi-network
+  # DEV:
+  # ports:
+  #   - "16686:16686"
+  #   - "14268:14268"
 
   nginx:
     image: nginx:1.25-alpine
@@ -119,21 +127,23 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - homenavi-network
+  # DEV:
+  # ports:
+  #   - "5432:5432"
 
   user-service:
     build: 
       context: ./user-service
       no_cache: true
-    ports:
-      - "8001:8001"
     restart: unless-stopped
+  # DEV:
+  # ports:
+  #   - "8001:8001"
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -150,18 +160,17 @@ services:
 
   profile-picture-service:
     build: ./profile-picture-service
-    ports:
-      - "8086:8000"
     restart: unless-stopped
     volumes:
       - profile-pictures:/uploads
     networks:
       - homenavi-network
+  # DEV:
+  # ports:
+  #   - "8086:8000"
 
   email-service:
     build: ./email-service
-    ports:
-      - "8002:8002"
     restart: unless-stopped
     environment:
       - EMAIL_SERVICE_PORT=8002
@@ -173,14 +182,18 @@ services:
       - FROM_NAME=${FROM_NAME:-Homenavi}
     networks:
       - homenavi-network
+  # DEV:
+  # ports:
+  #   - "8002:8002"
 
   echo-service:
     build: ./echo-service
-    ports:
-      - "9000:9000"
     restart: unless-stopped
     networks:
       - homenavi-network
+  # DEV:
+  # ports:
+  #   - "9000:9000"
 
 volumes:
   postgres_data:
