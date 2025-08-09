@@ -591,7 +591,8 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user.LockoutEnabled {
-		http.Error(w, "Account is locked", http.StatusForbidden)
+		// Use 423 Locked to distinguish from generic 403/401
+		http.Error(w, "Account is locked", http.StatusLocked)
 		return
 	}
 	if user.PasswordHash == nil {

@@ -55,6 +55,7 @@ func main() {
 	avatarHandler := profile.NewAvatarHandler(authService, userService, profilePictureService)
 
 	userDeleteHandler := user.NewDeleteHandler(authService, userService)
+	userManageHandler := user.NewManageHandler(authService, userService)
 
 	googleOAuthHandler := oauth.NewGoogleHandler(authService, userService)
 
@@ -99,6 +100,12 @@ func main() {
 		// Profile
 		r.Get("/me", profileHandler.HandleMe)
 		r.Delete("/delete", userDeleteHandler.HandleDeleteUser)
+
+		// User management (consolidated access via auth service)
+		r.Get("/users", userManageHandler.HandleList)
+		r.Get("/users/{id}", userManageHandler.HandleGet)
+		r.Patch("/users/{id}", userManageHandler.HandlePatch)
+		r.Post("/users/{id}/lockout", userManageHandler.HandleLockout)
 
 		// Profile pictures
 		r.Post("/profile/generate-avatar", avatarHandler.HandleGenerateAvatar)

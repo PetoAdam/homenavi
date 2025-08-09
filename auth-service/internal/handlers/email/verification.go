@@ -50,14 +50,13 @@ func (h *VerificationHandler) HandleEmailVerifyRequest(w http.ResponseWriter, r 
 		return
 	}
 
-	// Send email (mock for now, will use real email service when available)
+	// Send email
 	if err := h.emailService.SendVerificationEmail(user.Email, user.FirstName, code); err != nil {
 		log.Printf("[ERROR] Failed to send verification email: %v", err)
-		// Mock email sending
 		log.Printf("[INFO] Mock verification email sent to %s with code: %s", user.Email, code)
 	}
 
-	log.Printf("[INFO] Email verification code sent to user: %s", req.UserID)
+	log.Printf("[INFO] Email verification code %s sent to user: %s", code, req.UserID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.VerificationResponse{
 		Message:  "Verification code sent to your email",

@@ -37,12 +37,18 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 	user, err := h.userService.ValidateCredentials(req.Email, req.Password)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			// Translate internal forbidden/lockout to 423 Locked for clarity
+			if appErr.Code == http.StatusForbidden && appErr.Message == "account is locked" {
+				errors.WriteError(w, errors.NewAppError(http.StatusLocked, "account locked", nil))
+				return
+			}
 			errors.WriteError(w, appErr)
 			return
 		}
 		errors.WriteError(w, errors.Unauthorized("invalid credentials"))
 		return
 	}
+
 
 	// Check if 2FA is enabled
 	if user.TwoFactorEnabled {

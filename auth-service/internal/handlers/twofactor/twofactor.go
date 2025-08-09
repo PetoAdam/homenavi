@@ -204,7 +204,7 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 		log.Printf("[INFO] Mock 2FA email sent to %s with code: %s", user.Email, code)
 	}
 
-	log.Printf("[INFO] 2FA email code sent to user: %s", req.UserID)
+	log.Printf("[INFO] 2FA email code %s sent to user: %s", code, req.UserID)
 
 	response := responses.TwoFactorEmailResponse{
 		Message:  "2FA code sent to your email",

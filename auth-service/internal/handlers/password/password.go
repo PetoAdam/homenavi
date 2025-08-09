@@ -58,6 +58,7 @@ func (h *ResetHandler) HandlePasswordResetRequest(w http.ResponseWriter, r *http
 		log.Printf("[INFO] Mock password reset email sent to %s with code: %s", user.Email, code)
 	}
 
+	log.Printf("[INFO] Password reset email with code %s sent to user: %s", code, user.ID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.VerificationResponse{
 		Message:  "Password reset code sent to your email",
