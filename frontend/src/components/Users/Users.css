@@ -1,0 +1,85 @@
+.users-page { padding: 0 1rem; }
+.users-page .masonry-dashboard { column-count: 1 !important; }
+
+.fade-in { animation: fadeIn .2s ease-out; }
+.row-fade { animation: fadeIn .18s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: translateY(0);} }
+
+.card-body { padding: 0.5rem 0.25rem 0.5rem 0.25rem; }
+
+.users-toolbar {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+.input, .select {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  color: white;
+  padding: .6rem .8rem;
+}
+.input::placeholder { color: rgba(255,255,255,0.6); }
+
+.alert.error {
+  background: rgba(255, 102, 102, 0.15);
+  border: 1px solid rgba(255, 102, 102, 0.3);
+  color: #ffcccc;
+  padding: .75rem 1rem;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.table-wrapper { overflow: auto; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: .75rem .6rem; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; }
+.table th { font-weight: 600; }
+.table tbody tr { transition: background .15s ease; }
+.table tbody tr:hover { background: rgba(255,255,255,0.03); }
+.table tbody tr:active { background: rgba(255,255,255,0.06); }
+
+.user-cell { display: flex; gap: .6rem; align-items: center; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); }
+.name { font-weight: 600; }
+.muted { color: rgba(255,255,255,0.7); }
+
+.badge { padding: .18rem .55rem; border-radius: 999px; font-size: .8rem; font-weight: 700; letter-spacing: -0.2px; }
+.badge.success { background: rgba(102, 255, 178, 0.15); border: 1px solid rgba(102, 255, 178, 0.35); color: #d6ffef; }
+.badge.muted { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.8); }
+
+.actions { display: flex; gap: .5rem; }
+
+.pagination { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
+
+.page-header-flat { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; margin: 10px 10px 12px 10px; padding: 0 8px; }
+.page-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px; margin: 0; color: var(--color-white); }
+.page-subtitle { color: rgba(255,255,255,0.75); margin-top: 0.2rem; }
+
+/* Make toolbar and list cards span all columns to create a wide matrix */
+.span-all { width: 100%; }
+.masonry-dashboard > .span-all { break-inside: avoid; display: block; }
+
+/* Tighter inner alignment */
+/* Remove legacy inner alignment helper */
+.page-header-inner { display: none; }
+
+/* Skeleton loader */
+.skeleton-row .skeleton-line { height: 18px; background: linear-gradient(90deg, rgba(255,255,255,0.08) 25%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.08) 75%); background-size: 400% 100%; border-radius: 6px; animation: skeleton 1.2s ease-in-out infinite; }
+@keyframes skeleton { 0% { background-position: 0% 50%; } 100% { background-position: -200% 50%; } }
+
+/* Native select overrides removed (custom RoleSelect used) */
+
+@media (max-width: 720px) {
+  .page-header-flat { margin: 8px 6px 10px 6px; padding: 0 6px; align-items: center; text-align: center; }
+  .page-title { font-size: 1.6rem; }
+  .page-subtitle { font-size: 0.85rem; max-width: 320px; }
+  .users-toolbar { flex-wrap: wrap; justify-content: center; }
+  .users-toolbar .input { flex: 1 1 100%; min-width: 0; }
+  .users-toolbar > * { flex: 0 0 auto; }
+  .users-toolbar .role-select, .users-toolbar .btn { margin-top: 0.4rem; }
+  .card-body { padding: 0.5rem 0.4rem; }
+  .pagination { justify-content: center; }
+  .table th:nth-child(2), .table td:nth-child(2) { display: none; } /* hide email on very small screens */
+  .table th:nth-child(5), .table td:nth-child(5) { white-space: nowrap; }
+}

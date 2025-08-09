@@ -18,6 +18,7 @@ func main() {
 	r.Post("/users", handlers.HandleUserCreate)
 	r.Get("/users/{id}", handlers.HandleUserGet)
 	r.Get("/users", handlers.HandleUserGetByEmail)
+	// Listing is handled by GET /users with query params (q,page,page_size)
 	r.Patch("/users/{id}", handlers.HandleUserPatch)
 	r.Post("/users/{id}/lockout", handlers.HandleLockout)
 	r.Delete("/users/{id}", handlers.HandleUserDelete)

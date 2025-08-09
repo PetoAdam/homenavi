@@ -5,6 +5,7 @@ import Home from './components/Home/Home.jsx';
 import Devices from './components/Devices/Devices.jsx';
 import Map from './components/Map/Map.jsx';
 import Spotify from './components/Spotify/Spotify.jsx';
+import Users from './components/Users/Users.jsx';
 import Profile from './components/Profile/Profile.jsx';
 import ProfileButton from './components/common/ProfileButton/ProfileButton.jsx';
 import './App.css';
@@ -108,6 +109,7 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/map" element={<Map />} />
             <Route path="/spotify" element={<Spotify />} />
+            <Route path="/users" element={<Users />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>

@@ -79,16 +79,40 @@ func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handl
 	}
 }
 
-func AdminOnlyMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := r.Context().Value(claimsKey).(*Claims)
-		if !ok || claims.Role != "admin" {
-			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte("Admin only"))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+// RoleAtLeastMiddleware enforces that the user's role is at least the required role
+func RoleAtLeastMiddleware(required string) func(http.Handler) http.Handler {
+	roleRank := map[string]int{
+		"public":  0,
+		"user":    1,
+		"resident": 2,
+		"admin":   3,
+		// internal roles
+		"service": 4,
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := r.Context().Value(claimsKey).(*Claims)
+			if !ok {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte("Unauthorized"))
+				return
+			}
+			reqRank, ok := roleRank[required]
+			if !ok {
+				// Unknown requirement -> deny by default
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte("Forbidden"))
+				return
+			}
+			userRank := roleRank[claims.Role]
+			if userRank < reqRank {
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte("Forbidden"))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func extractToken(r *http.Request) string {
