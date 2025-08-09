@@ -27,7 +27,14 @@
 .glass-card:hover {
   border: 1.4px solid var(--color-primary);
   transform: translateY(-1px) scale(1.01);
-  filter: brightness(1.08) saturate(1.13);
+  filter: brightness(1.05) saturate(1.07);
+}
+
+/* Disable hover effects when explicit no-hover modifier is set */
+.glass-card.no-hover:hover {
+  border: 1.2px solid rgba(60,70,90,0.38);
+  transform: none;
+  filter: none;
 }
 
 /*
@@ -38,8 +45,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center; /* Center all card content horizontally */
+  justify-content: flex-start;
+  align-items: stretch;
   gap: 0.5rem;
   border-radius: 1.25rem;
   background: none;

@@ -9,18 +9,18 @@ routes:
     methods: [POST]
     access: public
     type: rest
+  - path: /api/users
+    upstream: http://user-service:8001/users
+    methods: [GET]
+    access: auth
+    type: rest
   - path: /api/users/validate
     upstream: http://user-service:8001/users/validate
     methods: [POST]
     access: public
     type: rest
-  - path: /api/users?email={email}
-    upstream: http://user-service:8001/users?email={email}
-    methods: [GET]
-    access: auth
-    type: rest
   - path: /api/users/{id}/lockout
     upstream: http://user-service:8001/users/{id}/lockout
     methods: [POST]
-    access: auth
+    access: admin
     type: rest

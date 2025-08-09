@@ -1,0 +1,24 @@
+.snackbar {
+  position: fixed;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.98);
+  min-width: 240px;
+  max-width: 90vw;
+  background: #232b36;
+  color: #fff;
+  padding: 0.9rem 1.8rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9999;
+  transition: opacity 0.35s cubic-bezier(.4,0,.2,1), transform 0.35s cubic-bezier(.4,0,.2,1);
+}
+.snackbar--show { opacity: 1; transform: translateX(-50%) scale(1); pointer-events: auto; }
+@media (max-width: 600px) {
+  .snackbar { min-width: 160px; padding: 0.75rem 1.2rem; font-size: 0.95rem; }
+}
