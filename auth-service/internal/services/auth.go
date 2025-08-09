@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	mathrand "math/rand"
 	"net/http"
 	"time"
 
@@ -136,8 +136,16 @@ func (s *AuthService) ValidateVerificationCode(codeType, userID, code string) er
 	return nil
 }
 
+// GenerateVerificationCode returns a 6‑digit numeric code using cryptographic randomness.
+// Falls back to a time-based value only if the RNG fails (extremely unlikely).
 func (s *AuthService) GenerateVerificationCode() string {
-	return fmt.Sprintf("%06d", mathrand.Intn(1000000))
+	buf := make([]byte, 4)
+	if _, err := rand.Read(buf); err == nil {
+		n := binary.BigEndian.Uint32(buf) % 1000000
+		return fmt.Sprintf("%06d", n)
+	}
+	// Fallback (non-crypto) – still returns a valid 6 digit string.
+	return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
 }
 
 func (s *AuthService) GenerateOAuthState() (string, error) {
