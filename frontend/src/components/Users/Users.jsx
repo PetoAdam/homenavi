@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { listUsers, updateUser, lockoutUser } from '../../services/usersService';
+import { listUsers, patchUser as updateUser, lockoutUser } from '../../services/authService';
 import MasonryDashboard from '../Home/MasonryDashboard/MasonryDashboard';
 import GlassCard from '../common/GlassCard/GlassCard';
 import Button from '../common/Button/Button';
@@ -155,6 +155,8 @@ function Users() {
                         </td>
                         <td>
                           <span className={`badge ${u.email_confirmed ? 'success' : 'muted'}`}>{u.email_confirmed ? 'Verified' : 'Unverified'}</span>
+                          {' '}
+                          <span className={`badge ${u.lockout_enabled ? 'error' : 'success'}`}>{u.lockout_enabled ? 'Locked' : 'Active'}</span>
                         </td>
                         <td>
                           <div className="actions">

@@ -1,268 +1,147 @@
-import axios from 'axios';
+import http, { setAccessToken as setHttpAccessToken } from './httpClient';
 
-const API_URL = '/api/auth'; // Use gateway path
-const API_USERS_URL = '/api/users'; // Users API path
+const AUTH_BASE = '/api/auth';
 
-// Helper function to create auth headers
-const createAuthHeaders = (accessToken, contentType = 'application/json') => ({
-  'Authorization': `Bearer ${accessToken}`,
-  'Content-Type': contentType
-});
+// Auth & user management consolidated service
+// Returns normalized { success, data?/tokens?, error? }
 
-// Helper function to handle API errors consistently
-const handleError = (err, defaultMessage) => {
-  console.error(`${defaultMessage}:`, err);
-  const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || defaultMessage;
-  return { success: false, error: errorMessage };
-};
-
-export async function login(email, password, twoFACode = null) {
-  try {
-    const resp = await axios.post(`${API_URL}/login/start`, { email, password });
-    if (resp.data && resp.data["2fa_required"]) {
-      return { twoFA: true, userId: resp.data.user_id, type: resp.data["2fa_type"] };
-    }
-    return {
-      success: true,
-      accessToken: resp.data.access_token,
-      refreshToken: resp.data.refresh_token,
-    };
-  } catch (err) {
-    return handleError(err, 'Login failed');
+export async function login(email, password) {
+  const res = await http.post(`${AUTH_BASE}/login/start`, { email, password });
+  if (!res.success) return { success: false, error: res.error };
+  const d = res.data || {};
+  if (d['2fa_required']) {
+    return { success: true, twoFA: true, userId: d.user_id, type: d['2fa_type'] };
   }
+  if (d.access_token) setHttpAccessToken(d.access_token);
+  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
 }
 
 export async function finish2FA(userId, code) {
-  try {
-    const resp = await axios.post(`${API_URL}/login/finish`, { user_id: userId, code });
-    return {
-      success: true,
-      accessToken: resp.data.access_token,
-      refreshToken: resp.data.refresh_token,
-    };
-  } catch (err) {
-    return handleError(err, '2FA verification failed');
-  }
+  const res = await http.post(`${AUTH_BASE}/login/finish`, { user_id: userId, code });
+  if (!res.success) return { success: false, error: res.error };
+  const d = res.data || {};
+  if (d.access_token) setHttpAccessToken(d.access_token);
+  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
 }
 
 export async function signup(firstName, lastName, userName, email, password) {
-  try {
-    const resp = await axios.post(`${API_URL}/signup`, {
-      first_name: firstName,
-      last_name: lastName,
-      user_name: userName,
-      email,
-      password
-    });
-    return { success: true, user: resp.data };
-  } catch (err) {
-    return handleError(err, 'Signup failed');
-  }
+  const res = await http.post(`${AUTH_BASE}/signup`, { first_name: firstName, last_name: lastName, user_name: userName, email, password });
+  if (!res.success) return res; // retain error shape
+  return { success: true, user: res.data };
 }
 
 export async function refreshToken(refreshToken) {
-  try {
-    const resp = await axios.post(`${API_URL}/refresh`, { refresh_token: refreshToken });
-    return {
-      success: true,
-      accessToken: resp.data.access_token,
-      refreshToken: resp.data.refresh_token,
-    };
-  } catch (err) {
-    return handleError(err, 'Refresh failed');
-  }
+  const res = await http.post(`${AUTH_BASE}/refresh`, { refresh_token: refreshToken });
+  if (!res.success) return { success: false, error: res.error };
+  const d = res.data || {};
+  if (d.access_token) setHttpAccessToken(d.access_token);
+  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
 }
 
 export async function logout(refreshToken, accessToken) {
-  try {
-    // Only call logout endpoint if we have a refresh token
-    if (refreshToken) {
-      const headers = accessToken ? createAuthHeaders(accessToken) : {};
-      await axios.post(`${API_URL}/logout`, { refresh_token: refreshToken }, { headers });
-    }
-    return { success: true };
-  } catch (err) {
-    console.error('Logout error:', err);
-    // Even if logout fails, we still want to clear local storage
-    return { success: true };
-  }
+  if (!refreshToken) { setHttpAccessToken(null); return { success: true }; }
+  const res = await http.post(`${AUTH_BASE}/logout`, { refresh_token: refreshToken }, { token: accessToken });
+  setHttpAccessToken(null);
+  return res;
 }
 
 export async function getMe(accessToken) {
-  try {
-    const resp = await axios.get(`${API_URL}/me`, { headers: createAuthHeaders(accessToken) });
-    return { success: true, user: resp.data };
-  } catch (err) {
-    return handleError(err, 'Failed to fetch user');
-  }
+  if (accessToken) setHttpAccessToken(accessToken);
+  const res = await http.get(`${AUTH_BASE}/me`, { token: accessToken });
+  if (!res.success) return res;
+  return { success: true, user: res.data };
 }
 
+// Email verification
 export async function requestEmailVerify(userId, accessToken) {
-  try {
-    await axios.post(`${API_URL}/email/verify/request`, { user_id: userId }, { headers: createAuthHeaders(accessToken) });
-    return { success: true };
-  } catch (err) {
-    return handleError(err, 'Email verify request failed');
-  }
+  return await http.post(`${AUTH_BASE}/email/verify/request`, { user_id: userId }, { token: accessToken });
 }
-
 export async function confirmEmailVerify(userId, code, accessToken) {
-  try {
-    const resp = await axios.post(`${API_URL}/email/verify/confirm`, 
-      { user_id: userId, code },
-      { headers: createAuthHeaders(accessToken) }
-    );
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, 'Email verification failed');
-  }
+  return await http.post(`${AUTH_BASE}/email/verify/confirm`, { user_id: userId, code }, { token: accessToken });
 }
 
+// 2FA flows
 export async function request2FAEmail(userId, accessToken) {
-  try {
-    const headers = accessToken ? createAuthHeaders(accessToken) : {};
-    await axios.post(`${API_URL}/2fa/email/request`, { user_id: userId }, { headers });
-    return { success: true };
-  } catch (err) {
-    return handleError(err, '2FA email request failed');
-  }
+  return await http.post(`${AUTH_BASE}/2fa/email/request`, { user_id: userId }, { token: accessToken });
 }
-
 export async function verify2FAEmail(userId, code, accessToken) {
-  try {
-    const resp = await axios.post(`${API_URL}/2fa/email/verify`, 
-      { user_id: userId, code },
-      { headers: createAuthHeaders(accessToken) }
-    );
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, '2FA verification failed');
-  }
+  return await http.post(`${AUTH_BASE}/2fa/email/verify`, { user_id: userId, code }, { token: accessToken });
 }
-
 export async function setup2FATOTP(userId, accessToken) {
-  try {
-    const resp = await axios.post(`${API_URL}/2fa/setup?user_id=${userId}`, {}, { headers: createAuthHeaders(accessToken) });
-    return { success: true, secret: resp.data.secret, otpauthUrl: resp.data.otpauth_url };
-  } catch (err) {
-    return handleError(err, '2FA TOTP setup failed');
-  }
+  return await http.post(`${AUTH_BASE}/2fa/setup`, {}, { token: accessToken, params: { user_id: userId } });
 }
-
 export async function verify2FATOTP(userId, code, accessToken) {
-  try {
-    await axios.post(`${API_URL}/2fa/verify`, { user_id: userId, code }, { headers: createAuthHeaders(accessToken) });
-    return { success: true };
-  } catch (err) {
-    return handleError(err, '2FA TOTP verify failed');
-  }
+  return await http.post(`${AUTH_BASE}/2fa/verify`, { user_id: userId, code }, { token: accessToken });
 }
 
-export async function patchUser(userId, patch, accessToken) {
-  try {
-    await axios.patch(`${API_USERS_URL}/${userId}`, patch, { headers: createAuthHeaders(accessToken) });
-    return { success: true };
-  } catch (err) {
-    return handleError(err, 'Patch user failed');
-  }
-}
-
-export async function deleteUser(userId, accessToken) {
-  try {
-    await axios.post(`${API_URL}/delete`, { user_id: userId }, { headers: createAuthHeaders(accessToken) });
-    return { success: true };
-  } catch (err) {
-    return handleError(err, 'Delete user failed');
-  }
-}
-
+// Password management
 export async function requestPasswordReset(email) {
-  try {
-    const resp = await axios.post(`${API_URL}/password/reset/request`, { email });
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, 'Failed to send reset code');
-  }
+  return await http.post(`${AUTH_BASE}/password/reset/request`, { email });
 }
-
 export async function confirmPasswordReset(email, code, newPassword) {
-  try {
-    const resp = await axios.post(`${API_URL}/password/reset/confirm`, {
-      email,
-      code,
-      new_password: newPassword
-    });
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, 'Password reset failed');
-  }
+  return await http.post(`${AUTH_BASE}/password/reset/confirm`, { email, code, new_password: newPassword });
 }
-
 export async function changePassword(currentPassword, newPassword, accessToken) {
-  try {
-    const resp = await axios.post(`${API_URL}/password/change`, 
-      { current_password: currentPassword, new_password: newPassword },
-      { headers: createAuthHeaders(accessToken) }
-    );
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, 'Password change failed');
-  }
+  return await http.post(`${AUTH_BASE}/password/change`, { current_password: currentPassword, new_password: newPassword }, { token: accessToken });
 }
 
-// Profile picture service functions
-export const generateAvatar = async (accessToken) => {
-  try {
-    const resp = await axios.post(`${API_URL}/profile/generate-avatar`, {}, {
-      headers: createAuthHeaders(accessToken)
-    });
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, 'Avatar generation failed');
-  }
+// Profile picture
+export async function generateAvatar(accessToken) {
+  return await http.post(`${AUTH_BASE}/profile/generate-avatar`, {}, { token: accessToken });
+}
+export async function uploadProfilePicture(file, accessToken, userId = null) {
+  const form = new FormData();
+  form.append('file', file);
+  const params = userId ? { user_id: userId } : undefined;
+  return await http.post(`${AUTH_BASE}/profile/upload`, form, { token: accessToken, contentType: 'multipart/form-data', params });
+}
+
+// OAuth
+export function initiateGoogleLogin() {
+  window.location.href = `${AUTH_BASE}/oauth/google/login`;
+}
+
+// User management (consolidated from former usersService)
+export async function listUsers(token, { q = '', page = 1, pageSize = 20 } = {}) {
+  return await http.get(`${AUTH_BASE}/users`, { token, params: { q: q || undefined, page, page_size: pageSize } });
+}
+export async function patchUser(userId, patch, token) {
+  return await http.patch(`${AUTH_BASE}/users/${userId}`, patch, { token });
+}
+export async function lockoutUser(userId, lock, token) {
+  return await http.post(`${AUTH_BASE}/users/${userId}/lockout`, { lock }, { token });
+}
+export async function getUserByEmail(email, token) {
+  return await http.get(`${AUTH_BASE}/users`, { token, params: { email } });
+}
+
+// We no longer expose deleteUser via auth service (if needed, add endpoint). Placeholder:
+export async function deleteUser(userId, token) {
+  return await http.post(`${AUTH_BASE}/users/${userId}/delete`, {}, { token }); // adjust server when implemented
+}
+
+export default {
+  login,
+  finish2FA,
+  signup,
+  refreshToken,
+  logout,
+  getMe,
+  requestEmailVerify,
+  confirmEmailVerify,
+  request2FAEmail,
+  verify2FAEmail,
+  setup2FATOTP,
+  verify2FATOTP,
+  requestPasswordReset,
+  confirmPasswordReset,
+  changePassword,
+  generateAvatar,
+  uploadProfilePicture,
+  initiateGoogleLogin,
+  listUsers,
+  patchUser,
+  lockoutUser,
+  getUserByEmail,
+  deleteUser,
 };
-
-export const uploadProfilePicture = async (file, accessToken, userId = null) => {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    let url = `${API_URL}/profile/upload`;
-    if (userId) {
-      url += `?user_id=${userId}`;
-    }
-    
-    const resp = await axios.post(url, formData, {
-      headers: createAuthHeaders(accessToken, 'multipart/form-data')
-    });
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return handleError(err, 'Upload failed');
-  }
-};
-
-// Google OAuth functions
-export async function initiateGoogleLogin() {
-  try {
-    // Redirect to Google OAuth login endpoint
-    window.location.href = `${API_URL}/oauth/google/login`;
-  } catch (err) {
-    return handleError(err, 'Failed to initiate Google login');
-  }
-}
-
-export async function handleGoogleCallback(code, redirectURI) {
-  try {
-    const resp = await axios.post(`${API_URL}/oauth/google/callback`, {
-      code,
-      redirect_uri: redirectURI
-    });
-    return {
-      success: true,
-      accessToken: resp.data.access_token,
-      refreshToken: resp.data.refresh_token,
-    };
-  } catch (err) {
-    return handleError(err, 'Google OAuth callback failed');
-  }
-}
