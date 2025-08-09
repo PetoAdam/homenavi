@@ -55,7 +55,7 @@ func (h *EmailHandler) SendVerificationEmail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	log.Printf("Verification email sent to %s", req.To)
+	log.Printf("Verification email with code %s sent to %s", req.Code, req.To)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }

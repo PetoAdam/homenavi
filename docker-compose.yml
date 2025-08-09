@@ -17,7 +17,7 @@ services:
     environment:
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
       - USER_SERVICE_URL=${USER_SERVICE_URL}
-      - JWT_PUBLIC_KEY_PATH=${JWT_PUBLIC_KEY_PATH}
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
       - REDIS_ADDR=${REDIS_ADDR}
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
       - LOG_LEVEL=${LOG_LEVEL}
@@ -37,7 +37,7 @@ services:
     environment:
       - AUTH_SERVICE_PORT=8000
       - USER_SERVICE_URL=${USER_SERVICE_URL}
-      - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
+      - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
       - REDIS_ADDR=${REDIS_ADDR}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - EMAIL_SERVICE_URL=http://email-service:8002
@@ -140,10 +140,13 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
     depends_on:
       - postgres
     networks:
       - homenavi-network
+    volumes:
+      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
 
   profile-picture-service:
     build: ./profile-picture-service

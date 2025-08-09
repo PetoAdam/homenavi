@@ -1,7 +1,10 @@
 package oauth
 
 import (
+	"fmt"
+	"log"
 	"net/http"
+	"time"
 
 	"auth-service/internal/services"
 )
@@ -19,6 +22,8 @@ func NewGoogleHandler(authService *services.AuthService, userService *services.U
 }
 
 func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	log.Printf("[OAUTH][Google] Callback start q=%v", r.URL.Query())
 	// Get code from query parameters (this is how Google sends it)
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
@@ -43,14 +48,43 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	// Exchange Google OAuth code for user information
 	userInfo, err := h.authService.ExchangeGoogleOAuthCode(code, "/api/auth/oauth/google/callback")
 	if err != nil {
+		log.Printf("[OAUTH][Google] Exchange failed: %v", err)
 		http.Redirect(w, r, "/?error=oauth_exchange_failed", http.StatusTemporaryRedirect)
 		return
 	}
 
-	// Try to find user by Google ID first
-	user, err := h.userService.GetUserByGoogleID(userInfo.ID)
+	// Prefer email match first (link scenario where user signed up via password before OAuth)
+	user, err := h.userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
-		// User exists with this Google ID, log them in
+		log.Printf("[OAUTH][Google] Existing user by email=%s id=%s google_id=%s", userInfo.Email, user.ID, user.GoogleID)
+		if user.GoogleID == "" {
+			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
+				log.Printf("[OAUTH][Google] Link failure user_id=%s: %v", user.ID, err)
+				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
+				return
+			}
+			user.GoogleID = userInfo.ID
+			log.Printf("[OAUTH][Google] Linked google_id=%s to user_id=%s", userInfo.ID, user.ID)
+		} else if user.GoogleID != userInfo.ID {
+			log.Printf("[OAUTH][Google] Email conflict existing google_id=%s incoming=%s", user.GoogleID, userInfo.ID)
+			http.Redirect(w, r, "/?error=email_conflict", http.StatusTemporaryRedirect)
+			return
+		}
+		// Proceed to token issuance
+		accessToken, err := h.authService.IssueAccessToken(user)
+		if err != nil { http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect); return }
+		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
+		if err != nil { http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect); return }
+		redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
+		log.Printf("[OAUTH][Google] Success (email path) user_id=%s total_ms=%d", user.ID, time.Since(started).Milliseconds())
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Fallback: lookup by Google ID (scenario: previously linked only via OAuth route)
+	user, err = h.userService.GetUserByGoogleID(userInfo.ID)
+	if err == nil && user != nil {
+		log.Printf("[OAUTH][Google] Existing user by google_id=%s -> user_id=%s (login)", userInfo.ID, user.ID)
 		accessToken, err := h.authService.IssueAccessToken(user)
 		if err != nil {
 			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
@@ -72,19 +106,21 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	// Try to find user by email
 	user, err = h.userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
-		// User exists with this email
+		log.Printf("[OAUTH][Google] Found existing user by email=%s id=%s google_id=%s", userInfo.Email, user.ID, user.GoogleID)
 		if user.GoogleID == "" {
-			// Link Google ID to existing user
 			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
+				log.Printf("[OAUTH][Google] Link failure user_id=%s: %v", user.ID, err)
 				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
 				return
 			}
-			user.GoogleID = userInfo.ID // Update local copy
+			user.GoogleID = userInfo.ID
+			log.Printf("[OAUTH][Google] Linked google_id=%s to user_id=%s", userInfo.ID, user.ID)
 		} else if user.GoogleID != userInfo.ID {
-			// Conflict: email used by different Google account
+			log.Printf("[OAUTH][Google] Email conflict existing google_id=%s incoming=%s", user.GoogleID, userInfo.ID)
 			http.Redirect(w, r, "/?error=email_conflict", http.StatusTemporaryRedirect)
 			return
 		}
+		// DO NOT override local profile attributes with Google defaults; keep existing first/last/user_name
 
 		// Issue tokens
 		accessToken, err := h.authService.IssueAccessToken(user)
@@ -106,8 +142,10 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// User doesn't exist, create new user
+	log.Printf("[OAUTH][Google] No existing user; creating new account email=%s", userInfo.Email)
 	user, err = h.userService.CreateGoogleUser(userInfo)
 	if err != nil {
+		log.Printf("[OAUTH][Google] Create user failed: %v", err)
 		http.Redirect(w, r, "/?error=user_creation_failed", http.StatusTemporaryRedirect)
 		return
 	}
@@ -126,6 +164,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// Redirect back to frontend with tokens
-	redirectURL := "/?access_token=" + accessToken + "&refresh_token=" + refreshToken
+	redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
+	log.Printf("[OAUTH][Google] Success user_id=%s total_ms=%d", user.ID, time.Since(started).Milliseconds())
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }
