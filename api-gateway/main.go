@@ -3,8 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -28,11 +27,20 @@ func main() {
 	if len(os.Args) > 1 {
 		cfgPath = os.Args[1]
 	}
+	// Initialize structured logger (JSON if LOG_FORMAT=json)
+	var handler slog.Handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})
+	if os.Getenv("LOG_FORMAT") == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{})
+	}
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
 	cfg, err := config.LoadConfig(cfgPath, routesDir)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
-	fmt.Printf("Loaded config: %+v\n", cfg)
+	slog.Info("config loaded", "listen", cfg.ListenAddr, "routes", len(cfg.Routes))
 
 	shutdown, promHandler, tracer := observability.SetupObservability()
 	defer shutdown()
@@ -48,18 +56,22 @@ func main() {
 	mux.Handle("/ws/", wsRouter)
 	mux.Handle("/", mainRouter)
 
-	log.Printf("API Gateway running on %s", cfg.ListenAddr)
-	http.ListenAndServe(cfg.ListenAddr, mux)
+	slog.Info("api gateway starting", "addr", cfg.ListenAddr)
+	if err := http.ListenAndServe(cfg.ListenAddr, mux); err != nil {
+		slog.Error("server exited", "error", err)
+	}
 }
 
 func setupJWTKey() *rsa.PublicKey {
 	pubKeyPath := os.Getenv("JWT_PUBLIC_KEY_PATH")
 	if pubKeyPath == "" {
-		log.Fatal("JWT_PUBLIC_KEY_PATH not set")
+		slog.Error("JWT_PUBLIC_KEY_PATH not set")
+		os.Exit(1)
 	}
 	pubKey, err := apiMiddleware.LoadRSAPublicKey(pubKeyPath)
 	if err != nil {
-		log.Fatalf("Failed to load JWT public key: %v", err)
+		slog.Error("failed to load JWT public key", "error", err)
+		os.Exit(1)
 	}
 	return pubKey
 }
@@ -71,9 +83,10 @@ func setupRedisClient() *redis.Client {
 		DB:       0,
 	})
 	if pong, err := client.Ping(context.Background()).Result(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
 	} else {
-		log.Printf("Connected to Redis: %s", pong)
+		slog.Info("connected to redis", "pong", pong)
 	}
 	return client
 }
@@ -116,7 +129,7 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Not found: %s %s", r.Method, r.URL.Path)
+		slog.Warn("route not found", "method", r.Method, "path", r.URL.Path)
 		http.Error(w, "Not found", http.StatusNotFound)
 	})
 

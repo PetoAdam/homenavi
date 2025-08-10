@@ -2,7 +2,7 @@ package oauth
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -23,7 +23,7 @@ func NewGoogleHandler(authService *services.AuthService, userService *services.U
 
 func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
-	log.Printf("[OAUTH][Google] Callback start q=%v", r.URL.Query())
+	slog.Info("oauth google callback start", "query", r.URL.RawQuery)
 	// Get code from query parameters (this is how Google sends it)
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
@@ -48,7 +48,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	// Exchange Google OAuth code for user information
 	userInfo, err := h.authService.ExchangeGoogleOAuthCode(code, "/api/auth/oauth/google/callback")
 	if err != nil {
-		log.Printf("[OAUTH][Google] Exchange failed: %v", err)
+		slog.Error("oauth google exchange failed", "error", err)
 		http.Redirect(w, r, "/?error=oauth_exchange_failed", http.StatusTemporaryRedirect)
 		return
 	}
@@ -56,17 +56,17 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	// Prefer email match first (link scenario where user signed up via password before OAuth)
 	user, err := h.userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
-		log.Printf("[OAUTH][Google] Existing user by email=%s id=%s google_id=%s", userInfo.Email, user.ID, user.GoogleID)
+		slog.Info("oauth google existing user by email", "email", userInfo.Email, "user_id", user.ID, "google_id", user.GoogleID)
 		if user.GoogleID == "" {
 			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
-				log.Printf("[OAUTH][Google] Link failure user_id=%s: %v", user.ID, err)
+				slog.Error("oauth google link failure", "user_id", user.ID, "error", err)
 				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
 				return
 			}
 			user.GoogleID = userInfo.ID
-			log.Printf("[OAUTH][Google] Linked google_id=%s to user_id=%s", userInfo.ID, user.ID)
+			slog.Info("oauth google linked google id", "google_id", userInfo.ID, "user_id", user.ID)
 		} else if user.GoogleID != userInfo.ID {
-			log.Printf("[OAUTH][Google] Email conflict existing google_id=%s incoming=%s", user.GoogleID, userInfo.ID)
+			slog.Warn("oauth google email conflict", "existing_google_id", user.GoogleID, "incoming_google_id", userInfo.ID)
 			http.Redirect(w, r, "/?error=email_conflict", http.StatusTemporaryRedirect)
 			return
 		}
@@ -76,7 +76,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
 		if err != nil { http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect); return }
 		redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
-		log.Printf("[OAUTH][Google] Success (email path) user_id=%s total_ms=%d", user.ID, time.Since(started).Milliseconds())
+		slog.Info("oauth google success email path", "user_id", user.ID, "ms", time.Since(started).Milliseconds())
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		return
 	}
@@ -84,7 +84,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	// Fallback: lookup by Google ID (scenario: previously linked only via OAuth route)
 	user, err = h.userService.GetUserByGoogleID(userInfo.ID)
 	if err == nil && user != nil {
-		log.Printf("[OAUTH][Google] Existing user by google_id=%s -> user_id=%s (login)", userInfo.ID, user.ID)
+		slog.Info("oauth google existing user by google id", "google_id", userInfo.ID, "user_id", user.ID)
 		accessToken, err := h.authService.IssueAccessToken(user)
 		if err != nil {
 			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
@@ -106,17 +106,17 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	// Try to find user by email
 	user, err = h.userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
-		log.Printf("[OAUTH][Google] Found existing user by email=%s id=%s google_id=%s", userInfo.Email, user.ID, user.GoogleID)
+		slog.Info("oauth google found existing user by email", "email", userInfo.Email, "user_id", user.ID, "google_id", user.GoogleID)
 		if user.GoogleID == "" {
 			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
-				log.Printf("[OAUTH][Google] Link failure user_id=%s: %v", user.ID, err)
+				slog.Error("oauth google link failure", "user_id", user.ID, "error", err)
 				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
 				return
 			}
 			user.GoogleID = userInfo.ID
-			log.Printf("[OAUTH][Google] Linked google_id=%s to user_id=%s", userInfo.ID, user.ID)
+			slog.Info("oauth google linked google id", "google_id", userInfo.ID, "user_id", user.ID)
 		} else if user.GoogleID != userInfo.ID {
-			log.Printf("[OAUTH][Google] Email conflict existing google_id=%s incoming=%s", user.GoogleID, userInfo.ID)
+			slog.Warn("oauth google email conflict", "existing_google_id", user.GoogleID, "incoming_google_id", userInfo.ID)
 			http.Redirect(w, r, "/?error=email_conflict", http.StatusTemporaryRedirect)
 			return
 		}
@@ -142,10 +142,10 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// User doesn't exist, create new user
-	log.Printf("[OAUTH][Google] No existing user; creating new account email=%s", userInfo.Email)
+	slog.Info("oauth google creating new user", "email", userInfo.Email)
 	user, err = h.userService.CreateGoogleUser(userInfo)
 	if err != nil {
-		log.Printf("[OAUTH][Google] Create user failed: %v", err)
+		slog.Error("oauth google create user failed", "error", err)
 		http.Redirect(w, r, "/?error=user_creation_failed", http.StatusTemporaryRedirect)
 		return
 	}
@@ -165,6 +165,6 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 
 	// Redirect back to frontend with tokens
 	redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
-	log.Printf("[OAUTH][Google] Success user_id=%s total_ms=%d", user.ID, time.Since(started).Milliseconds())
+	slog.Info("oauth google success", "user_id", user.ID, "ms", time.Since(started).Milliseconds())
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }

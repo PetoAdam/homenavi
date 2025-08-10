@@ -2,7 +2,7 @@ package ratelimit
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -79,7 +79,7 @@ end
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	res, err := rl.Redis.Eval(ctx, lua, []string{key}, maxTokens, refillRate, now).Result()
 	if err != nil {
-		log.Printf("Redis error for key %s: %v", key, err)
+		slog.Error("redis eval error", "key", key, "error", err)
 		return false, err
 	}
 	var allowed int64
@@ -91,7 +91,7 @@ end
 	default:
 		allowed = 0
 	}
-	log.Printf("Token bucket key %s: allowed=%d (max=%d, rps=%d)", key, allowed, maxTokens, refillRate)
+	slog.Debug("token bucket", "key", key, "allowed", allowed, "max", maxTokens, "rps", refillRate)
 	return allowed == 1, nil
 }
 

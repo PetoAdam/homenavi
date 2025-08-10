@@ -3,7 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,7 +21,7 @@ import (
 func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	// Signup should be public, no JWT required
 	if r.Method != http.MethodPost {
-		log.Printf("[WARN] Invalid method for /user: %s", r.Method)
+		slog.Warn("invalid method for /user", "method", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -36,7 +36,7 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		GoogleID *string `json:"google_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[ERROR] Invalid user create request: %v", err)
+		slog.Error("invalid user create request", "error", err)
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
@@ -44,12 +44,12 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	normEmail := strings.ToUpper(req.Email)
 	var existing db.User
 	if err := db.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
-		log.Printf("[ERROR] Duplicate email: %s", req.Email)
+		slog.Warn("duplicate email", "email", req.Email)
 		http.Error(w, "User with this email already exists", http.StatusConflict)
 		return
 	}
 	if err := db.DB.Where("user_name = ?", req.UserName).First(&existing).Error; err == nil {
-		log.Printf("[ERROR] Duplicate username: %s", req.UserName)
+		slog.Warn("duplicate username", "user_name", req.UserName)
 		http.Error(w, "User with this username already exists", http.StatusConflict)
 		return
 	}
@@ -59,7 +59,7 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	if req.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			log.Printf("[ERROR] Password hash error: %v", err)
+			slog.Error("password hash error", "error", err)
 			http.Error(w, "Password hash error", http.StatusInternalServerError)
 			return
 		}
@@ -67,13 +67,13 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		passwordHash = &ph
 	} else if req.GoogleID == nil || *req.GoogleID == "" {
 		// If no password and no GoogleID, reject the request
-		log.Printf("[ERROR] No password or GoogleID provided")
+		slog.Warn("no password or google id provided")
 		http.Error(w, "Password or GoogleID required", http.StatusBadRequest)
 		return
 	}
 	// Force role to standard user regardless of client-provided value to prevent privilege escalation
 	if req.Role != "" && req.Role != "user" {
-		log.Printf("[WARN] Ignoring attempted elevated role '%s' on public signup for email=%s", req.Role, req.Email)
+		slog.Warn("attempted elevated role on signup ignored", "requested_role", req.Role, "email", req.Email)
 	}
 	role := "user"
 	user := db.User{
@@ -93,11 +93,11 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		AccessFailedCount:  0,
 	}
 	if err := db.DB.Create(&user).Error; err != nil {
-		log.Printf("[ERROR] DB error on user create: %v", err)
+		slog.Error("db error on user create", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[INFO] User created: id=%s, email=%s", user.ID, user.Email)
+	slog.Info("user created", "id", user.ID, "email", user.Email)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(user)
 }
@@ -108,7 +108,7 @@ func authorizeUserOrAdmin(r *http.Request, userID string) bool {
 		return false
 	}
 	// Only allow if sub matches userID or role is admin
-	log.Printf("[DEBUG] Authorizing user %s with role %s for user ID %s", claims.Sub, claims.Role, userID)
+	slog.Debug("authorizing user", "requester", claims.Sub, "role", claims.Role, "target_user", userID)
 	return claims.Role == "admin" || claims.Sub == userID
 }
 
@@ -160,14 +160,14 @@ func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		log.Printf("[ERROR] Count users failed: %v", err)
+		slog.Error("count users failed", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
 
 	var users []db.User
 	if err := query.Order("created_at DESC").Offset(offset).Limit(size).Find(&users).Error; err != nil {
-		log.Printf("[ERROR] List users failed: %v", err)
+		slog.Error("list users failed", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
@@ -241,7 +241,7 @@ func HandleUserGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[DEBUG] User %s profile picture URL: %v", user.ID, user.ProfilePictureURL)
+	slog.Debug("user profile picture url", "user_id", user.ID, "url", user.ProfilePictureURL)
 
 	resp := struct {
 		ID                string `json:"id"`
@@ -357,14 +357,14 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		log.Printf("[ERROR] Count users failed: %v", err)
+		slog.Error("count users failed", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
 
 	var users []db.User
 	if err := query.Order("created_at DESC").Offset(offset).Limit(size).Find(&users).Error; err != nil {
-		log.Printf("[ERROR] List users failed: %v", err)
+		slog.Error("list users failed", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
@@ -423,7 +423,7 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		log.Printf("[ERROR] Invalid UUID for lockout: %s", idStr)
+		slog.Error("invalid uuid for lockout", "id", idStr)
 		http.Error(w, "Invalid user id", http.StatusBadRequest)
 		return
 	}
@@ -436,16 +436,16 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 		Lock bool `json:"lock"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[ERROR] Invalid lockout request: %v", err)
+		slog.Error("invalid lockout request", "error", err)
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Update("lockout_enabled", req.Lock).Error; err != nil {
-		log.Printf("[ERROR] DB error on lockout: %v", err)
+		slog.Error("db error on lockout", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[INFO] Lockout updated for user_id=%s, lock=%v", idStr, req.Lock)
+	slog.Info("lockout updated", "user_id", idStr, "lock", req.Lock)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Lockout updated"))
 }
@@ -464,16 +464,16 @@ func HandleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := db.DB.Delete(&db.User{}, "id = ?", id).Error; err != nil {
-		log.Printf("[ERROR] DB error on user delete: %v", err)
+		slog.Error("db error on user delete", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[INFO] User deleted: id=%s", id)
+	slog.Info("user deleted", "id", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[DEBUG] HandleUserPatch called. Headers: %v", r.Header)
+	slog.Debug("handle user patch", "headers", r.Header)
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -482,7 +482,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 	}
 	var req map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[DEBUG] Invalid request body: %v", err)
+		slog.Debug("invalid request body", "error", err)
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
@@ -495,7 +495,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if changingNonRole && !authorizeUserOrAdmin(r, id.String()) {
-		log.Printf("[DEBUG] Forbidden non-role change: not authorized for user id %s", idStr)
+		slog.Debug("forbidden user patch", "target_user", idStr)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -580,11 +580,11 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Updates(update).Error; err != nil {
-		log.Printf("[ERROR] DB error on user patch: %v", err)
+		slog.Error("db error on user patch", "error", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[INFO] User patched: id=%s fields=%v", id, update)
+	slog.Info("user patched", "id", id, "fields", update)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("User updated"))
 }

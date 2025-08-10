@@ -2,7 +2,7 @@ package email
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/requests"
@@ -45,18 +45,18 @@ func (h *VerificationHandler) HandleEmailVerifyRequest(w http.ResponseWriter, r 
 
 	code := h.authService.GenerateVerificationCode()
 	if err := h.authService.StoreVerificationCode("email_verify", req.UserID, code); err != nil {
-		log.Printf("[ERROR] Failed to store email verification code: %v", err)
+		slog.Error("failed to store email verification code", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to store verification code", err))
 		return
 	}
 
 	// Send email
 	if err := h.emailService.SendVerificationEmail(user.Email, user.FirstName, code); err != nil {
-		log.Printf("[ERROR] Failed to send verification email: %v", err)
-		log.Printf("[INFO] Mock verification email sent to %s with code: %s", user.Email, code)
+		slog.Error("failed to send verification email", "error", err)
+		slog.Info("mock verification email sent", "email", user.Email, "code", code)
 	}
 
-	log.Printf("[INFO] Email verification code %s sent to user: %s", code, req.UserID)
+	slog.Info("email verification code sent", "code", code, "user_id", req.UserID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.VerificationResponse{
 		Message:  "Verification code sent to your email",
@@ -102,7 +102,7 @@ func (h *VerificationHandler) HandleEmailVerifyConfirm(w http.ResponseWriter, r 
 		return
 	}
 
-	log.Printf("[INFO] Email verified for user: %s", req.UserID)
+	slog.Info("email verified", "user_id", req.UserID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.SuccessResponse{
 		Message: "Email verified successfully",

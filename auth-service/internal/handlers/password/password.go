@@ -2,7 +2,7 @@ package password
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/requests"
@@ -35,7 +35,7 @@ func (h *ResetHandler) HandlePasswordResetRequest(w http.ResponseWriter, r *http
 	user, err := h.userService.GetUserByEmail(req.Email)
 	if err != nil {
 		// Don't reveal if user exists or not for security
-		log.Printf("[INFO] Password reset requested for non-existent email: %s", req.Email)
+		slog.Info("password reset requested for non-existent email", "email", req.Email)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(responses.VerificationResponse{
 			Message:  "If the email exists, a password reset code has been sent",
@@ -46,19 +46,19 @@ func (h *ResetHandler) HandlePasswordResetRequest(w http.ResponseWriter, r *http
 
 	code := h.authService.GenerateVerificationCode()
 	if err := h.authService.StoreVerificationCode("password_reset", user.ID, code); err != nil {
-		log.Printf("[ERROR] Failed to store password reset code: %v", err)
+		slog.Error("failed to store password reset code", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to store reset code", err))
 		return
 	}
 
 	// Send email (mock for now, will use real email service when available)
 	if err := h.emailService.SendPasswordResetCode(user.Email, user.FirstName, code); err != nil {
-		log.Printf("[ERROR] Failed to send password reset email: %v", err)
+		slog.Error("failed to send password reset email", "error", err)
 		// Mock email sending
-		log.Printf("[INFO] Mock password reset email sent to %s with code: %s", user.Email, code)
+		slog.Info("mock password reset email sent", "email", user.Email, "code", code)
 	}
 
-	log.Printf("[INFO] Password reset email with code %s sent to user: %s", code, user.ID)
+	slog.Info("password reset code sent", "code", code, "user_id", user.ID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.VerificationResponse{
 		Message:  "Password reset code sent to your email",
@@ -89,7 +89,7 @@ func (h *ResetHandler) HandlePasswordResetConfirm(w http.ResponseWriter, r *http
 		return
 	}
 
-	log.Printf("[INFO] Password reset completed for user: %s", user.ID)
+	slog.Info("password reset completed", "user_id", user.ID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.SuccessResponse{
 		Message: "Password reset successfully",
@@ -149,7 +149,7 @@ func (h *ChangeHandler) HandleChangePassword(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	log.Printf("[INFO] Password changed for user: %s", userID)
+	slog.Info("password changed", "user_id", userID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(responses.SuccessResponse{
 		Message: "Password changed successfully",
