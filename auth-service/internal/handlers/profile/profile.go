@@ -2,7 +2,7 @@ package profile
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/responses"
@@ -95,7 +95,7 @@ func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Requ
 	// Call profile picture service to generate avatar
 	avatarURL, err := h.profilePictureService.GenerateAvatar(userID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to generate avatar for user %s: %v", userID, err)
+		slog.Error("failed to generate avatar", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to generate avatar", err))
 		return
 	}
@@ -106,12 +106,12 @@ func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
-		log.Printf("[ERROR] Failed to update user profile picture URL: %v", err)
+		slog.Error("failed to update user profile picture url", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to update profile picture", err))
 		return
 	}
 
-	log.Printf("[INFO] Avatar generated for user: %s", userID)
+	slog.Info("avatar generated", "user_id", userID)
 
 	response := responses.ProfilePictureResponse{
 		Success: true,
@@ -167,7 +167,7 @@ func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *htt
 	// Call profile picture service to upload and process the image
 	pictureURL, err := h.profilePictureService.UploadProfilePicture(userID, file, header)
 	if err != nil {
-		log.Printf("[ERROR] Failed to upload profile picture for user %s: %v", userID, err)
+		slog.Error("failed to upload profile picture", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to upload profile picture", err))
 		return
 	}
@@ -178,12 +178,12 @@ func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *htt
 	}
 
 	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
-		log.Printf("[ERROR] Failed to update user profile picture URL: %v", err)
+		slog.Error("failed to update user profile picture url", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to update profile picture", err))
 		return
 	}
 
-	log.Printf("[INFO] Profile picture uploaded for user: %s", userID)
+	slog.Info("profile picture uploaded", "user_id", userID)
 
 	response := responses.ProfilePictureResponse{
 		Success: true,

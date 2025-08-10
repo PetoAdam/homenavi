@@ -2,7 +2,7 @@ package twofactor
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/requests"
@@ -51,7 +51,7 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		SecretSize:  32,
 	})
 	if err != nil {
-		log.Printf("[ERROR] Failed to generate TOTP secret: %v", err)
+		slog.Error("failed to generate totp secret", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to generate TOTP secret", err))
 		return
 	}
@@ -75,7 +75,7 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[INFO] 2FA TOTP setup initiated for user: %s", req.UserID)
+	slog.Info("2fa totp setup initiated", "user_id", req.UserID)
 
 	response := responses.TwoFactorSetupResponse{
 		Secret:     secret.Secret(),
@@ -150,7 +150,7 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	log.Printf("[INFO] 2FA enabled for user: %s", req.UserID)
+	slog.Info("2fa enabled", "user_id", req.UserID)
 
 	response := responses.TwoFactorVerifyResponse{
 		Verified: true,
@@ -192,19 +192,19 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 	// Generate and store 2FA code
 	code := h.authService.GenerateVerificationCode()
 	if err := h.authService.StoreVerificationCode("2fa_email", req.UserID, code); err != nil {
-		log.Printf("[ERROR] Failed to store 2FA email code: %v", err)
+		slog.Error("failed to store 2fa email code", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to store 2FA code", err))
 		return
 	}
 
 	// Send email (mock for now)
 	if err := h.emailService.Send2FACode(user.Email, user.FirstName, code); err != nil {
-		log.Printf("[ERROR] Failed to send 2FA email: %v", err)
+		slog.Error("failed to send 2fa email", "error", err)
 		// Mock email sending
-		log.Printf("[INFO] Mock 2FA email sent to %s with code: %s", user.Email, code)
+		slog.Info("mock 2fa email sent", "email", user.Email, "code", code)
 	}
 
-	log.Printf("[INFO] 2FA email code %s sent to user: %s", code, req.UserID)
+	slog.Info("2fa email code sent", "code", code, "user_id", req.UserID)
 
 	response := responses.TwoFactorEmailResponse{
 		Message:  "2FA code sent to your email",
@@ -246,7 +246,7 @@ func (h *EmailHandler) Handle2FAEmailVerify(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	log.Printf("[INFO] Email 2FA enabled for user: %s", req.UserID)
+	slog.Info("email 2fa enabled", "user_id", req.UserID)
 
 	response := responses.TwoFactorVerifyResponse{
 		Verified: true,

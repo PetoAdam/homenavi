@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,9 +26,14 @@ import (
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
+	if err != nil { slog.Error("failed to load configuration", "error", err); os.Exit(1) }
+
+	// Initialize structured logger
+	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
+	if os.Getenv("LOG_FORMAT") == "json" { handler = slog.NewJSONHandler(os.Stdout, nil) }
+	slog.SetDefault(slog.New(handler))
+
+	slog.Info("auth service init", "port", cfg.Port)
 
 	// Initialize services
 	authService := services.NewAuthService(cfg)
@@ -44,7 +49,6 @@ func main() {
 
 	passwordResetHandler := password.NewResetHandler(authService, userService, emailService)
 	passwordChangeHandler := password.NewChangeHandler(authService, userService)
-
 	emailVerifyHandler := email.NewVerificationHandler(authService, userService, emailService)
 
 	twoFactorSetupHandler := twofactor.NewSetupHandler(authService, userService)
@@ -61,15 +65,14 @@ func main() {
 
 	// Setup router
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
@@ -101,7 +104,7 @@ func main() {
 		r.Get("/me", profileHandler.HandleMe)
 		r.Delete("/delete", userDeleteHandler.HandleDeleteUser)
 
-		// User management (consolidated access via auth service)
+		// User management
 		r.Get("/users", userManageHandler.HandleList)
 		r.Get("/users/{id}", userManageHandler.HandleGet)
 		r.Patch("/users/{id}", userManageHandler.HandlePatch)
@@ -125,31 +128,27 @@ func main() {
 	})
 
 	// Start server
-	server := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: r,
-	}
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: r}
 
-	// Graceful shutdown
 	go func() {
-		log.Printf("Auth service starting on port %s", cfg.Port)
+		slog.Info("auth service starting", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			slog.Error("server listen failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
-	// Wait for interrupt signal
+	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	slog.Info("auth service shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		slog.Error("auth service forced shutdown", "error", err)
+		os.Exit(1)
 	}
-
-	log.Println("Server exited")
+	slog.Info("auth service stopped")
 }

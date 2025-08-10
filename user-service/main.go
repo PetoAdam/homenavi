@@ -2,7 +2,7 @@ package main
 
 import (
 	"crypto/rsa"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -35,22 +35,23 @@ func main() {
 		pr.Delete("/users/{id}", handlers.HandleUserDelete)
 	})
 
-	log.Println("User service started on :8001")
-	http.ListenAndServe(":8001", r)
+	// Structured logger init (use LOG_FORMAT=json for JSON output)
+	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
+	if os.Getenv("LOG_FORMAT") == "json" { handler = slog.NewJSONHandler(os.Stdout, nil) }
+	slog.SetDefault(slog.New(handler))
+
+	slog.Info("user service starting", "addr", ":8001")
+	if err := http.ListenAndServe(":8001", r); err != nil {
+		slog.Error("server stopped", "error", err)
+	}
 }
 
 func loadPublicKey() *rsa.PublicKey {
 	path := os.Getenv("JWT_PUBLIC_KEY_PATH")
-	if path == "" {
-		log.Fatal("JWT_PUBLIC_KEY_PATH not set for user-service")
-	}
+	if path == "" { slog.Error("JWT_PUBLIC_KEY_PATH not set for user-service"); os.Exit(1) }
 	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Fatalf("failed reading public key: %v", err)
-	}
+	if err != nil { slog.Error("failed reading public key", "error", err); os.Exit(1) }
 	pub, err := jwt.ParseRSAPublicKeyFromPEM(data)
-	if err != nil {
-		log.Fatalf("failed parsing public key: %v", err)
-	}
+	if err != nil { slog.Error("failed parsing public key", "error", err); os.Exit(1) }
 	return pub
 }

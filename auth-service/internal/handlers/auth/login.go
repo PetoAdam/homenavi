@@ -2,7 +2,7 @@ package auth
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/requests"
@@ -67,7 +67,7 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 			}
 
 			if err := h.emailService.Send2FACode(user.Email, user.FirstName, code); err != nil {
-				log.Printf("[ERROR] Failed to send 2FA email: %v", err)
+				slog.Error("failed to send 2fa email", "error", err)
 				// Don't fail the request if email service is down
 			}
 		}
