@@ -7,7 +7,13 @@ const AUTH_BASE = '/api/auth';
 
 export async function login(email, password) {
   const res = await http.post(`${AUTH_BASE}/login/start`, { email, password });
-  if (!res.success) return { success: false, error: res.error };
+  if (!res.success) {
+    // Normalize auth errors: for 401 present a generic invalid credentials message
+    if (res.status === 401) {
+      return { success: false, error: 'Invalid email or password' };
+    }
+    return { success: false, error: res.error };
+  }
   const d = res.data || {};
   if (d['2fa_required']) {
     return { success: true, twoFA: true, userId: d.user_id, type: d['2fa_type'] };
@@ -26,7 +32,13 @@ export async function finish2FA(userId, code) {
 
 export async function signup(firstName, lastName, userName, email, password) {
   const res = await http.post(`${AUTH_BASE}/signup`, { first_name: firstName, last_name: lastName, user_name: userName, email, password });
-  if (!res.success) return res; // retain error shape
+  if (!res.success) {
+    // Surface password policy failures more cleanly
+    if (res.status === 400 && /password/i.test(res.error || '')) {
+      return { success: false, error: res.error };
+    }
+    return res; // retain other errors
+  }
   return { success: true, user: res.data };
 }
 

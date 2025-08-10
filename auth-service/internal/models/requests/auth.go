@@ -32,7 +32,7 @@ func (r *SignupRequest) Validate() error {
 	}
 
 	if !IsValidPassword(r.Password) {
-		return fmt.Errorf("password must be at least 8 characters with uppercase, lowercase, and digit")
+		return fmt.Errorf(PasswordPolicyError(r.Password))
 	}
 
 	if !IsValidName(r.FirstName) {
