@@ -2,14 +2,38 @@
 
 **A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.**
 
+[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml)
+[![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml)
+[![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml)
+[![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml)
+[![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml)
+[![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml)
+[![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
 
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
-[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml) [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml) [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml) [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml) [![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml) [![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml) [![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
+---
+
+## Table of Contents
+1. Why Homenavi
+2. Architecture Overview
+3. Smart Home Vision (Upcoming Modules)
+4. Quickstart
+5. Service Directory
+6. Security & Auth
+7. Observability
+8. WebSockets & Real‑Time
+9. Extending the Platform
+10. Roadmap
+11. Configuration & Environment
+12. CI/CD
+13. Contributing & Community
+14. FAQ
+15. License
 
 ---
 
-## 🚀 Why Homenavi?
+## 1. 🚀 Why Homenavi
 - **Microservice-first:** Each core feature is its own service – scale, swap, or extend as you like.
 - **Modern stack:** Go, React, Python, Docker, and more.
 - **Dev-friendly:** Easy to run, hack, and contribute.
@@ -20,203 +44,185 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 
 ---
 
-## 🧩 Architecture
+## 2. 🧩 Architecture Overview
 
-Homenavi follows a **microservices architecture** designed for scalability and modularity:
+Current Core:
+* API Gateway (Go + Chi): Routing, JWT verification, rate limit, WebSocket upgrade.
+* Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
+* User Service (Go): Profile, roles, administrative user actions.
+* Email Service (Go): Outbound verification & notification emails.
+* Profile Picture Service (Python): Image handling (avatars, basic processing).
+* Echo Service (Python): Real-time WebSocket demo & test surface.
+* Frontend (React + Vite + PWA): Auth flows, user management, future device UI.
+* Infrastructure: PostgreSQL, Redis, Nginx, Prometheus, Jaeger, (Grafana ready).
 
-### Core Services
-- **API Gateway** (Go + Chi): JWT authentication, WebSocket support, rate limiting, request routing
-- **Auth Service** (Go): User authentication, JWT tokens, 2FA (TOTP/Email), OAuth integration
-- **User Service** (Go): Profile management, user data storage
-- **Email Service** (Go): Email notifications and verification codes
-- **Profile Picture Service** (Python): Image processing and avatar management
-- **Echo Service** (Python): WebSocket testing and real-time communication demo
-
-### Frontend & Infrastructure
-- **Frontend** (React + Vite): Modern SPA with PWA capabilities, cookie-based auth
-- **Database**: PostgreSQL for persistent data storage
-- **Cache**: Redis for sessions and temporary data
-- **Proxy**: Nginx for load balancing and SSL termination
-- **Monitoring**: Prometheus metrics + Grafana dashboards + Jaeger tracing
-
-### Authentication & Security
-- **JWT RS256**: Cryptographically signed tokens with public/private key pairs
-- **Cookie-based WebSocket auth**: Seamless authentication for real-time features
-- **2FA Support**: TOTP (Google Authenticator) and Email-based verification
-- **Rate Limiting**: Protection against brute force and abuse
-- **Account Lockout**: Automatic protection against repeated failed attempts
-
-Add your own services and plug them into the gateway!
+Key Design Principles:
+* Clear separation of auth vs user domain.
+* Stateless services (use Redis / DB for state persistence & coordination).
+* Consistent JSON error schema across services.
+* Incremental addition of domain (devices, automations) without core rewrites.
 
 ---
 
-## 🐳 Quickstart (Recommended)
+## 3. 🔮 Smart Home Vision (Planned / Not Yet Implemented)
+The platform roadmap includes:
+* Device Adapters: Zigbee, Z-Wave, Matter, BLE, MQTT bridge.
+* Automation Engine: Rule graph (triggers → conditions → actions) with versioned deployments.
+* Scene & Mode Management: Grouped device state snapshots and home modes (Away / Night / Eco).
+* Scheduling & Timers: Cron-like and sunrise/sunset aware triggers.
+* Presence & Energy Modules: Occupancy inference; energy usage aggregation.
+* Plugin SDK: Custom services registering capabilities & metrics automatically with the gateway.
+* Edge Nodes: Lightweight agent pushing device state/events to the core cluster.
 
-The fastest way to get Homenavi running is with Docker Compose. Just clone, configure, and launch:
+These are intentionally referenced now to frame the architecture decisions already in place.
+
+---
+
+## 4. 🐳 Quickstart
 
 ```sh
 git clone https://github.com/PetoAdam/homenavi.git
 cd homenavi
-cp .env.example .env  # Edit as needed for secrets and service URLs
-# Then:
+cp .env.example .env   # adjust secrets / paths
 docker compose up --build
 ```
 
-- All services (including Prometheus, Grafana, Jaeger, Redis, and Nginx) will be built and started automatically.
-- Nginx is the public entrypoint and routes `/api` to the API Gateway and `/` to the frontend.
-  - For detailed Nginx configuration and security best practices, see [`doc/nginx_guide.md`](doc/nginx_guide.md).
-- Edit `.env` for secrets and service URLs.
-- See [`/doc/local_build.md`](doc/local_build.md) for advanced/local development.
+Entry Points:
+* Frontend: http://localhost (served via Nginx)
+* API Gateway (REST): http://localhost/api
+* Prometheus: http://localhost:9090
+* Jaeger UI: http://localhost:16686
+* (Grafana optional) http://localhost:3000
 
-**Services Overview:**
-- **Frontend**: React app with authentication and PWA features
-- **API Gateway**: Central routing with JWT authentication (REST + WebSocket)
-- **Auth Service**: User authentication, 2FA, password management
-- **User Service**: User profile and data management
-- **Email Service**: Email notifications and verification
-- **Profile Picture Service**: Avatar and image handling
-- **Echo Service**: WebSocket testing and demonstration
-- **Monitoring**: Prometheus (`:9090`), Grafana (`:3000`), Jaeger (`:16686`)
+See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 
 ---
 
-### 🔑 JWT Key Generation (RS256)
+## 5. 📂 Service Directory (Brief)
+| Service | Path | Purpose |
+|---------|------|---------|
+| API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy |
+| Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic |
+| User Service | `user-service/` | User profiles, roles, admin operations |
+| Email Service | `email-service/` | Sending verification / notification emails |
+| Profile Picture | `profile-picture-service/` | Avatar upload & processing |
+| Echo Service | `echo-service/` | WebSocket echo & diagnostic tool |
+| Frontend | `frontend/` | SPA & PWA client |
 
-Homenavi uses asymmetric JWT signing (RS256) for secure authentication:
-- The **Auth Service** signs tokens with a private key.
-- The **API Gateway** and other services validate tokens using the public key only.
+Support:
+* `nginx/` reverse proxy templates.
+* `prometheus/` scrape config.
+* `keys/` (DO NOT COMMIT PRIVATE KEYS IN PRODUCTION REPOS).
+* `doc/` guides and design docs.
 
-### Generate a key pair:
+---
+
+## 6. 🔒 Security & Auth
+Implemented:
+* RS256 JWT (private signing in Auth Service, public verification at gateway).
+* Email-based 2FA workflow (TOTP planned).
+* Account & 2FA attempt lockouts (structured 423 responses with remaining time).
+* Rate limiting (per-route & global) with Redis.
+* Standard JSON error format: `{ "error": string, "code"?: int, ... }` plus optional `reason`, `lockout_remaining`, `unlock_at`.
+
+---
+
+## 7. 📊 Observability
+* Metrics: Prometheus scrape (gateway, Go runtime). Add service-specific domain metrics as features grow.
+* Tracing: Jaeger via OpenTelemetry exporters.
+* Correlation: Request IDs / correlation IDs propagated across hops.
+* Health: Expose `/healthz` (liveness/readiness separation recommended for prod).
+
+---
+
+## 8. ⚡ WebSockets & Real‑Time
+* Gateway upgrades authenticated using existing JWT (cookie-based flow supported).
+* Echo service demonstrates publishing & latency characteristics.
+* Foundation for future real-time device state, automation events, and notifications.
+
+Test: `python3 test-websocket.py` (see root script).
+
+---
+
+## 9. 🔌 Extending the Platform
+1. Create a new service directory or external repo.
+2. Add container to `docker-compose.yml` (or helm chart later).
+3. Register route(s) in `api-gateway` config `gateway.yaml` / routes.*.yaml.
+4. Expose metrics, health, and (optionally) tracing.
+5. Use JWT for auth; validate only needed claims.
+
+Planned: An Extension/Plugin manifest so services self-register capabilities.
+
+---
+
+## 10. 🗺️ Roadmap (Condensed)
+
+Mid Term:
+* Device adapter abstraction (MQTT + Zigbee bridge)
+* Rule/automation engine MVP
+* Scene & scheduling module
+* UI dashboards for metrics & device state
+
+Long Term:
+* Edge node agent & secure tunneling
+* Energy analytics & occupancy inference
+* Plugin SDK & marketplace style discovery
+
+---
+
+## 11. ⚙️ Configuration & Environment
+Environment variables (selected):
+* `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`
+* Database connection vars (PostgreSQL)
+* Redis host/port
+* Email provider / SMTP credentials (for Email Service)
+
+Example: `cp .env.example .env` then edit. In production avoid storing secrets directly in env files—use a secrets manager.
+
+Key Management:
 ```sh
-mkdir -p ./keys
-openssl genpkey -algorithm RSA -out ./keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
-openssl rsa -pubout -in ./keys/jwt_private.pem -out ./keys/jwt_public.pem
+mkdir -p keys
+openssl genpkey -algorithm RSA -out keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
+openssl rsa -pubout -in keys/jwt_private.pem -out keys/jwt_public.pem
 ```
-- Set `JWT_PRIVATE_KEY_PATH` and `JWT_PUBLIC_KEY_PATH` in your `.env` to point to these files.
-- **Never commit your private key to version control!**
 
 ---
 
-## 🛠️ Extending Homenavi
-
-Want to add a new service? Just drop it in, add to `docker-compose.yml`, and go! The API Gateway makes integration easy.
-
-- Use Go, Python, Node.js, or any language you like.
-- Register new routes in the API Gateway.
-- Share authentication via JWT.
-- Add your own metrics and traces for observability.
-- Check out the [Extending Guide](doc/extending.md) (coming soon!)
+## 12. 📦 CI/CD
+* GitHub Actions per service build pipelines.
+* Docker image builds + artifact retention.
+* Future: Add lint (golangci-lint), security scanning (gosec, trivy), frontend tests.
 
 ---
 
-## 📦 CI/CD
+## 13. 🤝 Contributing & Community
+Contributions welcome:
+1. Fork & branch
+2. Make focused changes (tests appreciated)
+3. Open PR with rationale & scope
 
-- All services are built and tested via GitHub Actions on every push/PR.
-- Docker images are saved as artifacts for easy deployment.
-- Workflows for each service live in `.github/workflows/`.
-- Add your own workflow for new services!
-
----
-
-## 📊 Observability & Monitoring
-
-- **Prometheus metrics:**
-  - API Gateway exposes `/metrics` for Prometheus scraping.
-  - Per-endpoint request counts (`api_gateway_requests_total`).
-  - Go runtime/process metrics.
-- **Distributed tracing:**
-  - Jaeger integration via OpenTelemetry.
-  - All requests are traced; spans include HTTP method, path, and response code.
-- **Correlation/Request IDs:**
-  - Every request gets a unique `X-Request-ID` and `X-Correlation-ID` for easy tracking across logs and traces.
-- **Grafana dashboards:**
-  - Visualize metrics from Prometheus.
-- **Healthcheck:**
-  - `/healthz` endpoint for liveness/readiness checks.
-
-### How to use
-- Prometheus: [http://localhost:9090](http://localhost:9090)
-- Grafana: [http://localhost:3000](http://localhost:3000) (add Prometheus as a data source, URL: `http://prometheus:9090`)
-- Jaeger: [http://localhost:16686](http://localhost:16686)
-
+Discussions / Discord: (coming soon)
+Issues: https://github.com/PetoAdam/homenavi/issues
 
 ---
 
-## 🤝 Contributing
+## 14. ❓ FAQ
+**Can I run it on a Raspberry Pi?** Yes—multi-arch images are the target; optimize build flags if needed.
 
-We love contributions! Whether it's a bugfix, new feature, or documentation improvement:
-- Fork the repo & create a branch
-- Open a pull request with a clear description
-- Join the discussion in Issues or Discussions
+**Is it production ready?** Homenavi is under active development. The core authentication and user management features are stable, but always review the code for your specific use case. Device & automation layers are forthcoming—treat as early platform.
 
----
+**Can I add my own device protocol now?** Yes, via a custom service publishing REST/WS endpoints through the gateway.
 
-## 🌐 Community & Support
+**Does it support real-time updates?** Yes—WebSockets already integrated; domain events layer planned.
 
-- [Issues](https://github.com/PetoAdam/homenavi/issues)
-- [Discord](https://discord.gg/your-invite) (coming soon)
+**Will Matter / Zigbee / Z-Wave be supported?** Planned through modular adapters.
 
 ---
 
-## 📚 Docs
-- [Local Build Guide](doc/local_build.md)
+## 15. License
+MIT License © 2025 Adam Peto — See [LICENSE](LICENSE).
 
 ---
 
-## 🔒 Security Features
+> This README describes current capabilities and the forward-looking smart home direction. Features marked “planned” are not yet implemented but inform architectural choices.
 
-- **JWT authentication:** RS256 signed access tokens, public key validation in API Gateway
-- **Cookie-based WebSocket auth:** Seamless real-time communication authentication
-- **Rate-limited verification/2FA attempts:** Prevent brute-force attacks on codes
-- **Account lockout:** Login is blocked for locked users
-
----
-
-## 🧑‍💻 2FA Support
-
-- **Email 2FA:** Request and verify codes via Auth Service
-- **TOTP 2FA:** Setup and verify using standard authenticator apps (coming soon!)
-
----
-
-## 🔌 WebSocket Support
-
-Homenavi includes full WebSocket support for real-time communication:
-
-- **Cookie-based authentication:** WebSockets authenticate using the same JWT tokens as REST APIs
-- **Echo Service:** Python WebSocket service for testing and demonstration
-- **Test Script:** `test-websocket.py` provides comprehensive WebSocket testing capabilities
-
----
-
-## ❓ FAQ
-
-**Q: Can I run Homenavi on a Raspberry Pi?**
-A: Yes! All services are built for multi-arch Docker images.
-
-**Q: How do I add a new device/service?**
-A: Build a new microservice, register it in the API Gateway, and add it to Docker Compose.
-
-**Q: Is it production-ready?**
-A: Homenavi is under active development. The core authentication and user management features are stable, but always review the code for your specific use case.
-
-**Q: How do I monitor and trace requests?**
-A: Use Prometheus and Grafana for metrics, and Jaeger for distributed tracing. All are included in the default Docker Compose stack.
-
-**Q: Does it support real-time communication?**
-A: Yes! WebSocket support is built-in with cookie-based JWT authentication. See the echo service for examples.
-
----
-
-## 💡 Notes
-- This README reflects the current codebase and workflows.
-- PRs and contributions are welcome!
-
-## License
-
-MIT License  
-Copyright (c) 2025 Adam Peto
-
-See [LICENSE](LICENSE) for details.
-
----

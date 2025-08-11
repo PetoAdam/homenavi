@@ -1,4 +1,5 @@
 import http, { setAccessToken as setHttpAccessToken } from './httpClient';
+import { REASON_LOGIN_LOCKOUT, REASON_2FA_LOCKOUT, REASON_ADMIN_LOCK } from '../constants/lockoutReasons';
 
 const AUTH_BASE = '/api/auth';
 
@@ -8,7 +9,20 @@ const AUTH_BASE = '/api/auth';
 export async function login(email, password) {
   const res = await http.post(`${AUTH_BASE}/login/start`, { email, password });
   if (!res.success) {
-    // Normalize auth errors: for 401 present a generic invalid credentials message
+    // Prioritize explicit lockout (423) before generic 401 invalid credentials
+    if (res.status === 423 || /locked/i.test(res.error || '')) {
+      const remaining = res.data?.lockout_remaining ?? res.lockout_remaining ?? null;
+      const reason = res.data?.reason || REASON_LOGIN_LOCKOUT;
+      const unlockAt = res.data?.unlock_at || null;
+      let msg = 'Account locked';
+      if (reason === REASON_ADMIN_LOCK) {
+        msg = 'Account locked by administrator';
+      } else if (res.error && !/locked\.\s*try again/i.test(res.error)) {
+        // Preserve backend message only if it's not the generic with countdown we replace
+        msg = res.error;
+      }
+      return { success: false, error: msg, lockoutRemaining: remaining, reason, unlockAt };
+    }
     if (res.status === 401) {
       return { success: false, error: 'Invalid email or password' };
     }
@@ -114,7 +128,7 @@ export function initiateGoogleLogin() {
 }
 
 // User management (consolidated from former usersService)
-export async function listUsers(token, { q = '', page = 1, pageSize = 20 } = {}) {
+export async function listUsers({ q = '', page = 1, pageSize = 20 } = {}, token) {
   return await http.get(`${AUTH_BASE}/users`, { token, params: { q: q || undefined, page, page_size: pageSize } });
 }
 export async function patchUser(userId, patch, token) {

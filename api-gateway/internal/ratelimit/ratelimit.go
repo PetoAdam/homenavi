@@ -33,16 +33,23 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 			ctx := context.Background()
 			allowed, err := rl.allow(ctx, key)
 			if err != nil {
-				http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+				writeJSONError(w, http.StatusInternalServerError, "rate limiter error")
 				return
 			}
 			if !allowed {
-				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+				writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// writeJSONError duplicated locally (could be refactored to shared package) to avoid import cycle.
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(`{"error":"`+msg+`","code":`+strconv.Itoa(status)+`}`))
 }
 
 func (rl *RateLimiter) allow(ctx context.Context, key string) (bool, error) {

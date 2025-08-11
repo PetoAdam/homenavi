@@ -47,14 +47,15 @@ export default function ProfileButton() {
     const resp = await handleLogin(email, password);
     if (resp.twoFA) {
       setTwoFAState({ userId: resp.userId, type: resp.type });
-      return false;
+      return resp; // contains twoFA flag
     }
     if (resp.success) {
       setToastMsg("Logged in successfully");
       setTwoFAState(null);
-      return true;
+      return { success: true };
     }
-    return false;
+    // Pass through full failure object (lockout fields etc.)
+    return resp;
   };
 
   const doSignup = async (firstName, lastName, userName, email, password) => {
