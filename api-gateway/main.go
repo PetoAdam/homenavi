@@ -130,7 +130,9 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("route not found", "method", r.Method, "path", r.URL.Path)
-		http.Error(w, "Not found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "not found", "code": http.StatusNotFound})
 	})
 
 	return r

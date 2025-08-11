@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"encoding/json"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/koding/websocketproxy"
@@ -36,7 +37,9 @@ func MakeRestProxyHandler(route config.RouteConfig) http.HandlerFunc {
 		}
 		proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
 			slog.Error("proxy error", "method", r.Method, "path", r.URL.Path, "upstream", upstreamURL.String(), "error", err)
-			http.Error(rw, "Upstream error: "+err.Error(), http.StatusBadGateway)
+			rw.Header().Set("Content-Type","application/json")
+			rw.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(rw).Encode(map[string]any{"error":"upstream error","code":http.StatusBadGateway})
 		}
 		proxy.ServeHTTP(w, r)
 	}

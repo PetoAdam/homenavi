@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"encoding/json"
 
 	"auth-service/internal/config"
 	"auth-service/internal/handlers/auth"
@@ -118,7 +119,9 @@ func main() {
 		r.Get("/oauth/google/login", func(w http.ResponseWriter, r *http.Request) {
 			state, err := authService.GenerateOAuthState()
 			if err != nil {
-				http.Error(w, "Failed to generate OAuth state", http.StatusInternalServerError)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to generate oauth state", "code": http.StatusInternalServerError})
 				return
 			}
 			url := authService.GetGoogleAuthURL(state)

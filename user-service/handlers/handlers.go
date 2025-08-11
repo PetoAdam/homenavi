@@ -18,11 +18,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// jsonError writes a standardized JSON error payload {error, code, ...extra}
+func writeJSONError(w http.ResponseWriter, status int, message string, extra map[string]any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	payload := map[string]any{"error": message, "code": status}
+	for k, v := range extra {
+		if k != "error" && k != "code" {
+			payload[k] = v
+		}
+	}
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
 func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	// Signup should be public, no JWT required
 	if r.Method != http.MethodPost {
 		slog.Warn("invalid method for /user", "method", r.Method)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed", nil)
 		return
 	}
 	var req struct {
@@ -37,7 +50,7 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		slog.Error("invalid user create request", "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
 		return
 	}
 	normUser := strings.ToUpper(req.UserName)
@@ -45,12 +58,12 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	var existing db.User
 	if err := db.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
 		slog.Warn("duplicate email", "email", req.Email)
-		http.Error(w, "User with this email already exists", http.StatusConflict)
+		writeJSONError(w, http.StatusConflict, "user with this email already exists", nil)
 		return
 	}
 	if err := db.DB.Where("user_name = ?", req.UserName).First(&existing).Error; err == nil {
 		slog.Warn("duplicate username", "user_name", req.UserName)
-		http.Error(w, "User with this username already exists", http.StatusConflict)
+		writeJSONError(w, http.StatusConflict, "user with this username already exists", nil)
 		return
 	}
 
@@ -60,7 +73,7 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			slog.Error("password hash error", "error", err)
-			http.Error(w, "Password hash error", http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, "password hash error", nil)
 			return
 		}
 		ph := string(hash)
@@ -68,7 +81,7 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	} else if req.GoogleID == nil || *req.GoogleID == "" {
 		// If no password and no GoogleID, reject the request
 		slog.Warn("no password or google id provided")
-		http.Error(w, "Password or GoogleID required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "password or googleid required", nil)
 		return
 	}
 	// Force role to standard user regardless of client-provided value to prevent privilege escalation
@@ -94,7 +107,7 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := db.DB.Create(&user).Error; err != nil {
 		slog.Error("db error on user create", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 	slog.Info("user created", "id", user.ID, "email", user.Email)
@@ -128,7 +141,7 @@ func authorizeResidentOrAdmin(r *http.Request) bool {
 // HandleUsersList returns a paginated list of users (resident/admin only)
 func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 	if !authorizeResidentOrAdmin(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "forbidden", nil)
 		return
 	}
 
@@ -161,32 +174,32 @@ func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		slog.Error("count users failed", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 
 	var users []db.User
 	if err := query.Order("created_at DESC").Offset(offset).Limit(size).Find(&users).Error; err != nil {
 		slog.Error("list users failed", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 
 	type userOut struct {
-		ID                string     `json:"id"`
-		UserName          string     `json:"user_name"`
-		Email             string     `json:"email"`
-		FirstName         string     `json:"first_name"`
-		LastName          string     `json:"last_name"`
-		Role              string     `json:"role"`
-		EmailConfirmed    bool       `json:"email_confirmed"`
-		TwoFactorEnabled  bool       `json:"two_factor_enabled"`
-		TwoFactorType     string     `json:"two_factor_type"`
-		ProfilePictureURL *string    `json:"profile_picture_url"`
-		GoogleID          *string    `json:"google_id"`
-		LockoutEnabled    bool       `json:"lockout_enabled"`
-		CreatedAt         time.Time  `json:"created_at"`
-		UpdatedAt         time.Time  `json:"updated_at"`
+		ID                string    `json:"id"`
+		UserName          string    `json:"user_name"`
+		Email             string    `json:"email"`
+		FirstName         string    `json:"first_name"`
+		LastName          string    `json:"last_name"`
+		Role              string    `json:"role"`
+		EmailConfirmed    bool      `json:"email_confirmed"`
+		TwoFactorEnabled  bool      `json:"two_factor_enabled"`
+		TwoFactorType     string    `json:"two_factor_type"`
+		ProfilePictureURL *string   `json:"profile_picture_url"`
+		GoogleID          *string   `json:"google_id"`
+		LockoutEnabled    bool      `json:"lockout_enabled"`
+		CreatedAt         time.Time `json:"created_at"`
+		UpdatedAt         time.Time `json:"updated_at"`
 	}
 
 	out := make([]userOut, 0, len(users))
@@ -226,18 +239,18 @@ func HandleUserGet(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid user id", nil)
 		return
 	}
 
 	if !authorizeAnyValidJWT(r) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized", nil)
 		return
 	}
 
 	var user db.User
 	if err := db.DB.Where("id = ?", id).First(&user).Error; err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "user not found", nil)
 		return
 	}
 
@@ -292,7 +305,7 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 			err = db.DB.Where("email = ?", email).First(&user).Error
 		}
 		if err != nil {
-			http.Error(w, "User not found", http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "user not found", nil)
 			return
 		}
 		resp := struct {
@@ -326,7 +339,7 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 
 	// Otherwise, treat as list with pagination/search; restrict to resident/admin
 	if !authorizeResidentOrAdmin(r) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "forbidden", nil)
 		return
 	}
 	// Reuse list logic
@@ -358,32 +371,32 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		slog.Error("count users failed", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 
 	var users []db.User
 	if err := query.Order("created_at DESC").Offset(offset).Limit(size).Find(&users).Error; err != nil {
 		slog.Error("list users failed", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 
 	type userOut struct {
-		ID                string     `json:"id"`
-		UserName          string     `json:"user_name"`
-		Email             string     `json:"email"`
-		FirstName         string     `json:"first_name"`
-		LastName          string     `json:"last_name"`
-		Role              string     `json:"role"`
-		EmailConfirmed    bool       `json:"email_confirmed"`
-		TwoFactorEnabled  bool       `json:"two_factor_enabled"`
-		TwoFactorType     string     `json:"two_factor_type"`
-		ProfilePictureURL *string    `json:"profile_picture_url"`
-		GoogleID          *string    `json:"google_id"`
-		LockoutEnabled    bool       `json:"lockout_enabled"`
-		CreatedAt         time.Time  `json:"created_at"`
-		UpdatedAt         time.Time  `json:"updated_at"`
+		ID                string    `json:"id"`
+		UserName          string    `json:"user_name"`
+		Email             string    `json:"email"`
+		FirstName         string    `json:"first_name"`
+		LastName          string    `json:"last_name"`
+		Role              string    `json:"role"`
+		EmailConfirmed    bool      `json:"email_confirmed"`
+		TwoFactorEnabled  bool      `json:"two_factor_enabled"`
+		TwoFactorType     string    `json:"two_factor_type"`
+		ProfilePictureURL *string   `json:"profile_picture_url"`
+		GoogleID          *string   `json:"google_id"`
+		LockoutEnabled    bool      `json:"lockout_enabled"`
+		CreatedAt         time.Time `json:"created_at"`
+		UpdatedAt         time.Time `json:"updated_at"`
 	}
 
 	out := make([]userOut, 0, len(users))
@@ -424,12 +437,12 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		slog.Error("invalid uuid for lockout", "id", idStr)
-		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid user id", nil)
 		return
 	}
 	claims := middleware.GetClaims(r)
 	if claims == nil || claims.Role != "admin" {
-		http.Error(w, "Only admins can lockout accounts", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "only admins can lockout accounts", nil)
 		return
 	}
 	var req struct {
@@ -437,35 +450,34 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		slog.Error("invalid lockout request", "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
 		return
 	}
 	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Update("lockout_enabled", req.Lock).Error; err != nil {
 		slog.Error("db error on lockout", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 	slog.Info("lockout updated", "user_id", idStr, "lock", req.Lock)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Lockout updated"))
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "lockout updated", "lock": req.Lock})
 }
 
 func HandleUserDelete(w http.ResponseWriter, r *http.Request) {
-	// TODO: Enforce JWT authentication and admin/self authorization for production
-	// For development, allow delete without JWT check
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid user id", nil)
 		return
 	}
 	if !authorizeUserOrAdmin(r, id.String()) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "forbidden", nil)
 		return
 	}
 	if err := db.DB.Delete(&db.User{}, "id = ?", id).Error; err != nil {
 		slog.Error("db error on user delete", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 	slog.Info("user deleted", "id", id)
@@ -477,13 +489,13 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid user id", nil)
 		return
 	}
 	var req map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		slog.Debug("invalid request body", "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
 		return
 	}
 	// If fields other than role are being changed, enforce self-or-admin authorization
@@ -496,7 +508,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if changingNonRole && !authorizeUserOrAdmin(r, id.String()) {
 		slog.Debug("forbidden user patch", "target_user", idStr)
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "forbidden", nil)
 		return
 	}
 	// Only allow certain fields to be patched
@@ -521,7 +533,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 			case "password":
 				hash, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("%v", v)), bcrypt.DefaultCost)
 				if err != nil {
-					http.Error(w, "Password hash error", http.StatusInternalServerError)
+					writeJSONError(w, http.StatusInternalServerError, "password hash error", nil)
 					return
 				}
 				update["password_hash"] = string(hash)
@@ -529,19 +541,19 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 				// Allow admins to set any role, residents can grant resident role to others
 				claims := middleware.GetClaims(r)
 				if claims == nil {
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					writeJSONError(w, http.StatusUnauthorized, "unauthorized", nil)
 					return
 				}
 				newRole, ok := v.(string)
 				if !ok {
-					http.Error(w, "Invalid role value", http.StatusBadRequest)
+					writeJSONError(w, http.StatusBadRequest, "invalid role value", nil)
 					return
 				}
 				// Normalize
 				newRole = strings.ToLower(newRole)
 				validRoles := map[string]bool{"user": true, "resident": true, "admin": true}
 				if !validRoles[newRole] {
-					http.Error(w, "Unsupported role", http.StatusBadRequest)
+					writeJSONError(w, http.StatusBadRequest, "unsupported role", nil)
 					return
 				}
 				if claims.Role == "admin" {
@@ -551,24 +563,24 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 				if claims.Role == "resident" {
 					// Residents can only grant resident role, and not modify admin accounts
 					if newRole != "resident" {
-						http.Error(w, "Residents can only grant resident role", http.StatusForbidden)
+						writeJSONError(w, http.StatusForbidden, "residents can only grant resident role", nil)
 						return
 					}
 					// Fetch target user to ensure not admin
 					var target db.User
 					if err := db.DB.Where("id = ?", id).First(&target).Error; err != nil {
-						http.Error(w, "User not found", http.StatusNotFound)
+						writeJSONError(w, http.StatusNotFound, "user not found", nil)
 						return
 					}
 					if target.Role == "admin" {
-						http.Error(w, "Cannot modify admin role", http.StatusForbidden)
+						writeJSONError(w, http.StatusForbidden, "cannot modify admin role", nil)
 						return
 					}
 					update[k] = newRole
 					break
 				}
 				// Others cannot change roles
-				http.Error(w, "Insufficient permissions to change role", http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, "insufficient permissions to change role", nil)
 				return
 			default:
 				update[k] = v
@@ -576,17 +588,18 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(update) == 0 {
-		http.Error(w, "No valid fields to update", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "no valid fields to update", nil)
 		return
 	}
 	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Updates(update).Error; err != nil {
 		slog.Error("db error on user patch", "error", err)
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
 	slog.Info("user patched", "id", id, "fields", update)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("User updated"))
+	json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "user updated"})
 }
 
 func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
@@ -596,25 +609,24 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
 		return
 	}
 	var user db.User
 	if err := db.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}
 	if user.LockoutEnabled {
-		// Use 423 Locked to distinguish from generic 403/401
-		http.Error(w, "Account is locked", http.StatusLocked)
+		writeJSONError(w, http.StatusLocked, "account locked", map[string]any{"reason": "admin_lock"})
 		return
 	}
 	if user.PasswordHash == nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password)); err != nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}
 	resp := struct {

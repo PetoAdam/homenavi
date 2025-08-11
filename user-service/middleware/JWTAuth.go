@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"net/http"
 	"strings"
+	"encoding/json"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -24,9 +25,10 @@ var claimsKey claimsKeyType
 func JWTAuthMiddleware(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeJSONErr := func(status int, msg string){ w.Header().Set("Content-Type","application/json"); w.WriteHeader(status); _ = json.NewEncoder(w).Encode(map[string]any{"error":msg,"code":status}) }
 			tokenStr := extractToken(r)
 			if tokenStr == "" {
-				http.Error(w, "Missing token", http.StatusUnauthorized)
+				writeJSONErr(http.StatusUnauthorized, "missing token")
 				return
 			}
 			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
@@ -36,12 +38,12 @@ func JWTAuthMiddleware(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 				return pubKey, nil
 			})
 			if err != nil || !token.Valid {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				writeJSONErr(http.StatusUnauthorized, "invalid token")
 				return
 			}
 			claims, ok := token.Claims.(*Claims)
 			if !ok {
-				http.Error(w, "Invalid claims", http.StatusUnauthorized)
+				writeJSONErr(http.StatusUnauthorized, "invalid claims")
 				return
 			}
 			ctx := context.WithValue(r.Context(), claimsKey, claims)
@@ -63,16 +65,22 @@ func RoleAtLeastMiddleware(required string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := r.Context().Value(claimsKey).(*Claims)
 			if !ok {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				w.Header().Set("Content-Type","application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error":"unauthorized","code":http.StatusUnauthorized})
 				return
 			}
 			reqRank, ok := roleRank[required]
 			if !ok {
-				http.Error(w, "Forbidden", http.StatusForbidden)
+				w.Header().Set("Content-Type","application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error":"forbidden","code":http.StatusForbidden})
 				return
 			}
 			if roleRank[claims.Role] < reqRank {
-				http.Error(w, "Forbidden", http.StatusForbidden)
+				w.Header().Set("Content-Type","application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error":"forbidden","code":http.StatusForbidden})
 				return
 			}
 			next.ServeHTTP(w, r)

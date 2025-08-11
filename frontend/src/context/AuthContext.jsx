@@ -127,11 +127,10 @@ export function AuthProvider({ children }) {
     const resp = await login(email, password);
     setLoading(false);
     
-    // Handle 2FA flow
+    // Handle 2FA flow (return full resp so caller sees twoFA flag)
     if (resp.twoFA) {
       setPendingUserId(resp.userId); // Store userId for 2FA
-      // Don't auto-request 2FA email here - let the backend handle it during login
-      return resp;
+      return resp; // includes twoFA, userId, type
     }
     
     // Handle successful login
@@ -154,8 +153,8 @@ export function AuthProvider({ children }) {
       return { success: false, error: me.error || "Failed to fetch user profile" };
     }
     
-    // Handle login failure - make sure to return the error
-    return { success: false, error: resp.error || "Login failed" };
+  // Failure: return full response (may include lockoutRemaining, reason, unlockAt)
+  return { ...resp, success: false };
   };
 
   const handle2FA = async (code) => {

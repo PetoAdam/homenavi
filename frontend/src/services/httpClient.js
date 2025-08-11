@@ -84,6 +84,7 @@ function normalizeError(err, fallback) {
     success: false,
     status: resp?.status,
     error: data?.error || data?.message || err.message || fallback,
+  data: data,
     raw: err,
   };
 }

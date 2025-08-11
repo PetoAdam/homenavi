@@ -29,6 +29,7 @@ Note: Email / 2FA codes are currently printed in service logs. Enter them when p
 """
 from __future__ import annotations
 import os
+import re
 import sys
 import time
 import json
@@ -287,6 +288,42 @@ def run():
     log.info(f"Locked user login attempt -> {color_status(r.status_code)} (expect 423)")
     assert r.status_code == 423, f"Expected 423 Locked got {r.status_code}: {r.text}"
 
+    # Extract lockout_remaining if present and validate it decreases after a few seconds (tolerance)
+    try:
+        j = r.json()
+    except Exception:
+        j = {}
+    # Structured lockout fields
+    reason = j.get('reason')
+    if reason:
+        log.info(f"Lockout reason: {reason}")
+    rem = j.get('lockout_remaining') or None
+    if rem is None:
+        # Attempt to parse from error string if pattern present
+        msg = j.get('error') or ''
+        m = re.search(r'in (\d+) seconds', msg)
+        if m:
+            try:
+                rem = int(m.group(1))
+            except ValueError:
+                rem = None
+    if rem:
+        log.info(f"Lockout remaining reported: {rem}s")
+        # Wait 3 seconds and retry to ensure value decreased (unless very small)
+        if rem > 5:
+            time.sleep(3)
+            r2 = requests.post(f"{AUTH_PREFIX}/login/start", json={"email":user_email, "password":user_pw}, timeout=10)
+            try:
+                j2 = r2.json()
+            except Exception:
+                j2 = {}
+            rem2 = j2.get('lockout_remaining') or None
+            if rem2:
+                log.info(f"Subsequent lockout remaining: {rem2}s (after 3s)")
+                assert rem2 < rem, f"Expected decreased lockout remaining (initial {rem}, now {rem2})"
+    else:
+        log.warning("No lockout_remaining field present in locked response; countdown test skipped")
+
     # Unlock and login again
     lock_user(admin_tokens.access, user_id, False, expect=200)
     tokens = login(user_email, user_pw)
@@ -297,8 +334,10 @@ def run():
 
     # Another user attempts unauthorized profile patch (non-resident w/out rights)
     other_email = f"other_basic_{suffix}@example.com"
-    other_id = signup(f"otherbasic_{suffix}", other_email, "Other123A", first_name="Other", last_name="Basic")
-    other_tokens = login(other_email, "Other123A")
+    # Use a password meeting policy (>=10 chars, upper, lower, digit)
+    other_password = "Other1234A"  # length 10
+    other_id = signup(f"otherbasic_{suffix}", other_email, other_password, first_name="Other", last_name="Basic")
+    other_tokens = login(other_email, other_password)
     patch_user(other_tokens.access, user_id, {"last_name":"Hack"}, expect=403)
 
     # Admin set user back to user role
@@ -306,6 +345,117 @@ def run():
 
     # List users with admin
     list_users(admin_tokens.access)
+
+    # Optional dynamic lockout countdown test (skipped if lockout seconds too large to keep runtime low)
+    try:
+        lockout_cfg = int(os.getenv('LOGIN_LOCKOUT_SECONDS') or '900')
+    except ValueError:
+        lockout_cfg = 900
+    dynamic_lockout_enabled = lockout_cfg <= 1000  # only run if <=1000 seconds
+    if dynamic_lockout_enabled:
+        max_failures = int(os.getenv('LOGIN_MAX_FAILURES') or '5')
+        log.info(f"Starting dynamic failure-based lockout test (max_failures={max_failures}, lockout={lockout_cfg}s)")
+        # Ensure user is unlocked before starting
+        lock_user(admin_tokens.access, user_id, False, expect=200)
+        # Perform wrong password attempts until lockout
+        wrong_pw = user_pw + 'X'
+        locked_resp = None
+        for i in range(max_failures + 2):  # a couple extra attempts just in case
+            r_fail = requests.post(f"{AUTH_PREFIX}/login/start", json={"email":user_email, "password":wrong_pw}, timeout=10)
+            log.info(f"Failure attempt {i+1} -> {color_status(r_fail.status_code)}")
+            if r_fail.status_code == 423:
+                locked_resp = r_fail
+                break
+            time.sleep(0.2)
+        assert locked_resp is not None, "Did not reach lockout after expected failures"
+        try:
+            jlock = locked_resp.json()
+        except Exception:
+            jlock = {}
+        dyn_rem = jlock.get('lockout_remaining')
+        reason_dyn = jlock.get('reason')
+        if reason_dyn:
+            log.info(f"Dynamic lockout reason: {reason_dyn}")
+        if dyn_rem is None:
+            # parse from message
+            msg = jlock.get('error') or ''
+            m = re.search(r'in (\d+) seconds', msg)
+            if m:
+                try: dyn_rem = int(m.group(1))
+                except ValueError: dyn_rem = None
+        assert dyn_rem and dyn_rem > 0, f"Expected lockout_remaining in dynamic lockout response, got: {jlock}"
+        log.info(f"Dynamic lockout remaining: {dyn_rem}s")
+        if dyn_rem > 5:
+            time.sleep(2)
+            r_check = requests.post(f"{AUTH_PREFIX}/login/start", json={"email":user_email, "password":wrong_pw}, timeout=10)
+            try: jcheck = r_check.json()
+            except Exception: jcheck = {}
+            dyn_rem2 = jcheck.get('lockout_remaining')
+            if dyn_rem2 is None:
+                msg2 = jcheck.get('error') or ''
+                m2 = re.search(r'in (\d+) seconds', msg2)
+                if m2:
+                    try: dyn_rem2 = int(m2.group(1))
+                    except ValueError: dyn_rem2 = None
+            if dyn_rem2:
+                log.info(f"Dynamic lockout remaining after 2s: {dyn_rem2}s")
+                assert dyn_rem2 < dyn_rem, f"Countdown did not decrease: {dyn_rem} -> {dyn_rem2}"
+        # Skip waiting full expiry; just finish.
+    else:
+        log.info("Skipping dynamic failure-based lockout test (LOGIN_LOCKOUT_SECONDS too high)")
+
+    # 2FA lockout test (email-based) if dynamic lockout reasonable
+    if dynamic_lockout_enabled:
+        log.info("Starting 2FA email lockout test setup")
+        # Enable 2FA for resident user via admin patch (email type)
+        patch_user(admin_tokens.access, resident_id, {"two_factor_enabled": True, "two_factor_type": "email"}, expect=200)
+        # Start login to initiate 2FA flow (do raw request to capture user_id + twofa requirement without finishing)
+        for attempt in range(5):
+            r_start = requests.post(f"{AUTH_PREFIX}/login/start", json={"email":resident_email, "password":"Resident123A"}, timeout=15)
+            log.info(f"2FA start attempt {attempt+1} -> {color_status(r_start.status_code)}")
+            if r_start.status_code == 429:
+                time.sleep(0.3 * (attempt+1))
+                continue
+            break
+        assert r_start.status_code == 200, f"2FA start failed: {r_start.text}" 
+        jstart = r_start.json()
+        assert jstart.get('2fa_required'), f"Expected 2FA required after enabling; response: {jstart}" 
+        user_id_for_2fa = jstart['user_id']
+        wrong_code_attempts = int(os.getenv('CODE_MAX_FAILURES') or '5') + 2
+        locked_twofa = None
+        for i in range(wrong_code_attempts):
+            r_fail2 = requests.post(f"{AUTH_PREFIX}/login/finish", json={"user_id":user_id_for_2fa, "code":"000000"}, timeout=10)
+            log.info(f"2FA wrong code attempt {i+1} -> {color_status(r_fail2.status_code)}")
+            if r_fail2.status_code == 423:
+                locked_twofa = r_fail2
+                break
+            if r_fail2.status_code == 401:
+                # normal invalid code path, continue
+                pass
+            elif r_fail2.status_code == 429:
+                time.sleep(0.3)
+            else:
+                log.warning(f"Unexpected 2FA finish status {r_fail2.status_code}: {r_fail2.text}")
+            time.sleep(0.2)
+        if locked_twofa is None:
+            log.warning("Did not reach 2FA lockout; skipping 2FA countdown verification")
+        else:
+            try: jtf = locked_twofa.json()
+            except Exception: jtf = {}
+            reason_tf = jtf.get('reason')
+            rem_tf = jtf.get('lockout_remaining')
+            log.info(f"2FA lockout reason={reason_tf} remaining={rem_tf}")
+            assert reason_tf in ("2fa_lockout", "login_lockout"), f"Unexpected 2FA lockout reason {reason_tf}" 
+            if rem_tf and rem_tf > 5:
+                time.sleep(2)
+                r_tf2 = requests.post(f"{AUTH_PREFIX}/login/finish", json={"user_id":user_id_for_2fa, "code":"000000"}, timeout=10)
+                try: jtf2 = r_tf2.json()
+                except Exception: jtf2 = {}
+                rem_tf2 = jtf2.get('lockout_remaining')
+                if rem_tf2:
+                    log.info(f"2FA lockout remaining after 2s: {rem_tf2}")
+                    assert rem_tf2 < rem_tf, "2FA countdown did not decrease"
+
     elapsed = time.time() - _test_start
     log.info(f"Admin list users final check complete (elapsed {elapsed:.2f}s)")
 
