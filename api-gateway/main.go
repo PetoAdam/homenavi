@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -56,9 +59,27 @@ func main() {
 	mux.Handle("/ws/", wsRouter)
 	mux.Handle("/", mainRouter)
 
-	slog.Info("api gateway starting", "addr", cfg.ListenAddr)
-	if err := http.ListenAndServe(cfg.ListenAddr, mux); err != nil {
-		slog.Error("server exited", "error", err)
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux}
+
+	// Signal handling for graceful shutdown
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		slog.Info("api gateway starting", "addr", cfg.ListenAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server listen error", "error", err)
+		}
+	}()
+
+	<-stopCh
+	slog.Info("shutdown signal received")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("graceful shutdown failed", "error", err)
+	} else {
+		slog.Info("server shut down gracefully")
 	}
 }
 
