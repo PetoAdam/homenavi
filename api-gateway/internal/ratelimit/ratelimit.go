@@ -37,6 +37,8 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 				return
 			}
 			if !allowed {
+				// Minimal Retry-After: 1 second (token bucket refills per RPS); future enhancement could compute precise wait.
+				w.Header().Set("Retry-After", "1")
 				writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
