@@ -6,7 +6,7 @@ export default function Snackbar({ message, duration = 2500, onClose }) {
   useEffect(() => {
     if (message) {
       setOpen(true);
-      const t = setTimeout(() => { setOpen(false); if (onClose) onClose && onClose(); }, duration);
+      const t = setTimeout(() => { setOpen(false); if (onClose) onClose(); }, duration);
       return () => clearTimeout(t);
     }
   }, [message, duration, onClose]);
