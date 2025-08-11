@@ -10,6 +10,9 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const [loginForm, setLoginForm] = useState({ email: '', password: '', twofa: '' });
   const [signupForm, setSignupForm] = useState({ firstName: '', lastName: '', userName: '', email: '', password: '' });
   const [loginError, setLoginError] = useState('');
+  const [lockoutRemaining, setLockoutRemaining] = useState(null); // seconds remaining
+  const unlockAtRef = useRef(null); // epoch seconds for unlock
+  const [attemptedLogin, setAttemptedLogin] = useState(false);
   const [signupError, setSignupError] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordForm, setForgotPasswordForm] = useState({ email: '', code: '', newPassword: '', confirmPassword: '' });
@@ -26,6 +29,20 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [open, onClose]);
+
+  // Clear stale errors and transient form states whenever the modal is newly opened
+  useEffect(() => {
+    if (open) {
+      setLoginError('');
+  setLockoutRemaining(null);
+      setSignupError('');
+      setForgotPasswordError('');
+      // Do not wipe user input blindly except after a logout scenario; if no tokens and no user keep forms clean
+      // Optional heuristic: if no email typed yet keep as is. For simplicity only clear password field.
+      setLoginForm(f => ({ ...f, password: '', twofa: '' }));
+      setAttemptedLogin(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -57,20 +74,83 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
+    setLockoutRemaining(null);
     setFormLoading(true);
     try {
       const result = await onAuth(loginForm.email, loginForm.password);
+      setAttemptedLogin(true);
       if (result && result.success) {
         onClose();
-      } else if (result && result.error) {
-        setLoginError(result.error);
-      } else if (result && !result.twoFA) {
-        setLoginError('Login failed. Please check your credentials.');
+      } else if (result && result.twoFA) {
+        // 2FA path handled by parent
+      } else if (result) {
+        // result may contain error, lockoutRemaining, reason, unlockAt
+        if (result.lockoutRemaining != null) {
+          setLockoutRemaining(result.lockoutRemaining);
+          // If server didn't send unlockAt but provided remaining seconds, synthesize unlockAt baseline
+          if (!result.unlockAt) {
+            unlockAtRef.current = Math.floor(Date.now()/1000) + result.lockoutRemaining;
+          }
+        } else if (result.unlockAt) {
+          const nowSec = Math.floor(Date.now()/1000);
+          const rem = result.unlockAt - nowSec;
+          if (rem > 0) setLockoutRemaining(rem);
+        }
+        if (result.unlockAt) {
+          unlockAtRef.current = result.unlockAt;
+        }
+        // Prefer lockout messaging if reason or countdown present
+        if ((result.reason && /lockout|locked/i.test(result.reason)) || result.lockoutRemaining != null) {
+          const base = 'Account locked';
+          setLoginError(base);
+        } else if (result.error) {
+          setLoginError(result.error);
+        } else {
+          setLoginError('Invalid email or password');
+        }
+      } else {
+        setLoginError('Invalid email or password');
       }
     } finally {
       setFormLoading(false);
     }
   };
+
+  // Countdown effect: derive remaining from unlockAt baseline to avoid drift
+  useEffect(() => {
+    if (lockoutRemaining == null) return;
+    const tick = () => {
+      if (!unlockAtRef.current) {
+        // Fallback simple decrement if no baseline
+        setLockoutRemaining(prev => {
+          if (prev == null) return null;
+          if (prev <= 1) { return 0; }
+          return prev - 1;
+        });
+        return;
+      }
+      const nowSec = Math.floor(Date.now()/1000);
+      const rem = unlockAtRef.current - nowSec;
+      if (rem <= 0) {
+        setLockoutRemaining(null);
+        setLoginError('');
+      } else {
+        setLockoutRemaining(rem);
+      }
+    };
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [lockoutRemaining]);
+
+  // Rehydrate countdown on reopen if unlockAt still in future
+  useEffect(() => {
+    if (!open) return;
+    if (unlockAtRef.current) {
+      const nowSec = Math.floor(Date.now()/1000);
+      const rem = unlockAtRef.current - nowSec;
+      if (rem > 0) setLockoutRemaining(rem);
+    }
+  }, [open]);
 
   const handle2FA = async (e) => {
     e.preventDefault();
@@ -193,7 +273,16 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
                   />
                   <label className="auth-modal-label" htmlFor="login-password">Password</label>
                 </div>
-                {loginError && <div className="auth-modal-error">{loginError}</div>}
+                {loginError && attemptedLogin && (
+                  <div className="auth-modal-error">
+                    {loginError}
+                    {lockoutRemaining != null && lockoutRemaining > 0 && (
+                      <div style={{ marginTop: '0.25rem', fontSize: '0.85rem', opacity: 0.9 }}>
+                        You can try again in {lockoutRemaining}s
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ width: '100%', textAlign: 'right', marginBottom: '0.2rem' }}>
                   <button
                     type="button"

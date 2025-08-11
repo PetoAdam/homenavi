@@ -1,9 +1,10 @@
 import React, { forwardRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHouse, faLightbulb, faMap } from '@fortawesome/free-solid-svg-icons';
+import { faHouse, faLightbulb, faMap, faUsers } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import './Sidebar.css';
+import { useAuth } from '../../context/AuthContext';
 
 const menuGroups = [
 	{
@@ -25,6 +26,9 @@ const menuGroups = [
 const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanentSidebar }, ref) {
 	const location = useLocation();
 	const navigate = useNavigate();
+	const { user } = useAuth();
+
+	const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
 	return (
 		<aside
@@ -65,6 +69,19 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 									</button>
 								</li>
 							))}
+
+                {isResidentOrAdmin && group.header === 'Main' && (
+									<li key="Users">
+										<button
+											className={`menu-item${location.pathname === '/users' ? ' active' : ''}`}
+											onClick={() => { navigate('/users'); setMenuOpen(false); }}
+											aria-current={location.pathname === '/users' ? 'page' : undefined}
+										>
+											<span className="menu-icon"><FontAwesomeIcon icon={faUsers} /></span>
+											<span className="menu-label">Users</span>
+										</button>
+									</li>
+								)}
 						</ul>
 					</div>
 				))}

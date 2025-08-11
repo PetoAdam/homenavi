@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	mathrand "math/rand"
 	"net/http"
 	"time"
 
@@ -93,6 +93,77 @@ func (s *AuthService) ValidateRefreshToken(token string) (string, error) {
 	return userID, nil
 }
 
+// --- Lockout & attempt tracking ---
+// Keys:
+// login_fail:<email> -> integer count (TTL = lock window)
+// login_lockout:<email> -> "1" (TTL = lockout duration)
+// code_fail:<userID>:<type> -> integer count
+// code_lockout:<userID>:<type> -> "1"
+
+func (s *AuthService) IsLoginLocked(email string) (bool, int64, error) {
+	ctx := context.Background()
+	key := "login_lockout:" + email
+	ttl, err := s.redisClient.TTL(ctx, key).Result()
+	if err != nil && err != redis.Nil { return false, 0, err }
+	if ttl > 0 { return true, int64(ttl.Seconds()), nil }
+	return false, 0, nil
+}
+
+func (s *AuthService) RegisterLoginFailure(email string) (locked bool, ttlSeconds int64, err error) {
+	cfg := s.config
+	ctx := context.Background()
+	failKey := "login_fail:" + email
+	count, err := s.redisClient.Incr(ctx, failKey).Result()
+	if err != nil { return false, 0, err }
+	// Ensure fail counter expires within lockout window length (same as lockout so it resets eventually)
+	s.redisClient.Expire(ctx, failKey, time.Duration(cfg.LoginLockoutSeconds)*time.Second)
+	if int(count) >= cfg.LoginMaxFailures {
+		lockKey := "login_lockout:" + email
+		_ = s.redisClient.Set(ctx, lockKey, "1", time.Duration(cfg.LoginLockoutSeconds)*time.Second).Err()
+		return true, int64(cfg.LoginLockoutSeconds), nil
+	}
+	return false, 0, nil
+}
+
+func (s *AuthService) ClearLoginFailures(email string) {
+	ctx := context.Background()
+	s.redisClient.Del(ctx, "login_fail:"+email)
+}
+
+func (s *AuthService) IsCodeLocked(userID, codeType string) (bool, int64, error) {
+	ctx := context.Background()
+	key := "code_lockout:" + userID + ":" + codeType
+	ttl, err := s.redisClient.TTL(ctx, key).Result()
+	if err != nil && err != redis.Nil { return false, 0, err }
+	if ttl > 0 { return true, int64(ttl.Seconds()), nil }
+	return false, 0, nil
+}
+
+func (s *AuthService) RegisterCodeFailure(userID, codeType string) (locked bool, ttlSeconds int64, err error) {
+	cfg := s.config
+	ctx := context.Background()
+	failKey := "code_fail:" + userID + ":" + codeType
+	count, err := s.redisClient.Incr(ctx, failKey).Result()
+	if err != nil { return false, 0, err }
+	s.redisClient.Expire(ctx, failKey, time.Duration(cfg.CodeLockoutSeconds)*time.Second)
+	if int(count) >= cfg.CodeMaxFailures {
+		lockKey := "code_lockout:" + userID + ":" + codeType
+		// If already locked, do NOT reset TTL; return remaining
+		if ttl, err := s.redisClient.TTL(ctx, lockKey).Result(); err == nil && ttl > 0 {
+			return true, int64(ttl.Seconds()), nil
+		}
+		// Not currently locked -> set fresh lock
+		_ = s.redisClient.Set(ctx, lockKey, "1", time.Duration(cfg.CodeLockoutSeconds)*time.Second).Err()
+		return true, int64(cfg.CodeLockoutSeconds), nil
+	}
+	return false, 0, nil
+}
+
+func (s *AuthService) ClearCodeFailures(userID, codeType string) {
+	ctx := context.Background()
+	s.redisClient.Del(ctx, "code_fail:"+userID+":"+codeType)
+}
+
 func (s *AuthService) RevokeRefreshToken(token string) error {
 	ctx := context.Background()
 	key := "refresh_token:" + token
@@ -136,8 +207,16 @@ func (s *AuthService) ValidateVerificationCode(codeType, userID, code string) er
 	return nil
 }
 
+// GenerateVerificationCode returns a 6‑digit numeric code using cryptographic randomness.
+// Falls back to a time-based value only if the RNG fails (extremely unlikely).
 func (s *AuthService) GenerateVerificationCode() string {
-	return fmt.Sprintf("%06d", mathrand.Intn(1000000))
+	buf := make([]byte, 4)
+	if _, err := rand.Read(buf); err == nil {
+		n := binary.BigEndian.Uint32(buf) % 1000000
+		return fmt.Sprintf("%06d", n)
+	}
+	// Fallback (non-crypto) – still returns a valid 6 digit string.
+	return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
 }
 
 func (s *AuthService) GenerateOAuthState() (string, error) {

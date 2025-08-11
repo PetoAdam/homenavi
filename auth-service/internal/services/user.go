@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"auth-service/internal/config"
@@ -88,6 +90,10 @@ func (s *UserService) ValidateCredentials(email, password string) (*entities.Use
 		return nil, errors.Unauthorized("invalid credentials")
 	}
 
+	if resp.StatusCode == 423 { // Locked
+		return nil, errors.Forbidden("account is locked")
+	}
+
 	if resp.StatusCode != 200 {
 		return nil, errors.InternalServerError("user service returned unexpected status", nil)
 	}
@@ -130,7 +136,10 @@ func (s *UserService) GetUser(userID string) (*entities.User, error) {
 }
 
 func (s *UserService) GetUserByEmail(email string) (*entities.User, error) {
-	resp, err := s.makeRequest("GET", "/users?email="+email, nil, "")
+	// Internal read: issue internal token with a synthetic subject (empty) to bypass auth gating
+	// (User service currently requires JWT for /users?email= lookups inside protected group)
+	token, _ := s.issueInternalToken("")
+	resp, err := s.makeRequest("GET", "/users?email="+email, nil, token)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to get user by email", err)
 	}
@@ -209,7 +218,8 @@ func (s *UserService) DeleteUser(userID string, jwtToken string) error {
 }
 
 func (s *UserService) GetUserByGoogleID(googleID string) (*entities.User, error) {
-	resp, err := s.makeRequest("GET", "/users?google_id="+googleID, nil, "")
+	token, _ := s.issueInternalToken("")
+	resp, err := s.makeRequest("GET", "/users?google_id="+googleID, nil, token)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to get user by google_id", err)
 	}
@@ -288,6 +298,35 @@ func (s *UserService) CreateUserFromMap(userReq map[string]interface{}) (*entiti
 	}
 
 	return &user, nil
+}
+
+// ListUsers queries user-service with pagination/search; expects Authorization token from caller.
+func (s *UserService) ListUsers(values url.Values, bearer string) ([]entities.User, map[string]interface{}, error) {
+	// Forward query params as-is
+	path := "/users?" + values.Encode()
+	token := strings.TrimPrefix(bearer, "Bearer ")
+	resp, err := s.makeRequest("GET", path, nil, token)
+	if err != nil {
+		return nil, nil, errors.InternalServerError("failed list users", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, nil, errors.InternalServerError("unexpected status", nil)
+	}
+	// Response shape: { users: [], page:..., page_size:..., total:..., total_pages:..., query:... }
+	var raw struct {
+		Users []entities.User `json:"users"`
+		Page int `json:"page"`
+		PageSize int `json:"page_size"`
+		Total int64 `json:"total"`
+		TotalPages int64 `json:"total_pages"`
+		Query string `json:"query"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, nil, errors.InternalServerError("decode error", err)
+	}
+	meta := map[string]interface{}{"page":raw.Page, "page_size":raw.PageSize, "total":raw.Total, "total_pages":raw.TotalPages, "query":raw.Query}
+	return raw.Users, meta, nil
 }
 
 func (s *UserService) makeRequest(method, path string, body []byte, jwtToken string) (*http.Response, error) {

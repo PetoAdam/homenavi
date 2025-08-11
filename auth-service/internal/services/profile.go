@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"time"
@@ -59,7 +59,7 @@ func (s *ProfilePictureService) GenerateAvatar(userID string) (string, error) {
 
 	// Return the avatar URL
 	if url, ok := result["url"].(string); ok {
-		log.Printf("[INFO] Avatar generated for user %s: %s", userID, url)
+		slog.Info("avatar generated", "user_id", userID, "url", url)
 		return url, nil
 	}
 
@@ -121,7 +121,7 @@ func (s *ProfilePictureService) UploadProfilePicture(userID string, file multipa
 		return "", fmt.Errorf("failed to parse response: %v", err)
 	}
 
-	log.Printf("[DEBUG] Upload response: %+v", result)
+	slog.Debug("upload response", "result", result)
 
 	// Check if upload was successful
 	if success, ok := result["success"].(bool); !ok || !success {
@@ -130,7 +130,7 @@ func (s *ProfilePictureService) UploadProfilePicture(userID string, file multipa
 
 	// Get the primary URL (the main profile picture URL)
 	if primaryURL, ok := result["primary_url"].(string); ok {
-		log.Printf("[INFO] Profile picture uploaded for user %s: %s", userID, primaryURL)
+		slog.Info("profile picture uploaded", "user_id", userID, "url", primaryURL)
 		return primaryURL, nil
 	}
 

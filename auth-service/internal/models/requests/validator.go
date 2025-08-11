@@ -28,25 +28,46 @@ func IsValidEmail(email string) bool {
 	return re.MatchString(email)
 }
 
-func IsValidPassword(password string) bool {
-	if len(password) < 8 {
-		return false
+// Password policy (centralized):
+// - Minimum length 10
+// - Must include at least one lowercase, one uppercase, one digit
+// - No whitespace
+// - No sequence of the same character repeated 3+ times consecutively
+// Returns (ok, []violations)
+func passwordPolicyCheck(pw string) (bool, []string) {
+	var violations []string
+	if len(pw) < 10 {
+		violations = append(violations, "length >= 10")
 	}
-
 	var hasLower, hasUpper, hasDigit bool
-	for _, c := range password {
-		if c >= 'a' && c <= 'z' {
-			hasLower = true
-		}
-		if c >= 'A' && c <= 'Z' {
-			hasUpper = true
-		}
-		if c >= '0' && c <= '9' {
-			hasDigit = true
-		}
+	var repeatCount int
+	var lastRune rune
+	for i, r := range pw {
+		if r >= 'a' && r <= 'z' { hasLower = true }
+		if r >= 'A' && r <= 'Z' { hasUpper = true }
+		if r >= '0' && r <= '9' { hasDigit = true }
+		if r == ' ' || r == '\t' || r == '\n' { violations = append(violations, "no whitespace") ; break }
+		if i == 0 { lastRune = r; repeatCount = 1; continue }
+		if r == lastRune { repeatCount++ } else { lastRune = r; repeatCount = 1 }
+		if repeatCount == 3 { violations = append(violations, "no 3+ consecutive identical chars") ; break }
 	}
+	if !hasLower { violations = append(violations, "missing lowercase letter") }
+	if !hasUpper { violations = append(violations, "missing uppercase letter") }
+	if !hasDigit { violations = append(violations, "missing digit") }
+	return len(violations) == 0, violations
+}
 
-	return hasLower && hasUpper && hasDigit
+// IsValidPassword retains original signature for existing callers; internally uses enhanced policy.
+func IsValidPassword(password string) bool {
+	ok, _ := passwordPolicyCheck(password)
+	return ok
+}
+
+// PasswordPolicyError builds a human-friendly error string for a password that failed validation.
+func PasswordPolicyError(password string) string {
+	_, violations := passwordPolicyCheck(password)
+	if len(violations) == 0 { return "" }
+	return "password does not meet policy: " + strings.Join(violations, ", ")
 }
 
 func IsValidUserName(username string) bool {

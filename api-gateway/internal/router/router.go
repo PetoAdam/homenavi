@@ -50,8 +50,10 @@ func wrapWithAccessControl(pubKey *rsa.PublicKey, access string, next http.Handl
 		return next
 	case "auth":
 		return middleware.JWTAuthMiddlewareRS256(pubKey)(next)
+	case "resident":
+	return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.RoleAtLeastMiddleware("resident")(next))
 	case "admin":
-		return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.AdminOnlyMiddleware(next))
+	return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.RoleAtLeastMiddleware("admin")(next))
 	default:
 		return next
 	}

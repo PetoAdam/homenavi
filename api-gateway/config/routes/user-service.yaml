@@ -1,9 +1,5 @@
 routes:
-  - path: /api/users/{id}
-    upstream: http://user-service:8001/users/{id}
-    methods: [GET, DELETE, PATCH]
-    access: auth
-    type: rest
+  # Public signup & credential validation remain direct for simplicity
   - path: /api/users
     upstream: http://user-service:8001/users
     methods: [POST]
@@ -14,13 +10,20 @@ routes:
     methods: [POST]
     access: public
     type: rest
-  - path: /api/users?email={email}
-    upstream: http://user-service:8001/users?email={email}
+
+  # Backup direct admin-only access to user-service (should normally go via auth-service)
+  - path: /api/users/{id}
+    upstream: http://user-service:8001/users/{id}
+    methods: [GET, DELETE, PATCH]
+    access: admin
+    type: rest
+  - path: /api/users
+    upstream: http://user-service:8001/users
     methods: [GET]
-    access: auth
+    access: admin
     type: rest
   - path: /api/users/{id}/lockout
     upstream: http://user-service:8001/users/{id}/lockout
     methods: [POST]
-    access: auth
+    access: admin
     type: rest

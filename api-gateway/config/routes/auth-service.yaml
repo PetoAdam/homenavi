@@ -104,3 +104,19 @@ routes:
     methods: [POST]
     access: auth
     type: rest
+  # User management routes (auth-service consolidated)
+  - path: /api/auth/users
+    upstream: http://auth-service:8000/api/auth/users
+    methods: [GET]
+    access: resident
+    type: rest
+  - path: /api/auth/users/{id}
+    upstream: http://auth-service:8000/api/auth/users/{id}
+    methods: [GET, PATCH]
+    access: auth
+    type: rest
+  - path: /api/auth/users/{id}/lockout
+    upstream: http://auth-service:8000/api/auth/users/{id}/lockout
+    methods: [POST]
+    access: admin
+    type: rest
