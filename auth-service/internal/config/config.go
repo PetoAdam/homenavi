@@ -4,6 +4,7 @@ import (
 	"crypto/rsa"
 	"os"
 	"time"
+	"strconv"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -24,6 +25,10 @@ type Config struct {
 	GoogleOAuthClientID      string        `json:"google_oauth_client_id"`
 	GoogleOAuthClientSecret  string        `json:"google_oauth_client_secret"`
 	GoogleOAuthRedirectURL   string        `json:"google_oauth_redirect_url"`
+	LoginMaxFailures         int           `json:"login_max_failures"`
+	LoginLockoutSeconds      int           `json:"login_lockout_seconds"`
+	CodeMaxFailures          int           `json:"code_max_failures"`
+	CodeLockoutSeconds       int           `json:"code_lockout_seconds"`
 }
 
 func Load() (*Config, error) {
@@ -56,6 +61,10 @@ func Load() (*Config, error) {
 		GoogleOAuthClientID:      getEnv("GOOGLE_OAUTH_CLIENT_ID", ""),
 		GoogleOAuthClientSecret:  getEnv("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 		GoogleOAuthRedirectURL:   getEnv("GOOGLE_OAUTH_REDIRECT_URL", "http://localhost/api/auth/oauth/google/callback"),
+		LoginMaxFailures:         intFromEnv("LOGIN_MAX_FAILURES", 5),
+		LoginLockoutSeconds:      intFromEnv("LOGIN_LOCKOUT_SECONDS", 900),
+		CodeMaxFailures:          intFromEnv("CODE_MAX_FAILURES", 5),
+		CodeLockoutSeconds:       intFromEnv("CODE_LOCKOUT_SECONDS", 600),
 	}
 
 	return config, nil
@@ -66,4 +75,13 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func intFromEnv(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if iv, err := strconv.Atoi(v); err == nil {
+			return iv
+		}
+	}
+	return def
 }

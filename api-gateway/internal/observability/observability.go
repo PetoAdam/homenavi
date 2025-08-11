@@ -2,7 +2,7 @@ package observability
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -35,9 +35,7 @@ func init() {
 func SetupObservability() (shutdown func(), promHandler http.Handler, tracer oteltrace.Tracer) {
 	// Prometheus exporter
 	promExporter, err := otelprom.New()
-	if err != nil {
-		log.Fatalf("failed to create prometheus exporter: %v", err)
-	}
+	if err != nil { slog.Error("failed to create prometheus exporter", "error", err); os.Exit(1) }
 	meterProvider := otelmetric.NewMeterProvider(otelmetric.WithReader(promExporter))
 	otel.SetMeterProvider(meterProvider)
 
@@ -47,18 +45,14 @@ func SetupObservability() (shutdown func(), promHandler http.Handler, tracer ote
 			semconv.ServiceName("api-gateway"),
 		),
 	)
-	if err != nil {
-		log.Fatalf("failed to create otel resource: %v", err)
-	}
+	if err != nil { slog.Error("failed to create otel resource", "error", err); os.Exit(1) }
 
 	// Jaeger exporter
 	jaegerURL := os.Getenv("JAEGER_ENDPOINT")
 	var tp *trace.TracerProvider
 	if jaegerURL != "" {
 		exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(jaegerURL)))
-		if err != nil {
-			log.Fatalf("failed to create Jaeger exporter: %v", err)
-		}
+		if err != nil { slog.Error("failed to create jaeger exporter", "error", err); os.Exit(1) }
 		tp = trace.NewTracerProvider(
 			trace.WithBatcher(exp),
 			trace.WithResource(res),

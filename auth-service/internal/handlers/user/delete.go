@@ -2,7 +2,7 @@ package user
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/responses"
@@ -46,12 +46,12 @@ func (h *DeleteHandler) HandleDeleteUser(w http.ResponseWriter, r *http.Request)
 
 	// Delete user
 	if err := h.userService.DeleteUser(userID, token); err != nil {
-		log.Printf("[ERROR] Failed to delete user %s: %v", userID, err)
+		slog.Error("failed to delete user", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to delete user", err))
 		return
 	}
 
-	log.Printf("[INFO] User deleted: %s (%s)", userID, user.Email)
+	slog.Info("user deleted", "user_id", userID, "email", user.Email)
 
 	response := responses.DeleteUserResponse{
 		Success: true,

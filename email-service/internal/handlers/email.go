@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"email-service/internal/services"
@@ -10,6 +10,12 @@ import (
 
 type EmailHandler struct {
 	emailService *services.EmailService
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error":message, "code":status})
 }
 
 func NewEmailHandler(emailService *services.EmailService) *EmailHandler {
@@ -39,23 +45,23 @@ type TwoFactorEmailRequest struct {
 func (h *EmailHandler) SendVerificationEmail(w http.ResponseWriter, r *http.Request) {
 	var req VerificationEmailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Invalid verification email request: %v", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		slog.Debug("invalid verification email request", "error", err)
+		writeJSONError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
 	if req.To == "" || req.UserName == "" || req.Code == "" {
-		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "missing required fields")
 		return
 	}
 
 	if err := h.emailService.SendVerificationEmail(req.To, req.UserName, req.Code); err != nil {
-		log.Printf("Failed to send verification email: %v", err)
-		http.Error(w, "Failed to send email", http.StatusInternalServerError)
+		slog.Error("failed to send verification email", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to send email")
 		return
 	}
 
-	log.Printf("Verification email sent to %s", req.To)
+	slog.Info("verification email sent", "code", req.Code, "to", req.To)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }
@@ -63,23 +69,23 @@ func (h *EmailHandler) SendVerificationEmail(w http.ResponseWriter, r *http.Requ
 func (h *EmailHandler) SendPasswordResetEmail(w http.ResponseWriter, r *http.Request) {
 	var req PasswordResetEmailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Invalid password reset email request: %v", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		slog.Debug("invalid password reset email request", "error", err)
+		writeJSONError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
 	if req.To == "" || req.Name == "" || req.Code == "" {
-		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "missing required fields")
 		return
 	}
 
 	if err := h.emailService.SendPasswordResetEmail(req.To, req.Name, req.Code); err != nil {
-		log.Printf("Failed to send password reset email: %v", err)
-		http.Error(w, "Failed to send email", http.StatusInternalServerError)
+		slog.Error("failed to send password reset email", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to send email")
 		return
 	}
 
-	log.Printf("Password reset email sent to %s", req.To)
+	slog.Info("password reset email sent", "to", req.To)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }
@@ -87,23 +93,23 @@ func (h *EmailHandler) SendPasswordResetEmail(w http.ResponseWriter, r *http.Req
 func (h *EmailHandler) Send2FAEmail(w http.ResponseWriter, r *http.Request) {
 	var req TwoFactorEmailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Invalid 2FA email request: %v", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		slog.Debug("invalid 2fa email request", "error", err)
+		writeJSONError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
 	if req.To == "" || req.Name == "" || req.Code == "" {
-		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "missing required fields")
 		return
 	}
 
 	if err := h.emailService.Send2FAEmail(req.To, req.Name, req.Code); err != nil {
-		log.Printf("Failed to send 2FA email: %v", err)
-		http.Error(w, "Failed to send email", http.StatusInternalServerError)
+		slog.Error("failed to send 2fa email", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to send email")
 		return
 	}
 
-	log.Printf("2FA email sent to %s", req.To)
+	slog.Info("2fa email sent", "to", req.To)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }

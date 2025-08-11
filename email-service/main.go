@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -50,10 +50,16 @@ func main() {
 	}
 
 	// Graceful shutdown
+	// Initialize structured logging
+	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
+	if os.Getenv("LOG_FORMAT") == "json" { handler = slog.NewJSONHandler(os.Stdout, nil) }
+	slog.SetDefault(slog.New(handler))
+
 	go func() {
-		log.Printf("Email service starting on port %s", cfg.Port)
+		slog.Info("email service starting", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -62,15 +68,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Email service shutting down...")
+	slog.Info("email service shutting down")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Email service forced to shutdown: %v", err)
+		slog.Error("email service forced shutdown", "error", err)
+		os.Exit(1)
 	}
-
-	log.Println("Email service stopped")
+	slog.Info("email service stopped")
 }

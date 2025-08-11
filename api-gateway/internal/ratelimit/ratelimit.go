@@ -2,7 +2,7 @@ package ratelimit
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -33,16 +33,25 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 			ctx := context.Background()
 			allowed, err := rl.allow(ctx, key)
 			if err != nil {
-				http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+				writeJSONError(w, http.StatusInternalServerError, "rate limiter error")
 				return
 			}
 			if !allowed {
-				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+				// Minimal Retry-After: 1 second (token bucket refills per RPS); future enhancement could compute precise wait.
+				w.Header().Set("Retry-After", "1")
+				writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// writeJSONError duplicated locally (could be refactored to shared package) to avoid import cycle.
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(`{"error":"`+msg+`","code":`+strconv.Itoa(status)+`}`))
 }
 
 func (rl *RateLimiter) allow(ctx context.Context, key string) (bool, error) {
@@ -79,7 +88,7 @@ end
 	now := time.Now().UnixNano() / int64(time.Millisecond)
 	res, err := rl.Redis.Eval(ctx, lua, []string{key}, maxTokens, refillRate, now).Result()
 	if err != nil {
-		log.Printf("Redis error for key %s: %v", key, err)
+		slog.Error("redis eval error", "key", key, "error", err)
 		return false, err
 	}
 	var allowed int64
@@ -91,7 +100,7 @@ end
 	default:
 		allowed = 0
 	}
-	log.Printf("Token bucket key %s: allowed=%d (max=%d, rps=%d)", key, allowed, maxTokens, refillRate)
+	slog.Debug("token bucket", "key", key, "allowed", allowed, "max", maxTokens, "rps", refillRate)
 	return allowed == 1, nil
 }
 

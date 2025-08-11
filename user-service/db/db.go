@@ -2,7 +2,7 @@ package db
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -28,14 +28,14 @@ func MustInitDB() {
 		DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 		if err == nil {
 			if err = DB.AutoMigrate(&User{}, &EmailVerification{}); err == nil {
-				log.Println("Connected to Postgres and migrated schema")
+				slog.Info("connected to postgres and migrated schema")
 				// Create default admin user if not exists
 				adminEmail := "admin@example.com"
 				adminUser := "admin"
 				var existing User
 				resp := DB.Where("email = ?", adminEmail).Or("user_name = ?", adminUser).First(&existing)
 				if resp.Error == nil {
-					log.Printf("[INFO] Default admin user already exists: %s", existing.Email)
+					slog.Info("default admin user exists", "email", existing.Email)
 				} else {
 					hash, _ := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
 					ph := string(hash)
@@ -55,17 +55,18 @@ func MustInitDB() {
 						AccessFailedCount:  0,
 					}
 					if err := DB.Create(&user).Error; err != nil {
-						log.Printf("[ERROR] Failed to create default admin user: %v", err)
+						slog.Error("failed to create default admin user", "error", err)
 					} else {
-						log.Printf("[INFO] Default admin user created: %s", adminEmail)
+						slog.Info("default admin user created", "email", adminEmail)
 					}
 				}
 				return
 			}
 		}
-		log.Printf("Waiting for Postgres to be ready (%d/30)...", i+1)
+		slog.Warn("waiting for postgres", "attempt", i+1, "max", 30)
 		if i == 29 {
-			log.Fatalf("Failed to connect to Postgres after retries: %v", err)
+			slog.Error("failed to connect to postgres after retries", "error", err)
+			os.Exit(1)
 		}
 		time.Sleep(2 * time.Second)
 	}

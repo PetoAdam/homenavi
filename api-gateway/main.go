@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -28,11 +30,20 @@ func main() {
 	if len(os.Args) > 1 {
 		cfgPath = os.Args[1]
 	}
+	// Initialize structured logger (JSON if LOG_FORMAT=json)
+	var handler slog.Handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})
+	if os.Getenv("LOG_FORMAT") == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{})
+	}
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
 	cfg, err := config.LoadConfig(cfgPath, routesDir)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
-	fmt.Printf("Loaded config: %+v\n", cfg)
+	slog.Info("config loaded", "listen", cfg.ListenAddr, "routes", len(cfg.Routes))
 
 	shutdown, promHandler, tracer := observability.SetupObservability()
 	defer shutdown()
@@ -48,18 +59,40 @@ func main() {
 	mux.Handle("/ws/", wsRouter)
 	mux.Handle("/", mainRouter)
 
-	log.Printf("API Gateway running on %s", cfg.ListenAddr)
-	http.ListenAndServe(cfg.ListenAddr, mux)
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux}
+
+	// Signal handling for graceful shutdown
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		slog.Info("api gateway starting", "addr", cfg.ListenAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server listen error", "error", err)
+		}
+	}()
+
+	<-stopCh
+	slog.Info("shutdown signal received")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("graceful shutdown failed", "error", err)
+	} else {
+		slog.Info("server shut down gracefully")
+	}
 }
 
 func setupJWTKey() *rsa.PublicKey {
 	pubKeyPath := os.Getenv("JWT_PUBLIC_KEY_PATH")
 	if pubKeyPath == "" {
-		log.Fatal("JWT_PUBLIC_KEY_PATH not set")
+		slog.Error("JWT_PUBLIC_KEY_PATH not set")
+		os.Exit(1)
 	}
 	pubKey, err := apiMiddleware.LoadRSAPublicKey(pubKeyPath)
 	if err != nil {
-		log.Fatalf("Failed to load JWT public key: %v", err)
+		slog.Error("failed to load JWT public key", "error", err)
+		os.Exit(1)
 	}
 	return pubKey
 }
@@ -71,9 +104,10 @@ func setupRedisClient() *redis.Client {
 		DB:       0,
 	})
 	if pong, err := client.Ping(context.Background()).Result(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
 	} else {
-		log.Printf("Connected to Redis: %s", pong)
+		slog.Info("connected to redis", "pong", pong)
 	}
 	return client
 }
@@ -116,8 +150,10 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Not found: %s %s", r.Method, r.URL.Path)
-		http.Error(w, "Not found", http.StatusNotFound)
+		slog.Warn("route not found", "method", r.Method, "path", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "not found", "code": http.StatusNotFound})
 	})
 
 	return r

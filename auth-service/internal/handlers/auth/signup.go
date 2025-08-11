@@ -2,7 +2,7 @@ package auth
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"auth-service/internal/models/requests"
@@ -38,7 +38,7 @@ func (h *SignupHandler) HandleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[INFO] User created successfully: %s", user.ID)
+	slog.Info("user created", "user_id", user.ID)
 
 	response := responses.UserResponse{
 		ID:                user.ID,
