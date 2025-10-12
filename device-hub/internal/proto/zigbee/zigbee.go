@@ -37,6 +37,7 @@ type ZigbeeAdapter struct {
 	refreshProps   map[string][]string
 	capIndex       map[string]map[string]model.Capability
 	friendlyIndex  map[string]string
+	friendlyTopic  map[string]string
 }
 
 const (
@@ -60,6 +61,7 @@ func New(client *mqtt.Client, repo *store.Repository, cache *store.StateCache, e
 		refreshProps:   map[string][]string{},
 		capIndex:       map[string]map[string]model.Capability{},
 		friendlyIndex:  map[string]string{},
+		friendlyTopic:  map[string]string{},
 	}
 }
 
@@ -94,7 +96,23 @@ func (z *ZigbeeAdapter) PublishCommand(ctx context.Context, device *model.Device
 		payload[k] = v
 	}
 	b, _ := json.Marshal(payload)
-	topic := "zigbee2mqtt/" + device.ExternalID + "/set"
+	deviceTopic := strings.TrimSpace(device.ExternalID)
+	z.metaMu.RLock()
+	if norm := normalizeExternalKey(deviceTopic); norm != "" {
+		if friendly, ok := z.friendlyTopic[norm]; ok && friendly != "" {
+			deviceTopic = friendly
+		}
+	}
+	z.metaMu.RUnlock()
+	if deviceTopic == "" {
+		if device.Name != "" {
+			deviceTopic = strings.TrimSpace(device.Name)
+		}
+	}
+	if deviceTopic == "" {
+		deviceTopic = device.ID.String()
+	}
+	topic := "zigbee2mqtt/" + deviceTopic + "/set"
 	return z.client.Publish(topic, b)
 }
 
@@ -965,17 +983,33 @@ func (z *ZigbeeAdapter) resolveExternalID(friendly string) string {
 	return ""
 }
 
+func normalizeExternalKey(external string) string {
+	return strings.ToLower(strings.TrimSpace(external))
+}
+
 func (z *ZigbeeAdapter) setFriendlyMapping(friendly, external string) {
+	friendly = strings.TrimSpace(friendly)
 	if friendly == "" {
 		return
 	}
+	external = strings.TrimSpace(external)
 	z.metaMu.Lock()
 	defer z.metaMu.Unlock()
+	if current, ok := z.friendlyIndex[friendly]; ok {
+		if norm := normalizeExternalKey(current); norm != "" {
+			if stored, ok2 := z.friendlyTopic[norm]; ok2 && stored == friendly {
+				delete(z.friendlyTopic, norm)
+			}
+		}
+	}
 	if external == "" {
 		delete(z.friendlyIndex, friendly)
 		return
 	}
 	z.friendlyIndex[friendly] = external
+	if norm := normalizeExternalKey(external); norm != "" {
+		z.friendlyTopic[norm] = friendly
+	}
 }
 
 func (z *ZigbeeAdapter) dropFriendlyMappingsByExternal(external string) []string {
@@ -989,6 +1023,9 @@ func (z *ZigbeeAdapter) dropFriendlyMappingsByExternal(external string) []string
 			removed = append(removed, friendly)
 			delete(z.friendlyIndex, friendly)
 		}
+	}
+	if norm := normalizeExternalKey(external); norm != "" {
+		delete(z.friendlyTopic, norm)
 	}
 	z.metaMu.Unlock()
 	return removed
