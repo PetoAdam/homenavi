@@ -1,0 +1,9 @@
+homeassistant:
+  enabled: false
+mqtt:
+  server: mqtt://mosquitto:1883
+advanced:
+  log_level: info
+frontend:
+  enabled: false
+version: 4

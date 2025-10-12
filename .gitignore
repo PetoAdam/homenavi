@@ -4,3 +4,5 @@ nginx/certs/
 .env
 keys/
 postgres-data/
+mosquitto/config/conf.d/*
+devices_snapshot.json

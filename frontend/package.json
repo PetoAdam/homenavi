@@ -16,7 +16,9 @@
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^0.2.2",
     "axios": "^1.10.0",
+    "paho-mqtt": "^1.1.0",
     "react": "^19.0.0",
+    "react-colorful": "^5.6.1",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.5.1"
   },
