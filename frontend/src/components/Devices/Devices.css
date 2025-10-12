@@ -1,0 +1,142 @@
+.devices-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0 2.5rem 3rem;
+  color: var(--color-white);
+}
+
+.devices-page .card {
+  color: var(--color-gray-900, #1f2937);
+}
+
+.page-header-flat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  margin: 10px 10px 12px 10px;
+  padding: 0 8px;
+}
+
+.page-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 0;
+  color: var(--color-white);
+}
+
+.page-subtitle {
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 0.2rem;
+}
+
+.devices-header-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.devices-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.devices-summary-card .devices-summary-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.devices-error-card {
+  border: 1px solid rgba(248, 113, 113, 0.4);
+}
+
+.devices-error-text {
+  color: #fecaca;
+  font-size: 0.85rem;
+}
+
+.devices-loading-card {
+  display: flex;
+  justify-content: center;
+}
+
+.devices-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.devices-spinner {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.7);
+  animation: devices-spin 0.8s linear infinite;
+}
+
+@keyframes devices-spin {
+  to { transform: rotate(360deg); }
+}
+
+.devices-empty-card {
+  text-align: center;
+}
+
+.devices-empty {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2.2rem;
+  align-items: stretch;
+}
+
+.devices-grid .glass-card {
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .devices-page {
+    padding: 0 1.25rem 3rem;
+  }
+
+  .page-header-flat {
+    margin: 8px 6px 10px 6px;
+    padding: 0 6px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .page-title {
+    font-size: 1.6rem;
+  }
+
+  .page-subtitle {
+    font-size: 0.85rem;
+    max-width: 320px;
+  }
+
+  .devices-header-pills {
+    justify-content: center;
+  }
+
+  .devices-summary-card .devices-summary-content {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .devices-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.6rem;
+  }
+}

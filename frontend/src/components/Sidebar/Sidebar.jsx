@@ -54,23 +54,25 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 					<div className="sidebar-group" key={group.header}>
 						<div className="sidebar-group-header">{group.header}</div>
 						<ul className="sidebar-group-list">
-							{group.items.map(item => (
-								<li key={item.name}>
-									<button
-										className={`menu-item${location.pathname === item.path ? ' active' : ''}`}
-										onClick={() => {
-											navigate(item.path);
-											setMenuOpen(false);
-										}}
-										aria-current={location.pathname === item.path ? 'page' : undefined}
-									>
-										<span className="menu-icon">{item.icon}</span>
-										<span className="menu-label">{item.name}</span>
-									</button>
-								</li>
-							))}
+							{group.items
+								.filter(item => item.name !== 'Devices' || isResidentOrAdmin)
+								.map(item => (
+									<li key={item.name}>
+										<button
+											className={`menu-item${location.pathname === item.path ? ' active' : ''}`}
+											onClick={() => {
+												navigate(item.path);
+												setMenuOpen(false);
+											}}
+											aria-current={location.pathname === item.path ? 'page' : undefined}
+										>
+											<span className="menu-icon">{item.icon}</span>
+											<span className="menu-label">{item.name}</span>
+										</button>
+									</li>
+								))}
 
-                {isResidentOrAdmin && group.header === 'Main' && (
+							{isResidentOrAdmin && group.header === 'Main' && (
 									<li key="Users">
 										<button
 											className={`menu-item${location.pathname === '/users' ? ' active' : ''}`}
