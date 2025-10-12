@@ -293,20 +293,25 @@ function buildMetrics(device, capabilities = []) {
     const value = resolveStateValue(state, cap);
     if (kind === 'binary') {
       usedKeys.add(id);
-      if (!isCapabilityWritable(cap) && !BINARY_PILL_BLOCKLIST.has(id)) {
+      const formatted = formatBinaryCapabilityValue(cap, value);
+      if (BINARY_PILL_BLOCKLIST.has(id)) {
+        numericMetrics.push({
+          key: id,
+          label: cap.name || cap.property || rawId,
+          value: formatted,
+          unit: '',
+          icon,
+        });
+      } else if (!isCapabilityWritable(cap)) {
         binaryMetrics.push({
           key: id,
           label: cap.name || cap.property || rawId,
-          value: formatBinaryCapabilityValue(cap, value),
+          value: formatted,
           rawValue: value,
           unit: '',
           icon,
         });
       }
-      return;
-    }
-    if (BINARY_PILL_BLOCKLIST.has(id)) {
-      usedKeys.add(id);
       return;
     }
     usedKeys.add(id);
@@ -348,6 +353,8 @@ function buildMetrics(device, capabilities = []) {
     { key: 'humidity', label: 'Humidity', unit: '%', icon: faDroplet },
     { key: 'battery', label: 'Battery', unit: '%', icon: faBatteryThreeQuarters },
     { key: 'linkquality', label: 'Link quality', unit: '', icon: faSignal },
+    { key: 'contact', label: 'Contact', unit: '', icon: ICON_BY_CAP.contact || faGaugeHigh },
+    { key: 'battery_low', label: 'Battery Low', unit: '', icon: ICON_BY_CAP.battery || faBatteryThreeQuarters },
   ];
 
   fallbackMetrics.forEach(metric => {
