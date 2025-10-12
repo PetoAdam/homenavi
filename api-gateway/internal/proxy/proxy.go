@@ -97,8 +97,8 @@ func MakeWebSocketProxyHandler(route config.RouteConfig) http.HandlerFunc {
 
 		// Pipe data both directions.
 		var (
-			wg   sync.WaitGroup
-			once sync.Once
+			wg          sync.WaitGroup
+			once        sync.Once
 			closeNormal = func() {
 				// Attempt graceful close frames (best effort)
 				_ = backendConn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
