@@ -139,7 +139,6 @@ services:
   user-service:
     build: 
       context: ./user-service
-      no_cache: true
     restart: unless-stopped
   # DEV:
   # ports:
