@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +17,7 @@ import (
 
 	"device-hub/internal/model"
 	"device-hub/internal/mqtt"
+	"device-hub/internal/proto/adapterutil"
 	"device-hub/internal/store"
 )
 
@@ -98,7 +97,7 @@ func (z *ZigbeeAdapter) PublishCommand(ctx context.Context, device *model.Device
 	b, _ := json.Marshal(payload)
 	deviceTopic := strings.TrimSpace(device.ExternalID)
 	z.metaMu.RLock()
-	if norm := normalizeExternalKey(deviceTopic); norm != "" {
+	if norm := adapterutil.NormalizeExternalKey(deviceTopic); norm != "" {
 		if friendly, ok := z.friendlyTopic[norm]; ok && friendly != "" {
 			deviceTopic = friendly
 		}
@@ -267,8 +266,8 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 			slog.Warn("zigbee device_removed missing record", "friendly", friendly, "external", external)
 		}
 	case "device_renamed":
-		from := stringField(evt.Data, "from")
-		to := stringField(evt.Data, "to")
+		from := adapterutil.StringField(evt.Data, "from")
+		to := adapterutil.StringField(evt.Data, "to")
 		if from == "" || to == "" || strings.EqualFold(from, to) {
 			return
 		}
@@ -488,13 +487,13 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m paho.Message) {
 	metadataUpdates := 0
 	seen := make(map[string]string, len(list))
 	for _, d := range list {
-		if strings.EqualFold(stringField(d, "type"), "coordinator") {
+		if strings.EqualFold(adapterutil.StringField(d, "type"), "coordinator") {
 			continue
 		}
 		if supported, ok := d["supported"].(bool); ok && !supported {
 			continue
 		}
-		friendly := stringField(d, "friendly_name")
+		friendly := adapterutil.StringField(d, "friendly_name")
 		external := canonicalExternalID(d)
 		if external == "" {
 			continue
@@ -576,10 +575,10 @@ func (z *ZigbeeAdapter) handleBridgeDeviceResponse(m paho.Message) {
 }
 
 func (z *ZigbeeAdapter) upsertBridgeDevice(ctx context.Context, raw map[string]any, source string) (*model.Device, bool) {
-	origFriendly := strings.TrimSpace(stringField(raw, "friendly_name"))
+	origFriendly := strings.TrimSpace(adapterutil.StringField(raw, "friendly_name"))
 	friendly := origFriendly
 	if friendly == "" {
-		friendly = stringField(raw, "id")
+		friendly = adapterutil.StringField(raw, "id")
 	}
 	external := canonicalExternalID(raw)
 	if external == "" {
@@ -610,46 +609,48 @@ func (z *ZigbeeAdapter) upsertBridgeDevice(ctx context.Context, raw map[string]a
 			dev.Name = friendly
 		}
 	}
-	if typ := stringField(raw, "type"); typ != "" {
+	if typ := adapterutil.StringField(raw, "type"); typ != "" {
 		dev.Type = typ
 	}
-	if mf := stringField(raw, "manufacturer"); mf != "" {
+	if mf := adapterutil.StringField(raw, "manufacturer"); mf != "" {
 		dev.Manufacturer = mf
 	}
-	if mo := stringField(raw, "model"); mo != "" {
+	if mo := adapterutil.StringField(raw, "model"); mo != "" {
 		dev.Model = mo
 	}
-	if fw := stringField(raw, "software_build_id"); fw != "" {
+	if fw := adapterutil.StringField(raw, "software_build_id"); fw != "" {
 		dev.Firmware = fw
-	} else if fw := stringField(raw, "date_code"); fw != "" {
+	} else if fw := adapterutil.StringField(raw, "date_code"); fw != "" {
 		dev.Firmware = fw
 	}
-	if desc := stringField(raw, "description"); desc != "" {
+	if desc := adapterutil.StringField(raw, "description"); desc != "" {
 		dev.Description = desc
 	}
 
 	if def, ok := raw["definition"].(map[string]any); ok {
 		if dev.Type == "" {
-			if defType := stringField(def, "type"); defType != "" {
+			if defType := adapterutil.StringField(def, "type"); defType != "" {
 				dev.Type = defType
 			}
 		}
 		if dev.Manufacturer == "" {
-			if vendor := stringField(def, "vendor"); vendor != "" {
+			if vendor := adapterutil.StringField(def, "vendor"); vendor != "" {
 				dev.Manufacturer = vendor
 			}
 		}
 		if dev.Model == "" {
-			if model := stringField(def, "model"); model != "" {
+			if model := adapterutil.StringField(def, "model"); model != "" {
 				dev.Model = model
 			}
 		}
 		if dev.Description == "" {
-			if desc := stringField(def, "description"); desc != "" {
+			if desc := adapterutil.StringField(def, "description"); desc != "" {
 				dev.Description = desc
 			}
 		}
 	}
+
+	adapterutil.SanitizeDeviceStrings(dev)
 
 	exposes, exposuresFound := extractExposes(raw)
 	var (
@@ -799,27 +800,6 @@ func (z *ZigbeeAdapter) pruneOrphanStates(ctx context.Context, keepIDs []string)
 	}
 }
 
-func extractExposes(raw map[string]any) ([]any, bool) {
-	if raw == nil {
-		return nil, false
-	}
-	if def, ok := raw["definition"].(map[string]any); ok {
-		if exposes, ok := def["exposes"].([]any); ok {
-			return exposes, true
-		}
-		if exposes, ok := def["exposes"].([]interface{}); ok {
-			return exposes, true
-		}
-	}
-	if exposes, ok := raw["exposes"].([]any); ok {
-		return exposes, true
-	}
-	if exposes, ok := raw["exposes"].([]interface{}); ok {
-		return exposes, true
-	}
-	return nil, false
-}
-
 // requestInitialStates attempts to actively trigger devices to publish their current state.
 // Not all sensors respond to get requests; we issue best-effort per exposure property.
 func (z *ZigbeeAdapter) requestInitialStates() {
@@ -893,7 +873,7 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 						delete(z.capIndex, d.ExternalID)
 					}
 					if len(refresh) > 0 {
-						z.refreshProps[d.ExternalID] = uniqueStrings(refresh)
+						z.refreshProps[d.ExternalID] = adapterutil.UniqueStrings(refresh)
 					} else {
 						delete(z.refreshProps, d.ExternalID)
 					}
@@ -906,7 +886,7 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 	}
 	z.clearLegacyByExternal(ctx)
 	if len(missingCaps) > 0 {
-		unique := uniqueStrings(missingCaps)
+		unique := adapterutil.UniqueStrings(missingCaps)
 		slog.Info("zigbee requesting capability backfill", "devices", unique)
 		for _, friendly := range unique {
 			payload, _ := json.Marshal(map[string]string{"id": friendly})
@@ -960,7 +940,7 @@ func (z *ZigbeeAdapter) clearLegacyByExternal(ctx context.Context) {
 }
 
 func canonicalExternalID(raw map[string]any) string {
-	ieee := strings.TrimSpace(stringField(raw, "ieee_address"))
+	ieee := strings.TrimSpace(adapterutil.StringField(raw, "ieee_address"))
 	if ieee == "" {
 		return ""
 	}
@@ -983,20 +963,16 @@ func (z *ZigbeeAdapter) resolveExternalID(friendly string) string {
 	return ""
 }
 
-func normalizeExternalKey(external string) string {
-	return strings.ToLower(strings.TrimSpace(external))
-}
-
 func (z *ZigbeeAdapter) setFriendlyMapping(friendly, external string) {
-	friendly = strings.TrimSpace(friendly)
+	friendly = adapterutil.SanitizeString(strings.TrimSpace(friendly))
 	if friendly == "" {
 		return
 	}
-	external = strings.TrimSpace(external)
+	external = adapterutil.SanitizeString(strings.TrimSpace(external))
 	z.metaMu.Lock()
 	defer z.metaMu.Unlock()
 	if current, ok := z.friendlyIndex[friendly]; ok {
-		if norm := normalizeExternalKey(current); norm != "" {
+		if norm := adapterutil.NormalizeExternalKey(current); norm != "" {
 			if stored, ok2 := z.friendlyTopic[norm]; ok2 && stored == friendly {
 				delete(z.friendlyTopic, norm)
 			}
@@ -1007,7 +983,7 @@ func (z *ZigbeeAdapter) setFriendlyMapping(friendly, external string) {
 		return
 	}
 	z.friendlyIndex[friendly] = external
-	if norm := normalizeExternalKey(external); norm != "" {
+	if norm := adapterutil.NormalizeExternalKey(external); norm != "" {
 		z.friendlyTopic[norm] = friendly
 	}
 }
@@ -1024,454 +1000,9 @@ func (z *ZigbeeAdapter) dropFriendlyMappingsByExternal(external string) []string
 			delete(z.friendlyIndex, friendly)
 		}
 	}
-	if norm := normalizeExternalKey(external); norm != "" {
+	if norm := adapterutil.NormalizeExternalKey(external); norm != "" {
 		delete(z.friendlyTopic, norm)
 	}
 	z.metaMu.Unlock()
 	return removed
-}
-
-func stringField(m map[string]any, key string) string {
-	if m == nil {
-		return ""
-	}
-	if v, ok := m[key]; ok {
-		switch val := v.(type) {
-		case string:
-			return val
-		case fmt.Stringer:
-			return val.String()
-		default:
-			return fmt.Sprint(val)
-		}
-	}
-	return ""
-}
-
-func normalizeValueForCapability(cap model.Capability, v any) any {
-	switch cap.ValueType {
-	case "boolean":
-		return coerceBool(v, cap.TrueValue, cap.FalseValue)
-	case "number":
-		if f, ok := numericValue(v); ok {
-			if cap.Range != nil && cap.Range.Step > 0 {
-				step := cap.Range.Step
-				f = math.Round(f/step) * step
-			}
-			return f
-		}
-	case "enum", "string":
-		return fmt.Sprint(v)
-	default:
-		return v
-	}
-	return v
-}
-
-func normalizeLooseValue(prop string, v any) any {
-	switch strings.ToLower(prop) {
-	case "state", "on":
-		return coerceBool(v, "", "")
-	}
-	if f, ok := numericValue(v); ok {
-		return f
-	}
-	return v
-}
-
-func coerceBool(v any, trueVal, falseVal string) bool {
-	switch val := v.(type) {
-	case bool:
-		return val
-	case string:
-		s := strings.TrimSpace(strings.ToLower(val))
-		if trueVal != "" && strings.EqualFold(val, trueVal) {
-			return true
-		}
-		if falseVal != "" && strings.EqualFold(val, falseVal) {
-			return false
-		}
-		if s == "on" || s == "true" || s == "1" || s == "yes" {
-			return true
-		}
-		if s == "off" || s == "false" || s == "0" || s == "no" {
-			return false
-		}
-	case float64:
-		return val != 0
-	case float32:
-		return val != 0
-	case int:
-		return val != 0
-	case int64:
-		return val != 0
-	case uint64:
-		return val != 0
-	}
-	return false
-}
-
-func numericValue(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	case uint64:
-		return float64(val), true
-	case json.Number:
-		f, err := val.Float64()
-		return f, err == nil
-	case string:
-		if f, err := strconv.ParseFloat(val, 64); err == nil {
-			return f, true
-		}
-	}
-	return 0, false
-}
-
-func buildCapabilitiesFromExposes(exposes []any) ([]model.Capability, []model.DeviceInput, []string, map[string]model.Capability) {
-	caps := []model.Capability{}
-	inputs := []model.DeviceInput{}
-	refresh := []string{}
-	capMap := map[string]model.Capability{}
-	for _, raw := range exposes {
-		extractCapability(raw, "", &caps, &inputs, &refresh, capMap)
-	}
-	if len(refresh) > 0 {
-		refresh = uniqueStrings(refresh)
-	}
-	return caps, inputs, refresh, capMap
-}
-
-func extractCapability(raw any, parentKind string, caps *[]model.Capability, inputs *[]model.DeviceInput, refresh *[]string, capMap map[string]model.Capability) {
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return
-	}
-
-	kind := parentKind
-	if t := stringField(m, "type"); t != "" {
-		kind = strings.ToLower(t)
-	}
-	property := strings.ToLower(stringField(m, "property"))
-	name := stringField(m, "name")
-	description := stringField(m, "description")
-	unit := stringField(m, "unit")
-	access := parseAccess(m["access"])
-	enumValues := stringSliceFromAny(m["values"])
-	rng := parseRange(m)
-	trueVal := stringField(m, "value_on")
-	falseVal := stringField(m, "value_off")
-
-	features, hasChildren := m["features"].([]any)
-
-	includeSelf := !hasChildren || property != ""
-	var capID string
-	if includeSelf {
-		capID = makeCapabilityID(property, name, len(*caps))
-		cap := model.Capability{
-			ID:          capID,
-			Name:        humanizeName(name, property, kind, capID),
-			Kind:        kind,
-			Property:    property,
-			ValueType:   inferValueType(kind, enumValues, rng, property, m),
-			Unit:        unit,
-			Access:      access,
-			Description: description,
-		}
-		if parentKind != "" && parentKind != kind {
-			cap.SubType = parentKind
-		}
-		if rng != nil {
-			cap.Range = rng
-		}
-		if len(enumValues) > 0 {
-			cap.Enum = enumValues
-		}
-		if trueVal != "" {
-			cap.TrueValue = trueVal
-		}
-		if falseVal != "" {
-			cap.FalseValue = falseVal
-		}
-		if cap.ValueType == "boolean" {
-			if cap.TrueValue == "" {
-				cap.TrueValue = "ON"
-			}
-			if cap.FalseValue == "" {
-				cap.FalseValue = "OFF"
-			}
-		}
-		*caps = append(*caps, cap)
-		if property != "" {
-			capMap[property] = cap
-			if access.Read {
-				*refresh = append(*refresh, property)
-			}
-		}
-		if access.Write {
-			input := buildInputForCapability(cap, enumValues, trueVal, falseVal, m)
-			*inputs = append(*inputs, input)
-		}
-	}
-
-	if hasChildren {
-		for _, child := range features {
-			extractCapability(child, kind, caps, inputs, refresh, capMap)
-		}
-	}
-}
-
-func parseAccess(v any) model.CapabilityAccess {
-	access := 1
-	switch val := v.(type) {
-	case float64:
-		access = int(val)
-	case int:
-		access = val
-	case int64:
-		access = int(val)
-	case json.Number:
-		if i, err := val.Int64(); err == nil {
-			access = int(i)
-		}
-	}
-	return model.CapabilityAccess{
-		Read:  access&1 != 0,
-		Write: access&2 != 0,
-		Event: access&4 != 0,
-	}
-}
-
-func parseRange(m map[string]any) *model.CapabilityRange {
-	min, minOK := floatFromAny(m["value_min"])
-	max, maxOK := floatFromAny(m["value_max"])
-	if !minOK && !maxOK {
-		return nil
-	}
-	rng := &model.CapabilityRange{}
-	if minOK {
-		rng.Min = min
-	}
-	if maxOK {
-		rng.Max = max
-	}
-	if step, ok := floatFromAny(m["value_step"]); ok {
-		rng.Step = step
-	}
-	return rng
-}
-
-func inferValueType(kind string, enumValues []string, rng *model.CapabilityRange, property string, raw map[string]any) string {
-	lowerKind := strings.ToLower(kind)
-	switch lowerKind {
-	case "binary", "switch":
-		if property == "state" || property == "contact" || property == "occupancy" {
-			return "boolean"
-		}
-	case "light":
-		if property == "state" {
-			return "boolean"
-		}
-		if property == "brightness" || property == "color_temp" {
-			return "number"
-		}
-	case "numeric":
-		return "number"
-	case "enum":
-		return "enum"
-	case "composite":
-		if property == "color" {
-			return "object"
-		}
-	}
-	if len(enumValues) > 0 {
-		return "enum"
-	}
-	if rng != nil {
-		return "number"
-	}
-	if property == "linkquality" || strings.Contains(property, "battery") {
-		return "number"
-	}
-	if _, ok := raw["features"]; ok {
-		return "object"
-	}
-	return "string"
-}
-
-func makeCapabilityID(property, name string, idx int) string {
-	if property != "" {
-		return property
-	}
-	if name != "" {
-		return slugify(name)
-	}
-	return fmt.Sprintf("cap_%d", idx)
-}
-
-func slugify(v string) string {
-	v = strings.TrimSpace(strings.ToLower(v))
-	if v == "" {
-		return ""
-	}
-	var b strings.Builder
-	for _, r := range v {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == ' ' || r == '-' || r == '/':
-			b.WriteRune('_')
-		}
-	}
-	out := b.String()
-	if out == "" {
-		return v
-	}
-	return out
-}
-
-func humanizeName(name, property, kind, fallback string) string {
-	if name != "" {
-		return name
-	}
-	if property != "" {
-		return titleCase(strings.ReplaceAll(property, "_", " "))
-	}
-	if kind != "" {
-		return titleCase(kind)
-	}
-	return fallback
-}
-
-func buildInputForCapability(cap model.Capability, enumValues []string, trueVal, falseVal string, raw map[string]any) model.DeviceInput {
-	input := model.DeviceInput{
-		ID:           cap.ID,
-		Label:        cap.Name,
-		Type:         determineInputType(cap, enumValues),
-		CapabilityID: cap.ID,
-		Property:     cap.Property,
-	}
-	if cap.Range != nil {
-		input.Range = cap.Range
-	}
-	switch input.Type {
-	case "toggle":
-		if input.Metadata == nil {
-			input.Metadata = map[string]any{}
-		}
-		if trueVal == "" {
-			trueVal = "ON"
-		}
-		if falseVal == "" {
-			falseVal = "OFF"
-		}
-		input.Metadata["true_value"] = trueVal
-		input.Metadata["false_value"] = falseVal
-		input.Options = []model.InputOption{{Value: falseVal, Label: "Off"}, {Value: trueVal, Label: "On"}}
-	case "select":
-		opts := make([]model.InputOption, 0, len(enumValues))
-		for _, v := range enumValues {
-			opts = append(opts, model.InputOption{Value: v, Label: titleCase(v)})
-		}
-		input.Options = opts
-	case "color":
-		if input.Metadata == nil {
-			input.Metadata = map[string]any{}
-		}
-		input.Metadata["mode"] = cap.Kind
-	}
-	return input
-}
-
-func determineInputType(cap model.Capability, enumValues []string) string {
-	prop := cap.Property
-	switch cap.ValueType {
-	case "boolean":
-		return "toggle"
-	case "number":
-		if prop == "color_temp" || cap.Range != nil {
-			return "slider"
-		}
-		return "number"
-	case "enum":
-		return "select"
-	default:
-		if strings.Contains(prop, "color") {
-			return "color"
-		}
-		return "custom"
-	}
-}
-
-func stringSliceFromAny(v any) []string {
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(arr))
-	for _, item := range arr {
-		out = append(out, fmt.Sprint(item))
-	}
-	return out
-}
-
-func floatFromAny(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	case uint64:
-		return float64(val), true
-	case json.Number:
-		f, err := val.Float64()
-		return f, err == nil
-	case string:
-		f, err := strconv.ParseFloat(val, 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
-func uniqueStrings(in []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		if v == "" {
-			continue
-		}
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
-	}
-	return out
-}
-
-func titleCase(v string) string {
-	if v == "" {
-		return ""
-	}
-	splitFn := func(r rune) bool {
-		return r == '_' || r == '-' || r == ' '
-	}
-	parts := strings.FieldsFunc(strings.ToLower(v), splitFn)
-	for i, p := range parts {
-		if len(p) == 0 {
-			continue
-		}
-		parts[i] = strings.ToUpper(p[:1]) + p[1:]
-	}
-	return strings.Join(parts, " ")
 }
