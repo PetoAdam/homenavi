@@ -92,7 +92,6 @@ docker compose up --build
 Entry Points:
 * Frontend: http://localhost (served via Nginx)
 * API Gateway (REST): http://localhost/api
-* Device Hub (internal HTTP + MQTT): listens on :8090 inside the Docker network. Use `docker compose port device-hub 8090` if you need to hit it directly.
 * Prometheus: http://localhost:9090
 * Jaeger UI: http://localhost:16686
 * (Grafana optional) http://localhost:3000
