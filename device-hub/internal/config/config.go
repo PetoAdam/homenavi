@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -12,6 +13,8 @@ type Config struct {
 	Postgres      DBConfig
 	RedisAddr     string
 	RedisPassword string
+	EnableMatter  bool
+	EnableThread  bool
 }
 
 type DBConfig struct {
@@ -36,6 +39,8 @@ func Load() *Config {
 		},
 		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+		EnableMatter:  parseBool(getEnv("DEVICE_HUB_ENABLE_MATTER", "false")),
+		EnableThread:  parseBool(getEnv("DEVICE_HUB_ENABLE_THREAD", "false")),
 	}
 	slog.Info("device-hub config loaded", "port", cfg.Port, "mqtt", cfg.MQTTBrokerURL)
 	return cfg
@@ -46,4 +51,13 @@ func getEnv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func parseBool(val string) bool {
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }

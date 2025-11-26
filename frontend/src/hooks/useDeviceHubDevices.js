@@ -157,6 +157,7 @@ function transformEntry(key, raw) {
   const trimmedName = typeof raw.name === 'string' ? raw.name.trim() : '';
   const fallbackName = [raw.manufacturer, raw.model].filter(Boolean).join(' ') || externalId || key;
   const displayName = trimmedName || fallbackName;
+  const icon = typeof raw.icon === 'string' ? raw.icon : (raw.metadata?.icon || '');
   return {
     key,
     mapKey: key,
@@ -170,6 +171,7 @@ function transformEntry(key, raw) {
     model: raw.model || '',
     firmware: raw.firmware || raw.software_build_id || '',
     description: normalizeDescription(raw.description),
+    icon,
     capabilities,
     inputs,
     online: Boolean(raw.online),
@@ -202,12 +204,13 @@ function computeStats(devices) {
 }
 
 export default function useDeviceHubDevices(options = {}) {
-  const { enabled = true } = options;
+  const { enabled = true, metadataMode: rawMetadataMode = 'rest' } = options;
+  const metadataMode = rawMetadataMode === 'ws' ? 'ws' : 'rest';
   const [devices, setDevices] = useState([]);
   const [stats, setStats] = useState({ total: 0, online: 0, withState: 0, sensors: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [metadataStatus, setMetadataStatus] = useState({ connected: false, source: null });
+  const [metadataStatus, setMetadataStatus] = useState(() => ({ connected: false, source: metadataMode }));
   const [stateStatus, setStateStatus] = useState({ connected: false });
 
   const devicesRef = useRef(new Map());
@@ -226,6 +229,10 @@ export default function useDeviceHubDevices(options = {}) {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setMetadataStatus({ connected: false, source: metadataMode });
+  }, [metadataMode]);
 
   const schedulePublish = useCallback(() => {
     if (updateScheduledRef.current || !enabledRef.current) return;
@@ -273,6 +280,10 @@ export default function useDeviceHubDevices(options = {}) {
   }, []);
 
   const loadInitialDevices = useCallback(async () => {
+    if (metadataMode !== 'rest') {
+      setMetadataStatus({ connected: false, source: 'ws' });
+      return;
+    }
     try {
       const response = await fetch('/api/devicehub/devices', { credentials: 'include' });
       if (!response.ok) {
@@ -294,6 +305,7 @@ export default function useDeviceHubDevices(options = {}) {
         const stateObj = ensureStateObject(item.state);
         next.set(deviceId, {
           ...item,
+          icon: typeof item.icon === 'string' ? item.icon : (item.metadata?.icon || ''),
           capabilities: ensureArray(item.capabilities),
           inputs: ensureArray(item.inputs),
           description: normalizeDescription(item.description),
@@ -315,11 +327,11 @@ export default function useDeviceHubDevices(options = {}) {
       if (!mountedRef.current || !enabledRef.current) {
         return;
       }
-      setMetadataStatus({ connected: false, source: null });
+      setMetadataStatus({ connected: false, source: 'rest' });
       setError(prev => prev || 'Unable to load device list');
       setLoading(false);
     }
-  }, [schedulePublish]);
+  }, [metadataMode, schedulePublish]);
 
   const connectRealtime = useCallback(() => {
     if (!enabledRef.current) {
@@ -332,6 +344,9 @@ export default function useDeviceHubDevices(options = {}) {
     client.onConnectionLost = response => {
       console.warn('Realtime connection lost', response);
       setStateStatus({ connected: false });
+      if (metadataMode === 'ws') {
+        setMetadataStatus({ connected: false, source: 'ws' });
+      }
       if (!enabledRef.current) {
         return;
       }
@@ -444,11 +459,19 @@ export default function useDeviceHubDevices(options = {}) {
         client.subscribe(EVENT_TOPIC, { qos: 0 });
         client.subscribe(REMOVED_TOPIC, { qos: 0 });
         setStateStatus({ connected: true });
+        if (metadataMode === 'ws') {
+          setMetadataStatus({ connected: true, source: 'ws' });
+          setLoading(false);
+        }
       },
       onFailure: err => {
         console.warn('Realtime connection failed', err);
         client.disconnect();
         setStateStatus({ connected: false });
+        if (metadataMode === 'ws') {
+          setMetadataStatus({ connected: false, source: 'ws' });
+          setLoading(false);
+        }
         setError(prev => prev || 'Unable to connect to device stream');
         if (!enabledRef.current) {
           return;
@@ -460,7 +483,7 @@ export default function useDeviceHubDevices(options = {}) {
         }, 2000);
       },
     });
-  }, [schedulePublish]);
+  }, [metadataMode, schedulePublish]);
 
   useEffect(() => {
     devicesRef.current = new Map();
@@ -471,7 +494,7 @@ export default function useDeviceHubDevices(options = {}) {
       stateClientRef.current = null;
       setDevices([]);
       setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
-      setMetadataStatus({ connected: false, source: null });
+      setMetadataStatus({ connected: false, source: metadataMode });
       setStateStatus({ connected: false });
       setLoading(false);
       setError(null);
@@ -480,7 +503,7 @@ export default function useDeviceHubDevices(options = {}) {
 
     setDevices([]);
     setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
-    setMetadataStatus({ connected: false, source: null });
+    setMetadataStatus({ connected: false, source: metadataMode });
     setStateStatus({ connected: false });
     setError(null);
     setLoading(true);

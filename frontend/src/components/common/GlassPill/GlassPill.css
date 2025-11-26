@@ -5,12 +5,16 @@
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 500;
+  font-family: inherit;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(20px);
   white-space: nowrap;
+  appearance: none;
+  line-height: 1.1;
+  cursor: default;
 }
 
 .glass-pill-icon {
@@ -38,4 +42,19 @@
   border-color: rgba(248, 113, 113, 0.45);
   background: rgba(239, 68, 68, 0.16);
   color: #fecaca;
+}
+
+.glass-pill-clickable {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.glass-pill-clickable:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.glass-pill-clickable:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.6);
+  outline-offset: 2px;
 }

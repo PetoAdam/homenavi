@@ -1,18 +1,34 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBolt, faGaugeHigh, faSatelliteDish, faSignal } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import DeviceTile from './DeviceTile';
 import { useAuth } from '../../context/AuthContext';
-import { renameDevice as renameDeviceApi, sendDeviceCommand as sendDeviceCommandApi } from '../../services/deviceHubService';
+import {
+  renameDevice as renameDeviceApi,
+  sendDeviceCommand as sendDeviceCommandApi,
+  createDevice as createDeviceApi,
+  listIntegrations as listIntegrationsApi,
+  setDeviceIcon as setDeviceIconApi,
+  deleteDevice as deleteDeviceApi,
+} from '../../services/deviceHubService';
+import AddDeviceModal from './AddDeviceModal';
 import './Devices.css';
+
+const FALLBACK_INTEGRATIONS = [
+  { protocol: 'zigbee', label: 'Zigbee', status: 'active' },
+  { protocol: 'matter', label: 'Matter', status: 'planned' },
+  { protocol: 'thread', label: 'Thread', status: 'planned' },
+  { protocol: 'lan', label: 'LAN Bridge', status: 'active' },
+];
 
 export default function Devices() {
   const { user, accessToken } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
+  const [metadataMode, setMetadataMode] = useState('rest');
   const {
     devices,
     stats,
@@ -20,26 +36,53 @@ export default function Devices() {
     error,
     connectionInfo,
     renameDevice: renameDeviceWs,
-  } = useDeviceHubDevices({ enabled: isResidentOrAdmin });
+  } = useDeviceHubDevices({ enabled: isResidentOrAdmin, metadataMode });
   const [pendingCommands, setPendingCommands] = useState({});
   const [commandError, setCommandError] = useState(null);
+  const [integrations, setIntegrations] = useState([]);
+  const [integrationsLoading, setIntegrationsLoading] = useState(false);
+  const [integrationsError, setIntegrationsError] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [iconOverrides, setIconOverrides] = useState({});
+  const [protocolFilter, setProtocolFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const openAddModal = useCallback(() => setShowAddModal(true), []);
+
+  const integrationsErrorDisplay = useMemo(() => {
+    if (!integrationsError) return null;
+    if (/not\s+found/i.test(integrationsError)) {
+      return null;
+    }
+    return integrationsError;
+  }, [integrationsError]);
+
+  const toggleMetadataMode = useCallback(() => {
+    setMetadataMode(prev => (prev === 'rest' ? 'ws' : 'rest'));
+  }, []);
 
   const connectionPills = useMemo(() => {
     const pills = [];
-    if (connectionInfo?.metadata) {
-      const tone = connectionInfo.metadata.connected ? 'success' : 'warning';
-      const label = connectionInfo.metadata.connected
-        ? `Metadata: ${connectionInfo.metadata.source || 'connected'}`
-        : 'Metadata stream offline';
-      pills.push({ text: label, tone, icon: faSatelliteDish });
-    }
+    const metadataStatus = connectionInfo?.metadata || { connected: false };
+    const metadataLabel = metadataMode === 'rest'
+      ? 'Metadata: REST'
+      : 'Metadata: WebSocket';
+    pills.push({
+      key: 'metadata',
+      text: metadataLabel,
+      tone: metadataStatus.connected ? 'success' : 'warning',
+      icon: faSatelliteDish,
+      title: metadataMode === 'rest'
+        ? 'Click to switch to WebSocket-only metadata'
+        : 'Click to switch back to REST bootstrap',
+      onClick: toggleMetadataMode,
+    });
     if (connectionInfo?.state) {
       const tone = connectionInfo.state.connected ? 'success' : 'warning';
       const label = connectionInfo.state.connected ? 'State: connected' : 'State stream offline';
-      pills.push({ text: label, tone, icon: faSignal });
+      pills.push({ key: 'state', text: label, tone, icon: faSignal });
     }
     return pills;
-  }, [connectionInfo]);
+  }, [connectionInfo, metadataMode, toggleMetadataMode]);
 
   const subtitleText = useMemo(() => {
     const segments = ['Live inventory sourced from the Device Hub over MQTT/WebSocket'];
@@ -105,6 +148,194 @@ export default function Devices() {
     return res.data;
   };
 
+  const handleCreateDevice = useCallback(async payload => {
+    if (!accessToken) {
+      throw new Error('Authentication required');
+    }
+    const res = await createDeviceApi(payload, accessToken);
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to create device');
+    }
+    return res.data;
+  }, [accessToken]);
+
+  const handleUpdateIcon = useCallback(async (device, iconKey) => {
+    if (!device?.id) {
+      throw new Error('Device not ready for icon update');
+    }
+    if (!accessToken) {
+      throw new Error('Authentication required');
+    }
+    const normalized = typeof iconKey === 'string' && iconKey.trim() ? iconKey.trim() : null;
+    const res = await setDeviceIconApi(device.id, normalized, accessToken);
+    if (!res.success) {
+      throw new Error(res.error || 'Unable to update icon');
+    }
+    setIconOverrides(prev => {
+      const next = { ...prev };
+      if (!normalized) {
+        delete next[device.id];
+      } else {
+        next[device.id] = normalized;
+      }
+      return next;
+    });
+    return res.data;
+  }, [accessToken]);
+
+  const handleDeleteDevice = useCallback(async (device) => {
+    if (!device?.id) {
+      throw new Error('Device not ready for deletion');
+    }
+    if (!accessToken) {
+      throw new Error('Authentication required');
+    }
+    const res = await deleteDeviceApi(device.id, accessToken);
+    if (!res.success) {
+      throw new Error(res.error || 'Unable to delete device');
+    }
+    return res.data;
+  }, [accessToken]);
+
+  const loadIntegrations = useCallback(async () => {
+    if (!isResidentOrAdmin) return;
+    setIntegrationsLoading(true);
+    setIntegrationsError(null);
+    try {
+      const res = await listIntegrationsApi(accessToken);
+      if (!res.success) {
+        throw new Error(res.error || 'Unable to load integrations');
+      }
+      setIntegrations(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      setIntegrationsError(err?.message || 'Unable to load integrations');
+    } finally {
+      setIntegrationsLoading(false);
+    }
+  }, [accessToken, isResidentOrAdmin]);
+
+  useEffect(() => {
+    if (isResidentOrAdmin) {
+      loadIntegrations();
+    }
+  }, [isResidentOrAdmin, loadIntegrations]);
+
+  const devicesWithOverrides = useMemo(() => {
+    if (!devices.length) return devices;
+    return devices.map(device => {
+      const override = device?.id ? iconOverrides[device.id] : null;
+      if (!override) {
+        return device;
+      }
+      return { ...device, icon: override };
+    });
+  }, [devices, iconOverrides]);
+
+  const protocolCounts = useMemo(() => {
+    return devicesWithOverrides.reduce((acc, device) => {
+      const key = (device.protocol || '').toLowerCase() || 'unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+  }, [devicesWithOverrides]);
+
+  const integrationDisplay = useMemo(
+    () => (integrations.length ? integrations : FALLBACK_INTEGRATIONS),
+    [integrations],
+  );
+
+  const filterChips = useMemo(() => {
+    const map = new Map();
+    integrationDisplay.forEach(item => {
+      if (!item || !item.protocol) return;
+      const key = item.protocol.toLowerCase();
+      map.set(key, {
+        key,
+        label: item.label || item.protocol,
+        status: item.status || 'unknown',
+        count: protocolCounts[key] || 0,
+      });
+    });
+    devicesWithOverrides.forEach(device => {
+      const raw = (device.protocol || '').toLowerCase();
+      if (!raw) return;
+      if (map.has(raw)) {
+        map.set(raw, {
+          ...map.get(raw),
+          count: protocolCounts[raw] || 0,
+        });
+        return;
+      }
+      map.set(raw, {
+        key: raw,
+        label: device.protocol || raw.toUpperCase(),
+        status: 'detected',
+        count: protocolCounts[raw] || 0,
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [devicesWithOverrides, integrationDisplay, protocolCounts]);
+
+  const filterOptions = useMemo(() => {
+    const base = {
+      key: 'all',
+      label: 'All',
+      status: 'all',
+      count: devicesWithOverrides.length,
+    };
+    return [base, ...filterChips];
+  }, [devicesWithOverrides.length, filterChips]);
+
+  const filteredByProtocol = useMemo(() => {
+    if (protocolFilter === 'all') {
+      return devicesWithOverrides;
+    }
+    return devicesWithOverrides.filter(device => (device.protocol || '').toLowerCase() === protocolFilter);
+  }, [devicesWithOverrides, protocolFilter]);
+
+  const filteredDevices = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) {
+      return filteredByProtocol;
+    }
+    return filteredByProtocol.filter(device => {
+      const haystack = [
+        device.displayName,
+        device.name,
+        device.manufacturer,
+        device.model,
+        device.protocol,
+        device.type,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [filteredByProtocol, searchTerm]);
+
+  const activeFilterChip = useMemo(() => {
+    if (protocolFilter === 'all') {
+      return { key: 'all', label: 'All' };
+    }
+    return filterChips.find(chip => chip.key === protocolFilter) || null;
+  }, [filterChips, protocolFilter]);
+
+  const filterSummary = useMemo(() => {
+    const clauses = [];
+    if (protocolFilter !== 'all') {
+      clauses.push(`protocol ${activeFilterChip?.label || protocolFilter}`);
+    }
+    const trimmed = searchTerm.trim();
+    if (trimmed) {
+      clauses.push(`matching "${trimmed}"`);
+    }
+    if (!clauses.length) {
+      return null;
+    }
+    return `Showing ${filteredDevices.length} ${filteredDevices.length === 1 ? 'device' : 'devices'} for ${clauses.join(' and ')}.`;
+  }, [activeFilterChip, filteredDevices.length, protocolFilter, searchTerm]);
+
   if (!isResidentOrAdmin) {
     return (
       <div className="devices-page">
@@ -124,7 +355,14 @@ export default function Devices() {
         {connectionPills.length > 0 && (
           <div className="devices-header-pills">
             {connectionPills.map(pill => (
-              <GlassPill key={pill.text} icon={pill.icon} tone={pill.tone} text={pill.text} />
+              <GlassPill
+                key={pill.key || pill.text}
+                icon={pill.icon}
+                tone={pill.tone}
+                text={pill.text}
+                title={pill.title}
+                onClick={pill.onClick}
+              />
             ))}
           </div>
         )}
@@ -138,6 +376,51 @@ export default function Devices() {
             <GlassMetric icon={faSignal} label="With state" value={stats.withState} />
             <GlassMetric icon={faSatelliteDish} label="Sensors" value={stats.sensors} />
           </div>
+          <div className="devices-integrations-row">
+            <span className="devices-integrations-label">Filter by protocol</span>
+            <div className="devices-integrations-list devices-filter-chip-list">
+              {filterOptions.map(chip => {
+                const className = [
+                  'devices-integrations-chip',
+                  'filter-chip',
+                  `status-${chip.status || 'unknown'}`,
+                  protocolFilter === chip.key ? 'active' : '',
+                  chip.count ? '' : 'muted',
+                ].filter(Boolean).join(' ');
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    className={className}
+                    onClick={() => setProtocolFilter(chip.key)}
+                  >
+                    <span className="devices-integrations-dot" />
+                    <span>{chip.label}</span>
+                    <span className="devices-filter-chip-count">{chip.count ?? 0}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="devices-integrations-meta">
+              {protocolFilter !== 'all' ? (
+                <button type="button" className="devices-filter-clear" onClick={() => setProtocolFilter('all')}>
+                  Clear filter
+                </button>
+              ) : null}
+              {integrationsLoading ? <span>Refreshing…</span> : null}
+              {integrationsErrorDisplay ? (
+                <span className="devices-integrations-error">{integrationsErrorDisplay}</span>
+              ) : null}
+              <button
+                type="button"
+                className="devices-integrations-refresh"
+                onClick={loadIntegrations}
+                disabled={integrationsLoading}
+              >
+                Reload
+              </button>
+            </div>
+          </div>
         </GlassCard>
       </section>
 
@@ -146,6 +429,26 @@ export default function Devices() {
           <div className="devices-error-text">{commandError || error}</div>
         </GlassCard>
       )}
+
+      <div className="devices-toolbar">
+        <div className="devices-search">
+          <FontAwesomeIcon icon={faMagnifyingGlass} className="devices-search-icon" />
+          <input
+            type="search"
+            placeholder="Search by name, model, protocol…"
+            value={searchTerm}
+            onChange={event => setSearchTerm(event.target.value)}
+          />
+          {searchTerm ? (
+            <button type="button" className="devices-search-clear" onClick={() => setSearchTerm('')}>
+              Clear
+            </button>
+          ) : null}
+        </div>
+        <div className="devices-toolbar-meta">
+          <span>{filteredDevices.length} visible</span>
+        </div>
+      </div>
 
       {loading && !devices.length ? (
         <GlassCard className="devices-loading-card" interactive={false}>
@@ -162,17 +465,57 @@ export default function Devices() {
         </GlassCard>
       ) : null}
 
+      {filterSummary ? (
+        <div className="devices-filter-summary">
+          {filterSummary}
+        </div>
+      ) : null}
+
       <section className="devices-grid">
-        {devices.map(device => (
+        {filteredDevices.map(device => (
           <DeviceTile
-            key={device.key || device.externalId}
+            key={device.id || device.key || device.externalId || device.name}
             device={device}
             pending={Boolean(device.id && pendingCommands[device.id])}
             onCommand={handleCommand}
             onRename={handleRename}
+            onUpdateIcon={handleUpdateIcon}
+            onDelete={handleDeleteDevice}
           />
         ))}
+        {!loading && filteredDevices.length === 0 && devicesWithOverrides.length > 0 ? (
+          <GlassCard className="device-filter-empty-card" interactive={false}>
+            <div className="devices-filter-empty-text">
+              No devices found for the current filters{searchTerm.trim() ? ` and "${searchTerm.trim()}" search` : ''}.
+            </div>
+          </GlassCard>
+        ) : null}
+        <GlassCard className="device-add-card">
+          <button type="button" className="device-add-card-btn" onClick={openAddModal}>
+            <span className="device-add-card-icon">
+              <FontAwesomeIcon icon={faPlus} />
+            </span>
+            <span className="device-add-card-title">Add device</span>
+            <span className="device-add-card-subtitle">Register hardware manually or start the pairing flow.</span>
+            <span className="device-add-card-cta">Open form</span>
+          </button>
+        </GlassCard>
       </section>
+
+      <button type="button" className="devices-fab" onClick={openAddModal}>
+        <span className="devices-fab-icon">+</span>
+        <span>Add device</span>
+      </button>
+
+      <AddDeviceModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onCreate={async payload => {
+          await handleCreateDevice(payload);
+          setShowAddModal(false);
+        }}
+        integrations={integrations}
+      />
     </div>
   );
 }

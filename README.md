@@ -6,6 +6,7 @@
 [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml)
 [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml)
 [![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml)
+[![Build Device Hub Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml)
 [![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml)
 [![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml)
 [![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
@@ -48,6 +49,7 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 
 Current Core:
 * API Gateway (Go + Chi): Routing, JWT verification, rate limit, WebSocket upgrade.
+* Device Hub (Go + MQTT adapters): Central device inventory, capability normalization, and adapter bridge (Zigbee/Matter prototypes, MQTT fan-out).
 * Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
 * User Service (Go): Profile, roles, administrative user actions.
 * Email Service (Go): Outbound verification & notification emails.
@@ -90,6 +92,7 @@ docker compose up --build
 Entry Points:
 * Frontend: http://localhost (served via Nginx)
 * API Gateway (REST): http://localhost/api
+* Device Hub (internal HTTP + MQTT): listens on :8090 inside the Docker network. Use `docker compose port device-hub 8090` if you need to hit it directly.
 * Prometheus: http://localhost:9090
 * Jaeger UI: http://localhost:16686
 * (Grafana optional) http://localhost:3000
@@ -102,6 +105,7 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 | Service | Path | Purpose |
 |---------|------|---------|
 | API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy |
+| Device Hub | `device-hub/` | Device inventory, adapter bridge (MQTT, Zigbee/Matter stubs), metadata/state fan-out |
 | Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic |
 | User Service | `user-service/` | User profiles, roles, admin operations |
 | Email Service | `email-service/` | Sending verification / notification emails |
@@ -112,6 +116,7 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 Support:
 * `nginx/` reverse proxy templates.
 * `prometheus/` scrape config.
+* `mosquitto/` local MQTT broker config + data dirs for Device Hub adapters.
 * `keys/` (DO NOT COMMIT PRIVATE KEYS IN PRODUCTION REPOS).
 * `doc/` guides and design docs.
 
@@ -132,12 +137,14 @@ Implemented:
 * Tracing: Jaeger via OpenTelemetry exporters.
 * Correlation: Request IDs / correlation IDs propagated across hops.
 * Health: Expose `/healthz` (liveness/readiness separation recommended for prod).
+* Device Hub exports its own `/metrics` endpoint on :8090 and participates in the same trace pipeline, so add it to Prometheus once you expose the port or run a sidecar scrape job.
 
 ---
 
 ## 8. ⚡ WebSockets & Real‑Time
 * Gateway upgrades authenticated using existing JWT (cookie-based flow supported).
 * Echo service demonstrates publishing & latency characteristics.
+* Device Hub uses MQTT topics for adapter input/output today and will drive future WebSocket fan-out once device UI is fully wired.
 * Foundation for future real-time device state, automation events, and notifications.
 
 Test: `python3 test-websocket.py` (see root script).

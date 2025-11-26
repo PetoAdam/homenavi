@@ -1,0 +1,173 @@
+.add-device-modal-backdrop {
+  z-index: 2000;
+  padding: 1.5rem;
+}
+
+.add-device-modal-glass {
+  width: min(760px, 95vw);
+  max-height: 92vh;
+  overflow: hidden;
+}
+
+.add-device-modal-header {
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.add-device-modal-glass .auth-modal-content-outer {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-bottom: 0.5rem;
+}
+
+.add-device-modal-avatar {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 1.25rem;
+  padding: 0.75rem;
+  width: 4rem;
+  height: 4rem;
+}
+
+.add-device-modal-header .auth-modal-title {
+  font-size: 1.5rem;
+}
+
+.add-device-form {
+  align-items: stretch;
+  gap: 0.9rem;
+}
+
+.add-device-field {
+  width: 100%;
+}
+
+.add-device-select {
+  appearance: none;
+  padding-right: 2.4rem;
+  cursor: pointer;
+}
+
+.add-device-field-select .auth-modal-label {
+  top: 0.4em;
+  background: rgba(28, 34, 44, 0.92);
+  padding: 0 0.4em;
+}
+
+.add-device-field-select.filled .auth-modal-label,
+.add-device-field-select .add-device-select:focus + .auth-modal-label {
+  top: -0.5em;
+  font-size: 0.85rem;
+  color: var(--color-primary);
+}
+
+.add-device-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.add-device-modal-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.add-device-icon-field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.add-device-icon-label {
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.add-device-icon-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  width: 100%;
+}
+
+.add-device-icon-grid .device-icon-choice {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.add-device-modal-note {
+  width: 100%;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+  padding: 0.7rem 0.9rem;
+}
+
+.add-device-description-field {
+  margin-bottom: 0.4rem;
+}
+
+.add-device-advanced-toggle {
+  width: 100%;
+  margin-top: 0.6rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(15, 23, 36, 0.65);
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.65rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease;
+}
+
+.add-device-advanced-toggle svg {
+  transition: transform 0.2s ease;
+}
+
+.add-device-advanced-toggle.open svg {
+  transform: rotate(180deg);
+}
+
+.add-device-advanced-toggle:hover {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.add-device-advanced {
+  width: 100%;
+  display: none;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.8rem;
+}
+
+.add-device-advanced.open {
+  display: flex;
+}
+
+.add-device-row {
+  display: flex;
+  gap: 0.7rem;
+  width: 100%;
+}
+
+.add-device-row .add-device-field {
+  flex: 1 1 0;
+}
+
+.add-device-error {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 700px) {
+  .add-device-row {
+    flex-direction: column;
+  }
+}
