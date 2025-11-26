@@ -79,6 +79,9 @@ func (z *ZigbeeAdapter) Start(ctx context.Context) error {
 	if err := z.client.Subscribe("homenavi/devicehub/commands/device.rename", z.handleDeviceRenameCommand); err != nil {
 		return err
 	}
+	if err := z.client.Subscribe("homenavi/devicehub/commands/device.refresh", z.handleDeviceRefreshCommand); err != nil {
+		return err
+	}
 	if err := z.client.Subscribe("homenavi/devicehub/test/inject/zigbee/#", z.handleTestInject); err != nil {
 		return err
 	}
@@ -455,6 +458,67 @@ func (z *ZigbeeAdapter) handleDeviceRenameCommand(_ paho.Client, m paho.Message)
 	slog.Info("device name updated", "device", dev.ExternalID, "name", name)
 }
 
+func (z *ZigbeeAdapter) handleDeviceRefreshCommand(_ paho.Client, m paho.Message) {
+	var req struct {
+		DeviceID   string   `json:"device_id"`
+		ExternalID string   `json:"external_id"`
+		Protocol   string   `json:"protocol"`
+		Metadata   bool     `json:"metadata"`
+		State      bool     `json:"state"`
+		Properties []string `json:"properties"`
+	}
+	if err := json.Unmarshal(m.Payload(), &req); err != nil {
+		slog.Warn("zigbee refresh decode failed", "error", err)
+		return
+	}
+	if req.Protocol != "" && !strings.EqualFold(req.Protocol, "zigbee") {
+		return
+	}
+	external := strings.TrimSpace(req.ExternalID)
+	if external == "" && req.DeviceID != "" {
+		if dev, err := z.repo.GetByID(context.Background(), req.DeviceID); err == nil && dev != nil {
+			external = dev.ExternalID
+		} else if err != nil {
+			slog.Warn("zigbee refresh lookup failed", "device_id", req.DeviceID, "error", err)
+		}
+	}
+	if external == "" {
+		slog.Warn("zigbee refresh missing external id", "payload", req)
+		return
+	}
+	friendly := z.resolveFriendlyName(external)
+	target := friendly
+	if target == "" {
+		target = external
+	}
+	if target == "" {
+		return
+	}
+	refreshMetadata := req.Metadata || (!req.Metadata && !req.State)
+	refreshState := req.State || (!req.Metadata && !req.State)
+	if refreshMetadata {
+		data, _ := json.Marshal(map[string]string{"id": target})
+		if err := z.client.Publish("zigbee2mqtt/bridge/request/device", data); err != nil {
+			slog.Warn("zigbee metadata refresh publish failed", "device", target, "error", err)
+		}
+	}
+	if refreshState {
+		props := adapterutil.UniqueStrings(req.Properties)
+		if len(props) == 0 {
+			z.metaMu.RLock()
+			if refresh, ok := z.refreshProps[target]; ok {
+				props = append(props, refresh...)
+			} else if friendly != "" && external != friendly {
+				if refresh, ok := z.refreshProps[external]; ok {
+					props = append(props, refresh...)
+				}
+			}
+			z.metaMu.RUnlock()
+		}
+		z.requestStateSnapshotForDevice(target, props)
+	}
+}
+
 func (z *ZigbeeAdapter) normalizeState(friendly string, raw map[string]any) map[string]any {
 	out := map[string]any{}
 	z.metaMu.RLock()
@@ -815,20 +879,32 @@ func (z *ZigbeeAdapter) requestInitialStates() {
 	}
 	z.metaMu.RUnlock()
 	for friendly, props := range copyMap {
-		for _, p := range props {
-			if p == "" {
-				continue
-			}
-			payload := map[string]any{p: ""}
-			b, _ := json.Marshal(payload)
-			topic := "zigbee2mqtt/" + friendly + "/get"
-			if err := z.client.Publish(topic, b); err != nil {
-				slog.Debug("zigbee get publish failed", "device", friendly, "prop", p, "err", err)
-			} else {
-				slog.Debug("zigbee get published", "device", friendly, "prop", p)
-			}
-			time.Sleep(150 * time.Millisecond)
+		z.requestStateSnapshotForDevice(friendly, props)
+	}
+}
+
+func (z *ZigbeeAdapter) requestStateSnapshotForDevice(target string, props []string) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return
+	}
+	unique := adapterutil.UniqueStrings(props)
+	if len(unique) == 0 {
+		unique = []string{"state"}
+	}
+	for _, p := range unique {
+		if p == "" {
+			continue
 		}
+		payload := map[string]any{p: ""}
+		b, _ := json.Marshal(payload)
+		topic := "zigbee2mqtt/" + target + "/get"
+		if err := z.client.Publish(topic, b); err != nil {
+			slog.Debug("zigbee get publish failed", "device", target, "prop", p, "err", err)
+		} else {
+			slog.Debug("zigbee get published", "device", target, "prop", p)
+		}
+		time.Sleep(150 * time.Millisecond)
 	}
 }
 
@@ -961,6 +1037,19 @@ func (z *ZigbeeAdapter) resolveExternalID(friendly string) string {
 		return external
 	}
 	return ""
+}
+
+func (z *ZigbeeAdapter) resolveFriendlyName(external string) string {
+	if external == "" {
+		return ""
+	}
+	norm := adapterutil.NormalizeExternalKey(external)
+	if norm == "" {
+		return ""
+	}
+	z.metaMu.RLock()
+	defer z.metaMu.RUnlock()
+	return z.friendlyTopic[norm]
 }
 
 func (z *ZigbeeAdapter) setFriendlyMapping(friendly, external string) {

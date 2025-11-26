@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,24 +12,36 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 
 	"device-hub/internal/model"
 	"device-hub/internal/mqtt"
 	"device-hub/internal/store"
 )
 
-type Server struct {
-	repo *store.Repository
-	mqtt *mqtt.Client
+// IntegrationDescriptor surfaces adapter availability to the UI without
+// hardcoding the list of protocols on the frontend.
+type IntegrationDescriptor struct {
+	Protocol string `json:"protocol"`
+	Label    string `json:"label"`
+	Status   string `json:"status"`
+	Notes    string `json:"notes,omitempty"`
 }
 
-func NewServer(repo *store.Repository, mqtt *mqtt.Client) *Server {
-	return &Server{repo: repo, mqtt: mqtt}
+type Server struct {
+	repo         *store.Repository
+	mqtt         *mqtt.Client
+	integrations []IntegrationDescriptor
+}
+
+func NewServer(repo *store.Repository, mqtt *mqtt.Client, integrations []IntegrationDescriptor) *Server {
+	return &Server{repo: repo, mqtt: mqtt, integrations: integrations}
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/devicehub/devices", s.handleDeviceCollection)
 	mux.HandleFunc("/api/devicehub/devices/", s.handleDeviceRequest)
+	mux.HandleFunc("/api/devicehub/integrations", s.handleIntegrations)
 }
 
 type commandRequest struct {
@@ -47,13 +60,38 @@ type commandResponse struct {
 }
 
 type renameRequest struct {
-	Name string `json:"name"`
 }
 
-type renameResponse struct {
+type deviceUpdateRequest struct {
+	Name *string `json:"name"`
+	Icon *string `json:"icon"`
+}
+
+type deviceUpdateResponse struct {
 	Status   string `json:"status"`
 	DeviceID string `json:"device_id"`
-	Name     string `json:"name"`
+	Name     string `json:"name,omitempty"`
+	Icon     string `json:"icon,omitempty"`
+}
+
+type deviceCreateRequest struct {
+	Protocol     string          `json:"protocol"`
+	ExternalID   string          `json:"external_id"`
+	Name         string          `json:"name"`
+	Type         string          `json:"type"`
+	Manufacturer string          `json:"manufacturer"`
+	Model        string          `json:"model"`
+	Description  string          `json:"description"`
+	Firmware     string          `json:"firmware"`
+	Icon         string          `json:"icon"`
+	Capabilities json.RawMessage `json:"capabilities"`
+	Inputs       json.RawMessage `json:"inputs"`
+}
+
+type refreshRequest struct {
+	Metadata   *bool    `json:"metadata,omitempty"`
+	State      *bool    `json:"state,omitempty"`
+	Properties []string `json:"properties"`
 }
 
 type deviceListItem struct {
@@ -66,6 +104,7 @@ type deviceListItem struct {
 	Model        string          `json:"model"`
 	Description  string          `json:"description"`
 	Firmware     string          `json:"firmware"`
+	Icon         string          `json:"icon"`
 	Capabilities json.RawMessage `json:"capabilities,omitempty"`
 	Inputs       json.RawMessage `json:"inputs,omitempty"`
 	Online       bool            `json:"online"`
@@ -75,12 +114,16 @@ type deviceListItem struct {
 	State        json.RawMessage `json:"state"`
 }
 
+const deviceRemovedTopic = "homenavi/devicehub/events/device.removed"
+
 func (s *Server) handleDeviceCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.handleDeviceList(w, r)
+	case http.MethodPost:
+		s.handleDeviceCreate(w, r)
 	default:
-		w.Header().Set("Allow", "GET")
+		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -113,6 +156,7 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 			Model:        d.Model,
 			Description:  d.Description,
 			Firmware:     d.Firmware,
+			Icon:         d.Icon,
 			Online:       d.Online,
 			LastSeen:     d.LastSeen,
 			CreatedAt:    d.CreatedAt,
@@ -128,6 +172,68 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) handleDeviceCreate(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 32*1024))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	if len(body) == 0 {
+		http.Error(w, "request body required", http.StatusBadRequest)
+		return
+	}
+	var req deviceCreateRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	protocol := strings.ToLower(strings.TrimSpace(req.Protocol))
+	external := strings.TrimSpace(req.ExternalID)
+	if protocol == "" || external == "" {
+		http.Error(w, "protocol and external_id are required", http.StatusBadRequest)
+		return
+	}
+	dev := &model.Device{
+		Protocol:     protocol,
+		ExternalID:   external,
+		Name:         strings.TrimSpace(req.Name),
+		Type:         strings.TrimSpace(req.Type),
+		Manufacturer: strings.TrimSpace(req.Manufacturer),
+		Model:        strings.TrimSpace(req.Model),
+		Description:  strings.TrimSpace(req.Description),
+		Firmware:     strings.TrimSpace(req.Firmware),
+		Icon:         strings.TrimSpace(req.Icon),
+		Online:       false,
+	}
+	if len(req.Capabilities) > 0 {
+		if !json.Valid(req.Capabilities) {
+			http.Error(w, "capabilities must be valid json", http.StatusBadRequest)
+			return
+		}
+		dev.Capabilities = datatypes.JSON(append([]byte(nil), req.Capabilities...))
+	}
+	if len(req.Inputs) > 0 {
+		if !json.Valid(req.Inputs) {
+			http.Error(w, "inputs must be valid json", http.StatusBadRequest)
+			return
+		}
+		dev.Inputs = datatypes.JSON(append([]byte(nil), req.Inputs...))
+	}
+	if err := s.repo.UpsertDevice(r.Context(), dev); err != nil {
+		slog.Error("device create failed", "protocol", protocol, "external", external, "error", err)
+		http.Error(w, "failed to create device", http.StatusInternalServerError)
+		return
+	}
+	s.publishDeviceMetadata(dev)
+	item, err := s.buildDeviceItem(r.Context(), dev)
+	if err != nil {
+		http.Error(w, "failed to encode device", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusCreated, item)
 }
 
 func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +255,8 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request) {
 	switch segments[1] {
 	case "commands":
 		s.handleDeviceCommand(w, r, deviceID)
+	case "refresh":
+		s.handleDeviceRefresh(w, r, deviceID)
 	default:
 		http.NotFound(w, r)
 	}
@@ -156,10 +264,14 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request, deviceID string) {
 	switch r.Method {
+	case http.MethodGet:
+		s.handleDeviceGet(w, r, deviceID)
 	case http.MethodPatch:
 		s.handleDevicePatch(w, r, deviceID)
+	case http.MethodDelete:
+		s.handleDeviceDelete(w, r, deviceID)
 	default:
-		w.Header().Set("Allow", "PATCH")
+		w.Header().Set("Allow", "GET, PATCH, DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -175,19 +287,18 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		http.Error(w, "request body required", http.StatusBadRequest)
 		return
 	}
-	var req renameRequest
+	var req deviceUpdateRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if req.Name == nil && req.Icon == nil {
+		http.Error(w, "no updatable fields provided", http.StatusBadRequest)
 		return
 	}
 	dev, err := s.repo.GetByID(r.Context(), deviceID)
 	if err != nil {
-		slog.Error("rename lookup failed", "device_id", deviceID, "error", err)
+		slog.Error("device update lookup failed", "device_id", deviceID, "error", err)
 		http.Error(w, "device lookup failed", http.StatusInternalServerError)
 		return
 	}
@@ -195,14 +306,75 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		http.Error(w, "device not found", http.StatusNotFound)
 		return
 	}
-	dev.Name = name
+	updated := false
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" {
+			http.Error(w, "name cannot be empty", http.StatusBadRequest)
+			return
+		}
+		if dev.Name != trimmed {
+			dev.Name = trimmed
+			updated = true
+		}
+	}
+	if req.Icon != nil {
+		icon := strings.TrimSpace(*req.Icon)
+		if dev.Icon != icon {
+			dev.Icon = icon
+			updated = true
+		}
+	}
+	if !updated {
+		writeJSON(w, http.StatusOK, deviceUpdateResponse{Status: "unchanged", DeviceID: dev.ID.String(), Name: dev.Name, Icon: dev.Icon})
+		return
+	}
 	if err := s.repo.UpsertDevice(r.Context(), dev); err != nil {
-		slog.Error("rename update failed", "device_id", deviceID, "error", err)
+		slog.Error("device update failed", "device_id", deviceID, "error", err)
 		http.Error(w, "failed to update device", http.StatusInternalServerError)
 		return
 	}
 	s.publishDeviceMetadata(dev)
-	writeJSON(w, http.StatusOK, renameResponse{Status: "updated", DeviceID: dev.ID.String(), Name: dev.Name})
+	writeJSON(w, http.StatusOK, deviceUpdateResponse{Status: "updated", DeviceID: dev.ID.String(), Name: dev.Name, Icon: dev.Icon})
+}
+
+func (s *Server) handleDeviceGet(w http.ResponseWriter, r *http.Request, deviceID string) {
+	dev, err := s.repo.GetByID(r.Context(), deviceID)
+	if err != nil {
+		slog.Error("device get failed", "device_id", deviceID, "error", err)
+		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		return
+	}
+	if dev == nil {
+		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	item, err := s.buildDeviceItem(r.Context(), dev)
+	if err != nil {
+		http.Error(w, "failed to encode device", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, deviceID string) {
+	dev, err := s.repo.GetByID(r.Context(), deviceID)
+	if err != nil {
+		slog.Error("device delete lookup failed", "device_id", deviceID, "error", err)
+		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		return
+	}
+	if dev == nil {
+		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	if err := s.repo.DeleteDeviceAndState(r.Context(), deviceID); err != nil {
+		slog.Error("device delete failed", "device_id", deviceID, "error", err)
+		http.Error(w, "failed to delete device", http.StatusInternalServerError)
+		return
+	}
+	s.publishDeviceRemoval(dev, "api-delete")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, deviceID string) {
@@ -280,6 +452,66 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		return
 	}
 	writeJSON(w, http.StatusAccepted, commandResponse{Status: "queued", DeviceID: dev.ID.String(), TransitionMs: req.TransitionMs})
+}
+
+func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, deviceID string) {
+	dev, err := s.repo.GetByID(r.Context(), deviceID)
+	if err != nil {
+		slog.Error("device refresh lookup failed", "device_id", deviceID, "error", err)
+		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		return
+	}
+	if dev == nil {
+		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	var req refreshRequest
+	if r.Body != nil {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &req); err != nil {
+				http.Error(w, "invalid json", http.StatusBadRequest)
+				return
+			}
+		}
+		defer r.Body.Close()
+	}
+	metadata := true
+	state := true
+	if req.Metadata != nil || req.State != nil {
+		metadata = req.Metadata == nil || (req.Metadata != nil && *req.Metadata)
+		state = req.State == nil || (req.State != nil && *req.State)
+		if !metadata && !state {
+			state = true
+		}
+	}
+	props := make([]string, 0, len(req.Properties))
+	for _, prop := range req.Properties {
+		if trimmed := strings.TrimSpace(prop); trimmed != "" {
+			props = append(props, trimmed)
+		}
+	}
+	payload := map[string]any{
+		"device_id":   dev.ID.String(),
+		"protocol":    dev.Protocol,
+		"external_id": dev.ExternalID,
+		"metadata":    metadata,
+		"state":       state,
+	}
+	if len(props) > 0 {
+		payload["properties"] = props
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "failed to encode refresh payload", http.StatusInternalServerError)
+		return
+	}
+	if err := s.mqtt.Publish("homenavi/devicehub/commands/device.refresh", data); err != nil {
+		slog.Error("refresh publish failed", "device_id", deviceID, "error", err)
+		http.Error(w, "failed to enqueue refresh", http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": dev.ID.String()})
 }
 
 var errInputNotFound = errors.New("input not found")
@@ -419,6 +651,73 @@ func (s *Server) publishDeviceMetadata(dev *model.Device) {
 	if err := s.mqtt.Publish("homenavi/devicehub/events/device.upsert", devJSON); err != nil {
 		slog.Warn("broadcast device upsert failed", "device_id", dev.ID.String(), "error", err)
 	}
+}
+
+func (s *Server) publishDeviceRemoval(dev *model.Device, reason string) {
+	if dev == nil {
+		return
+	}
+	payload := map[string]any{
+		"id":          dev.ID.String(),
+		"device_id":   dev.ID.String(),
+		"external_id": dev.ExternalID,
+		"protocol":    dev.Protocol,
+		"reason":      reason,
+	}
+	if data, err := json.Marshal(payload); err == nil {
+		if err := s.mqtt.Publish(deviceRemovedTopic, data); err != nil {
+			slog.Warn("device removal publish failed", "device_id", dev.ID, "error", err)
+		}
+	}
+}
+
+func (s *Server) handleIntegrations(w http.ResponseWriter, _ *http.Request) {
+	if len(s.integrations) == 0 {
+		s.writeEmptyArray(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.integrations)
+}
+
+func (s *Server) writeEmptyArray(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("[]"))
+}
+
+func (s *Server) buildDeviceItem(ctx context.Context, d *model.Device) (deviceListItem, error) {
+	stateJSON, err := s.repo.GetDeviceState(ctx, d.ID.String())
+	if err != nil {
+		slog.Warn("device state lookup failed", "device_id", d.ID.String(), "error", err)
+		stateJSON = nil
+	}
+	if len(stateJSON) == 0 {
+		stateJSON = []byte(`{}`)
+	}
+	item := deviceListItem{
+		ID:           d.ID,
+		Protocol:     d.Protocol,
+		ExternalID:   d.ExternalID,
+		Name:         d.Name,
+		Type:         d.Type,
+		Manufacturer: d.Manufacturer,
+		Model:        d.Model,
+		Description:  d.Description,
+		Firmware:     d.Firmware,
+		Icon:         d.Icon,
+		Online:       d.Online,
+		LastSeen:     d.LastSeen,
+		CreatedAt:    d.CreatedAt,
+		UpdatedAt:    d.UpdatedAt,
+		State:        json.RawMessage(append([]byte(nil), stateJSON...)),
+	}
+	if len(d.Capabilities) > 0 {
+		item.Capabilities = json.RawMessage(append([]byte(nil), d.Capabilities...))
+	}
+	if len(d.Inputs) > 0 {
+		item.Inputs = json.RawMessage(append([]byte(nil), d.Inputs...))
+	}
+	return item, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

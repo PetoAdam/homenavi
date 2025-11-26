@@ -51,6 +51,14 @@
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.device-title-leading {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .device-title-icon {
@@ -58,29 +66,123 @@
   color: rgba(255, 255, 255, 0.82);
 }
 
+.device-title-icon-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.device-title-icon-button.editable {
+  border-radius: 0.65rem;
+  border: 1px solid rgba(34, 197, 94, 0.6);
+  padding: 0.15rem 0.35rem;
+  margin-left: -0.1rem;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  background: rgba(34, 197, 94, 0.08);
+  animation: device-icon-pulse 2.4s ease-in-out infinite;
+}
+
+.device-title-icon-button.editable:hover {
+  border-color: rgba(34, 197, 94, 0.65);
+  background: rgba(34, 197, 94, 0.18);
+  animation: none;
+}
+
+@keyframes device-icon-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+.device-icon-hint {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(34, 197, 94, 0.85);
+  font-weight: 600;
+}
+
+.device-icon-picker {
+  position: absolute;
+  top: 2.5rem;
+  left: 0;
+  width: 230px;
+  padding: 0.75rem;
+  border-radius: 0.9rem;
+  background: rgba(7, 11, 18, 0.95);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.45);
+  z-index: 25;
+}
+
+.device-icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.device-icon-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.82);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.device-icon-choice.active {
+  border-color: rgba(34, 197, 94, 0.7);
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+}
+
+.device-icon-choice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.device-icon-error {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  color: #fda4af;
+  font-weight: 600;
+}
+
 .device-title {
   font-size: 1.08rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-white);
   flex: 1 1 auto;
+  min-width: 0;
 }
 
 .device-title-edit-input {
   flex: 1 1 auto;
   min-width: 0;
-  border: 1px solid rgba(129, 140, 248, 0.4);
+  border: 1px solid var(--color-glass-border-light);
   border-radius: 0.6rem;
   padding: 0.35rem 0.6rem;
-  background: rgba(16, 22, 32, 0.6);
+  background: rgba(7, 11, 18, 0.85);
   color: rgba(255, 255, 255, 0.92);
   font-size: 1rem;
   font-weight: 600;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
 .device-title-edit-input:focus {
   outline: none;
-  border-color: rgba(129, 140, 248, 0.75);
-  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+  border-color: rgba(34, 197, 94, 0.8);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.55);
 }
 
 .device-title-actions {
@@ -88,6 +190,7 @@
   align-items: center;
   gap: 0.35rem;
   margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .device-title-action {
@@ -97,9 +200,9 @@
   width: 1.8rem;
   height: 1.8rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--color-glass-border-xlight);
   background: rgba(12, 18, 28, 0.45);
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.78);
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
   font-size: 0.85rem;
@@ -116,14 +219,32 @@
   cursor: not-allowed;
 }
 
+.device-title-action.device-title-edit {
+  border-color: rgba(57, 170, 121, 0.5);
+  background: rgba(57, 170, 121, 0.18);
+  color: #d1fae5;
+}
+
+.device-title-action.device-title-delete {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+}
+
+.device-title-action.device-title-delete:hover {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: rgba(248, 113, 113, 0.25);
+  color: #fee2e2;
+}
+
 .device-title-save {
-  border-color: rgba(129, 140, 248, 0.55);
-  background: rgba(129, 140, 248, 0.18);
-  color: rgba(208, 214, 255, 0.95);
+  border-color: rgba(14, 165, 129, 0.65);
+  background: rgba(16, 185, 129, 0.2);
+  color: #bbf7d0;
 }
 
 .device-title-cancel {
-  border-color: rgba(248, 113, 113, 0.4);
+  border-color: rgba(248, 113, 113, 0.5);
   background: rgba(239, 68, 68, 0.18);
   color: #fecaca;
 }

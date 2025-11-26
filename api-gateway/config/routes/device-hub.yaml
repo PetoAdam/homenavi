@@ -14,3 +14,8 @@ routes:
     methods: [POST, PATCH]
     access: resident
     type: rest
+  - path: /api/devicehub/integrations
+    upstream: http://device-hub:8090/api/devicehub/integrations
+    methods: [GET]
+    access: resident
+    type: rest

@@ -16,6 +16,8 @@ import (
 	"device-hub/internal/config"
 	"device-hub/internal/httpapi"
 	mqttpkg "device-hub/internal/mqtt"
+	matterpkg "device-hub/internal/proto/matter"
+	threadpkg "device-hub/internal/proto/thread"
 	zigbee "device-hub/internal/proto/zigbee"
 	"device-hub/internal/store"
 )
@@ -44,10 +46,34 @@ func main() {
 		os.Exit(1)
 	}
 
+	integrations := []httpapi.IntegrationDescriptor{
+		{Protocol: "zigbee", Label: "Zigbee (Zigbee2MQTT)", Status: "active"},
+	}
+
+	matterAdapter := matterpkg.New(mClient, repo, matterpkg.Config{Enabled: cfg.EnableMatter})
+	if err := matterAdapter.Start(context.Background()); err != nil {
+		slog.Error("matter startup failed", "error", err)
+	}
+	if cfg.EnableMatter {
+		integrations = append(integrations, httpapi.IntegrationDescriptor{Protocol: "matter", Label: "Matter", Status: "experimental", Notes: "adapter placeholder"})
+	} else {
+		integrations = append(integrations, httpapi.IntegrationDescriptor{Protocol: "matter", Label: "Matter", Status: "planned"})
+	}
+
+	threadAdapter := threadpkg.New(mClient, repo, threadpkg.Config{Enabled: cfg.EnableThread})
+	if err := threadAdapter.Start(context.Background()); err != nil {
+		slog.Error("thread startup failed", "error", err)
+	}
+	if cfg.EnableThread {
+		integrations = append(integrations, httpapi.IntegrationDescriptor{Protocol: "thread", Label: "Thread", Status: "experimental", Notes: "adapter placeholder"})
+	} else {
+		integrations = append(integrations, httpapi.IntegrationDescriptor{Protocol: "thread", Label: "Thread", Status: "planned"})
+	}
+
 	// Only health endpoint retained for k8s / docker health checks.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	httpapi.NewServer(repo, mClient).Register(mux)
+	httpapi.NewServer(repo, mClient, integrations).Register(mux)
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

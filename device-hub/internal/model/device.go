@@ -18,6 +18,7 @@ type Device struct {
 	Model        string         `json:"model"`
 	Description  string         `gorm:"type:text" json:"description"`
 	Firmware     string         `json:"firmware"`
+	Icon         string         `json:"icon"`
 	Capabilities datatypes.JSON `gorm:"type:jsonb" json:"capabilities"`
 	Inputs       datatypes.JSON `gorm:"type:jsonb" json:"inputs"`
 	Online       bool           `json:"online"`

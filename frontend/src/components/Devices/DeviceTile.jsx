@@ -1,29 +1,35 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBatteryThreeQuarters,
   faBolt,
   faDroplet,
   faDoorOpen,
+  faFan,
   faGaugeHigh,
   faLightbulb,
   faMicrochip,
+  faMusic,
   faPalette,
   faPlug,
+  faShieldHalved,
   faSignal,
   faSliders,
   faThermometerHalf,
   faTicket,
+  faVideo,
   faWaveSquare,
   faPen,
   faCheck,
   faXmark,
+  faTrash,
 } from '@fortawesome/free-solid-svg-icons';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassSwitch from '../common/GlassSwitch/GlassSwitch';
 import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
 import { HexColorPicker } from 'react-colorful';
+import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
 
 const ICON_BY_CAP = {
@@ -460,6 +466,10 @@ function buildInputsFromCapabilities(capabilities) {
 }
 
 function resolveDeviceIcon(device, capabilities) {
+  const manualKey = typeof device?.icon === 'string' ? device.icon.toLowerCase() : '';
+  if (manualKey && manualKey !== 'auto' && DEVICE_ICON_MAP[manualKey]) {
+    return DEVICE_ICON_MAP[manualKey];
+  }
   const keywords = [device?.type, device?.description, device?.model, device?.displayName, device?.manufacturer]
     .filter(Boolean)
     .join(' ')
@@ -640,7 +650,7 @@ function formatControlValue(input, value) {
   }
 }
 
-export default function DeviceTile({ device, onCommand, onRename, pending }) {
+export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, pending, onDelete }) {
   const capabilities = useMemo(
     () => collectCapabilities(device),
     [device],
@@ -759,6 +769,17 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
   const [nameDraft, setNameDraft] = useState(device.displayName || '');
   const [renamePending, setRenamePending] = useState(false);
   const [renameError, setRenameError] = useState(null);
+  const [iconMenuOpen, setIconMenuOpen] = useState(false);
+  const [iconPending, setIconPending] = useState(false);
+  const [iconError, setIconError] = useState(null);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+  const iconMenuRef = useRef(null);
+  const canEditIcon = Boolean(isEditingName && onUpdateIcon);
+  const showIconPicker = Boolean(canEditIcon && iconMenuOpen);
+  const iconGlyph = (
+    <FontAwesomeIcon icon={deviceIcon} className="device-title-icon" />
+  );
 
   const stateVersion = device.stateUpdatedAt instanceof Date ? device.stateUpdatedAt.getTime() : (device.stateUpdatedAt || 0);
   const metadataVersion = device.metadataUpdatedAt instanceof Date ? device.metadataUpdatedAt.getTime() : (device.metadataUpdatedAt || 0);
@@ -793,7 +814,18 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
     setRenamePending(false);
     setRenameError(null);
     setShowAllControls(false);
+    setIconMenuOpen(false);
+    setIconError(null);
+    setIconPending(false);
+    setDeletePending(false);
+    setDeleteError(null);
   }, [device, device.id, stateVersion, metadataVersion, device.toggleState, normalizedInputs]);
+
+  useEffect(() => {
+    if (!isEditingName) {
+      setIconMenuOpen(false);
+    }
+  }, [isEditingName]);
 
   const toggleValue = primaryToggleKey ? toControlBoolean(controlValues[primaryToggleKey]) : null;
 
@@ -853,12 +885,14 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
     setNameDraft(device.displayName || '');
     setRenameError(null);
     setIsEditingName(true);
+    setIconMenuOpen(false);
   }, [device.displayName, onRename]);
 
   const cancelRename = useCallback(() => {
     setIsEditingName(false);
     setNameDraft(device.displayName || '');
     setRenameError(null);
+    setIconMenuOpen(false);
   }, [device.displayName]);
 
   const handleRenameSubmit = useCallback(async () => {
@@ -873,6 +907,7 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
     }
     if (trimmed === (device.displayName || '').trim()) {
       setIsEditingName(false);
+      setIconMenuOpen(false);
       return;
     }
     setRenamePending(true);
@@ -881,6 +916,7 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
       setNameDraft(trimmed);
       setRenameError(null);
       setIsEditingName(false);
+      setIconMenuOpen(false);
     } catch (err) {
       setRenameError(err?.message || 'Unable to rename device');
     } finally {
@@ -896,6 +932,60 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
     [allMetrics, showAllMetrics],
   );
 
+  const activeIconKey = device?.icon && device.icon !== '' ? device.icon : 'auto';
+
+  useEffect(() => {
+    if (!iconMenuOpen || !canEditIcon) return undefined;
+    const handleClick = event => {
+      if (!iconMenuRef.current) return;
+      if (!iconMenuRef.current.contains(event.target)) {
+        setIconMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [canEditIcon, iconMenuOpen]);
+
+  const handleIconSelection = useCallback(async (nextKey) => {
+    if (!onUpdateIcon) {
+      setIconMenuOpen(false);
+      return;
+    }
+    const normalizedKey = nextKey || 'auto';
+    if (normalizedKey === activeIconKey) {
+      setIconMenuOpen(false);
+      return;
+    }
+    setIconPending(true);
+    setIconError(null);
+    try {
+      await onUpdateIcon(device, normalizedKey === 'auto' ? null : normalizedKey);
+      setIconMenuOpen(false);
+    } catch (err) {
+      setIconError(err?.message || 'Unable to update icon');
+    } finally {
+      setIconPending(false);
+    }
+  }, [activeIconKey, device, onUpdateIcon]);
+
+  const handleDelete = useCallback(async () => {
+    if (!onDelete) return;
+    const label = device.displayName || device.name || 'this device';
+    const confirmed = window.confirm(`Delete ${label}? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+    setDeletePending(true);
+    setDeleteError(null);
+    try {
+      await onDelete(device);
+    } catch (err) {
+      setDeleteError(err?.message || 'Unable to delete device');
+    } finally {
+      setDeletePending(false);
+    }
+  }, [device, onDelete]);
+
   const description = useMemo(() => {
     if (!device.description) return '';
     if (device.description.length <= DESCRIPTION_LIMIT) return device.description;
@@ -908,7 +998,43 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
         <div className="device-tile-header">
           <div className="device-title-container">
             <div className="device-title-row">
-              <FontAwesomeIcon icon={deviceIcon} className="device-title-icon" />
+              <div className="device-title-leading" ref={iconMenuRef}>
+                {canEditIcon ? (
+                  <>
+                    <button
+                      type="button"
+                      className="device-title-icon-button editable"
+                      onClick={() => setIconMenuOpen(prev => !prev)}
+                      title="Change icon"
+                      aria-label="Change icon"
+                    >
+                      {iconGlyph}
+                    </button>
+                    <span className="device-icon-hint">Tap to change</span>
+                  </>
+                ) : (
+                  iconGlyph
+                )}
+                {showIconPicker ? (
+                  <div className="device-icon-picker">
+                    <div className="device-icon-picker-grid">
+                      {DEVICE_ICON_CHOICES.map(choice => (
+                        <button
+                          key={choice.key}
+                          type="button"
+                          className={`device-icon-choice${activeIconKey === choice.key ? ' active' : ''}`}
+                          onClick={() => handleIconSelection(choice.key)}
+                          disabled={iconPending}
+                        >
+                          <FontAwesomeIcon icon={choice.icon} />
+                          <span>{choice.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {iconError ? <div className="device-icon-error">{iconError}</div> : null}
+                  </div>
+                ) : null}
+              </div>
               {isEditingName ? (
                 <input
                   className="device-title-edit-input"
@@ -931,7 +1057,7 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
               ) : (
                 <span className="device-title">{device.displayName}</span>
               )}
-              {onRename ? (
+              {onRename || onDelete ? (
                 <div className="device-title-actions">
                   {isEditingName ? (
                     <>
@@ -955,15 +1081,30 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
                       </button>
                     </>
                   ) : (
+                    onRename ? (
+                      <button
+                        type="button"
+                        className="device-title-action device-title-edit"
+                        onClick={beginRename}
+                        title="Edit device"
+                        aria-label="Edit device"
+                      >
+                        <FontAwesomeIcon icon={faPen} />
+                      </button>
+                    ) : null
+                  )}
+                  {onDelete ? (
                     <button
                       type="button"
-                      className="device-title-action device-title-edit"
-                      onClick={beginRename}
-                      title="Rename device"
+                      className="device-title-action device-title-delete"
+                      onClick={handleDelete}
+                      title="Delete device"
+                      aria-label="Delete device"
+                      disabled={deletePending}
                     >
-                      <FontAwesomeIcon icon={faPen} />
+                      <FontAwesomeIcon icon={faTrash} />
                     </button>
-                  )}
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -975,6 +1116,10 @@ export default function DeviceTile({ device, onCommand, onRename, pending }) {
               {device.type || null}
             </div>
             {renameError ? <div className="device-rename-error">{renameError}</div> : null}
+            {deleteError ? <div className="device-rename-error">{deleteError}</div> : null}
+            {iconError && !iconMenuOpen ? (
+              <div className="device-rename-error">{iconError}</div>
+            ) : null}
           </div>
           {showHeaderToggle ? (
             <GlassSwitch checked={Boolean(toggleValue)} disabled={toggleDisabled} onChange={handlePrimaryToggle} />
