@@ -7,3 +7,4 @@ postgres-data/
 mosquitto/config/conf.d/*
 devices_snapshot.json
 docker-compose-pi.yml
+zigbee2mqtt-data/configuration-pi.yaml
