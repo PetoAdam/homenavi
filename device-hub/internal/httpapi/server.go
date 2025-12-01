@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
@@ -28,20 +31,83 @@ type IntegrationDescriptor struct {
 	Notes    string `json:"notes,omitempty"`
 }
 
+type pairingMetadata struct {
+	Name         string `json:"name,omitempty"`
+	Icon         string `json:"icon,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Type         string `json:"type,omitempty"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Model        string `json:"model,omitempty"`
+}
+
+type pairingSession struct {
+	ID                  string          `json:"id"`
+	Protocol            string          `json:"protocol"`
+	Status              string          `json:"status"`
+	Active              bool            `json:"active"`
+	StartedAt           time.Time       `json:"started_at"`
+	ExpiresAt           time.Time       `json:"expires_at"`
+	DeviceID            string          `json:"device_id,omitempty"`
+	Metadata            pairingMetadata `json:"metadata,omitempty"`
+	cancel              context.CancelFunc
+	knownDevices        map[string]struct{} `json:"-"`
+	candidateExternalID string              `json:"-"`
+	awaitingInterview   bool                `json:"-"`
+}
+
+func (p *pairingSession) clone() pairingSession {
+	if p == nil {
+		return pairingSession{}
+	}
+	clone := *p
+	clone.cancel = nil
+	clone.knownDevices = nil
+	clone.candidateExternalID = ""
+	clone.awaitingInterview = false
+	return clone
+}
+
 type Server struct {
 	repo         *store.Repository
 	mqtt         *mqtt.Client
 	integrations []IntegrationDescriptor
+	pairingMu    sync.Mutex
+	pairings     map[string]*pairingSession
 }
 
 func NewServer(repo *store.Repository, mqtt *mqtt.Client, integrations []IntegrationDescriptor) *Server {
-	return &Server{repo: repo, mqtt: mqtt, integrations: integrations}
+	return &Server{
+		repo:         repo,
+		mqtt:         mqtt,
+		integrations: integrations,
+		pairings:     make(map[string]*pairingSession),
+	}
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/devicehub/devices", s.handleDeviceCollection)
 	mux.HandleFunc("/api/devicehub/devices/", s.handleDeviceRequest)
 	mux.HandleFunc("/api/devicehub/integrations", s.handleIntegrations)
+	mux.HandleFunc("/api/devicehub/pairings", s.handlePairings)
+	if err := s.mqtt.Subscribe(deviceUpsertTopic, s.handleDeviceUpsertEvent); err != nil {
+		slog.Error("device upsert subscribe failed", "error", err)
+	}
+	if err := s.mqtt.Subscribe(pairingProgressTopic, s.handlePairingProgressEvent); err != nil {
+		slog.Error("pairing progress subscribe failed", "error", err)
+	}
+}
+
+func (s *Server) handleDeviceUpsertEvent(_ paho.Client, msg mqtt.Message) {
+	payload := msg.Payload()
+	if len(payload) == 0 {
+		return
+	}
+	var dev model.Device
+	if err := json.Unmarshal(payload, &dev); err != nil {
+		slog.Debug("device upsert decode failed", "error", err)
+		return
+	}
+	s.handlePairingCandidate(&dev)
 }
 
 type commandRequest struct {
@@ -114,7 +180,20 @@ type deviceListItem struct {
 	State        json.RawMessage `json:"state"`
 }
 
-const deviceRemovedTopic = "homenavi/devicehub/events/device.removed"
+const (
+	deviceUpsertTopic        = "homenavi/devicehub/events/device.upsert"
+	deviceRemovedTopic       = "homenavi/devicehub/events/device.removed"
+	pairingEventTopic        = "homenavi/devicehub/events/pairing"
+	pairingCommandTopic      = "homenavi/devicehub/commands/pairing"
+	deviceRemoveCommandTopic = "homenavi/devicehub/commands/device.remove"
+	pairingProgressTopic     = "homenavi/devicehub/events/pairing.progress"
+)
+
+var (
+	errPairingActive      = errors.New("pairing already active")
+	errPairingNotFound    = errors.New("pairing session not found")
+	errPairingUnsupported = errors.New("protocol does not support pairing operations")
+)
 
 func (s *Server) handleDeviceCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -366,6 +445,16 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 	}
 	if dev == nil {
 		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	protocol := normalizeProtocol(dev.Protocol)
+	if protocol == "zigbee" {
+		if err := s.requestProtocolRemoval(dev); err != nil {
+			slog.Error("protocol removal failed", "device_id", dev.ID, "protocol", protocol, "error", err)
+			http.Error(w, "failed to request protocol removal", http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": dev.ID.String(), "protocol": protocol})
 		return
 	}
 	if err := s.repo.DeleteDeviceAndState(r.Context(), deviceID); err != nil {
@@ -643,6 +732,7 @@ func (s *Server) publishDeviceMetadata(dev *model.Device) {
 	if dev == nil {
 		return
 	}
+	s.handlePairingCandidate(dev)
 	devJSON, err := json.Marshal(dev)
 	if err != nil {
 		slog.Error("encode device metadata failed", "device_id", dev.ID.String(), "error", err)
@@ -677,6 +767,489 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.integrations)
+}
+
+type pairingStartRequest struct {
+	Protocol string          `json:"protocol"`
+	Timeout  int             `json:"timeout"`
+	Metadata pairingMetadata `json:"metadata"`
+}
+
+func (s *Server) handlePairings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		sessions := s.snapshotPairings()
+		writeJSON(w, http.StatusOK, sessions)
+		return
+	case http.MethodPost:
+		defer r.Body.Close()
+		var req pairingStartRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 8*1024)).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		protocol := normalizeProtocol(req.Protocol)
+		if protocol == "" {
+			http.Error(w, "protocol is required", http.StatusBadRequest)
+			return
+		}
+		session, err := s.startPairing(protocol, req.Timeout, req.Metadata)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, errPairingActive) {
+				status = http.StatusConflict
+			} else if errors.Is(err, errPairingUnsupported) {
+				status = http.StatusNotImplemented
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, session)
+		return
+	case http.MethodDelete:
+		protocol := normalizeProtocol(r.URL.Query().Get("protocol"))
+		if protocol == "" {
+			http.Error(w, "protocol query parameter required", http.StatusBadRequest)
+			return
+		}
+		session, err := s.stopPairing(protocol, "stopped")
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, errPairingNotFound) {
+				status = http.StatusNotFound
+			} else if errors.Is(err, errPairingUnsupported) {
+				status = http.StatusNotImplemented
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSON(w, http.StatusOK, session)
+		return
+	default:
+		w.Header().Set("Allow", "GET, POST, DELETE")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) snapshotPairings() []pairingSession {
+	s.pairingMu.Lock()
+	defer s.pairingMu.Unlock()
+	result := make([]pairingSession, 0, len(s.pairings))
+	for _, session := range s.pairings {
+		clone := session.clone()
+		result = append(result, clone)
+	}
+	return result
+}
+
+func (s *Server) startPairing(protocol string, timeout int, metadata pairingMetadata) (*pairingSession, error) {
+	if err := ensurePairingSupported(protocol); err != nil {
+		return nil, err
+	}
+	if timeout <= 0 {
+		timeout = 60
+	} else if timeout > 300 {
+		timeout = 300
+	}
+	now := time.Now().UTC()
+	meta := sanitizePairingMetadata(metadata)
+	session := &pairingSession{
+		ID:           uuid.NewString(),
+		Protocol:     protocol,
+		Status:       "starting",
+		Active:       true,
+		StartedAt:    now,
+		ExpiresAt:    now.Add(time.Duration(timeout) * time.Second),
+		Metadata:     meta,
+		knownDevices: s.snapshotKnownDevices(),
+	}
+	s.pairingMu.Lock()
+	if existing, ok := s.pairings[protocol]; ok && existing.Active {
+		s.pairingMu.Unlock()
+		return nil, errPairingActive
+	}
+	s.pairings[protocol] = session
+	s.pairingMu.Unlock()
+	if err := s.publishPairingCommand(protocol, "start", timeout); err != nil {
+		s.pairingMu.Lock()
+		delete(s.pairings, protocol)
+		s.pairingMu.Unlock()
+		return nil, fmt.Errorf("failed to start pairing: %w", err)
+	}
+	session.Status = "active"
+	s.emitPairingEvent(session.clone())
+	s.startPairingTimeout(protocol, session.ID, session.ExpiresAt)
+	clone := session.clone()
+	return &clone, nil
+}
+
+func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
+	if err := ensurePairingSupported(protocol); err != nil {
+		return nil, err
+	}
+	s.pairingMu.Lock()
+	session, ok := s.pairings[protocol]
+	if !ok {
+		s.pairingMu.Unlock()
+		return nil, errPairingNotFound
+	}
+	if session.cancel != nil {
+		session.cancel()
+		session.cancel = nil
+	}
+	session.Active = false
+	session.Status = status
+	session.ExpiresAt = time.Now().UTC()
+	clone := session.clone()
+	s.pairingMu.Unlock()
+	_ = s.publishPairingCommand(protocol, "stop", 0)
+	s.emitPairingEvent(clone)
+	return &clone, nil
+}
+
+func (s *Server) startPairingTimeout(protocol, sessionID string, expires time.Time) {
+	duration := time.Until(expires)
+	if duration <= 0 {
+		duration = time.Second * 60
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.pairingMu.Lock()
+	if session, ok := s.pairings[protocol]; ok && session.ID == sessionID {
+		session.cancel = cancel
+	} else {
+		s.pairingMu.Unlock()
+		cancel()
+		return
+	}
+	s.pairingMu.Unlock()
+	go func() {
+		select {
+		case <-time.After(duration):
+			s.handlePairingTimeout(protocol, sessionID)
+		case <-ctx.Done():
+		}
+	}()
+}
+
+func (s *Server) handlePairingTimeout(protocol, sessionID string) {
+	s.pairingMu.Lock()
+	session, ok := s.pairings[protocol]
+	if !ok || session.ID != sessionID || !session.Active {
+		s.pairingMu.Unlock()
+		return
+	}
+	session.Active = false
+	session.Status = "timeout"
+	session.ExpiresAt = time.Now().UTC()
+	if session.cancel != nil {
+		session.cancel()
+		session.cancel = nil
+	}
+	clone := session.clone()
+	s.pairingMu.Unlock()
+	_ = s.publishPairingCommand(protocol, "stop", 0)
+	s.emitPairingEvent(clone)
+}
+
+func (s *Server) publishPairingCommand(protocol, action string, timeout int) error {
+	payload := map[string]any{
+		"protocol": protocol,
+		"action":   action,
+	}
+	if timeout > 0 {
+		payload["timeout"] = timeout
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return s.mqtt.Publish(pairingCommandTopic, data)
+}
+
+func (s *Server) emitPairingEvent(session pairingSession) {
+	data, err := json.Marshal(session)
+	if err != nil {
+		slog.Warn("encode pairing event failed", "error", err)
+		return
+	}
+	if err := s.mqtt.Publish(pairingEventTopic, data); err != nil {
+		slog.Warn("pairing event publish failed", "error", err)
+	}
+}
+
+func (s *Server) handlePairingProgressEvent(_ paho.Client, msg mqtt.Message) {
+	if len(msg.Payload()) == 0 {
+		return
+	}
+	var evt struct {
+		Protocol   string `json:"protocol"`
+		Stage      string `json:"stage"`
+		Status     string `json:"status"`
+		ExternalID string `json:"external_id"`
+	}
+	if err := json.Unmarshal(msg.Payload(), &evt); err != nil {
+		slog.Debug("pairing progress decode failed", "error", err)
+		return
+	}
+	protocol := normalizeProtocol(evt.Protocol)
+	if protocol == "" {
+		protocol = "zigbee"
+	}
+	if !protocolSupportsInterviewTracking(protocol) {
+		return
+	}
+	s.pairingMu.Lock()
+	session, ok := s.pairings[protocol]
+	if !ok || !session.Active {
+		s.pairingMu.Unlock()
+		return
+	}
+	if session.candidateExternalID == "" && evt.ExternalID != "" {
+		session.candidateExternalID = strings.ToLower(evt.ExternalID)
+	}
+	updated := false
+	finalStatus := ""
+	switch evt.Stage {
+	case "device_joined", "device_announced":
+		session.Status = "device_joined"
+		session.awaitingInterview = true
+		updated = true
+	case "interview_started":
+		session.Status = "interviewing"
+		session.awaitingInterview = true
+		updated = true
+	case "interview_succeeded", "interview_complete":
+		session.Status = "interview_complete"
+		session.awaitingInterview = false
+		updated = true
+		finalStatus = "completed"
+	case "interview_failed":
+		session.Status = "failed"
+		session.Active = false
+		session.awaitingInterview = false
+		updated = true
+		finalStatus = "failed"
+	default:
+		s.pairingMu.Unlock()
+		return
+	}
+	snapshot := session.clone()
+	s.pairingMu.Unlock()
+	if !updated {
+		return
+	}
+	s.emitPairingEvent(snapshot)
+	if finalStatus != "" {
+		go func(proto, status string) {
+			if _, err := s.stopPairing(proto, status); err != nil && !errors.Is(err, errPairingNotFound) {
+				slog.Warn("pairing finalize failed", "protocol", proto, "status", status, "error", err)
+			}
+		}(protocol, finalStatus)
+	}
+}
+
+func (s *Server) shouldAcceptPairingCandidate(session *pairingSession, dev *model.Device) bool {
+	if session == nil || dev == nil {
+		return false
+	}
+	if session.DeviceID != "" && session.DeviceID != dev.ID.String() {
+		return false
+	}
+	if len(session.knownDevices) > 0 {
+		if _, exists := session.knownDevices[dev.ID.String()]; exists {
+			return false
+		}
+	}
+	if session.candidateExternalID != "" && dev.ExternalID != "" {
+		if !strings.EqualFold(session.candidateExternalID, dev.ExternalID) {
+			return false
+		}
+	}
+	if !session.StartedAt.IsZero() && !dev.CreatedAt.IsZero() {
+		if dev.CreatedAt.Before(session.StartedAt.Add(-5 * time.Second)) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) snapshotKnownDevices() map[string]struct{} {
+	ctx := context.Background()
+	devices, err := s.repo.List(ctx)
+	if err != nil {
+		slog.Debug("pairing snapshot failed", "error", err)
+		return nil
+	}
+	if len(devices) == 0 {
+		return nil
+	}
+	known := make(map[string]struct{}, len(devices))
+	for _, dev := range devices {
+		if dev.ID == uuid.Nil {
+			continue
+		}
+		known[dev.ID.String()] = struct{}{}
+	}
+	return known
+}
+
+func sanitizePairingMetadata(meta pairingMetadata) pairingMetadata {
+	trim := func(v string) string {
+		return strings.TrimSpace(v)
+	}
+	return pairingMetadata{
+		Name:         trim(meta.Name),
+		Icon:         strings.ToLower(trim(meta.Icon)),
+		Description:  trim(meta.Description),
+		Type:         trim(meta.Type),
+		Manufacturer: trim(meta.Manufacturer),
+		Model:        trim(meta.Model),
+	}
+}
+
+func normalizeProtocol(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func protocolSupportsInterviewTracking(proto string) bool {
+	switch normalizeProtocol(proto) {
+	case "zigbee":
+		return true
+	default:
+		return false
+	}
+}
+
+type unsupportedProtocolError struct {
+	protocol string
+}
+
+func (e unsupportedProtocolError) Error() string {
+	return fmt.Sprintf("protocol %s does not support this operation", e.protocol)
+}
+
+func (e unsupportedProtocolError) Is(target error) bool {
+	return target == errPairingUnsupported
+}
+
+func ensurePairingSupported(protocol string) error {
+	switch protocol {
+	case "zigbee":
+		return nil
+	default:
+		return unsupportedProtocolError{protocol: protocol}
+	}
+}
+
+func (s *Server) requestProtocolRemoval(dev *model.Device) error {
+	if dev == nil {
+		return errors.New("device is required")
+	}
+	protocol := normalizeProtocol(dev.Protocol)
+	switch protocol {
+	case "zigbee":
+		payload := map[string]string{
+			"protocol":    protocol,
+			"device_id":   dev.ID.String(),
+			"external_id": dev.ExternalID,
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		return s.mqtt.Publish(deviceRemoveCommandTopic, data)
+	default:
+		return unsupportedProtocolError{protocol: protocol}
+	}
+}
+
+func (s *Server) handlePairingCandidate(dev *model.Device) {
+	if dev == nil || dev.ID == uuid.Nil {
+		return
+	}
+	protocol := normalizeProtocol(dev.Protocol)
+	if protocol == "" {
+		return
+	}
+	deviceID := dev.ID.String()
+	s.pairingMu.Lock()
+	session, ok := s.pairings[protocol]
+	if !ok || !session.Active {
+		s.pairingMu.Unlock()
+		return
+	}
+	if !s.shouldAcceptPairingCandidate(session, dev) {
+		s.pairingMu.Unlock()
+		return
+	}
+	meta := session.Metadata
+	supportsInterview := protocolSupportsInterviewTracking(protocol)
+	session.DeviceID = deviceID
+	session.Status = "device_detected"
+	if supportsInterview {
+		session.awaitingInterview = true
+	} else {
+		session.Active = false
+	}
+	snapshot := session.clone()
+	s.pairingMu.Unlock()
+	s.emitPairingEvent(snapshot)
+	go s.applyPairingMetadata(deviceID, meta)
+	go func(proto string, deferCompletion bool) {
+		if err := s.publishPairingCommand(proto, "stop", 0); err != nil {
+			slog.Warn("pairing permit stop failed", "protocol", proto, "error", err)
+		}
+		if !deferCompletion {
+			if _, err := s.stopPairing(proto, "completed"); err != nil && !errors.Is(err, errPairingNotFound) {
+				slog.Warn("pairing stop failed", "protocol", proto, "error", err)
+			}
+		}
+	}(protocol, supportsInterview)
+}
+
+func (s *Server) applyPairingMetadata(deviceID string, meta pairingMetadata) {
+	trimmed := sanitizePairingMetadata(meta)
+	if deviceID == "" || trimmed == (pairingMetadata{}) {
+		return
+	}
+	ctx := context.Background()
+	dev, err := s.repo.GetByID(ctx, deviceID)
+	if err != nil || dev == nil {
+		return
+	}
+	changed := false
+	if trimmed.Name != "" && trimmed.Name != dev.Name {
+		dev.Name = trimmed.Name
+		changed = true
+	}
+	if trimmed.Description != "" && trimmed.Description != dev.Description {
+		dev.Description = trimmed.Description
+		changed = true
+	}
+	if trimmed.Type != "" && trimmed.Type != dev.Type {
+		dev.Type = trimmed.Type
+		changed = true
+	}
+	if trimmed.Manufacturer != "" && trimmed.Manufacturer != dev.Manufacturer {
+		dev.Manufacturer = trimmed.Manufacturer
+		changed = true
+	}
+	if trimmed.Model != "" && trimmed.Model != dev.Model {
+		dev.Model = trimmed.Model
+		changed = true
+	}
+	if trimmed.Icon != "" && trimmed.Icon != dev.Icon {
+		dev.Icon = trimmed.Icon
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if err := s.repo.UpsertDevice(ctx, dev); err != nil {
+		slog.Warn("pairing metadata update failed", "device_id", deviceID, "error", err)
+		return
+	}
+	s.publishDeviceMetadata(dev)
 }
 
 func (s *Server) writeEmptyArray(w http.ResponseWriter) {

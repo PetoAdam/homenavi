@@ -5,6 +5,7 @@ const DEVICEHUB_ROOT = 'homenavi/devicehub/';
 const STATE_PREFIX = `${DEVICEHUB_ROOT}devices/`;
 const EVENT_TOPIC = `${DEVICEHUB_ROOT}events/device.upsert`;
 const REMOVED_TOPIC = `${DEVICEHUB_ROOT}events/device.removed`;
+const PAIRING_TOPIC = `${DEVICEHUB_ROOT}events/pairing`;
 const COMMAND_TOPIC = `${DEVICEHUB_ROOT}commands/device.set`;
 const RENAME_TOPIC = `${DEVICEHUB_ROOT}commands/device.rename`;
 const REALTIME_PATH = '/ws/devicehub';
@@ -104,6 +105,39 @@ function ensureStateObject(value) {
     return { ...value };
   }
   return {};
+}
+
+function mapPairingSession(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const protocol = typeof raw.protocol === 'string' ? raw.protocol.toLowerCase() : '';
+  if (!protocol) return null;
+  const normalizeDate = value => {
+    if (!value) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  return {
+    id: raw.id || `${protocol}-${raw.started_at || Date.now()}`,
+    protocol,
+    status: raw.status || 'unknown',
+    active: Boolean(raw.active),
+    startedAt: normalizeDate(raw.started_at),
+    expiresAt: normalizeDate(raw.expires_at),
+    deviceId: raw.device_id || raw.deviceId || '',
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? { ...raw.metadata } : {},
+  };
+}
+
+function sessionsArrayToMap(payload) {
+  if (!Array.isArray(payload)) return {};
+  const next = {};
+  payload.forEach(item => {
+    const session = mapPairingSession(item);
+    if (session) {
+      next[session.protocol] = session;
+    }
+  });
+  return next;
 }
 
 function toBoolean(value) {
@@ -212,6 +246,7 @@ export default function useDeviceHubDevices(options = {}) {
   const [error, setError] = useState(null);
   const [metadataStatus, setMetadataStatus] = useState(() => ({ connected: false, source: metadataMode }));
   const [stateStatus, setStateStatus] = useState({ connected: false });
+  const [pairingSessions, setPairingSessions] = useState({});
 
   const devicesRef = useRef(new Map());
   const stateClientRef = useRef(null);
@@ -278,6 +313,29 @@ export default function useDeviceHubDevices(options = {}) {
       setTimeout(publish, 16);
     }
   }, []);
+
+  const refreshPairings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/devicehub/pairings', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`pairing request failed with status ${response.status}`);
+      }
+      const payload = await response.json();
+      if (!mountedRef.current) {
+        return;
+      }
+      setPairingSessions(sessionsArrayToMap(payload));
+    } catch (err) {
+      console.warn('Pairing status fetch failed', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabledRef.current) {
+      return;
+    }
+    refreshPairings();
+  }, [enabled, refreshPairings]);
 
   const loadInitialDevices = useCallback(async () => {
     if (metadataMode !== 'rest') {
@@ -363,6 +421,14 @@ export default function useDeviceHubDevices(options = {}) {
       const payload = typeof message.payloadString === 'string'
         ? message.payloadString
         : (textDecoder && message.payloadBytes ? textDecoder.decode(message.payloadBytes) : '');
+
+      if (topic === PAIRING_TOPIC) {
+        const data = safeParseJSON(payload);
+        const session = mapPairingSession(data);
+        if (!session) return;
+        setPairingSessions(prev => ({ ...prev, [session.protocol]: session }));
+        return;
+      }
 
       if (topic === EVENT_TOPIC) {
         const data = safeParseJSON(payload);
@@ -458,6 +524,7 @@ export default function useDeviceHubDevices(options = {}) {
         client.subscribe(STATE_PREFIX + '#', { qos: 0 });
         client.subscribe(EVENT_TOPIC, { qos: 0 });
         client.subscribe(REMOVED_TOPIC, { qos: 0 });
+        client.subscribe(PAIRING_TOPIC, { qos: 0 });
         setStateStatus({ connected: true });
         if (metadataMode === 'ws') {
           setMetadataStatus({ connected: true, source: 'ws' });
@@ -579,5 +646,7 @@ export default function useDeviceHubDevices(options = {}) {
     connectionInfo,
     sendDeviceCommand,
     renameDevice,
+    pairingSessions,
+    refreshPairings,
   };
 }
