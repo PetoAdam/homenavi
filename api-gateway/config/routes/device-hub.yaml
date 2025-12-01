@@ -1,12 +1,12 @@
 routes:
   - path: /api/devicehub/devices
     upstream: http://device-hub:8090/api/devicehub/devices
-    methods: [GET]
+    methods: [GET, POST]
     access: resident
     type: rest
   - path: /api/devicehub/devices/{id}
     upstream: http://device-hub:8090/api/devicehub/devices/{id}
-    methods: [PATCH]
+    methods: [PATCH, DELETE]
     access: resident
     type: rest
   - path: /api/devicehub/devices/{id}/commands
@@ -17,5 +17,10 @@ routes:
   - path: /api/devicehub/integrations
     upstream: http://device-hub:8090/api/devicehub/integrations
     methods: [GET]
+    access: resident
+    type: rest
+  - path: /api/devicehub/pairings
+    upstream: http://device-hub:8090/api/devicehub/pairings
+    methods: [GET, POST, DELETE]
     access: resident
     type: rest

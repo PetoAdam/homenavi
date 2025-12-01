@@ -14,6 +14,8 @@ import {
   listIntegrations as listIntegrationsApi,
   setDeviceIcon as setDeviceIconApi,
   deleteDevice as deleteDeviceApi,
+  startPairing as startPairingApi,
+  stopPairing as stopPairingApi,
 } from '../../services/deviceHubService';
 import AddDeviceModal from './AddDeviceModal';
 import './Devices.css';
@@ -36,6 +38,8 @@ export default function Devices() {
     error,
     connectionInfo,
     renameDevice: renameDeviceWs,
+    pairingSessions,
+    refreshPairings,
   } = useDeviceHubDevices({ enabled: isResidentOrAdmin, metadataMode });
   const [pendingCommands, setPendingCommands] = useState({});
   const [commandError, setCommandError] = useState(null);
@@ -196,6 +200,30 @@ export default function Devices() {
     }
     return res.data;
   }, [accessToken]);
+
+  const handleStartPairing = useCallback(async payload => {
+    if (!accessToken) {
+      throw new Error('Authentication required');
+    }
+    const res = await startPairingApi(payload, accessToken);
+    if (!res.success) {
+      throw new Error(res.error || 'Unable to start pairing');
+    }
+    refreshPairings?.();
+    return res.data;
+  }, [accessToken, refreshPairings]);
+
+  const handleStopPairing = useCallback(async protocol => {
+    if (!accessToken) {
+      throw new Error('Authentication required');
+    }
+    const res = await stopPairingApi(protocol, accessToken);
+    if (!res.success) {
+      throw new Error(res.error || 'Unable to stop pairing');
+    }
+    refreshPairings?.();
+    return res.data;
+  }, [accessToken, refreshPairings]);
 
   const loadIntegrations = useCallback(async () => {
     if (!isResidentOrAdmin) return;
@@ -515,6 +543,9 @@ export default function Devices() {
           setShowAddModal(false);
         }}
         integrations={integrations}
+        pairingSessions={pairingSessions}
+        onStartPairing={handleStartPairing}
+        onStopPairing={handleStopPairing}
       />
     </div>
   );

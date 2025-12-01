@@ -40,8 +40,9 @@ type ZigbeeAdapter struct {
 }
 
 const (
-	stateTopicPrefix   = "homenavi/devicehub/devices/"
-	deviceRemovedTopic = "homenavi/devicehub/events/device.removed"
+	stateTopicPrefix     = "homenavi/devicehub/devices/"
+	deviceRemovedTopic   = "homenavi/devicehub/events/device.removed"
+	pairingProgressTopic = "homenavi/devicehub/events/pairing.progress"
 )
 
 var deviceStateTopic = regexp.MustCompile(`^zigbee2mqtt/([^/]+)$`)
@@ -80,6 +81,9 @@ func (z *ZigbeeAdapter) Start(ctx context.Context) error {
 		return err
 	}
 	if err := z.client.Subscribe("homenavi/devicehub/commands/device.refresh", z.handleDeviceRefreshCommand); err != nil {
+		return err
+	}
+	if err := z.client.Subscribe("homenavi/devicehub/commands/device.remove", z.handleDeviceRemoveCommand); err != nil {
 		return err
 	}
 	if err := z.client.Subscribe("homenavi/devicehub/test/inject/zigbee/#", z.handleTestInject); err != nil {
@@ -225,7 +229,7 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 	}
 	ctx := context.Background()
 	switch evt.Type {
-	case "device_joined", "device_announce", "device_interview":
+	case "device_joined", "device_announce":
 		friendly, _ := evt.Data["friendly_name"].(string)
 		if friendly == "" {
 			return
@@ -238,24 +242,30 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 			external = friendly
 		}
 		z.setFriendlyMapping(friendly, external)
-		dev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
-		if dev == nil && !strings.EqualFold(external, friendly) {
-			dev, _ = z.repo.GetByExternal(ctx, "zigbee", friendly)
+		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
+			z.publishPairingProgress(bridgeLifecycleStage(evt.Type), "", external, friendly)
+			b, _ := json.Marshal(dev)
+			_ = z.client.Publish("homenavi/devicehub/events/device.upsert", b)
 		}
-		if dev == nil {
-			name := friendly
-			if name == "" {
-				name = external
-			}
-			dev = &model.Device{ID: uuid.New(), Protocol: "zigbee", ExternalID: external, Name: name}
-		} else if external != "" && !strings.EqualFold(dev.ExternalID, external) {
-			dev.ExternalID = external
+	case "device_interview":
+		friendly, _ := evt.Data["friendly_name"].(string)
+		if friendly == "" {
+			return
 		}
-		dev.Online = true
-		dev.LastSeen = time.Now().UTC()
-		_ = z.repo.UpsertDevice(ctx, dev)
-		b, _ := json.Marshal(dev)
-		_ = z.client.Publish("homenavi/devicehub/events/device.upsert", b)
+		external := canonicalExternalID(evt.Data)
+		if external == "" {
+			external = z.resolveExternalID(friendly)
+		}
+		if external == "" {
+			external = friendly
+		}
+		z.setFriendlyMapping(friendly, external)
+		status := adapterutil.StringField(evt.Data, "status")
+		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
+			z.publishPairingProgress(interviewStageFromStatus(status), status, external, friendly)
+			b, _ := json.Marshal(dev)
+			_ = z.client.Publish("homenavi/devicehub/events/device.upsert", b)
+		}
 	case "device_removed":
 		friendly, _ := evt.Data["friendly_name"].(string)
 		external := z.resolveExternalID(friendly)
@@ -324,10 +334,14 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 
 func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 	var cmd struct {
-		Action  string `json:"action"`
-		Timeout int    `json:"timeout"`
+		Action   string `json:"action"`
+		Timeout  int    `json:"timeout"`
+		Protocol string `json:"protocol"`
 	}
 	if err := json.Unmarshal(m.Payload(), &cmd); err != nil {
+		return
+	}
+	if cmd.Protocol != "" && !strings.EqualFold(cmd.Protocol, "zigbee") {
 		return
 	}
 	switch cmd.Action {
@@ -379,6 +393,146 @@ func (z *ZigbeeAdapter) stopPairing() {
 		cancel()
 	}
 	_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(`{"value":false}`))
+}
+
+func (z *ZigbeeAdapter) handleDeviceRemoveCommand(_ paho.Client, m paho.Message) {
+	var req struct {
+		Protocol   string `json:"protocol"`
+		DeviceID   string `json:"device_id"`
+		ExternalID string `json:"external_id"`
+		Friendly   string `json:"friendly_name"`
+	}
+	if err := json.Unmarshal(m.Payload(), &req); err != nil {
+		return
+	}
+	if req.Protocol != "" && !strings.EqualFold(req.Protocol, "zigbee") {
+		return
+	}
+	target := strings.TrimSpace(req.Friendly)
+	ctx := context.Background()
+	var dev *model.Device
+	if req.DeviceID != "" {
+		var err error
+		dev, err = z.repo.GetByID(ctx, req.DeviceID)
+		if err != nil {
+			slog.Warn("zigbee remove lookup failed", "device_id", req.DeviceID, "error", err)
+		}
+	}
+	if dev == nil && req.ExternalID != "" {
+		var err error
+		dev, err = z.repo.GetByExternal(ctx, "zigbee", req.ExternalID)
+		if err != nil {
+			slog.Warn("zigbee remove external lookup failed", "external", req.ExternalID, "error", err)
+		}
+	}
+	if dev != nil {
+		if target == "" {
+			if friendly := z.resolveFriendlyName(dev.ExternalID); friendly != "" {
+				target = friendly
+			} else {
+				target = dev.ExternalID
+			}
+		}
+	} else if target == "" {
+		target = strings.TrimSpace(req.ExternalID)
+	}
+	if target == "" {
+		slog.Warn("zigbee remove command missing target", "device_id", req.DeviceID)
+		return
+	}
+	payload := map[string]any{
+		"id":    target,
+		"block": false,
+		"force": true,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("zigbee remove payload encode failed", "target", target, "error", err)
+		return
+	}
+	if err := z.client.Publish("zigbee2mqtt/bridge/request/device/remove", data); err != nil {
+		slog.Warn("zigbee remove publish failed", "target", target, "error", err)
+	}
+}
+
+func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, external string, data map[string]any) *model.Device {
+	dev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
+	if dev == nil && !strings.EqualFold(external, friendly) {
+		dev, _ = z.repo.GetByExternal(ctx, "zigbee", friendly)
+	}
+	if dev == nil {
+		name := friendly
+		if name == "" {
+			name = external
+		}
+		dev = &model.Device{ID: uuid.New(), Protocol: "zigbee", ExternalID: external, Name: name}
+	} else if external != "" && !strings.EqualFold(dev.ExternalID, external) {
+		dev.ExternalID = external
+	}
+	dev.Online = true
+	dev.LastSeen = time.Now().UTC()
+	if mf, ok := data["manufacturer"].(string); ok {
+		dev.Manufacturer = mf
+	}
+	if mo, ok := data["model"].(string); ok {
+		dev.Model = mo
+	}
+	if friendly != "" && (strings.TrimSpace(dev.Name) == "" || strings.EqualFold(dev.Name, dev.ExternalID)) {
+		dev.Name = friendly
+	}
+	if err := z.repo.UpsertDevice(ctx, dev); err != nil {
+		slog.Warn("zigbee bridge device upsert failed", "external", external, "error", err)
+		return nil
+	}
+	return dev
+}
+
+func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external, friendly string) {
+	if stage == "" {
+		return
+	}
+	payload := map[string]any{
+		"protocol": "zigbee",
+		"stage":    stage,
+	}
+	if status != "" {
+		payload["status"] = status
+	}
+	if external != "" {
+		payload["external_id"] = external
+	}
+	if friendly != "" {
+		payload["friendly_name"] = friendly
+	}
+	if data, err := json.Marshal(payload); err == nil {
+		if err := z.client.Publish(pairingProgressTopic, data); err != nil {
+			slog.Debug("zigbee pairing progress publish failed", "error", err)
+		}
+	}
+}
+
+func bridgeLifecycleStage(eventType string) string {
+	switch eventType {
+	case "device_joined":
+		return "device_joined"
+	case "device_announce":
+		return "device_announced"
+	default:
+		return ""
+	}
+}
+
+func interviewStageFromStatus(status string) string {
+	switch strings.ToLower(status) {
+	case "started", "interview_started":
+		return "interview_started"
+	case "successful", "success", "completed", "complete":
+		return "interview_succeeded"
+	case "failed", "failure", "error":
+		return "interview_failed"
+	default:
+		return "interview_started"
+	}
 }
 
 func (z *ZigbeeAdapter) handleTestInject(_ paho.Client, m paho.Message) {

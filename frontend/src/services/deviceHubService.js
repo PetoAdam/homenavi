@@ -54,6 +54,26 @@ export async function listIntegrations(token) {
   return await http.get(`${DEVICE_HUB_BASE}/integrations`, { token });
 }
 
+export async function startPairing(payload, token) {
+  if (!payload || typeof payload !== 'object') {
+    return { success: false, error: 'Missing pairing payload' };
+  }
+  return await http.post(`${DEVICE_HUB_BASE}/pairings`, payload, { token });
+}
+
+export async function stopPairing(protocol, token) {
+  const normalized = typeof protocol === 'string' ? protocol.trim().toLowerCase() : '';
+  if (!normalized) {
+    return { success: false, error: 'Protocol required' };
+  }
+  const params = new URLSearchParams({ protocol: normalized }).toString();
+  return await http.del(`${DEVICE_HUB_BASE}/pairings?${params}`, { token });
+}
+
+export async function listPairings(token) {
+  return await http.get(`${DEVICE_HUB_BASE}/pairings`, { token });
+}
+
 export default {
   renameDevice,
   updateDevice,
@@ -63,4 +83,7 @@ export default {
   createDevice,
   deleteDevice,
   listIntegrations,
+  startPairing,
+  stopPairing,
+  listPairings,
 };

@@ -774,7 +774,10 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
   const [iconError, setIconError] = useState(null);
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const iconMenuRef = useRef(null);
+  const actionMenuRef = useRef(null);
+  const actionMenuButtonRef = useRef(null);
   const canEditIcon = Boolean(isEditingName && onUpdateIcon);
   const showIconPicker = Boolean(canEditIcon && iconMenuOpen);
   const iconGlyph = (
@@ -819,11 +822,13 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     setIconPending(false);
     setDeletePending(false);
     setDeleteError(null);
+    setActionMenuOpen(false);
   }, [device, device.id, stateVersion, metadataVersion, device.toggleState, normalizedInputs]);
 
   useEffect(() => {
     if (!isEditingName) {
       setIconMenuOpen(false);
+      setActionMenuOpen(false);
     }
   }, [isEditingName]);
 
@@ -886,6 +891,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     setRenameError(null);
     setIsEditingName(true);
     setIconMenuOpen(false);
+    setActionMenuOpen(false);
   }, [device.displayName, onRename]);
 
   const cancelRename = useCallback(() => {
@@ -893,6 +899,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     setNameDraft(device.displayName || '');
     setRenameError(null);
     setIconMenuOpen(false);
+    setActionMenuOpen(false);
   }, [device.displayName]);
 
   const handleRenameSubmit = useCallback(async () => {
@@ -908,6 +915,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     if (trimmed === (device.displayName || '').trim()) {
       setIsEditingName(false);
       setIconMenuOpen(false);
+      setActionMenuOpen(false);
       return;
     }
     setRenamePending(true);
@@ -917,6 +925,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
       setRenameError(null);
       setIsEditingName(false);
       setIconMenuOpen(false);
+      setActionMenuOpen(false);
     } catch (err) {
       setRenameError(err?.message || 'Unable to rename device');
     } finally {
@@ -945,6 +954,21 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [canEditIcon, iconMenuOpen]);
+
+  useEffect(() => {
+    if (!actionMenuOpen) return undefined;
+    const handleClick = event => {
+      if (actionMenuRef.current && actionMenuRef.current.contains(event.target)) {
+        return;
+      }
+      if (actionMenuButtonRef.current && actionMenuButtonRef.current.contains(event.target)) {
+        return;
+      }
+      setActionMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [actionMenuOpen]);
 
   const handleIconSelection = useCallback(async (nextKey) => {
     if (!onUpdateIcon) {
@@ -985,6 +1009,21 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
       setDeletePending(false);
     }
   }, [device, onDelete]);
+
+  const toggleActionMenu = useCallback(() => {
+    if (!onRename && !onDelete) return;
+    setActionMenuOpen(prev => !prev);
+  }, [onDelete, onRename]);
+
+  const handleMenuRename = useCallback(() => {
+    setActionMenuOpen(false);
+    beginRename();
+  }, [beginRename]);
+
+  const handleMenuDelete = useCallback(() => {
+    setActionMenuOpen(false);
+    handleDelete();
+  }, [handleDelete]);
 
   const description = useMemo(() => {
     if (!device.description) return '';
@@ -1081,30 +1120,43 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
                       </button>
                     </>
                   ) : (
-                    onRename ? (
+                    <div className="device-title-menu-wrapper">
                       <button
                         type="button"
                         className="device-title-action device-title-edit"
-                        onClick={beginRename}
-                        title="Edit device"
-                        aria-label="Edit device"
+                        onClick={toggleActionMenu}
+                        aria-haspopup="true"
+                        aria-expanded={actionMenuOpen}
+                        aria-label="Device options"
+                        ref={actionMenuButtonRef}
+                        title="Device options"
+                        disabled={!onRename && !onDelete}
                       >
                         <FontAwesomeIcon icon={faPen} />
                       </button>
-                    ) : null
+                      {actionMenuOpen ? (
+                        <div className="device-title-menu" ref={actionMenuRef}>
+                          {onRename ? (
+                            <button type="button" onClick={handleMenuRename}>
+                              <FontAwesomeIcon icon={faPen} />
+                              <span>Rename</span>
+                            </button>
+                          ) : null}
+                          {onDelete ? (
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={handleMenuDelete}
+                              disabled={deletePending}
+                            >
+                              <FontAwesomeIcon icon={faTrash} />
+                              <span>{deletePending ? 'Deleting…' : 'Delete'}</span>
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   )}
-                  {onDelete ? (
-                    <button
-                      type="button"
-                      className="device-title-action device-title-delete"
-                      onClick={handleDelete}
-                      title="Delete device"
-                      aria-label="Delete device"
-                      disabled={deletePending}
-                    >
-                      <FontAwesomeIcon icon={faTrash} />
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -1182,7 +1234,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
                 );
               case 'slider':
                 return (
-                  <div className="device-control" key={key}>
+                  <div className="device-control device-control-wide" key={key}>
                     <div className="device-control-label">
                       <FontAwesomeIcon icon={icon} />
                       <span>{label}</span>
@@ -1302,7 +1354,10 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
                   closePicker();
                 };
                 return (
-                  <div className={`device-control device-color-control ${isActive ? 'device-color-active' : ''}`} key={key}>
+                  <div
+                    className={`device-control device-color-control device-control-wide${isActive ? ' device-color-active' : ''}`}
+                    key={key}
+                  >
                     <div className="device-control-label">
                       <FontAwesomeIcon icon={icon} />
                       <span>{label}</span>

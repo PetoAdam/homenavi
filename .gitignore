@@ -6,3 +6,4 @@ keys/
 postgres-data/
 mosquitto/config/conf.d/*
 devices_snapshot.json
+docker-compose-pi.yml
