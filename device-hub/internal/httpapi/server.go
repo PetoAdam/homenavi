@@ -447,8 +447,9 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 		http.Error(w, "device not found", http.StatusNotFound)
 		return
 	}
+	force := queryBool(r.URL.Query().Get("force"))
 	protocol := normalizeProtocol(dev.Protocol)
-	if protocol == "zigbee" {
+	if protocol == "zigbee" && !force {
 		if err := s.requestProtocolRemoval(dev); err != nil {
 			slog.Error("protocol removal failed", "device_id", dev.ID, "protocol", protocol, "error", err)
 			http.Error(w, "failed to request protocol removal", http.StatusBadGateway)
@@ -462,8 +463,21 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 		http.Error(w, "failed to delete device", http.StatusInternalServerError)
 		return
 	}
-	s.publishDeviceRemoval(dev, "api-delete")
+	reason := "api-delete"
+	if force {
+		reason = "api-delete-force"
+	}
+	s.publishDeviceRemoval(dev, reason)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func queryBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, deviceID string) {

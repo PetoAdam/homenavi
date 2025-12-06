@@ -43,11 +43,17 @@ export async function createDevice(payload, token) {
   return await http.post(`${DEVICE_HUB_BASE}/devices`, payload, { token });
 }
 
-export async function deleteDevice(deviceId, token) {
+export async function deleteDevice(deviceId, token, options = {}) {
   if (!deviceId) {
     return { success: false, error: 'Missing device id' };
   }
-  return await http.del(`${DEVICE_HUB_BASE}/devices/${deviceId}`, { token });
+  const params = new URLSearchParams();
+  if (options.force) {
+    params.set('force', '1');
+  }
+  const query = params.toString();
+  const suffix = query ? `?${query}` : '';
+  return await http.del(`${DEVICE_HUB_BASE}/devices/${deviceId}${suffix}`, { token });
 }
 
 export async function listIntegrations(token) {
