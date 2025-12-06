@@ -1,5 +1,6 @@
 # Homenavi
 
+
 **A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.**
 
 [![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml)
@@ -15,22 +16,23 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 
 ---
 
+
 ## Table of Contents
-1. Why Homenavi
-2. Architecture Overview
-3. Smart Home Vision (Upcoming Modules)
-4. Quickstart
-5. Service Directory
-6. Security & Auth
-7. Observability
-8. WebSockets & Real‑Time
-9. Extending the Platform
-10. Roadmap
-11. Configuration & Environment
-12. CI/CD
-13. Contributing & Community
-14. FAQ
-15. License
+1. 🚀 Why Homenavi
+2. 🧩 Architecture Overview
+3. 🔮 Smart Home Vision (Planned/Upcoming)
+4. 🐳 Quickstart
+5. 📂 Service Directory
+6. 🔒 Security & Auth
+7. 📊 Observability
+8. ⚡ WebSockets & Real‑Time
+9. 🔌 Extending the Platform
+10. 🗺️ Roadmap
+11. ⚙️ Configuration & Environment
+12. 📦 CI/CD
+13. 🤝 Contributing & Community
+14. ❓ FAQ
+15. 📜 License
 
 ---
 
@@ -42,41 +44,44 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 - **Cloud or Home:** Run it on your Raspberry Pi, your server, or in the cloud.
 - **Observability built-in:** Prometheus metrics, Jaeger tracing, and request/correlation IDs for easy debugging and monitoring.
 - **WebSocket support:** Real-time communication with cookie-based JWT authentication.
+- **Extensible by design:** Add new device protocols, automations, and integrations with minimal friction.
 
 ---
 
 ## 2. 🧩 Architecture Overview
 
 Current Core:
-* API Gateway (Go + Chi): Routing, JWT verification, rate limit, WebSocket upgrade.
-* Device Hub (Go + MQTT adapters): Central device inventory, capability normalization, and adapter bridge (Zigbee/Matter prototypes, MQTT fan-out).
+* API Gateway (Go): Routing, JWT verification, rate limit, WebSocket upgrade.
+* Device Hub (Go): Central device inventory, capability normalization, and adapter bridge (MQTT, multi-protocol ready).
 * Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
 * User Service (Go): Profile, roles, administrative user actions.
 * Email Service (Go): Outbound verification & notification emails.
 * Profile Picture Service (Python): Image handling (avatars, basic processing).
 * Echo Service (Python): Real-time WebSocket demo & test surface.
-* Frontend (React + Vite + PWA): Auth flows, user management, future device UI.
+* Frontend (React + Vite + PWA): Auth flows, user management, device UI, dashboards.
 * Infrastructure: PostgreSQL, Redis, Nginx, Prometheus, Jaeger, (Grafana ready).
 
 Key Design Principles:
 * Clear separation of auth vs user domain.
 * Stateless services (use Redis / DB for state persistence & coordination).
 * Consistent JSON error schema across services.
-* Incremental addition of domain (devices, automations) without core rewrites.
+* Incremental addition of domain (devices, automations, adapters) without core rewrites.
+* SPA frontend with history fallback (direct links work out of the box).
 
 ---
 
-## 3. 🔮 Smart Home Vision (Planned / Not Yet Implemented)
+## 3. 🔮 Smart Home Vision (Planned/Upcoming)
 The platform roadmap includes:
-* Device Adapters: Zigbee, Z-Wave, Matter, BLE, MQTT bridge.
+* Device Adapters: Thread, Matter, Zigbee, Z-Wave, BLE, MQTT bridge, and 3rd party integrations.
 * Automation Engine: Rule graph (triggers → conditions → actions) with versioned deployments.
 * Scene & Mode Management: Grouped device state snapshots and home modes (Away / Night / Eco).
 * Scheduling & Timers: Cron-like and sunrise/sunset aware triggers.
 * Presence & Energy Modules: Occupancy inference; energy usage aggregation.
 * Plugin SDK: Custom services registering capabilities & metrics automatically with the gateway.
 * Edge Nodes: Lightweight agent pushing device state/events to the core cluster.
+* Marketplace-style extension discovery (planned).
 
-These are intentionally referenced now to frame the architecture decisions already in place.
+These are intentionally referenced now to frame the architecture decisions already in place. Contributions and feedback on these modules are welcome!
 
 ---
 
@@ -100,17 +105,18 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 
 ---
 
-## 5. 📂 Service Directory (Brief)
-| Service | Path | Purpose |
-|---------|------|---------|
-| API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy |
-| Device Hub | `device-hub/` | Device inventory, adapter bridge (MQTT, Zigbee/Matter stubs), metadata/state fan-out |
-| Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic |
-| User Service | `user-service/` | User profiles, roles, admin operations |
-| Email Service | `email-service/` | Sending verification / notification emails |
-| Profile Picture | `profile-picture-service/` | Avatar upload & processing |
-| Echo Service | `echo-service/` | WebSocket echo & diagnostic tool |
-| Frontend | `frontend/` | SPA & PWA client |
+
+## 5. 📂 Service Directory
+| Service | Path | Purpose | Docker Build Tag |
+|---------|------|---------|------------------|
+| API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy | `api-gateway:latest` |
+| Device Hub | `device-hub/` | Device inventory, adapter bridge (multi-protocol ready), metadata/state fan-out | `device-hub:latest` |
+| Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic | `auth-service:latest` |
+| User Service | `user-service/` | User profiles, roles, admin operations | `user-service:latest` |
+| Email Service | `email-service/` | Sending verification / notification emails | `email-service:latest` |
+| Profile Picture | `profile-picture-service/` | Avatar upload & processing | `profile-picture-service:latest` |
+| Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `echo-service:latest` |
+| Frontend | `frontend/` | SPA & PWA client | `frontend:latest` |
 
 Support:
 * `nginx/` reverse proxy templates.
@@ -132,18 +138,18 @@ Implemented:
 ---
 
 ## 7. 📊 Observability
-* Metrics: Prometheus scrape (gateway, Go runtime). Add service-specific domain metrics as features grow.
+* Metrics: Prometheus scrape (gateway, Go runtime, device hub, etc.).
 * Tracing: Jaeger via OpenTelemetry exporters.
 * Correlation: Request IDs / correlation IDs propagated across hops.
 * Health: Expose `/healthz` (liveness/readiness separation recommended for prod).
-* Device Hub exports its own `/metrics` endpoint on :8090 and participates in the same trace pipeline, so add it to Prometheus once you expose the port or run a sidecar scrape job.
+* Device Hub exports its own `/metrics` endpoint and participates in the same trace pipeline.
 
 ---
 
 ## 8. ⚡ WebSockets & Real‑Time
 * Gateway upgrades authenticated using existing JWT (cookie-based flow supported).
 * Echo service demonstrates publishing & latency characteristics.
-* Device Hub uses MQTT topics for adapter input/output today and will drive future WebSocket fan-out once device UI is fully wired.
+* Device Hub uses MQTT topics for adapter input/output and connects via WebSockets to the UI.
 * Foundation for future real-time device state, automation events, and notifications.
 
 Test: `python3 test-websocket.py` (see root script).
@@ -157,14 +163,14 @@ Test: `python3 test-websocket.py` (see root script).
 4. Expose metrics, health, and (optionally) tracing.
 5. Use JWT for auth; validate only needed claims.
 
-Planned: An Extension/Plugin manifest so services self-register capabilities.
+Planned: Extension/Plugin manifest so services self-register capabilities and metrics. Marketplace-style extension discovery is on the roadmap.
 
 ---
 
 ## 10. 🗺️ Roadmap (Condensed)
 
 Mid Term:
-* Device adapter abstraction (MQTT + Zigbee bridge)
+* Device adapter abstraction (multi-protocol, MQTT bridge)
 * Rule/automation engine MVP
 * Scene & scheduling module
 * UI dashboards for metrics & device state
@@ -172,7 +178,7 @@ Mid Term:
 Long Term:
 * Edge node agent & secure tunneling
 * Energy analytics & occupancy inference
-* Plugin SDK & marketplace style discovery
+* Plugin SDK & extension marketplace
 
 ---
 
@@ -217,11 +223,15 @@ Issues: https://github.com/PetoAdam/homenavi/issues
 
 **Is it production ready?** Homenavi is under active development. The core authentication and user management features are stable, but always review the code for your specific use case. Device & automation layers are forthcoming—treat as early platform.
 
-**Can I add my own device protocol now?** Yes, via a custom service publishing REST/WS endpoints through the gateway.
+**Can I add my own device protocol now?** Yes, via a custom service publishing REST/WS endpoints through the gateway. The platform is designed to support new adapters and integrations with minimal changes.
 
 **Does it support real-time updates?** Yes—WebSockets already integrated; domain events layer planned.
 
-**Will Matter / Zigbee / Z-Wave be supported?** Planned through modular adapters.
+**Can I build my own automation engine or dashboard?** Yes—extend the platform with custom services, frontend modules, or plugins. The architecture is intentionally open for extension.
+
+**How do I contribute or request a feature?** Open an issue or PR on GitHub, or join the upcoming Discord community.
+
+**How do I run integration tests?** See `test/` for Python scripts covering device, auth, and WebSocket flows. Most tests require a running stack (`docker compose up`).
 
 ---
 
