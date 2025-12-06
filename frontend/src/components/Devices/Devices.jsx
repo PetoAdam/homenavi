@@ -187,14 +187,14 @@ export default function Devices() {
     return res.data;
   }, [accessToken]);
 
-  const handleDeleteDevice = useCallback(async (device) => {
+  const handleDeleteDevice = useCallback(async (device, options = {}) => {
     if (!device?.id) {
       throw new Error('Device not ready for deletion');
     }
     if (!accessToken) {
       throw new Error('Authentication required');
     }
-    const res = await deleteDeviceApi(device.id, accessToken);
+    const res = await deleteDeviceApi(device.id, accessToken, options);
     if (!res.success) {
       throw new Error(res.error || 'Unable to delete device');
     }

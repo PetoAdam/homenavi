@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBatteryThreeQuarters,
@@ -774,6 +775,8 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
   const [iconError, setIconError] = useState(null);
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const iconMenuRef = useRef(null);
   const actionMenuRef = useRef(null);
@@ -783,6 +786,10 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
   const iconGlyph = (
     <FontAwesomeIcon icon={deviceIcon} className="device-title-icon" />
   );
+  const deleteDialogTitleId = useMemo(() => `device-delete-title-${device.id || 'unknown'}`, [device.id]);
+  const deleteDialogDescId = useMemo(() => `device-delete-desc-${device.id || 'unknown'}`, [device.id]);
+  const deleteForceNoteId = useMemo(() => `device-delete-note-${device.id || 'unknown'}`, [device.id]);
+  const deleteForceCheckboxId = useMemo(() => `device-delete-force-checkbox-${device.id || 'unknown'}`, [device.id]);
 
   const stateVersion = device.stateUpdatedAt instanceof Date ? device.stateUpdatedAt.getTime() : (device.stateUpdatedAt || 0);
   const metadataVersion = device.metadataUpdatedAt instanceof Date ? device.metadataUpdatedAt.getTime() : (device.metadataUpdatedAt || 0);
@@ -822,6 +829,8 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     setIconPending(false);
     setDeletePending(false);
     setDeleteError(null);
+    setDeleteModalOpen(false);
+    setForceDelete(false);
     setActionMenuOpen(false);
   }, [device, device.id, stateVersion, metadataVersion, device.toggleState, normalizedInputs]);
 
@@ -992,23 +1001,38 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     }
   }, [activeIconKey, device, onUpdateIcon]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(async (options = {}) => {
     if (!onDelete) return;
-    const label = device.displayName || device.name || 'this device';
-    const confirmed = window.confirm(`Delete ${label}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
     setDeletePending(true);
     setDeleteError(null);
     try {
-      await onDelete(device);
+      await onDelete(device, options);
+      setDeleteModalOpen(false);
+      setForceDelete(false);
     } catch (err) {
       setDeleteError(err?.message || 'Unable to delete device');
     } finally {
       setDeletePending(false);
     }
   }, [device, onDelete]);
+
+  const openDeleteModal = useCallback(() => {
+    setForceDelete(false);
+    setDeleteError(null);
+    setDeleteModalOpen(true);
+    setActionMenuOpen(false);
+  }, []);
+
+  const closeDeleteModal = useCallback(() => {
+    if (deletePending) return;
+    setDeleteModalOpen(false);
+    setForceDelete(false);
+    setDeleteError(null);
+  }, [deletePending]);
+
+  const confirmDelete = useCallback(() => {
+    handleDelete({ force: forceDelete });
+  }, [forceDelete, handleDelete]);
 
   const toggleActionMenu = useCallback(() => {
     if (!onRename && !onDelete) return;
@@ -1021,9 +1045,8 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
   }, [beginRename]);
 
   const handleMenuDelete = useCallback(() => {
-    setActionMenuOpen(false);
-    handleDelete();
-  }, [handleDelete]);
+    openDeleteModal();
+  }, [openDeleteModal]);
 
   const description = useMemo(() => {
     if (!device.description) return '';
@@ -1031,9 +1054,62 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     return `${device.description.slice(0, DESCRIPTION_LIMIT - 1)}…`;
   }, [device.description]);
 
+  const deleteModalElement = deleteModalOpen ? (
+    <div className="device-delete-modal-backdrop">
+      <div
+        className="device-delete-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={deleteDialogTitleId}
+        aria-describedby={deleteDialogDescId}
+      >
+        <div className="device-delete-modal-body">
+          <p className="device-delete-eyebrow">Device → Edit</p>
+          <h3 id={deleteDialogTitleId}>Delete {device.displayName || device.name || 'this device'}?</h3>
+          <p id={deleteDialogDescId}>
+            Removing this device clears its historical state from dashboards and automations. This action cannot be undone.
+          </p>
+          <label className="device-delete-force-toggle" htmlFor={deleteForceCheckboxId}>
+            <input
+              type="checkbox"
+              id={deleteForceCheckboxId}
+              checked={forceDelete}
+              onChange={event => setForceDelete(event.target.checked)}
+              disabled={deletePending}
+              aria-describedby={deleteForceNoteId}
+            />
+            <div>
+              <span>Force delete</span>
+              <p id={deleteForceNoteId}>
+                Force delete bypasses adapter acknowledgements and purges the record immediately. Use this when the bridge
+                or coordinator no longer recognizes the hardware or the removal queue is stuck.
+              </p>
+            </div>
+          </label>
+          {deleteError ? <div className="device-delete-error">{deleteError}</div> : null}
+          <div className="device-delete-actions">
+            <button type="button" className="device-delete-cancel" onClick={closeDeleteModal} disabled={deletePending}>
+              Cancel
+            </button>
+            <button type="button" className="device-delete-confirm" onClick={confirmDelete} disabled={deletePending}>
+              {deletePending ? 'Removing…' : forceDelete ? 'Force delete' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const deleteModal = deleteModalElement
+    ? (typeof document !== 'undefined'
+      ? createPortal(deleteModalElement, document.body)
+      : deleteModalElement)
+    : null;
+
   return (
-    <GlassCard className={`device-tile-card ${device.online ? 'device-online' : 'device-offline'}`}>
-      <div className="device-tile">
+    <>
+      <GlassCard className={`device-tile-card ${device.online ? 'device-online' : 'device-offline'}`}>
+        <div className="device-tile">
         <div className="device-tile-header">
           <div className="device-title-container">
             <div className="device-title-row">
@@ -1127,9 +1203,9 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
                         onClick={toggleActionMenu}
                         aria-haspopup="true"
                         aria-expanded={actionMenuOpen}
-                        aria-label="Device options"
+                        aria-label="device -> Edit"
                         ref={actionMenuButtonRef}
-                        title="Device options"
+                        title="device -> Edit"
                         disabled={!onRename && !onDelete}
                       >
                         <FontAwesomeIcon icon={faPen} />
@@ -1139,7 +1215,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
                           {onRename ? (
                             <button type="button" onClick={handleMenuRename}>
                               <FontAwesomeIcon icon={faPen} />
-                              <span>Rename</span>
+                              <span>Edit</span>
                             </button>
                           ) : null}
                           {onDelete ? (
@@ -1443,6 +1519,8 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
           {pending ? <span className="device-command-pending">Updating…</span> : null}
         </div>
       </div>
-    </GlassCard>
+      </GlassCard>
+      {deleteModal}
+    </>
   );
 }
