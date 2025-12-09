@@ -3,12 +3,15 @@
 :root {
   /* Basic colors */
   --color-white: #fff;
+  --color-white-rgb: 255, 255, 255;
   --color-black: #000;
+  --color-black-rgb: 0, 0, 0;
   --color-bg: #242e3a;
   --color-bg-secondary: #32404d;
   --color-glass-bg: rgba(255,255,255,0.13);
   --color-glass-bg-strong: rgba(255,255,255,0.18);
   --color-glass-bg-light: rgba(255,255,255,0.10);
+  --color-glass-bg-ultra: rgba(255,255,255,0.02);
   --color-glass-border: rgba(255,255,255,0.32);
   --color-glass-border-strong: rgba(255,255,255,0.38);
   --color-glass-border-light: rgba(255,255,255,0.22);
@@ -18,6 +21,7 @@
   --color-shadow-spotify: #1db95444;
   --color-shadow-weather: #FFD93B66;
   --color-shadow-weather-light: #FFD93B33;
+  --color-shadow-modal: rgba(0, 0, 0, 0.65);
   --color-shadow-menu: #fff8;
   --color-shadow-device: #fff6;
   --color-shadow-card: #fff3;
@@ -30,6 +34,14 @@
   --color-secondary-light: #7c848d;
   --color-secondary-xlight: #e5e4e3;
   --color-secondary-dark: #57616d;
+
+  /* Success states */
+  --color-success: #22c55e;
+  --color-success-light: #dcfce7;
+  --color-success-rgb: 34, 197, 94;
+  --color-success-contrast: #051407;
+  --color-success-surface: rgba(16, 37, 26, 0.75);
+  --color-success-surface-strong: rgba(16, 37, 26, 0.85);
 
   /* Spotify */
   --color-spotify: #1DB954;
@@ -47,4 +59,21 @@
   --gradient-bg: linear-gradient(120deg, var(--color-bg) 0%, var(--color-bg-secondary) 100%);
   --gradient-map-card: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
   --gradient-weather-cc-checked: linear-gradient(90deg, #4cd964 60%, var(--color-primary-light) 100%);
+  --gradient-card-emerald: radial-gradient(circle at top left, rgba(var(--color-success-rgb), 0.18), var(--color-surface-card-strong));
+  --gradient-card-emerald-soft: radial-gradient(circle at top left, rgba(var(--color-success-rgb), 0.08), var(--color-surface-panel-muted));
+  --gradient-card-slate: radial-gradient(circle at top left, var(--color-surface-iris), var(--color-surface-shadow));
+
+  /* Modal & panel surfaces */
+  --color-modal-surface: rgba(5, 9, 20, 0.92);
+  --color-surface-card: rgba(8, 11, 22, 0.78);
+  --color-surface-card-strong: rgba(8, 11, 22, 0.75);
+  --color-surface-overlay: rgba(28, 34, 44, 0.92);
+  --color-surface-panel: rgba(12, 17, 30, 0.72);
+  --color-surface-panel-soft: rgba(12, 17, 30, 0.55);
+  --color-surface-panel-alt: rgba(10, 15, 24, 0.7);
+  --color-surface-panel-muted: rgba(12, 18, 30, 0.8);
+  --color-surface-panel-accent: rgba(15, 23, 36, 0.65);
+  --color-surface-shadow: rgba(12, 16, 26, 0.9);
+  --color-surface-chip: rgba(8, 11, 20, 0.6);
+  --color-surface-iris: rgba(32, 41, 70, 0.38);
 }

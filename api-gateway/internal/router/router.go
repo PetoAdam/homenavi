@@ -13,11 +13,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func RegisterRoutes(r chi.Router, cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey) {
+func RegisterRoutes(r chi.Router, cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey, _ any) {
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {
 		case "websocket":
+			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeWebSocketProxyHandler(route))
+		case "websocket-mqtt":
+			// Treat identical to generic websocket reverse proxy; upstream must be a native MQTT WS listener.
 			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeWebSocketProxyHandler(route))
 		default: // "rest" or empty
 			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeRestProxyHandler(route))
@@ -51,9 +54,9 @@ func wrapWithAccessControl(pubKey *rsa.PublicKey, access string, next http.Handl
 	case "auth":
 		return middleware.JWTAuthMiddlewareRS256(pubKey)(next)
 	case "resident":
-	return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.RoleAtLeastMiddleware("resident")(next))
+		return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.RoleAtLeastMiddleware("resident")(next))
 	case "admin":
-	return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.RoleAtLeastMiddleware("admin")(next))
+		return middleware.JWTAuthMiddlewareRS256(pubKey)(middleware.RoleAtLeastMiddleware("admin")(next))
 	default:
 		return next
 	}
