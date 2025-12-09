@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-	"encoding/json"
 
 	"auth-service/internal/config"
 	"auth-service/internal/handlers/auth"
@@ -18,6 +18,7 @@ import (
 	"auth-service/internal/handlers/profile"
 	"auth-service/internal/handlers/twofactor"
 	"auth-service/internal/handlers/user"
+	"auth-service/internal/observability"
 	"auth-service/internal/services"
 
 	"github.com/go-chi/chi/v5"
@@ -27,12 +28,20 @@ import (
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
-	if err != nil { slog.Error("failed to load configuration", "error", err); os.Exit(1) }
+	if err != nil {
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Initialize structured logger
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
-	if os.Getenv("LOG_FORMAT") == "json" { handler = slog.NewJSONHandler(os.Stdout, nil) }
+	if os.Getenv("LOG_FORMAT") == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	}
 	slog.SetDefault(slog.New(handler))
+
+	shutdownObs, promHandler, tracer := observability.SetupObservability("auth-service")
+	defer shutdownObs()
 
 	slog.Info("auth service init", "port", cfg.Port)
 
@@ -70,6 +79,9 @@ func main() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(observability.MetricsAndTracingMiddleware(tracer, "auth-service"))
+
+	r.Handle("/metrics", promHandler)
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,7 @@ import (
 
 	"email-service/internal/config"
 	"email-service/internal/handlers"
+	"email-service/internal/observability"
 	"email-service/internal/services"
 
 	"github.com/go-chi/chi/v5"
@@ -23,14 +24,20 @@ func main() {
 
 	// Initialize email service
 	emailService := services.NewEmailService(cfg)
+	shutdownObs, promHandler, tracer := observability.SetupObservability("email-service")
+	defer shutdownObs()
 
 	// Initialize handlers
 	emailHandler := handlers.NewEmailHandler(emailService)
 
 	// Setup router
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(observability.MetricsAndTracingMiddleware(tracer, "email-service"))
+
+	r.Handle("/metrics", promHandler)
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +59,9 @@ func main() {
 	// Graceful shutdown
 	// Initialize structured logging
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
-	if os.Getenv("LOG_FORMAT") == "json" { handler = slog.NewJSONHandler(os.Stdout, nil) }
+	if os.Getenv("LOG_FORMAT") == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	}
 	slog.SetDefault(slog.New(handler))
 
 	go func() {
