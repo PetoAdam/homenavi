@@ -16,6 +16,7 @@ import (
 	"device-hub/internal/config"
 	"device-hub/internal/httpapi"
 	mqttpkg "device-hub/internal/mqtt"
+	"device-hub/internal/observability"
 	matterpkg "device-hub/internal/proto/matter"
 	threadpkg "device-hub/internal/proto/thread"
 	zigbee "device-hub/internal/proto/zigbee"
@@ -70,11 +71,15 @@ func main() {
 		integrations = append(integrations, httpapi.IntegrationDescriptor{Protocol: "thread", Label: "Thread", Status: "planned"})
 	}
 
+	shutdownObs, promHandler, tracer := observability.SetupObservability("device-hub")
+	defer shutdownObs()
+
 	// Only health endpoint retained for k8s / docker health checks.
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", promHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	httpapi.NewServer(repo, mClient, integrations).Register(mux)
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: observability.WrapHandler(tracer, "device-hub", mux)}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)

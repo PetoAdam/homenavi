@@ -49,6 +49,7 @@ services:
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
       - GOOGLE_OAUTH_REDIRECT_URL=${GOOGLE_OAUTH_REDIRECT_URL}
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
     volumes:
       - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
     depends_on:
@@ -75,9 +76,8 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - homenavi-network
-  # DEV:
-  # ports:
-  #   - "9090:9090"
+    ports:
+      - "9090:9090"
 
   grafana:
     image: grafana/grafana
@@ -86,19 +86,17 @@ services:
       - homenavi-network
     depends_on:
       - prometheus
-  # DEV:
-  # ports:
-  #   - "3000:3000"
+    ports:
+      - "3000:3000"
 
   jaeger:
     image: jaegertracing/all-in-one
     restart: unless-stopped
     networks:
       - homenavi-network
-  # DEV:
-  # ports:
-  #   - "16686:16686"
-  #   - "14268:14268"
+    ports:
+      - "16686:16686"
+      - "14268:14268"
 
   nginx:
     image: nginx:1.25-alpine
@@ -150,6 +148,7 @@ services:
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
     depends_on:
       - postgres
     networks:
@@ -179,6 +178,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - FROM_EMAIL=${FROM_EMAIL:-noreply@homenavi.org}
       - FROM_NAME=${FROM_NAME:-Homenavi}
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
     networks:
       - homenavi-network
   # DEV:
@@ -206,10 +206,9 @@ services:
       - ./mosquitto/config/conf.d:/mosquitto/config/conf.d:ro
       - ./mosquitto/entrypoint.sh:/docker-entrypoint-nochown.sh:ro
     entrypoint: ["/bin/sh", "/docker-entrypoint-nochown.sh"]
-    # DEV:
-    # ports:
-    #   - "1883:1883"
-    #   - "9001:9001" # optional websocket listener if enabled in config
+    ports:
+      - "1883:1883"
+      - "9001:9001" # optional websocket listener if enabled in config
 
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
@@ -245,6 +244,7 @@ services:
       - REDIS_ADDR=${REDIS_ADDR}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - LOG_LEVEL=${LOG_LEVEL}
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
     networks:
       - homenavi-network
     # No ports exposed; internal only
