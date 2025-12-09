@@ -4,3 +4,13 @@ routes:
     methods: [GET]
     access: auth
     type: websocket
+  - path: /ws/devices
+    upstream: ws://mosquitto:9001/
+    methods: [GET]
+    access: auth
+    type: websocket-mqtt
+  - path: /ws/devicehub
+    upstream: ws://mosquitto:9001/
+    methods: [GET]
+    access: auth
+    type: websocket-mqtt
