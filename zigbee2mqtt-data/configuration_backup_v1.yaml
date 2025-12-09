@@ -1,0 +1,14 @@
+# Zigbee2MQTT minimal configuration (MVP)
+# Adapter serial will be overridden in deployment where hardware exists.
+homeassistant: false
+permit_join: false
+mqtt:
+  server: 'mqtt://mosquitto:1883'
+serial:
+  # For auto detection leave port omitted; or set explicitly on deployment
+  # port: /dev/ttyUSB0
+advanced:
+  log_level: info
+  legacy_api: false
+frontend: false
+# Runtime option updates can be sent to zigbee2mqtt/bridge/request/options

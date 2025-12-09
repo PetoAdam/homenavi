@@ -114,7 +114,8 @@ func setupRedisClient() *redis.Client {
 
 func setupWebSocketRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey) http.Handler {
 	r := chi.NewRouter()
-	router.RegisterRoutes(r, cfg, redisClient, pubKey)
+	// No custom MQTT bridge; websocket routes are pure reverse proxies defined in config.
+	router.RegisterRoutes(r, cfg, redisClient, pubKey, nil)
 	return r
 }
 
@@ -143,7 +144,7 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 		w.Write([]byte("ok"))
 	})
 
-	router.RegisterRoutes(r, cfg, redisClient, pubKey)
+	router.RegisterRoutes(r, cfg, redisClient, pubKey, nil)
 
 	r.Get("/api/gateway/routes", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(cfg.Routes)

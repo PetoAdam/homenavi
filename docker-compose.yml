@@ -139,7 +139,6 @@ services:
   user-service:
     build: 
       context: ./user-service
-      no_cache: true
     restart: unless-stopped
   # DEV:
   # ports:
@@ -195,10 +194,68 @@ services:
   # ports:
   #   - "9000:9000"
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    networks:
+      - homenavi-network
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+      - ./mosquitto/config/conf.d:/mosquitto/config/conf.d:ro
+      - ./mosquitto/entrypoint.sh:/docker-entrypoint-nochown.sh:ro
+    entrypoint: ["/bin/sh", "/docker-entrypoint-nochown.sh"]
+    # DEV:
+    # ports:
+    #   - "1883:1883"
+    #   - "9001:9001" # optional websocket listener if enabled in config
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    networks:
+      - homenavi-network
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./zigbee2mqtt-data:/app/data
+    # To use your USB dongle, uncomment and adjust the device mapping below on the deployment host ONLY (not committed with a host-specific path)
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyACM0
+    # NOTE: Web UI disabled for minimal attack surface; can enable via configuration.yaml if needed
+
+  device-hub:
+    build: ./device-hub
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - postgres
+      - redis
+    environment:
+      - DEVICE_HUB_PORT=8090
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - REDIS_ADDR=${REDIS_ADDR}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - LOG_LEVEL=${LOG_LEVEL}
+    networks:
+      - homenavi-network
+    # No ports exposed; internal only
+
+
 volumes:
   postgres_data:
   auth_postgres_data:
   profile-pictures:
+  mosquitto_data:
+  mosquitto_logs:
 
 networks:
   homenavi-network:
