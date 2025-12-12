@@ -42,6 +42,7 @@ func main() {
 		pr.Get("/users/{id}", handlers.HandleUserGet)
 		pr.Get("/users", handlers.HandleUserGetByEmail) // both single fetch & list (list has role checks inside)
 		pr.Post("/users/{id}/lockout", handlers.HandleLockout)
+		pr.Patch("/users/{id}", handlers.HandleUserPatch)
 		pr.Delete("/users/{id}", handlers.HandleUserDelete)
 	})
 

@@ -1,6 +1,6 @@
 import http from './httpClient';
 
-const DEVICE_HUB_BASE = '/api/devicehub';
+const DEVICE_HUB_BASE = '/api/hdp';
 
 export async function updateDevice(deviceId, payload, token) {
   if (!deviceId) {
@@ -80,6 +80,10 @@ export async function listPairings(token) {
   return await http.get(`${DEVICE_HUB_BASE}/pairings`, { token });
 }
 
+export async function listPairingConfig(token) {
+  return await http.get(`${DEVICE_HUB_BASE}/pairing-config`, { token });
+}
+
 export default {
   renameDevice,
   updateDevice,
@@ -92,4 +96,5 @@ export default {
   startPairing,
   stopPairing,
   listPairings,
+  listPairingConfig,
 };

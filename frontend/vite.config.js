@@ -46,7 +46,7 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true
       },
-      '/ws/devicehub': {
+      '/ws/hdp': {
         target: 'ws://localhost:8080',
         changeOrigin: true,
         ws: true

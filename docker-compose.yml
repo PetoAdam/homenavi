@@ -232,9 +232,33 @@ services:
     depends_on:
       - mosquitto
       - postgres
-      - redis
     environment:
       - DEVICE_HUB_PORT=8090
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - DEVICE_HUB_ENABLE_THREAD=true
+      - LOG_LEVEL=${LOG_LEVEL}
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+    networks:
+      - homenavi-network
+    # No ports exposed; internal only
+
+  zigbee-adapter:
+    build:
+      context: ./zigbee-adapter
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - postgres
+      - redis
+    environment:
+      - ZIGBEE_ADAPTER_PORT=8091
+      - ZIGBEE_ADAPTER_ID=zigbee-adapter-1
+      - ZIGBEE_ADAPTER_VERSION=dev
       - MQTT_BROKER_URL=mqtt://mosquitto:1883
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -247,7 +271,22 @@ services:
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
     networks:
       - homenavi-network
-    # No ports exposed; internal only
+
+  thread-adapter:
+    build:
+      context: ./thread-adapter
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    environment:
+      - THREAD_ADAPTER_PORT=8092
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - THREAD_ADAPTER_ID=thread-adapter-1
+      - THREAD_ADAPTER_VERSION=dev
+      - LOG_LEVEL=${LOG_LEVEL}
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+    networks:
+      - homenavi-network
 
 
 volumes:

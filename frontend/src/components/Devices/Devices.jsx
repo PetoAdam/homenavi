@@ -39,9 +39,10 @@ export default function Devices() {
     connectionInfo,
     renameDevice: renameDeviceWs,
     pairingSessions,
+    pairingConfig,
     refreshPairings,
   } = useDeviceHubDevices({ enabled: isResidentOrAdmin, metadataMode });
-  const [pendingCommands, setPendingCommands] = useState({});
+  const [pendingCommands, setPendingCommands] = useState({}); // { [deviceId]: { corr, timerId } }
   const [commandError, setCommandError] = useState(null);
   const [integrations, setIntegrations] = useState([]);
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
@@ -102,8 +103,22 @@ export default function Devices() {
   const handleCommand = (device, payload) => {
     if (!device?.id) return Promise.resolve();
     setCommandError(null);
-    setPendingCommands(prev => ({ ...prev, [device.id]: true }));
-    return sendDeviceCommandApi(device.id, payload, accessToken)
+
+    const stateVersionAtSend = device?.stateUpdatedAt instanceof Date
+      ? device.stateUpdatedAt.getTime()
+      : (device?.stateUpdatedAt || 0);
+    const startedAt = Date.now();
+
+    const corr = (payload && payload.correlation_id)
+      || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const enrichedPayload = payload && typeof payload === 'object'
+      ? { ...payload, correlation_id: corr }
+      : { correlation_id: corr };
+
+    // Keep UI in "pending" until we see a matching command_result or a timeout.
+    setPendingCommands(prev => ({ ...prev, [device.id]: { corr, startedAt, stateVersion: stateVersionAtSend } }));
+
+    return sendDeviceCommandApi(device.id, enrichedPayload, accessToken)
       .then(res => {
         if (!res.success) {
           const message = res.error || 'Unable to send command';
@@ -118,13 +133,64 @@ export default function Devices() {
         throw err;
       })
       .finally(() => {
+        // Leave pending entry until cleared by command_result or timeout fallback.
+        // Set a short timeout so the UI doesn't get stuck if no result arrives.
         setPendingCommands(prev => {
-          const clone = { ...prev };
-          delete clone[device.id];
-          return clone;
+          const next = { ...prev };
+          const current = next[device.id];
+          if (!current) return next;
+          if (current.timeoutId) {
+            clearTimeout(current.timeoutId);
+          }
+          next[device.id] = {
+            ...current,
+            timeoutId: setTimeout(() => {
+              setPendingCommands(latePrev => {
+                const clone = { ...latePrev };
+                delete clone[device.id];
+                return clone;
+              });
+            }, 3000),
+          };
+          return next;
         });
       });
   };
+
+  // Clear pending when command_result with matching corr is observed.
+  useEffect(() => {
+    if (!devices || !devices.length) return;
+    setPendingCommands(prev => {
+      let changed = false;
+      const next = { ...prev };
+      devices.forEach(dev => {
+        const pending = next[dev.id];
+        const result = dev.lastCommandResult;
+        if (!pending || !result) return;
+        if (!pending.corr || !result.corr || pending.corr !== result.corr) return;
+
+        // Avoid clearing too early; wait for a newer state than when we sent the command
+        // so the optimistic UI does not flicker back to the previous value.
+        const stateTs = dev.stateUpdatedAt instanceof Date
+          ? dev.stateUpdatedAt.getTime()
+          : (dev.stateUpdatedAt || 0);
+        const baselineTs = pending.stateVersion || 0;
+        const resultTs = Number(result.ts || 0);
+        const hasStateAdvanced = stateTs && stateTs > baselineTs;
+        const stateCoversResult = stateTs && resultTs && stateTs >= resultTs;
+
+        const shouldClear = !result.success || hasStateAdvanced || stateCoversResult;
+        if (!shouldClear) return;
+
+        if (pending.timeoutId) {
+          clearTimeout(pending.timeoutId);
+        }
+        delete next[dev.id];
+        changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [devices]);
 
   const handleRename = async (device, name) => {
     if (!device?.id) {
@@ -544,6 +610,7 @@ export default function Devices() {
         }}
         integrations={integrations}
         pairingSessions={pairingSessions}
+        pairingConfig={pairingConfig}
         onStartPairing={handleStartPairing}
         onStopPairing={handleStopPairing}
       />

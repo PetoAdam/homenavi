@@ -15,17 +15,22 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
-	"device-hub/internal/model"
-	"device-hub/internal/mqtt"
-	"device-hub/internal/proto/adapterutil"
-	"device-hub/internal/store"
+	"zigbee-adapter/internal/model"
+	"zigbee-adapter/internal/mqtt"
+	"zigbee-adapter/internal/proto/adapterutil"
+	"zigbee-adapter/internal/store"
 )
 
 type ZigbeeAdapter struct {
-	client *mqtt.Client
-	repo   *store.Repository
-	cache  *store.StateCache
-	events chan<- any
+	client    *mqtt.Client
+	repo      *store.Repository
+	cache     *store.StateCache
+	adapterID string
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	subscriptions []string
 
 	pairingMu     sync.Mutex
 	pairingActive bool
@@ -37,62 +42,98 @@ type ZigbeeAdapter struct {
 	capIndex       map[string]map[string]model.Capability
 	friendlyIndex  map[string]string
 	friendlyTopic  map[string]string
+	correlationMu  sync.Mutex
+	correlationMap map[string]string
 }
 
 const (
-	stateTopicPrefix     = "homenavi/devicehub/devices/"
-	deviceRemovedTopic   = "homenavi/devicehub/events/device.removed"
-	pairingProgressTopic = "homenavi/devicehub/events/pairing.progress"
+	hdpSchema               = "hdp.v1"
+	hdpMetadataPrefix       = "homenavi/hdp/device/metadata/"
+	hdpStatePrefix          = "homenavi/hdp/device/state/"
+	hdpEventPrefix          = "homenavi/hdp/device/event/"
+	hdpCommandPrefix        = "homenavi/hdp/device/command/"
+	hdpCommandResultPrefix  = "homenavi/hdp/device/command_result/"
+	hdpPairingCommandTopic  = "homenavi/hdp/pairing/command/zigbee"
+	hdpPairingProgressTopic = "homenavi/hdp/pairing/progress/zigbee"
+	hdpAdapterHelloTopic    = "homenavi/hdp/adapter/hello"
+	hdpAdapterStatusPrefix  = "homenavi/hdp/adapter/status/"
 )
 
 var deviceStateTopic = regexp.MustCompile(`^zigbee2mqtt/([^/]+)$`)
 
-func New(client *mqtt.Client, repo *store.Repository, cache *store.StateCache, events chan<- any) *ZigbeeAdapter {
+func New(client *mqtt.Client, repo *store.Repository, cache *store.StateCache) *ZigbeeAdapter {
 	refresh := true
-	if v := strings.ToLower(os.Getenv("DEVICE_HUB_REFRESH_STATES")); v == "0" || v == "false" || v == "no" {
+	if v := strings.ToLower(os.Getenv("ZIGBEE_ADAPTER_REFRESH_STATES")); v == "0" || v == "false" || v == "no" {
 		refresh = false
+	} else if v := strings.ToLower(os.Getenv("DEVICE_HUB_REFRESH_STATES")); v == "0" || v == "false" || v == "no" {
+		refresh = false
+	}
+	adapterID := os.Getenv("ZIGBEE_ADAPTER_ID")
+	if strings.TrimSpace(adapterID) == "" {
+		adapterID = os.Getenv("DEVICE_HUB_ZIGBEE_ADAPTER_ID")
+	}
+	if strings.TrimSpace(adapterID) == "" {
+		adapterID = "zigbee"
 	}
 	return &ZigbeeAdapter{
 		client:         client,
 		repo:           repo,
 		cache:          cache,
-		events:         events,
+		adapterID:      adapterID,
 		refreshOnStart: refresh,
 		refreshProps:   map[string][]string{},
 		capIndex:       map[string]map[string]model.Capability{},
 		friendlyIndex:  map[string]string{},
 		friendlyTopic:  map[string]string{},
+		correlationMap: map[string]string{},
 	}
 }
 
 func (z *ZigbeeAdapter) Name() string { return "zigbee" }
 
 func (z *ZigbeeAdapter) Start(ctx context.Context) error {
-	if err := z.client.Subscribe("zigbee2mqtt/#", z.handle); err != nil {
+	z.ctx, z.cancel = context.WithCancel(ctx)
+	slog.Info("zigbee adapter starting", "adapter_id", z.adapterID)
+	// Announce adapter presence to hub. Non-retained per spec.
+	_ = z.publishHello()
+	_ = z.publishStatus("starting", "initializing")
+
+	if err := z.subscribe("zigbee2mqtt/#", z.handle); err != nil {
 		return err
 	}
-	if err := z.client.Subscribe("homenavi/devicehub/commands/pairing", z.handlePairingCommand); err != nil {
+	if err := z.subscribe(hdpPairingCommandTopic, z.handlePairingCommand); err != nil {
 		return err
 	}
-	if err := z.client.Subscribe("homenavi/devicehub/commands/device.set", z.handleDeviceSetCommand); err != nil {
+	if err := z.subscribe(hdpCommandPrefix+"zigbee/#", z.handleHDPDeviceCommand); err != nil {
 		return err
 	}
-	if err := z.client.Subscribe("homenavi/devicehub/commands/device.rename", z.handleDeviceRenameCommand); err != nil {
-		return err
-	}
-	if err := z.client.Subscribe("homenavi/devicehub/commands/device.refresh", z.handleDeviceRefreshCommand); err != nil {
-		return err
-	}
-	if err := z.client.Subscribe("homenavi/devicehub/commands/device.remove", z.handleDeviceRemoveCommand); err != nil {
-		return err
-	}
-	if err := z.client.Subscribe("homenavi/devicehub/test/inject/zigbee/#", z.handleTestInject); err != nil {
-		return err
-	}
-	slog.Info("zigbee adapter subscribed", "patterns", []string{"zigbee2mqtt/#", "pairing"})
+	slog.Info("zigbee adapter subscribed", "patterns", []string{"zigbee2mqtt/#", "hdp commands", "hdp pairing"})
 
 	go z.primeFromDB(context.Background())
 	_ = z.client.Publish("zigbee2mqtt/bridge/request/devices", []byte(`{}`))
+	_ = z.publishStatus("online", "healthy")
+	slog.Info("zigbee adapter started", "adapter_id", z.adapterID)
+	return nil
+}
+
+func (z *ZigbeeAdapter) Stop() {
+	if z.cancel != nil {
+		z.cancel()
+	}
+	// Best-effort unsubscribe to avoid lingering retained subs.
+	for _, topic := range z.subscriptions {
+		if err := z.client.Unsubscribe(topic); err != nil {
+			slog.Debug("unsubscribe failed", "topic", topic, "error", err)
+		}
+	}
+	_ = z.publishStatus("offline", "shutdown")
+}
+
+func (z *ZigbeeAdapter) subscribe(topic string, handler mqtt.Handler) error {
+	if err := z.client.Subscribe(topic, handler); err != nil {
+		return err
+	}
+	z.subscriptions = append(z.subscriptions, topic)
 	return nil
 }
 
@@ -190,6 +231,10 @@ func (z *ZigbeeAdapter) handle(_ paho.Client, m paho.Message) {
 	_ = z.repo.UpsertDevice(ctx, dev)
 
 	state := z.normalizeState(friendly, raw)
+	corr := z.consumeCorrelation(dev.ID.String())
+	if corr != "" {
+		state["correlation_id"] = corr
+	}
 	var prev map[string]any
 	if cached, err := z.cache.Get(ctx, dev.ID.String()); err == nil && len(cached) > 0 {
 		_ = json.Unmarshal(cached, &prev)
@@ -205,9 +250,8 @@ func (z *ZigbeeAdapter) handle(_ paho.Client, m paho.Message) {
 	sb, _ := json.Marshal(state)
 	_ = z.cache.Set(ctx, dev.ID.String(), sb)
 	_ = z.repo.SaveDeviceState(ctx, dev.ID.String(), sb)
-	_ = z.client.PublishWith(stateTopicPrefix+dev.ID.String(), sb, true)
-	devJSON, _ := json.Marshal(dev)
-	_ = z.client.Publish("homenavi/devicehub/events/device.upsert", devJSON)
+	z.publishHDPState(dev, state, corr)
+	z.publishHDPMeta(dev)
 
 	if len(state) == 0 {
 		slog.Warn("zigbee state empty", "device", dev.ExternalID)
@@ -244,8 +288,6 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 		z.setFriendlyMapping(friendly, external)
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
 			z.publishPairingProgress(bridgeLifecycleStage(evt.Type), "", external, friendly)
-			b, _ := json.Marshal(dev)
-			_ = z.client.Publish("homenavi/devicehub/events/device.upsert", b)
 		}
 	case "device_interview":
 		friendly, _ := evt.Data["friendly_name"].(string)
@@ -263,8 +305,6 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 		status := adapterutil.StringField(evt.Data, "status")
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
 			z.publishPairingProgress(interviewStageFromStatus(status), status, external, friendly)
-			b, _ := json.Marshal(dev)
-			_ = z.client.Publish("homenavi/devicehub/events/device.upsert", b)
 		}
 	case "device_removed":
 		friendly, _ := evt.Data["friendly_name"].(string)
@@ -323,8 +363,6 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 			delete(z.refreshProps, from)
 		}
 		z.metaMu.Unlock()
-		devJSON, _ := json.Marshal(dev)
-		_ = z.client.Publish("homenavi/devicehub/events/device.upsert", devJSON)
 		if b, err := json.Marshal(map[string]string{"id": to}); err == nil {
 			_ = z.client.Publish("zigbee2mqtt/bridge/request/device", b)
 		}
@@ -339,7 +377,26 @@ func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 		Protocol string `json:"protocol"`
 	}
 	if err := json.Unmarshal(m.Payload(), &cmd); err != nil {
+		slog.Debug("adapter cmd decode failed", "error", err)
 		return
+	}
+	if cmd.Action == "" {
+		var env map[string]any
+		if err := json.Unmarshal(m.Payload(), &env); err == nil {
+			cmd.Action = strings.TrimSpace(adapterutil.StringField(env, "action"))
+			cmd.Protocol = adapterutil.StringField(env, "protocol")
+			if cmd.Timeout == 0 {
+				switch v := env["timeout_sec"].(type) {
+				case float64:
+					cmd.Timeout = int(v)
+				case int:
+					cmd.Timeout = v
+				}
+			}
+		}
+	}
+	if cmd.Protocol == "" && strings.HasPrefix(m.Topic(), hdpPairingCommandTopic) {
+		cmd.Protocol = "zigbee"
 	}
 	if cmd.Protocol != "" && !strings.EqualFold(cmd.Protocol, "zigbee") {
 		return
@@ -367,7 +424,7 @@ func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 				z.pairingMu.Unlock()
 				if active {
 					z.stopPairing()
-					_ = z.client.Publish("homenavi/devicehub/events/pairing.timeout", []byte(`{}`))
+					z.publishPairingProgress("timeout", "timeout", "", "")
 				}
 			case <-c.Done():
 			}
@@ -403,6 +460,7 @@ func (z *ZigbeeAdapter) handleDeviceRemoveCommand(_ paho.Client, m paho.Message)
 		Friendly   string `json:"friendly_name"`
 	}
 	if err := json.Unmarshal(m.Payload(), &req); err != nil {
+		slog.Debug("device.set decode failed", "error", err)
 		return
 	}
 	if req.Protocol != "" && !strings.EqualFold(req.Protocol, "zigbee") {
@@ -487,27 +545,277 @@ func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, extern
 	return dev
 }
 
+func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]any, correlationID string) {
+	if dev == nil || len(state) == 0 {
+		return
+	}
+	if correlationID != "" {
+		z.setCorrelation(dev.ID.String(), correlationID)
+	}
+	payload := map[string]any{}
+	for k, v := range state {
+		switch k {
+		case "on":
+			if vb, ok := v.(bool); ok {
+				if vb {
+					payload["state"] = "ON"
+				} else {
+					payload["state"] = "OFF"
+				}
+			}
+		default:
+			payload[k] = v
+		}
+	}
+	if correlationID != "" {
+		payload["correlation_id"] = correlationID
+	}
+	b, _ := json.Marshal(payload)
+	_ = z.client.Publish("zigbee2mqtt/"+dev.ExternalID+"/set", b)
+}
+
+func (z *ZigbeeAdapter) handleAdapterCommand(_ paho.Client, m paho.Message) {
+	var cmd struct {
+		Type   string `json:"type"`
+		Device struct {
+			ID string `json:"id"`
+		} `json:"device"`
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(m.Payload(), &cmd); err != nil {
+		return
+	}
+	if !strings.EqualFold(cmd.Type, "command") {
+		return
+	}
+	deviceRef := strings.TrimSpace(cmd.Device.ID)
+	if deviceRef == "" {
+		return
+	}
+	ctx := context.Background()
+	var dev *model.Device
+	dev, _ = z.repo.GetByID(ctx, deviceRef)
+	if dev == nil {
+		parts := strings.Split(deviceRef, ":")
+		if len(parts) == 2 {
+			dev, _ = z.repo.GetByExternal(ctx, parts[0], parts[1])
+		}
+	}
+	if dev == nil {
+		return
+	}
+	state := map[string]any{}
+	correlationID := adapterutil.StringField(cmd.Payload, "correlation_id")
+	if params, ok := cmd.Payload["params"].(map[string]any); ok {
+		state = params
+	}
+	if len(state) == 0 {
+		if st, ok := cmd.Payload["state"].(map[string]any); ok {
+			state = st
+		}
+	}
+	z.forwardStateCommand(dev, state, correlationID)
+	slog.Info("adapter command forwarded", "device_id", dev.ID.String(), "correlation_id", correlationID, "keys", len(state))
+}
+
+func (z *ZigbeeAdapter) publishHello() error {
+	hdp := map[string]any{
+		"schema":      hdpSchema,
+		"type":        "hello",
+		"adapter_id":  z.adapterID,
+		"protocol":    "zigbee",
+		"version":     adapterVersion(),
+		"hdp_version": "1.0",
+		"features": map[string]any{
+			"supports_ack":         true,
+			"supports_correlation": true,
+			"supports_batch_state": true,
+		},
+		"ts": time.Now().UnixMilli(),
+	}
+	if hb, err := json.Marshal(hdp); err == nil {
+		_ = z.client.Publish(hdpAdapterHelloTopic, hb)
+	}
+	return nil
+}
+
+func (z *ZigbeeAdapter) publishStatus(status, reason string) error {
+	hdp := map[string]any{
+		"schema":     hdpSchema,
+		"type":       "status",
+		"adapter_id": z.adapterID,
+		"status":     status,
+		"reason":     reason,
+		"version":    adapterVersion(),
+		"ts":         time.Now().UnixMilli(),
+	}
+	if hb, err := json.Marshal(hdp); err == nil {
+		_ = z.client.PublishWith(hdpAdapterStatusPrefix+z.adapterID, hb, true)
+	}
+	return nil
+}
+
+func adapterVersion() string {
+	if v := strings.TrimSpace(os.Getenv("ZIGBEE_ADAPTER_VERSION")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("DEVICE_HUB_ZIGBEE_VERSION")); v != "" {
+		return v
+	}
+	return "dev"
+}
+
+// setCorrelation records the latest correlation_id for a device so it can be echoed with the next state event.
+func (z *ZigbeeAdapter) setCorrelation(deviceID, cid string) {
+	if deviceID == "" || cid == "" {
+		return
+	}
+	z.correlationMu.Lock()
+	z.correlationMap[deviceID] = cid
+	z.correlationMu.Unlock()
+}
+
+// consumeCorrelation retrieves and clears the pending correlation_id for a device.
+func (z *ZigbeeAdapter) consumeCorrelation(deviceID string) string {
+	if deviceID == "" {
+		return ""
+	}
+	z.correlationMu.Lock()
+	cid := z.correlationMap[deviceID]
+	if cid != "" {
+		delete(z.correlationMap, deviceID)
+	}
+	z.correlationMu.Unlock()
+	return cid
+}
+
+func (z *ZigbeeAdapter) publishHDPState(dev *model.Device, state map[string]any, corr string) {
+	if dev == nil || len(state) == 0 {
+		return
+	}
+	deviceID := z.hdpDeviceID(dev.ExternalID)
+	if deviceID == "" {
+		return
+	}
+	envelope := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "state",
+		"device_id": deviceID,
+		"ts":        time.Now().UnixMilli(),
+		"state":     state,
+	}
+	if corr != "" {
+		envelope["corr"] = corr
+	}
+	if b, err := json.Marshal(envelope); err == nil {
+		_ = z.client.PublishWith(hdpStatePrefix+deviceID, b, true)
+	}
+}
+
+func (z *ZigbeeAdapter) publishHDPMeta(dev *model.Device) {
+	if dev == nil {
+		return
+	}
+	deviceID := z.hdpDeviceID(dev.ExternalID)
+	if deviceID == "" {
+		return
+	}
+	envelope := map[string]any{
+		"schema":       hdpSchema,
+		"type":         "metadata",
+		"device_id":    deviceID,
+		"protocol":     "zigbee",
+		"name":         dev.Name,
+		"manufacturer": dev.Manufacturer,
+		"model":        dev.Model,
+		"description":  dev.Description,
+		"icon":         dev.Icon,
+		"ts":           time.Now().UnixMilli(),
+	}
+	if len(dev.Capabilities) > 0 {
+		var caps any
+		if err := json.Unmarshal(dev.Capabilities, &caps); err == nil {
+			envelope["capabilities"] = caps
+		}
+	}
+	if len(dev.Inputs) > 0 {
+		var inputs any
+		if err := json.Unmarshal(dev.Inputs, &inputs); err == nil {
+			envelope["inputs"] = inputs
+		}
+	}
+	if b, err := json.Marshal(envelope); err == nil {
+		_ = z.client.PublishWith(hdpMetadataPrefix+deviceID, b, true)
+	}
+}
+
+func (z *ZigbeeAdapter) publishHDPEvent(deviceID, event string, data map[string]any) {
+	id := z.hdpDeviceID(deviceID)
+	if id == "" || strings.TrimSpace(event) == "" {
+		return
+	}
+	envelope := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "event",
+		"device_id": id,
+		"event":     event,
+		"ts":        time.Now().UnixMilli(),
+	}
+	if len(data) > 0 {
+		envelope["data"] = data
+	}
+	if b, err := json.Marshal(envelope); err == nil {
+		_ = z.client.Publish(hdpEventPrefix+id, b)
+	}
+}
+
+func (z *ZigbeeAdapter) publishHDPCommandResult(dev *model.Device, corr string, success bool, status, errMsg string) {
+	if dev == nil || corr == "" {
+		return
+	}
+	deviceID := z.hdpDeviceID(dev.ExternalID)
+	if deviceID == "" {
+		return
+	}
+	envelope := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "command_result",
+		"device_id": deviceID,
+		"corr":      corr,
+		"success":   success,
+		"ts":        time.Now().UnixMilli(),
+	}
+	if status != "" {
+		envelope["status"] = status
+	}
+	if errMsg != "" {
+		envelope["error"] = errMsg
+	}
+	if b, err := json.Marshal(envelope); err == nil {
+		_ = z.client.Publish(hdpCommandResultPrefix+deviceID, b)
+	}
+}
+
 func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external, friendly string) {
 	if stage == "" {
 		return
 	}
-	payload := map[string]any{
+	hdp := map[string]any{
+		"schema":   hdpSchema,
+		"type":     "pairing_progress",
 		"protocol": "zigbee",
 		"stage":    stage,
-	}
-	if status != "" {
-		payload["status"] = status
+		"status":   status,
+		"ts":       time.Now().UnixMilli(),
 	}
 	if external != "" {
-		payload["external_id"] = external
+		hdp["external_id"] = external
 	}
 	if friendly != "" {
-		payload["friendly_name"] = friendly
+		hdp["friendly_name"] = friendly
 	}
-	if data, err := json.Marshal(payload); err == nil {
-		if err := z.client.Publish(pairingProgressTopic, data); err != nil {
-			slog.Debug("zigbee pairing progress publish failed", "error", err)
-		}
+	if b, err := json.Marshal(hdp); err == nil {
+		_ = z.client.Publish(hdpPairingProgressTopic, b)
 	}
 }
 
@@ -535,141 +843,100 @@ func interviewStageFromStatus(status string) string {
 	}
 }
 
-func (z *ZigbeeAdapter) handleTestInject(_ paho.Client, m paho.Message) {
-	parts := strings.Split(m.Topic(), "/")
-	if len(parts) < 6 {
+func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
+	var envelope map[string]any
+	if err := json.Unmarshal(m.Payload(), &envelope); err != nil {
+		slog.Debug("hdp command decode failed", "topic", m.Topic(), "error", err)
 		return
 	}
-	friendly := parts[len(parts)-1]
-	_ = z.client.Publish("zigbee2mqtt/"+friendly, m.Payload())
-}
-
-func (z *ZigbeeAdapter) handleDeviceSetCommand(_ paho.Client, m paho.Message) {
-	var req struct {
-		DeviceID string         `json:"device_id"`
-		State    map[string]any `json:"state"`
+	deviceID := adapterutil.StringField(envelope, "device_id")
+	if deviceID == "" {
+		deviceID = strings.TrimPrefix(m.Topic(), hdpCommandPrefix)
 	}
-	if err := json.Unmarshal(m.Payload(), &req); err != nil {
+	proto, external := z.externalFromHDP(deviceID)
+	if proto != "" && proto != "zigbee" {
 		return
-	}
-	if req.DeviceID == "" || len(req.State) == 0 {
-		return
-	}
-	ctx := context.Background()
-	dev, _ := z.repo.GetByID(ctx, req.DeviceID)
-	if dev == nil {
-		return
-	}
-	payload := map[string]any{}
-	for k, v := range req.State {
-		switch k {
-		case "on":
-			if vb, ok := v.(bool); ok {
-				if vb {
-					payload["state"] = "ON"
-				} else {
-					payload["state"] = "OFF"
-				}
-			}
-		default:
-			payload[k] = v
-		}
-	}
-	b, _ := json.Marshal(payload)
-	_ = z.client.Publish("zigbee2mqtt/"+dev.ExternalID+"/set", b)
-}
-
-func (z *ZigbeeAdapter) handleDeviceRenameCommand(_ paho.Client, m paho.Message) {
-	var req struct {
-		DeviceID string `json:"device_id"`
-		Name     string `json:"name"`
-	}
-	if err := json.Unmarshal(m.Payload(), &req); err != nil {
-		return
-	}
-	name := strings.TrimSpace(req.Name)
-	if req.DeviceID == "" || name == "" {
-		return
-	}
-	ctx := context.Background()
-	dev, _ := z.repo.GetByID(ctx, req.DeviceID)
-	if dev == nil {
-		return
-	}
-	dev.Name = name
-	if err := z.repo.UpsertDevice(ctx, dev); err != nil {
-		slog.Error("zigbee rename update failed", "device_id", req.DeviceID, "error", err)
-		return
-	}
-	devJSON, err := json.Marshal(dev)
-	if err != nil {
-		slog.Error("zigbee rename encode failed", "device_id", req.DeviceID, "error", err)
-		return
-	}
-	if err := z.client.Publish("homenavi/devicehub/events/device.upsert", devJSON); err != nil {
-		slog.Warn("zigbee rename event publish failed", "device_id", dev.ID.String(), "error", err)
-	}
-	slog.Info("device name updated", "device", dev.ExternalID, "name", name)
-}
-
-func (z *ZigbeeAdapter) handleDeviceRefreshCommand(_ paho.Client, m paho.Message) {
-	var req struct {
-		DeviceID   string   `json:"device_id"`
-		ExternalID string   `json:"external_id"`
-		Protocol   string   `json:"protocol"`
-		Metadata   bool     `json:"metadata"`
-		State      bool     `json:"state"`
-		Properties []string `json:"properties"`
-	}
-	if err := json.Unmarshal(m.Payload(), &req); err != nil {
-		slog.Warn("zigbee refresh decode failed", "error", err)
-		return
-	}
-	if req.Protocol != "" && !strings.EqualFold(req.Protocol, "zigbee") {
-		return
-	}
-	external := strings.TrimSpace(req.ExternalID)
-	if external == "" && req.DeviceID != "" {
-		if dev, err := z.repo.GetByID(context.Background(), req.DeviceID); err == nil && dev != nil {
-			external = dev.ExternalID
-		} else if err != nil {
-			slog.Warn("zigbee refresh lookup failed", "device_id", req.DeviceID, "error", err)
-		}
 	}
 	if external == "" {
-		slog.Warn("zigbee refresh missing external id", "payload", req)
+		external = deviceID
+	}
+	corr := adapterutil.StringField(envelope, "corr")
+	command := strings.ToLower(adapterutil.StringField(envelope, "command"))
+	if command == "" {
+		command = "set_state"
+	}
+	args := map[string]any{}
+	if payload, ok := envelope["args"].(map[string]any); ok {
+		args = payload
+	} else if payload, ok := envelope["state"].(map[string]any); ok {
+		args = payload
+	}
+	ctx := context.Background()
+	var dev *model.Device
+	dev, _ = z.repo.GetByExternal(ctx, "zigbee", external)
+	if dev == nil {
+		dev, _ = z.repo.GetByID(ctx, external)
+	}
+	if dev == nil {
 		return
 	}
-	friendly := z.resolveFriendlyName(external)
-	target := friendly
-	if target == "" {
-		target = external
-	}
-	if target == "" {
-		return
-	}
-	refreshMetadata := req.Metadata || (!req.Metadata && !req.State)
-	refreshState := req.State || (!req.Metadata && !req.State)
-	if refreshMetadata {
-		data, _ := json.Marshal(map[string]string{"id": target})
-		if err := z.client.Publish("zigbee2mqtt/bridge/request/device", data); err != nil {
-			slog.Warn("zigbee metadata refresh publish failed", "device", target, "error", err)
-		}
-	}
-	if refreshState {
-		props := adapterutil.UniqueStrings(req.Properties)
-		if len(props) == 0 {
+refreshProps := func(target, external string, props []string) []string {
+		out := adapterutil.UniqueStrings(props)
+		if len(out) == 0 {
 			z.metaMu.RLock()
 			if refresh, ok := z.refreshProps[target]; ok {
-				props = append(props, refresh...)
-			} else if friendly != "" && external != friendly {
+				out = append(out, refresh...)
+			} else if target != external && external != "" {
 				if refresh, ok := z.refreshProps[external]; ok {
-					props = append(props, refresh...)
+					out = append(out, refresh...)
 				}
 			}
 			z.metaMu.RUnlock()
 		}
-		z.requestStateSnapshotForDevice(target, props)
+		return adapterutil.UniqueStrings(out)
+	}
+
+	switch command {
+	case "set_state":
+		slog.Info("hdp command", "device_id", dev.ID.String(), "external", dev.ExternalID, "corr", corr, "keys", len(args))
+		z.forwardStateCommand(dev, args, corr)
+		if corr != "" {
+			z.publishHDPCommandResult(dev, corr, true, "queued", "")
+		}
+	case "remove_device":
+		slog.Info("hdp remove device", "device_id", dev.ID.String(), "external", dev.ExternalID, "corr", corr)
+		z.removeDevice(ctx, dev, "hdp-command")
+		if corr != "" {
+			z.publishHDPCommandResult(dev, corr, true, "removed", "")
+		}
+	case "refresh":
+		target := external
+		if friendly := z.resolveFriendlyName(external); friendly != "" {
+			target = friendly
+		}
+		refreshMetadata := true
+		refreshState := true
+		if metaFlag, ok := envelope["metadata"].(bool); ok {
+			refreshMetadata = metaFlag
+		}
+		if stateFlag, ok := envelope["state"].(bool); ok {
+			refreshState = stateFlag
+		}
+		props := refreshProps(target, external, adapterutil.StringSliceFromAny(envelope["properties"]))
+		if refreshMetadata {
+			data, _ := json.Marshal(map[string]string{"id": target})
+			if err := z.client.Publish("zigbee2mqtt/bridge/request/device", data); err != nil {
+				slog.Warn("zigbee metadata refresh publish failed", "device", target, "error", err)
+			}
+		}
+		if refreshState {
+			z.requestStateSnapshotForDevice(target, props)
+		}
+		if corr != "" {
+			z.publishHDPCommandResult(dev, corr, true, "refreshing", "")
+		}
+	default:
+		return
 	}
 }
 
@@ -904,8 +1171,6 @@ func (z *ZigbeeAdapter) upsertBridgeDevice(ctx context.Context, raw map[string]a
 	if err := z.repo.UpsertDevice(ctx, dev); err != nil {
 		slog.Error("zigbee device upsert failed", "device", friendly, "err", err)
 	}
-	devJSON, _ := json.Marshal(dev)
-	_ = z.client.Publish("homenavi/devicehub/events/device.upsert", devJSON)
 	if removed, err := z.repo.DeleteDuplicatesByExternal(ctx, "zigbee", dev.ExternalID, dev.ID.String()); err != nil {
 		slog.Warn("zigbee duplicate prune failed", "device", friendly, "error", err)
 	} else {
@@ -939,7 +1204,7 @@ func (z *ZigbeeAdapter) upsertBridgeDevice(ctx context.Context, raw map[string]a
 		z.metaMu.Unlock()
 		slog.Info("zigbee device metadata synced", "device", friendly, "caps", len(capabilities), "inputs", len(inputs), "source", source)
 	}
-
+	z.publishHDPMeta(dev)
 	return dev, exposuresFound
 }
 
@@ -965,22 +1230,10 @@ func (z *ZigbeeAdapter) cleanupRemovedDevices(ctx context.Context, removed []mod
 		if err := z.cache.Delete(ctx, dev.ID.String()); err != nil {
 			slog.Debug("zigbee cache delete failed", "device", dev.ExternalID, "error", err)
 		}
-		if err := z.client.PublishWith(stateTopicPrefix+dev.ID.String(), []byte{}, true); err != nil {
-			slog.Warn("zigbee state cleanup publish failed", "device", dev.ExternalID, "error", err)
-		}
-		payload := map[string]any{
-			"id":          dev.ID.String(),
-			"device_id":   dev.ID.String(),
-			"external_id": dev.ExternalID,
-			"protocol":    dev.Protocol,
-			"reason":      reason,
-		}
-		if data, err := json.Marshal(payload); err == nil {
-			if err := z.client.Publish(deviceRemovedTopic, data); err != nil {
-				slog.Warn("zigbee removal event publish failed", "device", dev.ExternalID, "error", err)
-			}
-		} else {
-			slog.Warn("zigbee removal payload encode failed", "device", dev.ExternalID, "error", err)
+		if hdpID := z.hdpDeviceID(dev.ExternalID); hdpID != "" {
+			_ = z.client.PublishWith(hdpStatePrefix+hdpID, []byte{}, true)
+			_ = z.client.PublishWith(hdpMetadataPrefix+hdpID, []byte{}, true)
+			z.publishHDPEvent(dev.ExternalID, "device_removed", map[string]any{"reason": reason})
 		}
 		removedFriendly := z.dropFriendlyMappingsByExternal(dev.ExternalID)
 		z.metaMu.Lock()
@@ -1077,7 +1330,10 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 			stateJSON = []byte(`{}`)
 		}
 		_ = z.cache.Set(ctx, d.ID.String(), stateJSON)
-		_ = z.client.PublishWith(stateTopicPrefix+d.ID.String(), stateJSON, true)
+		var state map[string]any
+		if err := json.Unmarshal(stateJSON, &state); err == nil && len(state) > 0 {
+			z.publishHDPState(&d, state, "")
+		}
 		if d.Protocol == "zigbee" && d.ExternalID != "" {
 			if len(d.Capabilities) > 0 {
 				var caps []model.Capability
@@ -1114,7 +1370,6 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 			}
 		}
 	}
-	z.clearLegacyByExternal(ctx)
 	if len(missingCaps) > 0 {
 		unique := adapterutil.UniqueStrings(missingCaps)
 		slog.Info("zigbee requesting capability backfill", "devices", unique)
@@ -1125,48 +1380,7 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-	}
 }
-
-func (z *ZigbeeAdapter) clearLegacyByExternal(ctx context.Context) {
-	const topic = "homenavi/devicehub/devices/by-external/#"
-	const prefix = "homenavi/devicehub/devices/by-external/"
-	legacy := map[string]struct{}{}
-	var mu sync.Mutex
-	h := func(_ paho.Client, msg mqtt.Message) {
-		if !msg.Retained() {
-			return
-		}
-		if len(msg.Payload()) == 0 {
-			return
-		}
-		topicName := msg.Topic()
-		if !strings.HasPrefix(topicName, prefix) {
-			return
-		}
-		mu.Lock()
-		legacy[topicName] = struct{}{}
-		mu.Unlock()
-	}
-	if err := z.client.Subscribe(topic, h); err != nil {
-		slog.Error("legacy metadata cleanup subscribe failed", "error", err)
-		return
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-	defer cancel()
-	<-waitCtx.Done()
-	if err := z.client.Unsubscribe(topic); err != nil {
-		slog.Warn("legacy metadata cleanup unsubscribe failed", "topic", topic, "error", err)
-	}
-	if len(legacy) == 0 {
-		return
-	}
-	slog.Info("clearing legacy device metadata topics", "count", len(legacy))
-	for orphan := range legacy {
-		if err := z.client.PublishWith(orphan, []byte{}, true); err != nil {
-			slog.Warn("legacy metadata cleanup publish failed", "topic", orphan, "error", err)
-		}
-	}
 }
 
 func canonicalExternalID(raw map[string]any) string {
@@ -1248,4 +1462,42 @@ func (z *ZigbeeAdapter) dropFriendlyMappingsByExternal(external string) []string
 	}
 	z.metaMu.Unlock()
 	return removed
+}
+
+func (z *ZigbeeAdapter) hdpDeviceID(external string) string {
+	ext := strings.Trim(strings.TrimSpace(external), "/")
+	if ext == "" {
+		return ""
+	}
+	if strings.HasPrefix(ext, "zigbee/") {
+		return ext
+	}
+	if strings.HasPrefix(ext, z.adapterID+"/") {
+		return "zigbee/" + ext
+	}
+	if strings.Contains(ext, "/") {
+		return "zigbee/" + ext
+	}
+	if strings.TrimSpace(z.adapterID) != "" {
+		return fmt.Sprintf("zigbee/%s/%s", z.adapterID, ext)
+	}
+	return "zigbee/" + ext
+}
+
+func (z *ZigbeeAdapter) externalFromHDP(deviceID string) (protocol, external string) {
+	id := strings.Trim(strings.TrimSpace(deviceID), "/")
+	if id == "" {
+		return "", ""
+	}
+	parts := strings.Split(id, "/")
+	if len(parts) == 1 {
+		return "zigbee", parts[0]
+	}
+	protocol = strings.ToLower(parts[0])
+	if len(parts) >= 3 {
+		external = strings.Join(parts[2:], "/")
+	} else {
+		external = strings.Join(parts[1:], "/")
+	}
+	return protocol, external
 }

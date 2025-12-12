@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Paho from 'paho-mqtt';
 
-const DEVICEHUB_ROOT = 'homenavi/devicehub/';
-const STATE_PREFIX = `${DEVICEHUB_ROOT}devices/`;
-const EVENT_TOPIC = `${DEVICEHUB_ROOT}events/device.upsert`;
-const REMOVED_TOPIC = `${DEVICEHUB_ROOT}events/device.removed`;
-const PAIRING_TOPIC = `${DEVICEHUB_ROOT}events/pairing`;
-const COMMAND_TOPIC = `${DEVICEHUB_ROOT}commands/device.set`;
-const RENAME_TOPIC = `${DEVICEHUB_ROOT}commands/device.rename`;
-const REALTIME_PATH = '/ws/devicehub';
+const HDP_SCHEMA = 'hdp.v1';
+const HDP_ROOT = 'homenavi/hdp/';
+const METADATA_PREFIX = `${HDP_ROOT}device/metadata/`;
+const STATE_PREFIX = `${HDP_ROOT}device/state/`;
+const EVENT_PREFIX = `${HDP_ROOT}device/event/`;
+const PAIRING_PREFIX = `${HDP_ROOT}pairing/progress/`;
+const COMMAND_PREFIX = `${HDP_ROOT}device/command/`;
+const COMMAND_RESULT_PREFIX = `${HDP_ROOT}device/command_result/`;
+const REALTIME_PATH = '/ws/hdp';
 const LEGACY_DEVICE_PREFIX = 'by-external/';
 
 const textDecoder = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
@@ -107,6 +108,40 @@ function ensureStateObject(value) {
   return {};
 }
 
+function resolveMapKey(externalId, uuid, externalIndex) {
+  const ext = typeof externalId === 'string' ? externalId : '';
+  const id = typeof uuid === 'string' ? uuid : '';
+  if (id) {
+    if (ext) {
+      externalIndex.set(ext, id);
+    }
+    return id;
+  }
+  if (ext && externalIndex.has(ext)) {
+    return externalIndex.get(ext);
+  }
+  return ext || '';
+}
+
+function normalizeDeviceId(raw) {
+  const deviceId = (raw || '').trim();
+  if (!deviceId) {
+    return { external: '', hdpId: '', protocol: '', adapter: '' };
+  }
+  const parts = deviceId.split('/').filter(Boolean);
+  if (parts.length === 0) {
+    return { external: deviceId, hdpId: deviceId, protocol: '', adapter: '' };
+  }
+  const protocol = parts[0];
+  if (parts.length === 1) {
+    return { external: deviceId, hdpId: deviceId, protocol, adapter: '' };
+  }
+  if (parts.length === 2) {
+    return { external: parts[1], hdpId: deviceId, protocol, adapter: '' };
+  }
+  return { external: parts.slice(2).join('/'), hdpId: deviceId, protocol, adapter: parts[1] };
+}
+
 function mapPairingSession(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const protocol = typeof raw.protocol === 'string' ? raw.protocol.toLowerCase() : '';
@@ -135,6 +170,18 @@ function sessionsArrayToMap(payload) {
     const session = mapPairingSession(item);
     if (session) {
       next[session.protocol] = session;
+    }
+  });
+  return next;
+}
+
+export function pairingConfigArrayToMap(payload) {
+  if (!Array.isArray(payload)) return {};
+  const next = {};
+  payload.forEach(item => {
+    if (item && typeof item.protocol === 'string') {
+      const key = item.protocol.toLowerCase();
+      next[key] = item;
     }
   });
   return next;
@@ -176,6 +223,7 @@ function transformEntry(key, raw) {
   const stateUpdatedAt = raw.stateUpdatedAt ? new Date(raw.stateUpdatedAt) : null;
   const createdAt = raw.created_at ? new Date(raw.created_at) : null;
   const updatedAt = raw.updated_at ? new Date(raw.updated_at) : null;
+  const lastCommandResult = raw.__lastCommandResult || null;
   const hasToggle = capabilities.some(cap => {
     const id = (cap.id || cap.property || '').toLowerCase();
     const valueType = (cap.value_type || cap.valueType || '').toLowerCase();
@@ -188,6 +236,7 @@ function transformEntry(key, raw) {
     return null;
   })();
   const externalId = raw.external_id || raw.externalId || raw.externalID || raw.external || key;
+  const hdpId = raw.hdpId || raw.device_id || raw.deviceId || externalId;
   const trimmedName = typeof raw.name === 'string' ? raw.name.trim() : '';
   const fallbackName = [raw.manufacturer, raw.model].filter(Boolean).join(' ') || externalId || key;
   const displayName = trimmedName || fallbackName;
@@ -196,6 +245,7 @@ function transformEntry(key, raw) {
     key,
     mapKey: key,
     externalId,
+    hdpId,
     id: raw.id || raw.device_id || key,
     protocol: raw.protocol || '',
     name: trimmedName,
@@ -218,6 +268,7 @@ function transformEntry(key, raw) {
     stateHasValues: Object.keys(stateObj).length > 0,
     hasToggle,
     toggleState,
+    lastCommandResult,
   };
 }
 
@@ -247,8 +298,10 @@ export default function useDeviceHubDevices(options = {}) {
   const [metadataStatus, setMetadataStatus] = useState(() => ({ connected: false, source: metadataMode }));
   const [stateStatus, setStateStatus] = useState({ connected: false });
   const [pairingSessions, setPairingSessions] = useState({});
+  const [pairingConfig, setPairingConfig] = useState({});
 
   const devicesRef = useRef(new Map());
+  const externalIndexRef = useRef(new Map());
   const stateClientRef = useRef(null);
   const updateScheduledRef = useRef(false);
   const mountedRef = useRef(false);
@@ -279,30 +332,52 @@ export default function useDeviceHubDevices(options = {}) {
       }
       const entries = Array.from(devicesRef.current.entries());
       const legacyKeys = [];
-      const nextDevices = entries
-        .map(([id, raw]) => {
-          if (isLegacyDeviceId(id)) {
-            legacyKeys.push(id);
-            return null;
-          }
-          if (!shouldIncludeDevice(raw)) {
-            return null;
-          }
-          const entry = transformEntry(id, raw);
-          if (!entry) {
-            return null;
-          }
-          if (isLegacyDeviceId(entry.mapKey) || isLegacyDeviceId(entry.id)) {
-            legacyKeys.push(id);
-            return null;
-          }
-          return entry;
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+      const canonicalByExternal = new Map();
+      const pruned = [];
+      entries.forEach(([id, raw]) => {
+        if (isLegacyDeviceId(id)) {
+          legacyKeys.push(id);
+          return;
+        }
+        if (!shouldIncludeDevice(raw)) {
+          return;
+        }
+        const entry = transformEntry(id, raw);
+        if (!entry) {
+          return;
+        }
+        if (isLegacyDeviceId(entry.mapKey) || isLegacyDeviceId(entry.id)) {
+          legacyKeys.push(id);
+          return;
+        }
+        const ext = entry.externalId || entry.id;
+        const preferred = externalIndexRef.current.get(ext);
+        const isUuid = typeof entry.id === 'string' && entry.id.includes('-');
+        const current = canonicalByExternal.get(ext);
+        const shouldReplace = !current
+          || (preferred && entry.id === preferred && current.id !== preferred)
+          || (!current.id.includes('-') && isUuid);
+        if (shouldReplace) {
+          canonicalByExternal.set(ext, entry);
+        }
+      });
       if (legacyKeys.length) {
         legacyKeys.forEach(key => devicesRef.current.delete(key));
       }
+      const nextDevices = Array.from(canonicalByExternal.values())
+        .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+      // Drop any non-canonical duplicate keys from the backing map.
+      entries.forEach(([id]) => {
+        const raw = devicesRef.current.get(id);
+        if (!raw || isLegacyDeviceId(id)) return;
+        const entry = transformEntry(id, raw);
+        if (!entry) return;
+        const ext = entry.externalId || entry.id;
+        const canonical = canonicalByExternal.get(ext);
+        if (canonical && canonical.id !== entry.id) {
+          devicesRef.current.delete(id);
+        }
+      });
       setDevices(nextDevices);
       setStats(computeStats(nextDevices));
       setLoading(false);
@@ -316,7 +391,7 @@ export default function useDeviceHubDevices(options = {}) {
 
   const refreshPairings = useCallback(async () => {
     try {
-      const response = await fetch('/api/devicehub/pairings', { credentials: 'include' });
+      const response = await fetch('/api/hdp/pairings', { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`pairing request failed with status ${response.status}`);
       }
@@ -330,12 +405,31 @@ export default function useDeviceHubDevices(options = {}) {
     }
   }, []);
 
+  const refreshPairingConfig = useCallback(async () => {
+    try {
+      const response = await fetch('/api/hdp/pairing-config', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`pairing config request failed with status ${response.status}`);
+      }
+      const payload = await response.json();
+      if (!mountedRef.current) {
+        return;
+      }
+      if (Array.isArray(payload)) {
+        setPairingConfig(pairingConfigArrayToMap(payload));
+      }
+    } catch (err) {
+      console.warn('Pairing config fetch failed', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!enabledRef.current) {
       return;
     }
     refreshPairings();
-  }, [enabled, refreshPairings]);
+    refreshPairingConfig();
+  }, [enabled, refreshPairings, refreshPairingConfig]);
 
   const loadInitialDevices = useCallback(async () => {
     if (metadataMode !== 'rest') {
@@ -343,7 +437,7 @@ export default function useDeviceHubDevices(options = {}) {
       return;
     }
     try {
-      const response = await fetch('/api/devicehub/devices', { credentials: 'include' });
+      const response = await fetch('/api/hdp/devices', { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`request failed with status ${response.status}`);
       }
@@ -355,14 +449,23 @@ export default function useDeviceHubDevices(options = {}) {
       const next = new Map();
       payload.forEach(item => {
         if (!item || typeof item !== 'object') return;
-        const deviceId = item.id || item.device_id;
-        if (!deviceId) return;
-        if (isLegacyDeviceId(deviceId)) {
+        const idFromApi = item.device_id || item.external_id || item.id;
+        const norm = normalizeDeviceId(idFromApi);
+        const externalId = norm.external || idFromApi;
+        const deviceUuid = item.id || item.uuid || item.device_uuid;
+        const mapKey = resolveMapKey(externalId, deviceUuid, externalIndexRef.current);
+        if (!mapKey) return;
+        if (isLegacyDeviceId(mapKey) || isLegacyDeviceId(externalId)) {
           return;
         }
         const stateObj = ensureStateObject(item.state);
-        next.set(deviceId, {
+        next.set(mapKey, {
           ...item,
+          id: deviceUuid || mapKey,
+          mapKey,
+          device_id: mapKey,
+          externalId: externalId || mapKey,
+          hdpId: norm.hdpId || externalId || mapKey,
           icon: typeof item.icon === 'string' ? item.icon : (item.metadata?.icon || ''),
           capabilities: ensureArray(item.capabilities),
           inputs: ensureArray(item.inputs),
@@ -422,91 +525,134 @@ export default function useDeviceHubDevices(options = {}) {
         ? message.payloadString
         : (textDecoder && message.payloadBytes ? textDecoder.decode(message.payloadBytes) : '');
 
-      if (topic === PAIRING_TOPIC) {
-        const data = safeParseJSON(payload);
-        const session = mapPairingSession(data);
-        if (!session) return;
-        setPairingSessions(prev => ({ ...prev, [session.protocol]: session }));
+      if (topic.startsWith(PAIRING_PREFIX)) {
+        const data = safeParseJSON(payload) || {};
+        const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
+        if (!protocol) return;
+        const status = data.stage || data.status || 'in_progress';
+        const session = {
+          id: data.id || `${protocol}-${Date.now()}`,
+          protocol,
+          status,
+          active: status !== 'completed' && status !== 'failed' && status !== 'timeout' && status !== 'stopped',
+          metadata: data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {},
+        };
+        setPairingSessions(prev => ({ ...prev, [protocol]: session }));
         return;
       }
 
-      if (topic === EVENT_TOPIC) {
+      if (topic.startsWith(METADATA_PREFIX)) {
         const data = safeParseJSON(payload);
         if (!data || typeof data !== 'object') return;
-        const deviceId = data.id || data.device_id || data.deviceId;
-        if (!deviceId) return;
-        if (isLegacyDeviceId(deviceId)) {
-          const removed = devicesRef.current.delete(deviceId);
-          if (removed) {
-            schedulePublish();
-          }
-          return;
+        const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(METADATA_PREFIX.length));
+        const externalId = norm.external || norm.hdpId || '';
+        const deviceUuid = data.id || data.uuid || '';
+        const mapKey = resolveMapKey(externalId, deviceUuid, externalIndexRef.current);
+        if (!mapKey) return;
+        const prev = devicesRef.current.get(mapKey) || devicesRef.current.get(externalId) || {};
+        if (mapKey !== externalId) {
+          devicesRef.current.delete(externalId);
         }
-        const prev = devicesRef.current.get(deviceId) || {};
         const merged = {
           ...prev,
-          ...data,
+          id: deviceUuid || prev.id || mapKey,
+          mapKey,
+          device_id: mapKey,
+          externalId: externalId || prev.externalId || mapKey,
+          hdpId: norm.hdpId || prev.hdpId || externalId || mapKey,
+          protocol: data.protocol || prev.protocol || (externalId.includes('/') ? externalId.split('/')[0] : ''),
+          name: data.name ?? prev.name,
+          manufacturer: data.manufacturer ?? prev.manufacturer,
+          model: data.model ?? prev.model,
+          firmware: data.firmware ?? prev.firmware,
+          description: normalizeDescription(data.description ?? prev.description),
+          icon: data.icon ?? prev.icon,
+          capabilities: ensureArray(data.capabilities ?? prev.capabilities),
+          inputs: ensureArray(data.inputs ?? prev.inputs),
           metadataUpdatedAt: Date.now(),
           __hasMetadata: true,
         };
-        merged.capabilities = ensureArray(merged.capabilities);
-        merged.inputs = ensureArray(merged.inputs);
-        merged.description = normalizeDescription(merged.description);
-        if (!merged.id) {
-          merged.id = deviceId;
-        }
-        devicesRef.current.set(deviceId, merged);
+        devicesRef.current.set(mapKey, merged);
         schedulePublish();
         return;
       }
 
-      if (topic === REMOVED_TOPIC) {
+      if (topic.startsWith(EVENT_PREFIX)) {
         const data = safeParseJSON(payload);
         if (!data || typeof data !== 'object') return;
-        const deviceId = data.id || data.device_id || data.deviceId;
-        const externalId = data.external_id || data.externalId || data.externalID;
-        let removed = false;
-        if (deviceId) {
-          removed = devicesRef.current.delete(deviceId);
-        }
-        if (!removed && externalId) {
-          for (const [key, value] of devicesRef.current.entries()) {
-            if (value?.externalId === externalId || value?.external_id === externalId || value?.externalID === externalId) {
-              devicesRef.current.delete(key);
-              removed = true;
-              break;
-            }
+        const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(EVENT_PREFIX.length));
+        const externalId = norm.external || norm.hdpId || '';
+        if (!externalId) return;
+        const mapKey = resolveMapKey(externalId, data.id || data.uuid || '', externalIndexRef.current) || externalId;
+        if (data.event === 'device_removed') {
+          const removed = devicesRef.current.delete(mapKey) || devicesRef.current.delete(externalId);
+          if (removed) {
+            schedulePublish();
           }
-        }
-        if (removed) {
-          schedulePublish();
         }
         return;
       }
 
+      if (topic.startsWith(COMMAND_RESULT_PREFIX)) {
+        const data = safeParseJSON(payload) || {};
+        const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(COMMAND_RESULT_PREFIX.length));
+        const externalId = norm.external || norm.hdpId || '';
+        if (!externalId) return;
+        const mapKey = resolveMapKey(externalId, data.id || data.uuid || '', externalIndexRef.current) || externalId;
+        const result = {
+          corr: data.corr || data.correlation_id || '',
+          success: typeof data.success === 'boolean' ? data.success : true,
+          status: data.status || '',
+          error: data.error || null,
+          ts: data.ts || Date.now(),
+        };
+        const prev = devicesRef.current.get(mapKey) || devicesRef.current.get(externalId) || {};
+        if (mapKey !== externalId) {
+          devicesRef.current.delete(externalId);
+        }
+        devicesRef.current.set(mapKey, { ...prev, id: prev.id || mapKey, mapKey, __lastCommandResult: result });
+        schedulePublish();
+        return;
+      }
+
       if (topic.startsWith(STATE_PREFIX)) {
-        const deviceId = topic.slice(STATE_PREFIX.length);
-        if (!deviceId) return;
-        if (isLegacyDeviceId(deviceId)) {
-          const removed = devicesRef.current.delete(deviceId);
-          if (removed) {
-            schedulePublish();
-          }
+        const stateEnvelope = safeParseJSON(payload) || {};
+        const norm = normalizeDeviceId(stateEnvelope.device_id || topic.slice(STATE_PREFIX.length));
+        const externalId = norm.external || norm.hdpId || '';
+        if (!externalId) return;
+        const mapKey = resolveMapKey(externalId, stateEnvelope.id || stateEnvelope.uuid || '', externalIndexRef.current) || externalId;
+        const stateObj = ensureStateObject(stateEnvelope.state || stateEnvelope.data || stateEnvelope);
+        if (!Object.keys(stateObj).length) return;
+        const prev = devicesRef.current.get(mapKey) || devicesRef.current.get(externalId) || {};
+        const incomingTs = Number(stateEnvelope.ts || stateEnvelope.timestamp || Date.now());
+        const prevTs = prev.stateUpdatedAt instanceof Date
+          ? prev.stateUpdatedAt.getTime()
+          : typeof prev.stateUpdatedAt === 'number'
+            ? prev.stateUpdatedAt
+            : 0;
+        if (prevTs && incomingTs && incomingTs < prevTs) {
+          // Drop stale state to avoid UI flicker (older MQTT state overriding optimistic UI).
           return;
         }
-        const stateObj = ensureStateObject(safeParseJSON(payload));
-        const prev = devicesRef.current.get(deviceId) || {};
+        if (mapKey !== externalId) {
+          devicesRef.current.delete(externalId);
+        }
         const merged = {
           ...prev,
-          id: prev.id || deviceId,
+          id: prev.id || mapKey,
+          mapKey,
+          device_id: mapKey,
+          externalId: prev.externalId || externalId,
+          hdpId: norm.hdpId || prev.hdpId || externalId || mapKey,
           _last_state: stateObj,
-          stateUpdatedAt: Date.now(),
+          last_seen: incomingTs || Date.now(),
+          stateUpdatedAt: incomingTs || Date.now(),
           online: true,
         };
         if (prev.__hasMetadata) {
           merged.__hasMetadata = true;
         }
-        devicesRef.current.set(deviceId, merged);
+        devicesRef.current.set(mapKey, merged);
         schedulePublish();
       }
     };
@@ -522,9 +668,10 @@ export default function useDeviceHubDevices(options = {}) {
           return;
         }
         client.subscribe(STATE_PREFIX + '#', { qos: 0 });
-        client.subscribe(EVENT_TOPIC, { qos: 0 });
-        client.subscribe(REMOVED_TOPIC, { qos: 0 });
-        client.subscribe(PAIRING_TOPIC, { qos: 0 });
+        client.subscribe(METADATA_PREFIX + '#', { qos: 0 });
+        client.subscribe(EVENT_PREFIX + '#', { qos: 0 });
+        client.subscribe(PAIRING_PREFIX + '#', { qos: 0 });
+        client.subscribe(COMMAND_RESULT_PREFIX + '#', { qos: 0 });
         setStateStatus({ connected: true });
         if (metadataMode === 'ws') {
           setMetadataStatus({ connected: true, source: 'ws' });
@@ -554,6 +701,7 @@ export default function useDeviceHubDevices(options = {}) {
 
   useEffect(() => {
     devicesRef.current = new Map();
+    externalIndexRef.current = new Map();
     updateScheduledRef.current = false;
 
     if (!enabled) {
@@ -594,9 +742,32 @@ export default function useDeviceHubDevices(options = {}) {
       reject(new Error('Invalid command payload'));
       return;
     }
+    const resolveTargetId = () => {
+      const direct = devicesRef.current.get(deviceId);
+      if (direct) {
+        return direct.hdpId || direct.externalId || deviceId;
+      }
+      for (const [, dev] of devicesRef.current.entries()) {
+        if (dev.id === deviceId || dev.mapKey === deviceId || dev.externalId === deviceId) {
+          return dev.hdpId || dev.externalId || dev.id || deviceId;
+        }
+      }
+      return deviceId;
+    };
+    const targetId = resolveTargetId();
     try {
-      const message = new Paho.Message(JSON.stringify({ device_id: deviceId, state: statePatch }));
-      message.destinationName = COMMAND_TOPIC;
+      const corr = `cmd-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const envelope = {
+        schema: HDP_SCHEMA,
+        type: 'command',
+        device_id: targetId,
+        command: 'set_state',
+        args: statePatch,
+        ts: Date.now(),
+        corr,
+      };
+      const message = new Paho.Message(JSON.stringify(envelope));
+      message.destinationName = `${COMMAND_PREFIX}${targetId}`;
       message.qos = 0;
       message.retained = false;
       client.send(message);
@@ -606,32 +777,7 @@ export default function useDeviceHubDevices(options = {}) {
     }
   }), []);
 
-  const renameDevice = useCallback((deviceId, rawName) => new Promise((resolve, reject) => {
-    const client = stateClientRef.current;
-    if (!client || typeof client.isConnected !== 'function' || !client.isConnected()) {
-      reject(new Error('Not connected to rename channel'));
-      return;
-    }
-    const name = typeof rawName === 'string' ? rawName.trim() : '';
-    if (!deviceId) {
-      reject(new Error('Missing device id'));
-      return;
-    }
-    if (!name) {
-      reject(new Error('Name cannot be empty'));
-      return;
-    }
-    try {
-      const message = new Paho.Message(JSON.stringify({ device_id: deviceId, name }));
-      message.destinationName = RENAME_TOPIC;
-      message.qos = 0;
-      message.retained = false;
-      client.send(message);
-      resolve();
-    } catch (err) {
-      reject(err);
-    }
-  }), []);
+  const renameDevice = useCallback(() => Promise.reject(new Error('Rename over MQTT is disabled; use HTTP fallback')), []);
 
   const connectionInfo = useMemo(() => ({
     metadata: metadataStatus,
@@ -647,6 +793,7 @@ export default function useDeviceHubDevices(options = {}) {
     sendDeviceCommand,
     renameDevice,
     pairingSessions,
+    pairingConfig,
     refreshPairings,
   };
 }

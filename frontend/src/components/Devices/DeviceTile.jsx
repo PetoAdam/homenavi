@@ -796,6 +796,10 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
 
   useEffect(() => {
     setControlValues(prev => {
+      if (pending) {
+        // Keep the optimistic value while a command is in flight to avoid flicker.
+        return prev;
+      }
       const baseline = buildInitialControlValues(device, normalizedInputs);
       if (!prev || typeof prev !== 'object') {
         return baseline;
@@ -832,7 +836,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     setDeleteModalOpen(false);
     setForceDelete(false);
     setActionMenuOpen(false);
-  }, [device, device.id, stateVersion, metadataVersion, device.toggleState, normalizedInputs]);
+  }, [device, device.id, stateVersion, metadataVersion, device.toggleState, normalizedInputs, pending]);
 
   useEffect(() => {
     if (!isEditingName) {
