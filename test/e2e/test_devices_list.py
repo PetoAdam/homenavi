@@ -7,7 +7,7 @@
 
 Environment:
     GATEWAY_ORIGIN (default http://localhost:8080)
-    WS_STATE_URL (default ws://localhost:8080/ws/devicehub)
+    WS_STATE_URL (default ws://localhost:8080/ws/hdp)
     ADMIN_EMAIL / ADMIN_PASSWORD
     REQUIRE_DEVICES=1 (enforce at least one)
     VERBOSE=1 for frame logging
@@ -28,7 +28,7 @@ import paho.mqtt.client as mqtt
 import requests
 
 GATEWAY_ORIGIN = os.getenv("GATEWAY_ORIGIN", "http://localhost:8080")
-DEFAULT_WS_URL = os.getenv("WS_URL", "ws://localhost:8080/ws/devicehub")
+DEFAULT_WS_URL = os.getenv("WS_URL", "ws://localhost:8080/ws/hdp")
 WS_STATE_URL = os.getenv("WS_STATE_URL", DEFAULT_WS_URL)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
@@ -36,8 +36,8 @@ VERBOSE = os.getenv("VERBOSE", "0").lower() in ("1", "true", "yes")
 SHOW_METADATA = os.getenv("SHOW_METADATA", "0").lower() in ("1", "true", "yes")
 REQUIRE_DEVICES = os.getenv("REQUIRE_DEVICES", "0").lower() in ("1", "true", "yes")
 SNAPSHOT_PATH = os.getenv("DEVICES_SNAPSHOT_PATH", "devices_snapshot.json")
-DEVICEHUB_PREFIX = "homenavi/devicehub/"
-STATE_PREFIX = f"{DEVICEHUB_PREFIX}devices/"
+HDP_PREFIX = "homenavi/hdp/"
+STATE_PREFIX = f"{HDP_PREFIX}device/state/"
 
 CollectHandler = Callable[[str, bytes], None]
 def login() -> str:
@@ -249,7 +249,7 @@ def summarize_inputs(inputs: Any, limit: int = 3) -> str:
     return f"inputs={len(inputs)}[{', '.join(labels)}{extra}]"
 
 def fetch_device_metadata(token: str) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
-    url = f"{GATEWAY_ORIGIN}/api/devicehub/devices"
+    url = f"{GATEWAY_ORIGIN}/api/hdp/devices"
     headers = {"Authorization": f"Bearer {token}"}
     cookies = {"auth_token": token}
     response = requests.get(url, headers=headers, cookies=cookies, timeout=10)

@@ -1,26 +1,31 @@
 routes:
-  - path: /api/devicehub/devices
-    upstream: http://device-hub:8090/api/devicehub/devices
+  - path: /api/hdp/devices
+    upstream: http://device-hub:8090/api/hdp/devices
     methods: [GET, POST]
     access: resident
     type: rest
-  - path: /api/devicehub/devices/{id}
-    upstream: http://device-hub:8090/api/devicehub/devices/{id}
+  - path: /api/hdp/devices/{id}
+    upstream: http://device-hub:8090/api/hdp/devices/{id}
     methods: [PATCH, DELETE]
     access: resident
     type: rest
-  - path: /api/devicehub/devices/{id}/commands
-    upstream: http://device-hub:8090/api/devicehub/devices/{id}/commands
+  - path: /api/hdp/devices/{id}/commands
+    upstream: http://device-hub:8090/api/hdp/devices/{id}/commands
     methods: [POST, PATCH]
     access: resident
     type: rest
-  - path: /api/devicehub/integrations
-    upstream: http://device-hub:8090/api/devicehub/integrations
+  - path: /api/hdp/integrations
+    upstream: http://device-hub:8090/api/hdp/integrations
     methods: [GET]
     access: resident
     type: rest
-  - path: /api/devicehub/pairings
-    upstream: http://device-hub:8090/api/devicehub/pairings
+  - path: /api/hdp/pairings
+    upstream: http://device-hub:8090/api/hdp/pairings
     methods: [GET, POST, DELETE]
+    access: resident
+    type: rest
+  - path: /api/hdp/pairing-config
+    upstream: http://device-hub:8090/api/hdp/pairing-config
+    methods: [GET]
     access: resident
     type: rest

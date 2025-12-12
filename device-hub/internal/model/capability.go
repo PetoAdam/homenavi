@@ -7,6 +7,8 @@ type Capability struct {
 	Property    string           `json:"property"`
 	ValueType   string           `json:"value_type"`
 	Unit        string           `json:"unit,omitempty"`
+	DeviceClass string           `json:"device_class,omitempty"`
+	Measurement string           `json:"measurement_type,omitempty"`
 	Access      CapabilityAccess `json:"access"`
 	Description string           `json:"description,omitempty"`
 	Range       *CapabilityRange `json:"range,omitempty"`

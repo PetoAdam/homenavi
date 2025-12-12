@@ -31,6 +31,19 @@ type IntegrationDescriptor struct {
 	Notes    string `json:"notes,omitempty"`
 }
 
+// PairingConfig describes how the UI should render pairing for a protocol.
+// This lets the frontend avoid protocol-specific hardcoding.
+type PairingConfig struct {
+	Protocol          string   `json:"protocol"`
+	Label             string   `json:"label"`
+	Supported         bool     `json:"supported"`
+	SupportsInterview bool     `json:"supports_interview"`
+	DefaultTimeoutSec int      `json:"default_timeout_sec"`
+	Instructions      []string `json:"instructions,omitempty"`
+	CTALabel          string   `json:"cta_label,omitempty"`
+	Notes             string   `json:"notes,omitempty"`
+}
+
 type pairingMetadata struct {
 	Name         string `json:"name,omitempty"`
 	Icon         string `json:"icon,omitempty"`
@@ -68,46 +81,264 @@ func (p *pairingSession) clone() pairingSession {
 }
 
 type Server struct {
-	repo         *store.Repository
-	mqtt         *mqtt.Client
-	integrations []IntegrationDescriptor
-	pairingMu    sync.Mutex
-	pairings     map[string]*pairingSession
+	repo           *store.Repository
+	mqtt           *mqtt.Client
+	integrations   []IntegrationDescriptor
+	pairingConfigs []PairingConfig
+	pairingMu      sync.Mutex
+	pairings       map[string]*pairingSession
 }
 
-func NewServer(repo *store.Repository, mqtt *mqtt.Client, integrations []IntegrationDescriptor) *Server {
+func NewServer(repo *store.Repository, mqtt *mqtt.Client, integrations []IntegrationDescriptor, pairingConfigs []PairingConfig) *Server {
+	if repo == nil {
+		slog.Warn("NewServer initialized without repository; persistence operations will be unavailable")
+	}
+	if mqtt == nil {
+		slog.Warn("NewServer initialized without mqtt client; publish/subscribe will be disabled")
+	}
 	return &Server{
-		repo:         repo,
-		mqtt:         mqtt,
-		integrations: integrations,
-		pairings:     make(map[string]*pairingSession),
+		repo:           repo,
+		mqtt:           mqtt,
+		integrations:   integrations,
+		pairingConfigs: pairingConfigs,
+		pairings:       make(map[string]*pairingSession),
 	}
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
-	mux.HandleFunc("/api/devicehub/devices", s.handleDeviceCollection)
-	mux.HandleFunc("/api/devicehub/devices/", s.handleDeviceRequest)
-	mux.HandleFunc("/api/devicehub/integrations", s.handleIntegrations)
-	mux.HandleFunc("/api/devicehub/pairings", s.handlePairings)
-	if err := s.mqtt.Subscribe(deviceUpsertTopic, s.handleDeviceUpsertEvent); err != nil {
-		slog.Error("device upsert subscribe failed", "error", err)
+	mux.HandleFunc("/api/hdp/devices", s.handleDeviceCollection)
+	mux.HandleFunc("/api/hdp/devices/", s.handleDeviceRequest)
+	mux.HandleFunc("/api/hdp/integrations", s.handleIntegrations)
+	mux.HandleFunc("/api/hdp/pairing-config", s.handlePairingConfig)
+	mux.HandleFunc("/api/hdp/pairings", s.handlePairings)
+	if s.mqtt == nil {
+		slog.Warn("mqtt client not configured; skipping mqtt subscriptions")
+		return
 	}
-	if err := s.mqtt.Subscribe(pairingProgressTopic, s.handlePairingProgressEvent); err != nil {
-		slog.Error("pairing progress subscribe failed", "error", err)
+	if err := s.mqtt.Subscribe(hdpMetadataPrefix+"#", s.handleHDPMetadataEvent); err != nil {
+		slog.Error("hdp metadata subscribe failed", "error", err)
+	}
+	if err := s.mqtt.Subscribe(hdpStatePrefix+"#", s.handleHDPStateEvent); err != nil {
+		slog.Error("hdp state subscribe failed", "error", err)
+	}
+	if err := s.mqtt.Subscribe(hdpEventPrefix+"#", s.handleHDPEvent); err != nil {
+		slog.Error("hdp event subscribe failed", "error", err)
+	}
+	if err := s.mqtt.Subscribe(hdpPairingProgressPrefix+"#", s.handleHDPPairingProgressEvent); err != nil {
+		slog.Error("hdp pairing progress subscribe failed", "error", err)
 	}
 }
 
-func (s *Server) handleDeviceUpsertEvent(_ paho.Client, msg mqtt.Message) {
-	payload := msg.Payload()
-	if len(payload) == 0 {
+func (s *Server) handleHDPMetadataEvent(_ paho.Client, msg mqtt.Message) {
+	deviceID := strings.TrimPrefix(msg.Topic(), hdpMetadataPrefix)
+	if deviceID == msg.Topic() || deviceID == "" {
 		return
 	}
-	var dev model.Device
-	if err := json.Unmarshal(payload, &dev); err != nil {
-		slog.Debug("device upsert decode failed", "error", err)
+	slog.Info("hdp metadata received", "device_id", deviceID)
+	var payload map[string]any
+	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		slog.Debug("hdp metadata decode failed", "topic", msg.Topic(), "error", err)
 		return
 	}
-	s.handlePairingCandidate(&dev)
+	s.upsertMetadataFromHDP(deviceID, payload)
+}
+
+func (s *Server) handleHDPEvent(_ paho.Client, msg mqtt.Message) {
+	if len(msg.Payload()) == 0 {
+		return
+	}
+	var evt map[string]any
+	if err := json.Unmarshal(msg.Payload(), &evt); err != nil {
+		slog.Debug("hdp event decode failed", "topic", msg.Topic(), "error", err)
+		return
+	}
+	deviceID := asString(evt["device_id"])
+	if deviceID == "" {
+		deviceID = strings.TrimPrefix(msg.Topic(), hdpEventPrefix)
+	}
+	if deviceID == "" {
+		return
+	}
+	if asString(evt["event"]) == "device_removed" {
+		_ = s.repo.DeleteDeviceAndState(context.Background(), deviceID)
+	}
+}
+
+func (s *Server) upsertMetadataFromHDP(deviceID string, payload map[string]any) {
+	if deviceID == "" {
+		return
+	}
+	ctx := context.Background()
+	dev, err := s.repo.GetByID(ctx, deviceID)
+	if err != nil {
+		slog.Warn("hdp metadata lookup failed", "device_id", deviceID, "error", err)
+		return
+	}
+	if dev == nil {
+		dev = &model.Device{ExternalID: deviceID, Protocol: normalizeProtocol(strings.Split(deviceID, "/")[0])}
+	}
+	changed := false
+	if name := strings.TrimSpace(asString(payload["name"])); name != "" && dev.Name != name {
+		dev.Name = name
+		changed = true
+	}
+	if m := strings.TrimSpace(asString(payload["manufacturer"])); m != "" && dev.Manufacturer != m {
+		dev.Manufacturer = m
+		changed = true
+	}
+	if m := strings.TrimSpace(asString(payload["model"])); m != "" && dev.Model != m {
+		dev.Model = m
+		changed = true
+	}
+	if d := strings.TrimSpace(asString(payload["description"])); d != "" && dev.Description != d {
+		dev.Description = d
+		changed = true
+	}
+	if ic := strings.TrimSpace(asString(payload["icon"])); dev.Icon != ic {
+		dev.Icon = ic
+		changed = true
+	}
+	if proto := normalizeProtocol(asString(payload["protocol"])); proto != "" && dev.Protocol != proto {
+		dev.Protocol = proto
+		changed = true
+	}
+	if caps, ok := payload["capabilities"]; ok {
+		if b, err := json.Marshal(caps); err == nil {
+			dev.Capabilities = b
+			changed = true
+		}
+	}
+	if inputs, ok := payload["inputs"]; ok {
+		if b, err := json.Marshal(inputs); err == nil {
+			dev.Inputs = b
+			changed = true
+		}
+	}
+	if !changed && dev.ID != uuid.Nil {
+		return
+	}
+	if err := s.repo.UpsertDevice(ctx, dev); err != nil {
+		slog.Warn("hdp metadata upsert failed", "device_id", deviceID, "error", err)
+		return
+	}
+}
+
+func (s *Server) handleHDPStateEvent(_ paho.Client, msg mqtt.Message) {
+	topic := strings.TrimPrefix(msg.Topic(), hdpStatePrefix)
+	if topic == msg.Topic() {
+		return
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		slog.Debug("hdp state decode failed", "topic", msg.Topic(), "error", err)
+		return
+	}
+	deviceID := strings.TrimSpace(asString(payload["device_id"]))
+	if deviceID == "" {
+		deviceID = strings.TrimSpace(topic)
+	}
+	state := map[string]any{}
+	if st, ok := payload["state"].(map[string]any); ok && len(st) > 0 {
+		state = st
+	}
+	ts := parseTimestamp(payload["ts"])
+	corr := strings.TrimSpace(asString(payload["corr"]))
+	if len(state) == 0 {
+		return
+	}
+	slog.Info("hdp state received", "device_id", deviceID, "corr", corr, "ts", ts, "keys", len(state))
+	s.consumeState(deviceID, state, corr, ts, false)
+}
+
+func parseTimestamp(raw any) int64 {
+	switch v := raw.(type) {
+	case float64:
+		if v <= 0 {
+			return time.Now().UnixMilli()
+		}
+		return int64(v)
+	case int64:
+		if v <= 0 {
+			return time.Now().UnixMilli()
+		}
+		return v
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return time.Now().UnixMilli()
+		}
+		return int64(f)
+	default:
+		return time.Now().UnixMilli()
+	}
+}
+
+func asString(raw any) string {
+	if raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprintf("%v", raw)
+	}
+}
+
+func (s *Server) consumeState(deviceTopicID string, state map[string]any, corr string, ts int64, publishHDP bool) {
+	deviceKey := strings.TrimSpace(deviceTopicID)
+	if deviceKey == "" || len(state) == 0 {
+		return
+	}
+	ctx := context.Background()
+	deviceUUID := deviceKey
+	externalID := deviceKey
+	dev, err := s.repo.GetByID(ctx, deviceKey)
+	if err != nil {
+		slog.Warn("state lookup by id failed", "device_id", deviceKey, "error", err)
+	}
+	if dev == nil {
+		proto := normalizeProtocol(strings.Split(deviceKey, "/")[0])
+		if proto != "" {
+			found, err := s.repo.GetByExternal(ctx, proto, deviceKey)
+			if err != nil {
+				slog.Warn("state lookup by external failed", "device_id", deviceKey, "error", err)
+			} else if found != nil {
+				dev = found
+			}
+		}
+	}
+	if dev != nil {
+		deviceUUID = dev.ID.String()
+		externalID = dev.ExternalID
+		_ = s.repo.TouchOnline(ctx, deviceUUID)
+		if b, err := json.Marshal(state); err == nil {
+			if err := s.repo.SaveDeviceState(ctx, deviceUUID, b); err != nil {
+				slog.Warn("state persist failed", "device_id", deviceUUID, "error", err)
+			}
+		}
+	}
+	slog.Info("state persisted", "device_id", deviceUUID, "external_id", externalID, "corr", corr, "ts", ts, "keys", len(state))
+	if !publishHDP {
+		return
+	}
+	envelope := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "state",
+		"device_id": externalID,
+		"ts":        ts,
+		"state":     state,
+	}
+	if corr != "" {
+		envelope["corr"] = corr
+	}
+	if data, err := json.Marshal(envelope); err == nil {
+		if err := s.mqtt.PublishWith(hdpStatePrefix+externalID, data, true); err != nil {
+			slog.Warn("hdp state publish failed", "device_id", externalID, "error", err)
+		}
+	}
 }
 
 type commandRequest struct {
@@ -116,16 +347,15 @@ type commandRequest struct {
 		ID    string `json:"id"`
 		Value any    `json:"value"`
 	} `json:"input"`
-	TransitionMs *int `json:"transition_ms"`
+	TransitionMs  *int   `json:"transition_ms"`
+	CorrelationID string `json:"correlation_id"`
 }
 
 type commandResponse struct {
-	Status       string `json:"status"`
-	DeviceID     string `json:"device_id"`
-	TransitionMs *int   `json:"transition_ms,omitempty"`
-}
-
-type renameRequest struct {
+	Status        string `json:"status"`
+	DeviceID      string `json:"device_id"`
+	TransitionMs  *int   `json:"transition_ms,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 type deviceUpdateRequest struct {
@@ -160,8 +390,45 @@ type refreshRequest struct {
 	Properties []string `json:"properties"`
 }
 
+func normalizeExternalID(protocol, external string) (string, error) {
+	proto := normalizeProtocol(protocol)
+	ext := strings.TrimSpace(external)
+	if proto == "" || ext == "" {
+		return "", errors.New("protocol and external_id are required")
+	}
+	segments := strings.Split(ext, "/")
+	filtered := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		seg = strings.TrimSpace(seg)
+		if seg != "" {
+			filtered = append(filtered, seg)
+		}
+	}
+	if len(filtered) == 0 {
+		return "", fmt.Errorf("external_id suffix is required")
+	}
+	suffix := filtered[len(filtered)-1]
+	return fmt.Sprintf("%s/%s", proto, suffix), nil
+}
+
+func canonicalHDPDeviceID(protocol, external string) string {
+	proto := normalizeProtocol(protocol)
+	ext := strings.Trim(strings.TrimSpace(external), "/")
+	if ext == "" {
+		return ""
+	}
+	if proto != "" && strings.HasPrefix(ext, proto+"/") {
+		return ext
+	}
+	if proto != "" {
+		return fmt.Sprintf("%s/%s", proto, ext)
+	}
+	return ext
+}
+
 type deviceListItem struct {
 	ID           uuid.UUID       `json:"id"`
+	DeviceID     string          `json:"device_id"`
 	Protocol     string          `json:"protocol"`
 	ExternalID   string          `json:"external_id"`
 	Name         string          `json:"name"`
@@ -181,12 +448,14 @@ type deviceListItem struct {
 }
 
 const (
-	deviceUpsertTopic        = "homenavi/devicehub/events/device.upsert"
-	deviceRemovedTopic       = "homenavi/devicehub/events/device.removed"
-	pairingEventTopic        = "homenavi/devicehub/events/pairing"
-	pairingCommandTopic      = "homenavi/devicehub/commands/pairing"
-	deviceRemoveCommandTopic = "homenavi/devicehub/commands/device.remove"
-	pairingProgressTopic     = "homenavi/devicehub/events/pairing.progress"
+	hdpSchema                = "hdp.v1"
+	hdpMetadataPrefix        = "homenavi/hdp/device/metadata/"
+	hdpStatePrefix           = "homenavi/hdp/device/state/"
+	hdpEventPrefix           = "homenavi/hdp/device/event/"
+	hdpCommandPrefix         = "homenavi/hdp/device/command/"
+	hdpCommandResultPrefix   = "homenavi/hdp/device/command_result/"
+	hdpPairingCommandPrefix  = "homenavi/hdp/pairing/command/"
+	hdpPairingProgressPrefix = "homenavi/hdp/pairing/progress/"
 )
 
 var (
@@ -212,7 +481,7 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 	devices, err := s.repo.List(ctx)
 	if err != nil {
 		slog.Error("device list query failed", "error", err)
-		http.Error(w, "failed to load devices", http.StatusInternalServerError)
+		http.Error(w, "could not load devices", http.StatusInternalServerError)
 		return
 	}
 	items := make([]deviceListItem, 0, len(devices))
@@ -227,6 +496,7 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 		}
 		item := deviceListItem{
 			ID:           d.ID,
+			DeviceID:     d.ExternalID,
 			Protocol:     d.Protocol,
 			ExternalID:   d.ExternalID,
 			Name:         d.Name,
@@ -269,10 +539,20 @@ func (s *Server) handleDeviceCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	protocol := strings.ToLower(strings.TrimSpace(req.Protocol))
-	external := strings.TrimSpace(req.ExternalID)
-	if protocol == "" || external == "" {
-		http.Error(w, "protocol and external_id are required", http.StatusBadRequest)
+	protocol := normalizeProtocol(req.Protocol)
+	external, err := normalizeExternalID(protocol, req.ExternalID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	existing, err := s.repo.GetByExternal(r.Context(), protocol, external)
+	if err != nil {
+		slog.Error("device lookup failed", "protocol", protocol, "external", external, "error", err)
+		http.Error(w, "could not create device", http.StatusInternalServerError)
+		return
+	}
+	if existing != nil {
+		http.Error(w, "device already exists", http.StatusConflict)
 		return
 	}
 	dev := &model.Device{
@@ -303,20 +583,20 @@ func (s *Server) handleDeviceCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.repo.UpsertDevice(r.Context(), dev); err != nil {
 		slog.Error("device create failed", "protocol", protocol, "external", external, "error", err)
-		http.Error(w, "failed to create device", http.StatusInternalServerError)
+		http.Error(w, "could not create device", http.StatusInternalServerError)
 		return
 	}
 	s.publishDeviceMetadata(dev)
 	item, err := s.buildDeviceItem(r.Context(), dev)
 	if err != nil {
-		http.Error(w, "failed to encode device", http.StatusInternalServerError)
+		http.Error(w, "could not encode device", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
 }
 
 func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/devicehub/devices/")
+	path := strings.TrimPrefix(r.URL.Path, "/api/hdp/devices/")
 	if path == r.URL.Path {
 		http.NotFound(w, r)
 		return
@@ -378,7 +658,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 	dev, err := s.repo.GetByID(r.Context(), deviceID)
 	if err != nil {
 		slog.Error("device update lookup failed", "device_id", deviceID, "error", err)
-		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		http.Error(w, "could not load device", http.StatusInternalServerError)
 		return
 	}
 	if dev == nil {
@@ -410,7 +690,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 	}
 	if err := s.repo.UpsertDevice(r.Context(), dev); err != nil {
 		slog.Error("device update failed", "device_id", deviceID, "error", err)
-		http.Error(w, "failed to update device", http.StatusInternalServerError)
+		http.Error(w, "could not update device", http.StatusInternalServerError)
 		return
 	}
 	s.publishDeviceMetadata(dev)
@@ -421,7 +701,7 @@ func (s *Server) handleDeviceGet(w http.ResponseWriter, r *http.Request, deviceI
 	dev, err := s.repo.GetByID(r.Context(), deviceID)
 	if err != nil {
 		slog.Error("device get failed", "device_id", deviceID, "error", err)
-		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		http.Error(w, "could not load device", http.StatusInternalServerError)
 		return
 	}
 	if dev == nil {
@@ -430,7 +710,7 @@ func (s *Server) handleDeviceGet(w http.ResponseWriter, r *http.Request, deviceI
 	}
 	item, err := s.buildDeviceItem(r.Context(), dev)
 	if err != nil {
-		http.Error(w, "failed to encode device", http.StatusInternalServerError)
+		http.Error(w, "could not encode device", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -440,7 +720,7 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 	dev, err := s.repo.GetByID(r.Context(), deviceID)
 	if err != nil {
 		slog.Error("device delete lookup failed", "device_id", deviceID, "error", err)
-		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		http.Error(w, "could not load device", http.StatusInternalServerError)
 		return
 	}
 	if dev == nil {
@@ -452,7 +732,7 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 	if protocol == "zigbee" && !force {
 		if err := s.requestProtocolRemoval(dev); err != nil {
 			slog.Error("protocol removal failed", "device_id", dev.ID, "protocol", protocol, "error", err)
-			http.Error(w, "failed to request protocol removal", http.StatusBadGateway)
+			http.Error(w, "could not request protocol removal", http.StatusBadGateway)
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": dev.ID.String(), "protocol": protocol})
@@ -460,7 +740,7 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 	}
 	if err := s.repo.DeleteDeviceAndState(r.Context(), deviceID); err != nil {
 		slog.Error("device delete failed", "device_id", deviceID, "error", err)
-		http.Error(w, "failed to delete device", http.StatusInternalServerError)
+		http.Error(w, "could not delete device", http.StatusInternalServerError)
 		return
 	}
 	reason := "api-delete"
@@ -486,6 +766,7 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	slog.Info("device command received", "device_id", deviceID, "method", r.Method)
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
@@ -508,11 +789,18 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 	dev, err := s.repo.GetByID(r.Context(), deviceID)
 	if err != nil {
 		slog.Error("command lookup failed", "device_id", deviceID, "error", err)
-		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		http.Error(w, "could not load device", http.StatusInternalServerError)
 		return
 	}
 	if dev == nil {
 		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+
+	targetExternal := canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
+	if targetExternal == "" {
+		slog.Error("command missing external id", "device_id", deviceID, "protocol", dev.Protocol)
+		http.Error(w, "device external id missing", http.StatusInternalServerError)
 		return
 	}
 
@@ -540,34 +828,44 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		"device_id": dev.ID.String(),
 		"state":     statePatch,
 	}
+	corr := strings.TrimSpace(req.CorrelationID)
+	if corr == "" {
+		corr = uuid.NewString()
+	}
+	payload["correlation_id"] = corr
 	if req.TransitionMs != nil {
 		// Zigbee2MQTT expects transition in seconds, accept ms from clients for precision.
 		statePatch["transition"] = float64(*req.TransitionMs) / 1000.0
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "failed to encode command", http.StatusInternalServerError)
-		return
+	hdpCommand := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "command",
+		"device_id": targetExternal,
+		"command":   "set_state",
+		"args":      statePatch,
+		"ts":        time.Now().UnixMilli(),
+		"corr":      corr,
 	}
-	if err := s.mqtt.Publish("homenavi/devicehub/commands/device.set", data); err != nil {
-		slog.Error("publish command failed", "device_id", deviceID, "error", err)
-		http.Error(w, "failed to forward command", http.StatusBadGateway)
-		return
+	if req.TransitionMs != nil {
+		hdpCommand["args"] = statePatch
 	}
-	writeJSON(w, http.StatusAccepted, commandResponse{Status: "queued", DeviceID: dev.ID.String(), TransitionMs: req.TransitionMs})
+	slog.Info("device command dispatch", "device_id", deviceID, "external", targetExternal, "corr", corr)
+	s.publishHDPCommand(targetExternal, hdpCommand)
+	writeJSON(w, http.StatusAccepted, commandResponse{Status: "queued", DeviceID: dev.ID.String(), TransitionMs: req.TransitionMs, CorrelationID: corr})
 }
 
 func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, deviceID string) {
 	dev, err := s.repo.GetByID(r.Context(), deviceID)
 	if err != nil {
 		slog.Error("device refresh lookup failed", "device_id", deviceID, "error", err)
-		http.Error(w, "device lookup failed", http.StatusInternalServerError)
+		http.Error(w, "could not load device", http.StatusInternalServerError)
 		return
 	}
 	if dev == nil {
 		http.Error(w, "device not found", http.StatusNotFound)
 		return
 	}
+	slog.Info("device refresh requested", "device_id", dev.ID.String(), "protocol", dev.Protocol)
 	var req refreshRequest
 	if r.Body != nil {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
@@ -604,16 +902,13 @@ func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, dev
 	if len(props) > 0 {
 		payload["properties"] = props
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "failed to encode refresh payload", http.StatusInternalServerError)
-		return
+	cmd := map[string]any{
+		"command":    "refresh",
+		"metadata":   metadata,
+		"state":      state,
+		"properties": props,
 	}
-	if err := s.mqtt.Publish("homenavi/devicehub/commands/device.refresh", data); err != nil {
-		slog.Error("refresh publish failed", "device_id", deviceID, "error", err)
-		http.Error(w, "failed to enqueue refresh", http.StatusBadGateway)
-		return
-	}
+	s.publishHDPCommand(dev.ExternalID, cmd)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": dev.ID.String()})
 }
 
@@ -752,9 +1047,8 @@ func (s *Server) publishDeviceMetadata(dev *model.Device) {
 		slog.Error("encode device metadata failed", "device_id", dev.ID.String(), "error", err)
 		return
 	}
-	if err := s.mqtt.Publish("homenavi/devicehub/events/device.upsert", devJSON); err != nil {
-		slog.Warn("broadcast device upsert failed", "device_id", dev.ID.String(), "error", err)
-	}
+	s.publishHDPMeta(dev)
+	_ = s.mqtt.PublishWith("homenavi/events/device", devJSON, true)
 }
 
 func (s *Server) publishDeviceRemoval(dev *model.Device, reason string) {
@@ -769,8 +1063,89 @@ func (s *Server) publishDeviceRemoval(dev *model.Device, reason string) {
 		"reason":      reason,
 	}
 	if data, err := json.Marshal(payload); err == nil {
-		if err := s.mqtt.Publish(deviceRemovedTopic, data); err != nil {
+		if err := s.mqtt.Publish(hdpEventPrefix+dev.ExternalID, data); err != nil {
 			slog.Warn("device removal publish failed", "device_id", dev.ID, "error", err)
+		}
+	}
+	slog.Info("device removal broadcast", "device_id", dev.ID.String(), "protocol", dev.Protocol, "reason", reason)
+	s.publishHDPEvent(dev.ExternalID, "device_removed", map[string]any{"reason": reason})
+}
+
+func (s *Server) publishHDPMeta(dev *model.Device) {
+	if dev == nil {
+		return
+	}
+	envelope := map[string]any{
+		"schema":       hdpSchema,
+		"type":         "metadata",
+		"device_id":    dev.ExternalID,
+		"protocol":     dev.Protocol,
+		"name":         dev.Name,
+		"manufacturer": dev.Manufacturer,
+		"model":        dev.Model,
+		"description":  dev.Description,
+		"icon":         dev.Icon,
+		"ts":           time.Now().UnixMilli(),
+	}
+	if len(dev.Capabilities) > 0 {
+		var caps any
+		if err := json.Unmarshal(dev.Capabilities, &caps); err == nil {
+			envelope["capabilities"] = caps
+		}
+	}
+	if len(dev.Inputs) > 0 {
+		var inputs any
+		if err := json.Unmarshal(dev.Inputs, &inputs); err == nil {
+			envelope["inputs"] = inputs
+		}
+	}
+	if data, err := json.Marshal(envelope); err == nil {
+		if err := s.mqtt.PublishWith(hdpMetadataPrefix+dev.ExternalID, data, true); err != nil {
+			slog.Warn("hdp metadata publish failed", "device_id", dev.ExternalID, "error", err)
+		}
+	}
+}
+
+func (s *Server) publishHDPEvent(deviceID, event string, data map[string]any) {
+	if strings.TrimSpace(deviceID) == "" || strings.TrimSpace(event) == "" {
+		return
+	}
+	envelope := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "event",
+		"device_id": deviceID,
+		"event":     event,
+		"ts":        time.Now().UnixMilli(),
+	}
+	if len(data) > 0 {
+		envelope["data"] = data
+	}
+	if b, err := json.Marshal(envelope); err == nil {
+		if err := s.mqtt.Publish(hdpEventPrefix+deviceID, b); err != nil {
+			slog.Warn("hdp event publish failed", "device_id", deviceID, "event", event, "error", err)
+		}
+	}
+}
+
+func (s *Server) publishHDPCommand(deviceID string, cmd map[string]any) {
+	if strings.TrimSpace(deviceID) == "" || cmd == nil {
+		return
+	}
+	if _, ok := cmd["device_id"]; !ok {
+		cmd["device_id"] = deviceID
+	}
+	if _, ok := cmd["schema"]; !ok {
+		cmd["schema"] = hdpSchema
+	}
+	if _, ok := cmd["type"]; !ok {
+		cmd["type"] = "command"
+	}
+	if _, ok := cmd["ts"]; !ok {
+		cmd["ts"] = time.Now().UnixMilli()
+	}
+	if b, err := json.Marshal(cmd); err == nil {
+		if err := s.mqtt.Publish(hdpCommandPrefix+deviceID, b); err != nil {
+			slog.Warn("hdp command publish failed", "device_id", deviceID, "error", err)
 		}
 	}
 }
@@ -781,6 +1156,14 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.integrations)
+}
+
+func (s *Server) handlePairingConfig(w http.ResponseWriter, _ *http.Request) {
+	if len(s.pairingConfigs) == 0 {
+		s.writeEmptyArray(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.pairingConfigs)
 }
 
 type pairingStartRequest struct {
@@ -977,7 +1360,24 @@ func (s *Server) publishPairingCommand(protocol, action string, timeout int) err
 	if err != nil {
 		return err
 	}
-	return s.mqtt.Publish(pairingCommandTopic, data)
+	if err := s.mqtt.Publish(hdpPairingCommandPrefix+protocol, data); err != nil {
+		return err
+	}
+	hdpPayload := map[string]any{
+		"schema":   hdpSchema,
+		"type":     "pairing_command",
+		"protocol": protocol,
+		"action":   action,
+	}
+	if timeout > 0 {
+		hdpPayload["timeout_sec"] = timeout
+	}
+	if b, err := json.Marshal(hdpPayload); err == nil {
+		if err := s.mqtt.Publish(hdpPairingCommandPrefix+protocol, b); err != nil {
+			slog.Warn("hdp pairing command publish failed", "protocol", protocol, "action", action, "error", err)
+		}
+	}
+	return nil
 }
 
 func (s *Server) emitPairingEvent(session pairingSession) {
@@ -986,8 +1386,37 @@ func (s *Server) emitPairingEvent(session pairingSession) {
 		slog.Warn("encode pairing event failed", "error", err)
 		return
 	}
-	if err := s.mqtt.Publish(pairingEventTopic, data); err != nil {
+	if err := s.mqtt.Publish(hdpPairingProgressPrefix+session.Protocol, data); err != nil {
 		slog.Warn("pairing event publish failed", "error", err)
+	}
+	s.publishHDPPairingProgress(session)
+}
+
+func (s *Server) publishHDPPairingProgress(session pairingSession) {
+	if session.Protocol == "" {
+		return
+	}
+	envelope := map[string]any{
+		"schema":   hdpSchema,
+		"type":     "pairing_progress",
+		"protocol": session.Protocol,
+		"stage":    session.Status,
+		"status":   session.Status,
+		"ts":       time.Now().UnixMilli(),
+	}
+	if session.DeviceID != "" {
+		envelope["device_id"] = session.DeviceID
+	}
+	if session.candidateExternalID != "" {
+		envelope["external_id"] = session.candidateExternalID
+	}
+	if (session.Metadata != pairingMetadata{}) {
+		envelope["metadata"] = session.Metadata
+	}
+	if b, err := json.Marshal(envelope); err == nil {
+		if err := s.mqtt.Publish(hdpPairingProgressPrefix+session.Protocol, b); err != nil {
+			slog.Warn("hdp pairing progress publish failed", "protocol", session.Protocol, "error", err)
+		}
 	}
 }
 
@@ -1005,25 +1434,51 @@ func (s *Server) handlePairingProgressEvent(_ paho.Client, msg mqtt.Message) {
 		slog.Debug("pairing progress decode failed", "error", err)
 		return
 	}
-	protocol := normalizeProtocol(evt.Protocol)
-	if protocol == "" {
-		protocol = "zigbee"
+	s.processPairingProgress(evt.Protocol, evt.Stage, evt.Status, evt.ExternalID)
+}
+
+func (s *Server) handleHDPPairingProgressEvent(_ paho.Client, msg mqtt.Message) {
+	protocol := strings.TrimPrefix(msg.Topic(), hdpPairingProgressPrefix)
+	if protocol == msg.Topic() {
+		protocol = ""
 	}
-	if !protocolSupportsInterviewTracking(protocol) {
+	var evt map[string]any
+	if err := json.Unmarshal(msg.Payload(), &evt); err != nil {
+		slog.Debug("hdp pairing progress decode failed", "error", err)
+		return
+	}
+	if protoVal := asString(evt["protocol"]); protoVal != "" {
+		protocol = protoVal
+	}
+	stage := asString(evt["stage"])
+	status := asString(evt["status"])
+	external := asString(evt["external_id"])
+	if external == "" {
+		external = asString(evt["device_id"])
+	}
+	s.processPairingProgress(protocol, stage, status, external)
+}
+
+func (s *Server) processPairingProgress(protocol, stage, status, externalID string) {
+	proto := normalizeProtocol(protocol)
+	if proto == "" {
+		proto = "zigbee"
+	}
+	if !protocolSupportsInterviewTracking(proto) {
 		return
 	}
 	s.pairingMu.Lock()
-	session, ok := s.pairings[protocol]
+	session, ok := s.pairings[proto]
 	if !ok || !session.Active {
 		s.pairingMu.Unlock()
 		return
 	}
-	if session.candidateExternalID == "" && evt.ExternalID != "" {
-		session.candidateExternalID = strings.ToLower(evt.ExternalID)
+	if session.candidateExternalID == "" && externalID != "" {
+		session.candidateExternalID = strings.ToLower(externalID)
 	}
 	updated := false
 	finalStatus := ""
-	switch evt.Stage {
+	switch stage {
 	case "device_joined", "device_announced":
 		session.Status = "device_joined"
 		session.awaitingInterview = true
@@ -1058,7 +1513,7 @@ func (s *Server) handlePairingProgressEvent(_ paho.Client, msg mqtt.Message) {
 			if _, err := s.stopPairing(proto, status); err != nil && !errors.Is(err, errPairingNotFound) {
 				slog.Warn("pairing finalize failed", "protocol", proto, "status", status, "error", err)
 			}
-		}(protocol, finalStatus)
+		}(proto, finalStatus)
 	}
 }
 
@@ -1150,6 +1605,10 @@ func ensurePairingSupported(protocol string) error {
 	switch protocol {
 	case "zigbee":
 		return nil
+	case "thread":
+		return nil
+	case "matter":
+		return nil
 	default:
 		return unsupportedProtocolError{protocol: protocol}
 	}
@@ -1162,16 +1621,19 @@ func (s *Server) requestProtocolRemoval(dev *model.Device) error {
 	protocol := normalizeProtocol(dev.Protocol)
 	switch protocol {
 	case "zigbee":
-		payload := map[string]string{
-			"protocol":    protocol,
-			"device_id":   dev.ID.String(),
+		payload := map[string]any{
+			"schema":      hdpSchema,
+			"type":        "command",
+			"device_id":   dev.ExternalID,
+			"command":     "remove_device",
+			"ts":          time.Now().UnixMilli(),
+			"corr":        uuid.NewString(),
 			"external_id": dev.ExternalID,
 		}
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return err
+		if b, err := json.Marshal(payload); err == nil {
+			return s.mqtt.Publish(hdpCommandPrefix+dev.ExternalID, b)
 		}
-		return s.mqtt.Publish(deviceRemoveCommandTopic, data)
+		return nil
 	default:
 		return unsupportedProtocolError{protocol: protocol}
 	}
@@ -1283,6 +1745,7 @@ func (s *Server) buildDeviceItem(ctx context.Context, d *model.Device) (deviceLi
 	}
 	item := deviceListItem{
 		ID:           d.ID,
+		DeviceID:     d.ExternalID,
 		Protocol:     d.Protocol,
 		ExternalID:   d.ExternalID,
 		Name:         d.Name,

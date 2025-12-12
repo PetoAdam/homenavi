@@ -7,10 +7,28 @@ import './AddDeviceModal.css';
 
 const CAPABILITIES_EXAMPLE = '[{ "id": "state", "kind": "binary" }]';
 const INPUTS_EXAMPLE = '[{ "type": "toggle", "property": "state" }]';
-const ZIGBEE_PAIRING_INSTRUCTIONS = [
-  'Reset or power-cycle the device to enter pairing mode.',
-  'Keep it close to your coordinator while pairing runs.',
-  'Wait here—we will auto-register it as soon as it is detected.',
+const PAIRING_INSTRUCTIONS = {
+  zigbee: [
+    'Reset or power-cycle the device to enter pairing mode.',
+    'Keep it close to the Zigbee coordinator while pairing runs.',
+    'Wait here—we will auto-register it as soon as it is detected.',
+  ],
+  thread: [
+    'Make sure the Thread border router is online.',
+    'Put the Thread device into commissioning mode.',
+    'We will record the session as soon as the adapter reports it.',
+  ],
+  matter: [
+    'Open the Matter device commissioning window.',
+    'Keep the QR code handy in case an app flow is required.',
+    'We will attach the device when the hub sees it join.',
+  ],
+};
+
+const DEFAULT_PAIRING_INSTRUCTIONS = [
+  'Power-cycle or reset the device to start discovery.',
+  'Keep it close to the hub while pairing runs.',
+  'We will register it automatically when detected.',
 ];
 
 const FLOW_STEPS = [
@@ -80,6 +98,31 @@ const defaultForm = {
   icon: 'auto',
 };
 
+function getPairingHints(protocol, pairingProfile) {
+  const instructions = pairingProfile?.instructions;
+  if (Array.isArray(instructions) && instructions.length > 0) {
+    return instructions;
+  }
+  const key = (protocol || '').toLowerCase();
+  if (key && Array.isArray(PAIRING_INSTRUCTIONS[key])) {
+    return PAIRING_INSTRUCTIONS[key];
+  }
+  return DEFAULT_PAIRING_INSTRUCTIONS;
+}
+
+function getProtocolLabel(protocol, options) {
+  if (!protocol) return 'Device';
+  const match = options?.find?.(opt => opt?.protocol === protocol);
+  if (match?.label) return match.label;
+  return protocol.charAt(0).toUpperCase() + protocol.slice(1);
+}
+
+function getPairingProfile(protocol, config) {
+  const key = (protocol || '').toLowerCase();
+  if (!key) return null;
+  return config?.[key] || null;
+}
+
 function slugify(value) {
   return value
     .toString()
@@ -99,13 +142,18 @@ function parseOptionalJson(raw, label) {
   }
 }
 
+function ensureProtocolPrefixedIdentifier(protocol, value) {
+  const proto = (protocol || '').toLowerCase();
+  const raw = (value || '').trim();
+  if (!proto || !raw) return raw;
+  const segments = raw.split('/').filter(Boolean);
+  const suffix = segments.length ? segments[segments.length - 1] : raw;
+  return `${proto}/${suffix}`;
+}
+
 function buildIdentifier(protocol, name, manual) {
-  if (manual && manual.trim()) {
-    return manual.trim();
-  }
-  const base = slugify(name) || `device-${Date.now().toString(36)}`;
-  const safeProtocol = protocol || 'manual';
-  return `${safeProtocol}/${base}`;
+  const base = (manual && manual.trim()) || slugify(name) || `device-${Date.now().toString(36)}`;
+  return ensureProtocolPrefixedIdentifier(protocol, base);
 }
 
 export default function AddDeviceModal({
@@ -114,6 +162,7 @@ export default function AddDeviceModal({
   onCreate,
   integrations = [],
   pairingSessions = {},
+  pairingConfig = {},
   onStartPairing,
   onStopPairing,
 }) {
@@ -139,6 +188,7 @@ export default function AddDeviceModal({
     setShowAdvanced(false);
   }, []);
   const modalRef = useRef(null);
+  const resumePairingRef = useRef(false);
 
   const protocolOptions = useMemo(() => {
     const filtered = (integrations || []).filter(item => item && item.protocol && item.status !== 'planned');
@@ -153,10 +203,37 @@ export default function AddDeviceModal({
   }, [integrations]);
 
   const selectedProtocol = form.protocol || protocolOptions[0]?.protocol || '';
+  const selectedIntegration = useMemo(
+    () => protocolOptions.find(option => option.protocol === selectedProtocol),
+    [protocolOptions, selectedProtocol],
+  );
+  const pairingProfile = useMemo(
+    () => getPairingProfile(selectedProtocol, pairingConfig),
+    [pairingConfig, selectedProtocol],
+  );
+  const selectedProtocolLabel = useMemo(
+    () => getProtocolLabel(selectedProtocol, protocolOptions),
+    [selectedProtocol, protocolOptions],
+  );
+  const pairingTitleLabel = pairingProfile?.label || selectedProtocolLabel;
   const selectedIcon = form.icon || 'auto';
   const selectedIconMeta = useMemo(() => DEVICE_ICON_CHOICES.find(choice => choice.key === selectedIcon), [selectedIcon]);
   const identifierPreview = useMemo(() => buildIdentifier(selectedProtocol, form.name, form.identifier), [selectedProtocol, form.name, form.identifier]);
-  const isZigbeeSelection = selectedProtocol === 'zigbee';
+  const handleIdentifierChange = useCallback(event => {
+    const next = event.target.value.replaceAll('/', '');
+    setForm(prev => ({ ...prev, identifier: next }));
+  }, []);
+  const pairingSupported = useMemo(() => {
+    const integrationBlocked = selectedIntegration?.status === 'planned';
+    if (typeof pairingProfile?.supported === 'boolean') {
+      return pairingProfile.supported && !integrationBlocked;
+    }
+    return selectedProtocol === 'zigbee' && !integrationBlocked;
+  }, [pairingProfile, selectedIntegration, selectedProtocol]);
+  const activeSessionForSelected = useMemo(
+    () => pairingSessions?.[selectedProtocol],
+    [pairingSessions, selectedProtocol],
+  );
   const currentStepIndex = useMemo(() => {
     const idx = FLOW_STEPS.findIndex(step => step.id === flowStep);
     return idx >= 0 ? idx : 0;
@@ -177,8 +254,23 @@ export default function AddDeviceModal({
     return session;
   }, [activePairing, pairingSessions]);
 
-  const sessionStatus = activePairingSession?.status || (activePairing ? 'active' : 'starting');
+  const sessionStatus = useMemo(() => {
+    if (activePairingSession?.status) return activePairingSession.status;
+    if (activePairingSession?.active) return 'active';
+    if (activePairing) return activePairing.status || 'starting';
+    return 'starting';
+  }, [activePairingSession, activePairing]);
+  const pairingBlockedReason = useMemo(() => {
+    if (pairingSupported) {
+      return activeSessionForSelected?.active ? 'Pairing already running for this protocol.' : '';
+    }
+    if (pairingProfile?.notes) {
+      return pairingProfile.notes;
+    }
+    return 'Guided pairing is not available for this protocol yet.';
+  }, [activeSessionForSelected, pairingProfile, pairingSupported]);
   const pairingPhaseStates = useMemo(() => buildPairingPhaseStates(sessionStatus), [sessionStatus]);
+  const pairingCtaLabel = pairingProfile?.cta_label || pairingProfile?.ctaLabel || `Start ${pairingTitleLabel} pairing`;
 
   const handleStopPairing = useCallback(async () => {
     if (!activePairing || typeof onStopPairing !== 'function') {
@@ -229,7 +321,16 @@ export default function AddDeviceModal({
     };
   }, [form]);
 
-  const beginZigbeePairing = useCallback(async () => {
+  const beginGuidedPairing = useCallback(async () => {
+    if (!pairingSupported) {
+      setPairingError(pairingProfile?.notes || 'Guided pairing is not available for this protocol yet.');
+      return;
+    }
+    if (activeSessionForSelected?.active) {
+      setFlowStep('pairing');
+      setPairingNotice('Pairing already running. Monitoring progress…');
+      return;
+    }
     if (typeof onStartPairing !== 'function') {
       setPairingError('Pairing is not available right now.');
       return;
@@ -237,7 +338,9 @@ export default function AddDeviceModal({
     try {
       setPairingStartPending(true);
       setPairingError(null);
-      const timeout = 60;
+      const timeout = pairingProfile?.default_timeout_sec
+        || pairingProfile?.defaultTimeoutSec
+        || 60;
       const payload = {
         protocol: selectedProtocol.trim().toLowerCase(),
         timeout,
@@ -255,17 +358,19 @@ export default function AddDeviceModal({
         protocol: payload.protocol,
         startedAt,
         expiresAt,
+        status: session.status || 'active',
       });
       setFlowStep('pairing');
-      setPairingNotice('Permit join enabled. Put your device into pairing mode now.');
+      setPairingNotice(pairingProfile?.notes || 'Permit join enabled. Put your device into pairing mode now.');
       setFormError(null);
+      resumePairingRef.current = true;
     } catch (err) {
       console.error('Failed to start pairing', err);
       setPairingError(err?.message || 'Unable to start pairing');
     } finally {
       setPairingStartPending(false);
     }
-  }, [onStartPairing, selectedProtocol, buildPairingMetadata]);
+  }, [pairingSupported, activeSessionForSelected, onStartPairing, selectedProtocol, buildPairingMetadata]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -294,6 +399,31 @@ export default function AddDeviceModal({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open, handleClose]);
+
+  useEffect(() => {
+    if (!open) {
+      resumePairingRef.current = false;
+      return;
+    }
+    if (resumePairingRef.current) {
+      return;
+    }
+    const existing = Object.values(pairingSessions || {}).find(session => session && session.active);
+    if (!existing) {
+      return;
+    }
+    const started = existing.startedAt || existing.started_at;
+    const expires = existing.expiresAt || existing.expires_at;
+    setActivePairing({
+      id: existing.id || `${existing.protocol || 'pairing'}-${Date.now()}`,
+      protocol: existing.protocol || '',
+      startedAt: started instanceof Date ? started : (started ? new Date(started) : new Date()),
+      expiresAt: expires instanceof Date ? expires : (expires ? new Date(expires) : null),
+    });
+    setFlowStep('pairing');
+    setPairingNotice('Pairing already running. Monitoring progress…');
+    resumePairingRef.current = true;
+  }, [open, pairingSessions]);
 
   useEffect(() => {
     if (open || !activePairing || !onStopPairing) {
@@ -388,9 +518,13 @@ export default function AddDeviceModal({
     try {
       setSubmitting(true);
       setFormError(null);
+      const externalId = buildIdentifier(selectedProtocol, form.name, form.identifier);
+      if (!externalId) {
+        throw new Error('Identifier is required');
+      }
       const payload = {
         protocol: selectedProtocol.trim().toLowerCase(),
-        external_id: identifierPreview,
+        external_id: externalId,
       };
       if (form.name.trim()) payload.name = form.name.trim();
       if (form.type.trim()) payload.type = form.type.trim();
@@ -425,6 +559,12 @@ export default function AddDeviceModal({
   const renderPairingStep = () => {
     const countdownLabel = secondsRemaining ?? '—';
     const statusLabel = sessionStatus.replace(/_/g, ' ');
+    const pairingProtocol = activePairing?.protocol || selectedProtocol;
+    const pairingProfileForView = getPairingProfile(pairingProtocol, pairingConfig) || pairingProfile;
+    const pairingHints = getPairingHints(pairingProtocol, pairingProfileForView);
+    const pairingMeta = activePairingSession?.metadata;
+    const pairingDeviceId = activePairingSession?.deviceId || activePairingSession?.device_id;
+    const fallbackPairingNotice = pairingProfileForView?.notes || 'Permit join active — reset the device and keep it near the coordinator.';
     return (
       <div className="auth-modal-content-inner add-device-step add-device-pairing-step">
         <div className="add-device-pairing-panel">
@@ -448,12 +588,25 @@ export default function AddDeviceModal({
               <div className="add-device-pairing-status-pill">{statusLabel}</div>
             </div>
           </div>
-          <p className="add-device-pairing-note">{pairingNotice || 'Permit join active — reset the device and keep it near the coordinator.'}</p>
+          <p className="add-device-pairing-note">{pairingNotice || fallbackPairingNotice}</p>
           <div className="add-device-pairing-inline-tips">
-            {ZIGBEE_PAIRING_INSTRUCTIONS.map(instruction => (
+            {pairingHints.map(instruction => (
               <span key={instruction}>{instruction}</span>
             ))}
           </div>
+          {pairingMeta ? (
+            <div className="add-device-pairing-meta">
+              <span className="add-device-pairing-label">Metadata applied after join</span>
+              <div className="add-device-pairing-meta-grid">
+                {pairingMeta.name ? <span><strong>Name:</strong> {pairingMeta.name}</span> : null}
+                {pairingMeta.type ? <span><strong>Type:</strong> {pairingMeta.type}</span> : null}
+                {pairingMeta.manufacturer ? <span><strong>Mfr:</strong> {pairingMeta.manufacturer}</span> : null}
+                {pairingMeta.model ? <span><strong>Model:</strong> {pairingMeta.model}</span> : null}
+                {pairingMeta.icon ? <span><strong>Icon:</strong> {pairingMeta.icon}</span> : null}
+                {pairingDeviceId ? <span><strong>Device ID:</strong> {pairingDeviceId}</span> : null}
+              </div>
+            </div>
+          ) : null}
           {pairingError ? <div className="auth-modal-error add-device-error">{pairingError}</div> : null}
           <div className="add-device-pairing-actions">
             <button type="button" className="auth-modal-btn" onClick={handleStopPairing} disabled={stopPending}>
@@ -483,7 +636,7 @@ export default function AddDeviceModal({
 
   const headerTitleMap = {
     form: 'Add Device',
-    pairing: 'Guided Zigbee Pairing',
+    pairing: `Guided ${pairingTitleLabel} Pairing`,
     success: 'Device Connected',
   };
   const headerTitle = headerTitleMap[flowStep] || headerTitleMap.form;
@@ -575,7 +728,7 @@ export default function AddDeviceModal({
                               type="text"
                               placeholder=" "
                               value={form.identifier}
-                              onChange={event => setForm(prev => ({ ...prev, identifier: event.target.value }))}
+                              onChange={handleIdentifierChange}
                             />
                             <label className="auth-modal-label" htmlFor="add-device-identifier">Identifier (optional)</label>
                             <small className="add-device-modal-hint">Preview: {identifierPreview}</small>
@@ -712,20 +865,27 @@ export default function AddDeviceModal({
                       <div className="add-device-card add-device-guided-card">
                         <div className="add-device-card-head add-device-card-head-center">
                           <div>
-                            <h4>{isZigbeeSelection ? 'Guided Zigbee pairing' : 'Manual onboarding'}</h4>
-                            <p>{isZigbeeSelection ? 'Kick off permit-join right when you reset the device.' : 'Use advanced setup or manual registration for non-Zigbee gear.'}</p>
+                            <h4>{pairingSupported ? `Guided ${pairingTitleLabel} pairing` : 'Manual onboarding'}</h4>
+                              <p>{pairingSupported
+                                ? (pairingProfile?.notes || 'Kick off permit-join right when you reset the device.')
+                                : 'Use advanced setup or manual registration for this protocol.'}
+                              </p>
                           </div>
                         </div>
                         {pairingError ? <div className="auth-modal-error add-device-error">{pairingError}</div> : null}
                         <div className="add-device-guided-actions">
-                          {isZigbeeSelection ? (
+                          {pairingSupported ? (
                             <button
                               type="button"
                               className="auth-modal-btn add-device-guided-action"
-                              onClick={beginZigbeePairing}
-                              disabled={pairingStartPending}
+                              onClick={beginGuidedPairing}
+                              disabled={pairingStartPending || activeSessionForSelected?.active}
                             >
-                              {pairingStartPending ? 'Starting…' : 'Start Zigbee pairing'}
+                              {activeSessionForSelected?.active
+                                ? 'Pairing in progress'
+                                : pairingStartPending
+                                  ? 'Starting…'
+                                  : pairingCtaLabel}
                             </button>
                           ) : (
                             <button
@@ -737,9 +897,9 @@ export default function AddDeviceModal({
                             </button>
                           )}
                           <small className="add-device-modal-hint">
-                            {isZigbeeSelection
-                              ? 'Need manual control? Expand Advanced setup above.'
-                              : 'Switch to Zigbee to unlock guided permit-join controls.'}
+                            {pairingSupported
+                              ? (pairingBlockedReason || 'Need manual control? Expand Advanced setup above.')
+                              : (pairingBlockedReason || 'Guided pairing is not available for this protocol yet.')}
                           </small>
                         </div>
                       </div>

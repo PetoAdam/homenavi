@@ -9,7 +9,7 @@ routes:
     methods: [GET]
     access: auth
     type: websocket-mqtt
-  - path: /ws/devicehub
+  - path: /ws/hdp
     upstream: ws://mosquitto:9001/
     methods: [GET]
     access: auth
