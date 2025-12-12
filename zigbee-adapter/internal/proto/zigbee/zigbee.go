@@ -880,7 +880,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 	if dev == nil {
 		return
 	}
-refreshProps := func(target, external string, props []string) []string {
+	refreshProps := func(target, external string, props []string) []string {
 		out := adapterutil.UniqueStrings(props)
 		if len(out) == 0 {
 			z.metaMu.RLock()
@@ -1380,7 +1380,7 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-}
+	}
 }
 
 func canonicalExternalID(raw map[string]any) string {
