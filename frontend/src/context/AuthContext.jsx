@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { login, finish2FA, signup, refreshToken, logout, getMe, request2FAEmail } from '../services/authService';
+import { setAuthCookie, clearAuthCookie } from '../services/authCookie';
 
 const AuthContext = createContext();
 
@@ -39,6 +40,9 @@ export function AuthProvider({ children }) {
       setAccessToken(accessTokenFromUrl);
       setRefreshTokenValue(refreshTokenFromUrl);
       localStorage.setItem('refreshToken', refreshTokenFromUrl);
+
+      // Ensure cookie is set for api-gateway (and websocket) auth
+      setAuthCookie(accessTokenFromUrl);
       
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -89,16 +93,14 @@ export function AuthProvider({ children }) {
           setAccessToken(res.accessToken);
           setRefreshTokenValue(res.refreshToken);
           localStorage.setItem('refreshToken', res.refreshToken);
-          
-          // Update cookie with new access token
-          document.cookie = `auth_token=${res.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+
+          setAuthCookie(res.accessToken);
         } else {
           setAccessToken(null);
           setRefreshTokenValue(null);
           localStorage.removeItem('refreshToken');
-          
-          // Clear cookie
-          document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
+          clearAuthCookie();
         }
       })();
     }
@@ -114,9 +116,8 @@ export function AuthProvider({ children }) {
         setAccessToken(res.accessToken);
         setRefreshTokenValue(res.refreshToken);
         localStorage.setItem('refreshToken', res.refreshToken);
-        
-        // Update cookie with new access token
-        document.cookie = `auth_token=${res.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+
+        setAuthCookie(res.accessToken);
       }
     }, 13 * 60 * 1000); // every 13 min
     return () => clearInterval(interval);
@@ -138,9 +139,8 @@ export function AuthProvider({ children }) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
       localStorage.setItem('refreshToken', resp.refreshToken);
-      
-      // Set cookie for WebSocket authentication
-      document.cookie = `auth_token=${resp.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+
+      setAuthCookie(resp.accessToken);
       
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
@@ -171,9 +171,8 @@ export function AuthProvider({ children }) {
       setAccessToken(resp.accessToken);
       setRefreshTokenValue(resp.refreshToken);
       localStorage.setItem('refreshToken', resp.refreshToken);
-      
-      // Set cookie for WebSocket authentication
-      document.cookie = `auth_token=${resp.accessToken}; path=/; SameSite=strict; max-age=900`; // 15 minutes
+
+      setAuthCookie(resp.accessToken);
       
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
@@ -228,9 +227,8 @@ export function AuthProvider({ children }) {
     setAccessToken(null);
     setRefreshTokenValue(null);
     localStorage.removeItem('refreshToken');
-    
-    // Clear cookie
-    document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
+    clearAuthCookie();
     
     setUser(null);
     setPendingUserId(null); // Clear pending userId

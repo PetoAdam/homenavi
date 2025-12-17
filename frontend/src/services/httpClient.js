@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { setAuthCookie, clearAuthCookie } from './authCookie';
 
 // Unified HTTP client with consistent error shaping & auth header injection.
 // Usage: http.get(url, { token, params }); http.post(url, data, { token });
@@ -54,8 +55,7 @@ instance.interceptors.response.use(r => r, async (error) => {
       if (newAccess) {
         currentAccessToken = newAccess;
         localStorage.setItem('refreshToken', newRefresh || refreshToken);
-        // Update auth cookie for websockets
-        document.cookie = `auth_token=${newAccess}; path=/; SameSite=strict; max-age=900`;
+        setAuthCookie(newAccess);
         processQueue(null, newAccess);
         config.headers['Authorization'] = `Bearer ${newAccess}`;
         return instance(config);
@@ -67,7 +67,7 @@ instance.interceptors.response.use(r => r, async (error) => {
       // Clear tokens on refresh failure
       currentAccessToken = null;
       localStorage.removeItem('refreshToken');
-      document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      clearAuthCookie();
       return Promise.reject(e);
     } finally {
       isRefreshing = false;
