@@ -146,7 +146,7 @@ func (a *Adapter) publishStatus(status, reason string) {
 			"cta_label":           "Start Thread pairing",
 			"notes":               "Placeholder implementation",
 		},
-		"ts":         time.Now().UnixMilli(),
+		"ts": time.Now().UnixMilli(),
 	}
 	if b, err := json.Marshal(hdp); err == nil {
 		_ = a.client.PublishWith(hdpAdapterStatusPrefix+a.adapterID, b, true)

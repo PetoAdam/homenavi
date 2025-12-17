@@ -809,7 +809,7 @@ func (z *ZigbeeAdapter) publishStatus(status, reason string) error {
 			"default_timeout_sec": 60,
 			"cta_label":           "Start Zigbee pairing",
 		},
-		"ts":         time.Now().UnixMilli(),
+		"ts": time.Now().UnixMilli(),
 	}
 	if hb, err := json.Marshal(hdp); err == nil {
 		_ = z.client.PublishWith(hdpAdapterStatusPrefix+z.adapterID, hb, true)
@@ -1190,26 +1190,26 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m paho.Message) {
 				if dev.ExternalID == "" {
 					continue
 				}
-					if _, ok := seen[dev.ExternalID]; ok {
+				if _, ok := seen[dev.ExternalID]; ok {
 					continue
 				}
-					// Backward-compat: legacy rows stored ExternalID as "zigbee/<ieee>".
-					// If the canonical IEEE exists in this refresh, delete the legacy row without
-					// clearing retained HDP topics (which would otherwise wipe the canonical metadata).
-					lower := strings.ToLower(dev.ExternalID)
-					if strings.HasPrefix(lower, "zigbee/") {
-						legacy := strings.TrimSpace(dev.ExternalID[len("zigbee/"):])
-						if legacy != "" {
-							if _, ok := seen[legacy]; ok {
-								if err := z.repo.DeleteDeviceAndState(ctx, dev.ID.String()); err != nil {
-									slog.Warn("zigbee legacy row delete failed", "device", dev.ExternalID, "id", dev.ID, "error", err)
-								} else {
-									slog.Info("zigbee legacy row pruned", "device", dev.ExternalID, "reason", "bridge-refresh-legacy")
-								}
-								continue
+				// Backward-compat: legacy rows stored ExternalID as "zigbee/<ieee>".
+				// If the canonical IEEE exists in this refresh, delete the legacy row without
+				// clearing retained HDP topics (which would otherwise wipe the canonical metadata).
+				lower := strings.ToLower(dev.ExternalID)
+				if strings.HasPrefix(lower, "zigbee/") {
+					legacy := strings.TrimSpace(dev.ExternalID[len("zigbee/"):])
+					if legacy != "" {
+						if _, ok := seen[legacy]; ok {
+							if err := z.repo.DeleteDeviceAndState(ctx, dev.ID.String()); err != nil {
+								slog.Warn("zigbee legacy row delete failed", "device", dev.ExternalID, "id", dev.ID, "error", err)
+							} else {
+								slog.Info("zigbee legacy row pruned", "device", dev.ExternalID, "reason", "bridge-refresh-legacy")
 							}
+							continue
 						}
 					}
+				}
 				z.removeDevice(ctx, dev, "bridge-refresh-prune")
 			}
 			keepIDs := make([]string, 0, len(seen)+len(nonZigbeeIDs))

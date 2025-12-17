@@ -80,11 +80,11 @@ func (p *pairingSession) clone() pairingSession {
 }
 
 type Server struct {
-	repo           *store.Repository
-	mqtt           mqtt.ClientAPI
-	adapters       *adapterRegistry
-	pairingMu      sync.Mutex
-	pairings       map[string]*pairingSession
+	repo      *store.Repository
+	mqtt      mqtt.ClientAPI
+	adapters  *adapterRegistry
+	pairingMu sync.Mutex
+	pairings  map[string]*pairingSession
 }
 
 func NewServer(repo *store.Repository, mqtt mqtt.ClientAPI) *Server {
@@ -95,10 +95,10 @@ func NewServer(repo *store.Repository, mqtt mqtt.ClientAPI) *Server {
 		slog.Warn("NewServer initialized without mqtt client; publish/subscribe will be disabled")
 	}
 	return &Server{
-		repo:           repo,
-		mqtt:           mqtt,
-		adapters:       newAdapterRegistry(0),
-		pairings:       make(map[string]*pairingSession),
+		repo:     repo,
+		mqtt:     mqtt,
+		adapters: newAdapterRegistry(0),
+		pairings: make(map[string]*pairingSession),
 	}
 }
 
