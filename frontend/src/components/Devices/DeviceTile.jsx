@@ -604,37 +604,55 @@ function buildInitialControlValues(device, inputs) {
   return values;
 }
 
+function normalizeToggleProperty(property) {
+  const key = (property ?? '').toString().trim();
+  const lower = key.toLowerCase();
+  if (lower === 'state' || lower === 'power' || lower === 'on') return 'on';
+  return key;
+}
+
 function buildPayloadForInput(input, value) {
   const key = sanitizeInputKey(input);
   if (!key) {
     return null;
   }
-  const payload = { input: { id: key, value } };
-  const property = (input.property || '').toLowerCase();
-  if (input.type === 'slider' && property.startsWith('brightness')) {
+  const stateKeyRaw = (input.property || key || '').toString().trim();
+  if (!stateKeyRaw) return null;
+
+  const state = {};
+  const propertyLower = stateKeyRaw.toLowerCase();
+
+  switch (input.type) {
+  case 'toggle':
+    state[normalizeToggleProperty(stateKeyRaw)] = toControlBoolean(value);
+    break;
+  case 'slider':
+  case 'number': {
     const numeric = Number(value);
-    if (!Number.isNaN(numeric)) {
-      payload.state = { on: numeric > 0 };
+    if (Number.isNaN(numeric)) return null;
+    state[stateKeyRaw] = numeric;
+    if (propertyLower.startsWith('brightness')) {
+      state.on = numeric > 0;
     }
+    break;
   }
-  if (input.type === 'color') {
+  case 'color': {
     const hex = typeof value === 'string' ? normalizeColorHex(value) : normalizeColorHex(value?.hex);
-    payload.input.value = hex;
-    payload.state = { ...(payload.state || {}), on: true };
+    state[stateKeyRaw] = hex;
+    state.on = true;
+    break;
   }
-  if (input.type === 'select') {
-    const nextState = { ...(payload.state || {}) };
-    if (property) {
-      nextState[property] = value;
+  case 'select':
+    state[stateKeyRaw] = value;
+    if (propertyLower.includes('effect')) {
+      state.on = true;
     }
-    if (property.includes('effect')) {
-      nextState.on = true;
-    }
-    if (Object.keys(nextState).length > 0) {
-      payload.state = nextState;
-    }
+    break;
+  default:
+    state[stateKeyRaw] = value;
   }
-  return payload;
+
+  return { state };
 }
 
 function formatControlValue(input, value) {

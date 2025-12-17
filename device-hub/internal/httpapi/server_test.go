@@ -9,11 +9,41 @@ import (
 )
 
 func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
-	configs := []PairingConfig{
-		{Protocol: "zigbee", Label: "Zigbee", Supported: true, DefaultTimeoutSec: 60},
-		{Protocol: "thread", Label: "Thread", Supported: false, DefaultTimeoutSec: 30},
-	}
-	srv := NewServer(nil, nil, nil, configs)
+	srv := NewServer(nil, nil)
+	// Simulate adapters advertising pairing configs via hello/status frames.
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"zigbee",
+		"protocol":"zigbee",
+		"version":"test",
+		"features": {"supports_pairing": true, "supports_interview": true},
+		"pairing": {
+		  "label":"Zigbee",
+		  "supported": true,
+		  "supports_interview": true,
+		  "default_timeout_sec": 60,
+		  "instructions": ["a","b"],
+		  "cta_label": "Start Zigbee pairing"
+		},
+		"ts": 1
+	}`))
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"thread",
+		"protocol":"thread",
+		"version":"test",
+		"features": {"supports_pairing": true, "supports_interview": false},
+		"pairing": {
+		  "label":"Thread",
+		  "supported": false,
+		  "supports_interview": false,
+		  "default_timeout_sec": 30,
+		  "notes": "placeholder"
+		},
+		"ts": 1
+	}`))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/hdp/pairing-config", nil)
 	rr := httptest.NewRecorder()
@@ -29,17 +59,25 @@ func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 		t.Fatalf("response is not valid json: %v", err)
 	}
 
-	if len(got) != len(configs) {
-		t.Fatalf("unexpected config count: got %d want %d", len(got), len(configs))
+	if len(got) != 2 {
+		t.Fatalf("unexpected config count: got %d want %d", len(got), 2)
 	}
 
-	if got[0].Protocol != "zigbee" || got[1].Protocol != "thread" {
-		t.Fatalf("protocols not preserved: %+v", got)
+	// Order isn't guaranteed; assert presence.
+	byProto := map[string]PairingConfig{}
+	for _, cfg := range got {
+		byProto[cfg.Protocol] = cfg
+	}
+	if _, ok := byProto["zigbee"]; !ok {
+		t.Fatalf("expected zigbee config present: %+v", got)
+	}
+	if _, ok := byProto["thread"]; !ok {
+		t.Fatalf("expected thread config present: %+v", got)
 	}
 }
 
 func TestHandlePairingConfigEmpty(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil)
+	srv := NewServer(nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/hdp/pairing-config", nil)
 	rr := httptest.NewRecorder()
@@ -61,7 +99,7 @@ func TestHandlePairingConfigEmpty(t *testing.T) {
 }
 
 func TestHandleDeviceCommandInvalidJSON(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil)
+	srv := NewServer(nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices/abc/commands", strings.NewReader("{not-json"))
 	rr := httptest.NewRecorder()
 
@@ -76,7 +114,7 @@ func TestHandleDeviceCommandInvalidJSON(t *testing.T) {
 }
 
 func TestHandleDeviceCommandMissingState(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil)
+	srv := NewServer(nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices/abc/commands", strings.NewReader(`{"state":{},"input":null}`))
 	rr := httptest.NewRecorder()
 
@@ -85,13 +123,13 @@ func TestHandleDeviceCommandMissingState(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("unexpected status: got %d want %d", rr.Code, http.StatusBadRequest)
 	}
-	if !strings.Contains(rr.Body.String(), "state or input required") {
+	if !strings.Contains(rr.Body.String(), "state is required") {
 		t.Fatalf("expected missing state message, got %q", rr.Body.String())
 	}
 }
 
 func TestHandleDeviceCreateInvalidJSON(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil)
+	srv := NewServer(nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices", strings.NewReader("{bad"))
 	rr := httptest.NewRecorder()
 
@@ -106,7 +144,7 @@ func TestHandleDeviceCreateInvalidJSON(t *testing.T) {
 }
 
 func TestHandleDeviceCreateMissingFields(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil)
+	srv := NewServer(nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices", strings.NewReader(`{"protocol":"","external_id":""}`))
 	rr := httptest.NewRecorder()
 
@@ -117,5 +155,62 @@ func TestHandleDeviceCreateMissingFields(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "protocol and external_id are required") {
 		t.Fatalf("expected external id message, got %q", rr.Body.String())
+	}
+}
+
+func TestParseHDPDeviceRequestPath_WithSlashDeviceIDCommands(t *testing.T) {
+	deviceID, action, ok := parseHDPDeviceRequestPath("/api/hdp/devices/zigbee/0xa4c13867e32d96d4/commands")
+	if !ok {
+		t.Fatalf("expected ok")
+	}
+	if action != "commands" {
+		t.Fatalf("expected action commands, got %q", action)
+	}
+	if deviceID != "zigbee/0xa4c13867e32d96d4" {
+		t.Fatalf("expected device id %q got %q", "zigbee/0xa4c13867e32d96d4", deviceID)
+	}
+}
+
+func TestHandleDeviceRequest_StateIsRequired(t *testing.T) {
+	srv := NewServer(nil, nil)
+
+	body := `{"correlation_id":"test-corr"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices/zigbee/0xa4c13867e32d96d4/commands", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	srv.handleDeviceRequest(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status: got %d want %d body=%q", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "state is required") {
+		t.Fatalf("expected state required message, got %q", rr.Body.String())
+	}
+}
+
+func TestParseHDPDeviceRequestPath_WithSlashDeviceIDRefresh(t *testing.T) {
+	deviceID, action, ok := parseHDPDeviceRequestPath("/api/hdp/devices/zigbee/0xa4c13867e32d96d4/refresh")
+	if !ok {
+		t.Fatalf("expected ok")
+	}
+	if action != "refresh" {
+		t.Fatalf("expected action refresh, got %q", action)
+	}
+	if deviceID != "zigbee/0xa4c13867e32d96d4" {
+		t.Fatalf("expected device id %q got %q", "zigbee/0xa4c13867e32d96d4", deviceID)
+	}
+}
+
+func TestParseHDPDeviceRequestPath_WithSlashDeviceIDGet(t *testing.T) {
+	deviceID, action, ok := parseHDPDeviceRequestPath("/api/hdp/devices/zigbee/0xa4c13867e32d96d4")
+	if !ok {
+		t.Fatalf("expected ok")
+	}
+	if action != "" {
+		t.Fatalf("expected empty action, got %q", action)
+	}
+	if deviceID != "zigbee/0xa4c13867e32d96d4" {
+		t.Fatalf("expected device id %q got %q", "zigbee/0xa4c13867e32d96d4", deviceID)
 	}
 }

@@ -6,12 +6,18 @@ http {
     sendfile        on;
     keepalive_timeout  65;
 
+    # Docker DNS (service-name) resolution.
+    # Using variables in proxy_pass forces runtime re-resolution so container IP changes
+    # (e.g. after `docker compose up --build`) don't leave nginx with stale upstream IPs.
+    resolver 127.0.0.11 ipv6=off valid=10s;
+
     server {
         listen 80;
         server_name _;
 
         location /ws/ {
-            proxy_pass http://api-gateway:8080/ws/;
+            set $api_gateway_upstream http://api-gateway:8080;
+            proxy_pass $api_gateway_upstream;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
@@ -39,7 +45,8 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
         location /api {
-            proxy_pass http://api-gateway:8080/api;
+            set $api_gateway_upstream http://api-gateway:8080;
+            proxy_pass $api_gateway_upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -13,6 +13,15 @@ type Client struct {
 	cli mqtt.Client
 }
 
+// ClientAPI is the minimal surface area device-hub needs.
+// It enables unit testing HTTP handlers without requiring a live broker.
+type ClientAPI interface {
+	Subscribe(topic string, cb Handler) error
+	Unsubscribe(topic string) error
+	Publish(topic string, payload []byte) error
+	PublishWith(topic string, payload []byte, retain bool) error
+}
+
 // Message is re-exported type for handlers
 type Message = mqtt.Message
 

@@ -56,12 +56,12 @@ func HandleUserCreate(w http.ResponseWriter, r *http.Request) {
 	normUser := strings.ToUpper(req.UserName)
 	normEmail := strings.ToUpper(req.Email)
 	var existing db.User
-	if err := db.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
+	if err := db.DB.Where(&db.User{Email: req.Email}).First(&existing).Error; err == nil {
 		slog.Warn("duplicate email", "email", req.Email)
 		writeJSONError(w, http.StatusConflict, "user with this email already exists", nil)
 		return
 	}
-	if err := db.DB.Where("user_name = ?", req.UserName).First(&existing).Error; err == nil {
+	if err := db.DB.Where(&db.User{UserName: req.UserName}).First(&existing).Error; err == nil {
 		slog.Warn("duplicate username", "user_name", req.UserName)
 		writeJSONError(w, http.StatusConflict, "user with this username already exists", nil)
 		return
@@ -164,11 +164,12 @@ func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 
 	query := db.DB.Model(&db.User{})
 	if q != "" {
-		like := "%" + strings.ToLower(escapeLike(q)) + "%"
-		query = query.Where(clause.Like{Column: clause.Expr{SQL: "LOWER(email)"}, Value: like}).
-			Or(clause.Like{Column: clause.Expr{SQL: "LOWER(user_name)"}, Value: like}).
-			Or(clause.Like{Column: clause.Expr{SQL: "LOWER(first_name)"}, Value: like}).
-			Or(clause.Like{Column: clause.Expr{SQL: "LOWER(last_name)"}, Value: like})
+		like := "%" + escapeLike(q) + "%"
+		likeNorm := "%" + strings.ToUpper(escapeLike(q)) + "%"
+		query = query.Where(clause.Like{Column: clause.Column{Name: "normalized_email"}, Value: likeNorm}).
+			Or(clause.Like{Column: clause.Column{Name: "normalized_user_name"}, Value: likeNorm}).
+			Or(clause.Like{Column: clause.Column{Name: "first_name"}, Value: like}).
+			Or(clause.Like{Column: clause.Column{Name: "last_name"}, Value: like})
 	}
 
 	var total int64
@@ -179,7 +180,11 @@ func HandleUsersList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var users []db.User
-	if err := query.Order("created_at DESC").Offset(offset).Limit(size).Find(&users).Error; err != nil {
+	if err := query.
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "created_at"}, Desc: true}).
+		Offset(offset).
+		Limit(size).
+		Find(&users).Error; err != nil {
 		slog.Error("list users failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
@@ -249,7 +254,7 @@ func HandleUserGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user db.User
-	if err := db.DB.Where("id = ?", id).First(&user).Error; err != nil {
+	if err := db.DB.First(&user, id).Error; err != nil {
 		writeJSONError(w, http.StatusNotFound, "user not found", nil)
 		return
 	}
@@ -300,9 +305,10 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 		var user db.User
 		var err error
 		if googleID != "" {
-			err = db.DB.Where("google_id = ?", googleID).First(&user).Error
+			gid := googleID
+			err = db.DB.Where(&db.User{GoogleID: &gid}).First(&user).Error
 		} else {
-			err = db.DB.Where("email = ?", email).First(&user).Error
+			err = db.DB.Where(&db.User{Email: email}).First(&user).Error
 		}
 		if err != nil {
 			writeJSONError(w, http.StatusNotFound, "user not found", nil)
@@ -361,11 +367,12 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 
 	query := db.DB.Model(&db.User{})
 	if q != "" {
-		like := "%" + strings.ToLower(escapeLike(q)) + "%"
-		query = query.Where(clause.Like{Column: clause.Expr{SQL: "LOWER(email)"}, Value: like}).
-			Or(clause.Like{Column: clause.Expr{SQL: "LOWER(user_name)"}, Value: like}).
-			Or(clause.Like{Column: clause.Expr{SQL: "LOWER(first_name)"}, Value: like}).
-			Or(clause.Like{Column: clause.Expr{SQL: "LOWER(last_name)"}, Value: like})
+		like := "%" + escapeLike(q) + "%"
+		likeNorm := "%" + strings.ToUpper(escapeLike(q)) + "%"
+		query = query.Where(clause.Like{Column: clause.Column{Name: "normalized_email"}, Value: likeNorm}).
+			Or(clause.Like{Column: clause.Column{Name: "normalized_user_name"}, Value: likeNorm}).
+			Or(clause.Like{Column: clause.Column{Name: "first_name"}, Value: like}).
+			Or(clause.Like{Column: clause.Column{Name: "last_name"}, Value: like})
 	}
 
 	var total int64
@@ -376,7 +383,11 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var users []db.User
-	if err := query.Order("created_at DESC").Offset(offset).Limit(size).Find(&users).Error; err != nil {
+	if err := query.
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "created_at"}, Desc: true}).
+		Offset(offset).
+		Limit(size).
+		Find(&users).Error; err != nil {
 		slog.Error("list users failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
@@ -453,7 +464,7 @@ func HandleLockout(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
 		return
 	}
-	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Update("lockout_enabled", req.Lock).Error; err != nil {
+	if err := db.DB.Model(&db.User{ID: id}).Update("lockout_enabled", req.Lock).Error; err != nil {
 		slog.Error("db error on lockout", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
@@ -475,7 +486,7 @@ func HandleUserDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusForbidden, "forbidden", nil)
 		return
 	}
-	if err := db.DB.Delete(&db.User{}, "id = ?", id).Error; err != nil {
+	if err := db.DB.Delete(&db.User{}, id).Error; err != nil {
 		slog.Error("db error on user delete", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
@@ -568,7 +579,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 					}
 					// Fetch target user to ensure not admin
 					var target db.User
-					if err := db.DB.Where("id = ?", id).First(&target).Error; err != nil {
+					if err := db.DB.First(&target, id).Error; err != nil {
 						writeJSONError(w, http.StatusNotFound, "user not found", nil)
 						return
 					}
@@ -591,7 +602,7 @@ func HandleUserPatch(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "no valid fields to update", nil)
 		return
 	}
-	if err := db.DB.Model(&db.User{}).Where("id = ?", id).Updates(update).Error; err != nil {
+	if err := db.DB.Model(&db.User{ID: id}).Updates(update).Error; err != nil {
 		slog.Error("db error on user patch", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
@@ -613,7 +624,7 @@ func HandleUserValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var user db.User
-	if err := db.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+	if err := db.DB.Where(&db.User{Email: req.Email}).First(&user).Error; err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}

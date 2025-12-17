@@ -46,7 +46,7 @@ func (r *PasswordResetConfirmRequest) Validate() error {
 	}
 
 	if !IsValidPassword(r.NewPassword) {
-		return fmt.Errorf(PasswordPolicyError(r.NewPassword))
+		return fmt.Errorf("%s", PasswordPolicyError(r.NewPassword))
 	}
 
 	return nil
@@ -66,7 +66,7 @@ func (r *ChangePasswordRequest) Validate() error {
 	}
 
 	if !IsValidPassword(r.NewPassword) {
-		return fmt.Errorf(PasswordPolicyError(r.NewPassword))
+		return fmt.Errorf("%s", PasswordPolicyError(r.NewPassword))
 	}
 
 	if r.CurrentPassword == r.NewPassword {
