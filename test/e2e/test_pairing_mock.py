@@ -73,6 +73,15 @@ def build_external_id(protocol: str) -> str:
     return f"{proto}/{suffix}"
 
 
+def external_id_suffix(external_id: str) -> str:
+    external_id = (external_id or "").strip().strip("/")
+    if not external_id:
+        return ""
+    if "/" in external_id:
+        return external_id.split("/", 1)[1]
+    return external_id
+
+
 def build_device_name(protocol: str) -> str:
     proto = (protocol or "").lower()
     base = PAIRING_DEVICE_NAME
@@ -301,9 +310,10 @@ def delete_device(token: str, device_id: str, external_id: str) -> None:
 
 def wait_for_device_absence(token: str, external_id: str, timeout: float = 15.0) -> None:
     expiry = time.time() + timeout
+    suffix = external_id_suffix(external_id)
     while time.time() <= expiry:
         devices = list_devices(token)
-        if not any(dev.get("external_id") == external_id for dev in devices):
+        if not any((dev.get("device_id") == external_id) or (suffix and dev.get("external_id") == suffix) for dev in devices):
             return
         time.sleep(0.5)
     raise RuntimeError(f"device {external_id} still present after delete")
@@ -371,7 +381,15 @@ def run_for_protocol(token: str, protocol: str) -> None:
 
         print(f"PAIRING_FINAL protocol={protocol} status={final_session.status} active={final_session.active}")
         devices = list_devices(token)
-        matched = next((dev for dev in devices if dev.get("external_id") == external_id), None)
+        suffix = external_id_suffix(external_id)
+        matched = next(
+            (
+                dev
+                for dev in devices
+                if (dev.get("device_id") == external_id) or (suffix and dev.get("external_id") == suffix)
+            ),
+            None,
+        )
         if not matched:
             raise RuntimeError("mock device missing from device list")
         print(f"PAIRING MOCK TEST OK protocol={protocol} device_id={matched.get('id')} external_id={external_id}")

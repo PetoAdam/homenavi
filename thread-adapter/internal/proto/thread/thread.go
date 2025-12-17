@@ -19,6 +19,8 @@ type Adapter struct {
 	enabled   bool
 	adapterID string
 	version   string
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 type Config struct {
@@ -48,6 +50,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		slog.Info("thread adapter disabled", "status", "placeholder")
 		return nil
 	}
+	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.publishHello()
 	a.publishStatus("online", "placeholder")
 	if err := a.client.Subscribe(hdpPairingCommandTopic, a.handlePairingCommand); err != nil {
@@ -56,12 +59,27 @@ func (a *Adapter) Start(ctx context.Context) error {
 	if err := a.client.Subscribe(hdpCommandPrefix+"thread/#", a.handleDeviceCommand); err != nil {
 		slog.Warn("thread adapter command subscribe failed", "error", err)
 	}
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				a.publishStatus("online", "heartbeat")
+			}
+		}
+	}()
 	slog.Info("thread adapter placeholder running", "status", "planned")
 	return nil
 }
 
 func (a *Adapter) Stop() {
 	slog.Info("thread adapter stopping")
+	if a.cancel != nil {
+		a.cancel()
+	}
 	a.publishStatus("offline", "shutdown")
 	// Placeholder: nothing to tear down yet beyond MQTT handled by main.
 }
@@ -69,22 +87,6 @@ func (a *Adapter) Stop() {
 func (a *Adapter) publishHello() {
 	if a.adapterID == "" {
 		return
-	}
-	payload := map[string]any{
-		"type":        "hello",
-		"adapter_id":  a.adapterID,
-		"protocols":   []string{"thread"},
-		"version":     a.version,
-		"hdp_version": "1.0",
-		"features": map[string]any{
-			"supports_ack":         false,
-			"supports_correlation": false,
-			"supports_batch_state": false,
-		},
-		"timestamp": time.Now().Unix(),
-	}
-	if b, err := json.Marshal(payload); err == nil {
-		_ = a.client.Publish("homenavi/adapter/"+a.adapterID+"/hello", b)
 	}
 	hdp := map[string]any{
 		"schema":      hdpSchema,
@@ -97,6 +99,21 @@ func (a *Adapter) publishHello() {
 			"supports_ack":         true,
 			"supports_correlation": true,
 			"supports_batch_state": false,
+			"supports_pairing":     true,
+			"supports_interview":   false,
+		},
+		"pairing": map[string]any{
+			"label":               "Thread",
+			"supported":           true,
+			"supports_interview":  false,
+			"default_timeout_sec": 60,
+			"instructions": []string{
+				"Ensure the Thread border router is online.",
+				"Put the Thread device into commissioning mode.",
+				"We will attach it when the adapter reports the join.",
+			},
+			"cta_label": "Start Thread pairing",
+			"notes":     "Placeholder implementation",
 		},
 		"ts": time.Now().UnixMilli(),
 	}
@@ -109,24 +126,26 @@ func (a *Adapter) publishStatus(status, reason string) {
 	if a.adapterID == "" {
 		return
 	}
-	payload := map[string]any{
-		"type":       "adapter_status",
-		"adapter_id": a.adapterID,
-		"status":     status,
-		"reason":     reason,
-		"version":    a.version,
-		"timestamp":  time.Now().Unix(),
-	}
-	if b, err := json.Marshal(payload); err == nil {
-		_ = a.client.PublishWith("homenavi/adapter/"+a.adapterID+"/status", b, true)
-	}
 	hdp := map[string]any{
 		"schema":     hdpSchema,
 		"type":       "status",
 		"adapter_id": a.adapterID,
+		"protocol":   "thread",
 		"status":     status,
 		"reason":     reason,
 		"version":    a.version,
+		"features": map[string]any{
+			"supports_pairing":   true,
+			"supports_interview": false,
+		},
+		"pairing": map[string]any{
+			"label":               "Thread",
+			"supported":           true,
+			"supports_interview":  false,
+			"default_timeout_sec": 60,
+			"cta_label":           "Start Thread pairing",
+			"notes":               "Placeholder implementation",
+		},
 		"ts":         time.Now().UnixMilli(),
 	}
 	if b, err := json.Marshal(hdp); err == nil {
@@ -142,13 +161,12 @@ func (a *Adapter) hdpDeviceID(deviceID string) string {
 	if strings.HasPrefix(id, "thread/") {
 		return id
 	}
-	if strings.Contains(id, "/") {
-		return "thread/" + id
+	parts := strings.Split(id, "/")
+	suffix := strings.TrimSpace(parts[len(parts)-1])
+	if suffix == "" {
+		return ""
 	}
-	if strings.TrimSpace(a.adapterID) != "" {
-		return "thread/" + a.adapterID + "/" + id
-	}
-	return "thread/" + id
+	return "thread/" + suffix
 }
 
 func (a *Adapter) externalFromHDP(deviceID string) (string, string) {

@@ -42,6 +42,8 @@ type ZigbeeAdapter struct {
 	capIndex       map[string]map[string]model.Capability
 	friendlyIndex  map[string]string
 	friendlyTopic  map[string]string
+	devicesReqMu   sync.Mutex
+	lastDevicesReq time.Time
 	correlationMu  sync.Mutex
 	correlationMap map[string]string
 }
@@ -112,8 +114,73 @@ func (z *ZigbeeAdapter) Start(ctx context.Context) error {
 	go z.primeFromDB(context.Background())
 	_ = z.client.Publish("zigbee2mqtt/bridge/request/devices", []byte(`{}`))
 	_ = z.publishStatus("online", "healthy")
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-z.ctx.Done():
+				return
+			case <-ticker.C:
+				_ = z.publishStatus("online", "heartbeat")
+			}
+		}
+	}()
 	slog.Info("zigbee adapter started", "adapter_id", z.adapterID)
 	return nil
+}
+
+func (z *ZigbeeAdapter) requestBridgeDevicesThrottled(reason string) {
+	if z == nil || z.client == nil {
+		return
+	}
+	z.devicesReqMu.Lock()
+	defer z.devicesReqMu.Unlock()
+	if !z.lastDevicesReq.IsZero() && time.Since(z.lastDevicesReq) < 10*time.Second {
+		return
+	}
+	z.lastDevicesReq = time.Now().UTC()
+	if err := z.client.Publish("zigbee2mqtt/bridge/request/devices", []byte(`{}`)); err != nil {
+		slog.Debug("zigbee bridge devices request publish failed", "reason", reason, "err", err)
+	}
+}
+
+func isCanonicalZigbeeExternal(external string) bool {
+	ext := strings.ToLower(strings.TrimSpace(external))
+	return strings.HasPrefix(ext, "0x") && len(ext) > 2
+}
+
+func (z *ZigbeeAdapter) reconcileFriendlyDevice(ctx context.Context, friendly, external string) {
+	if friendly == "" || external == "" || strings.EqualFold(friendly, external) {
+		return
+	}
+	if !isCanonicalZigbeeExternal(external) {
+		return
+	}
+	canonicalDev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
+	friendlyDev, _ := z.repo.GetByExternal(ctx, "zigbee", friendly)
+	if canonicalDev == nil && friendlyDev != nil {
+		friendlyDev.ExternalID = external
+		if strings.TrimSpace(friendlyDev.Name) == "" || strings.EqualFold(friendlyDev.Name, friendlyDev.ExternalID) {
+			friendlyDev.Name = friendly
+		}
+		if err := z.repo.UpsertDevice(ctx, friendlyDev); err == nil {
+			return
+		}
+	}
+	if canonicalDev != nil && friendlyDev != nil && canonicalDev.ID != friendlyDev.ID {
+		if strings.TrimSpace(canonicalDev.Name) == "" || strings.EqualFold(canonicalDev.Name, canonicalDev.ExternalID) {
+			if nm := strings.TrimSpace(friendlyDev.Name); nm != "" {
+				canonicalDev.Name = nm
+			} else {
+				canonicalDev.Name = friendly
+			}
+			_ = z.repo.UpsertDevice(ctx, canonicalDev)
+		}
+		if err := z.repo.DeleteDeviceAndState(ctx, friendlyDev.ID.String()); err == nil {
+			z.cleanupRemovedDevices(ctx, []model.Device{*friendlyDev}, "dedupe-friendly")
+		}
+	}
 }
 
 func (z *ZigbeeAdapter) Stop() {
@@ -151,6 +218,11 @@ func (z *ZigbeeAdapter) PublishCommand(ctx context.Context, device *model.Device
 		}
 	}
 	z.metaMu.RUnlock()
+	if isCanonicalZigbeeExternal(deviceTopic) {
+		if nm := strings.TrimSpace(device.Name); nm != "" && !strings.EqualFold(nm, deviceTopic) {
+			deviceTopic = nm
+		}
+	}
 	if deviceTopic == "" {
 		if device.Name != "" {
 			deviceTopic = strings.TrimSpace(device.Name)
@@ -195,16 +267,22 @@ func (z *ZigbeeAdapter) handle(_ paho.Client, m paho.Message) {
 		canonical = z.resolveExternalID(friendly)
 	}
 	if canonical == "" {
-		canonical = friendly
+		slog.Debug("zigbee state missing canonical identity", "friendly", friendly)
+		z.requestBridgeDevicesThrottled("state-missing-identity")
+		return
 	}
 	if friendly != "" && canonical != "" {
 		z.setFriendlyMapping(friendly, canonical)
+		z.reconcileFriendlyDevice(context.Background(), friendly, canonical)
 	}
 
 	ctx := context.Background()
 	dev, _ := z.repo.GetByExternal(ctx, "zigbee", canonical)
-	if dev == nil && !strings.EqualFold(canonical, friendly) {
-		dev, _ = z.repo.GetByExternal(ctx, "zigbee", friendly)
+	if dev == nil && friendly != "" && !strings.EqualFold(canonical, friendly) {
+		if legacy, _ := z.repo.GetByExternal(ctx, "zigbee", friendly); legacy != nil {
+			legacy.ExternalID = canonical
+			dev = legacy
+		}
 	}
 	if dev == nil {
 		name := friendly
@@ -283,9 +361,11 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 			external = z.resolveExternalID(friendly)
 		}
 		if external == "" {
-			external = friendly
+			z.requestBridgeDevicesThrottled("bridge-event-join")
+			return
 		}
 		z.setFriendlyMapping(friendly, external)
+		z.reconcileFriendlyDevice(ctx, friendly, external)
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
 			z.publishPairingProgress(bridgeLifecycleStage(evt.Type), "", external, friendly)
 		}
@@ -299,9 +379,11 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 			external = z.resolveExternalID(friendly)
 		}
 		if external == "" {
-			external = friendly
+			z.requestBridgeDevicesThrottled("bridge-event-interview")
+			return
 		}
 		z.setFriendlyMapping(friendly, external)
+		z.reconcileFriendlyDevice(ctx, friendly, external)
 		status := adapterutil.StringField(evt.Data, "status")
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
 			z.publishPairingProgress(interviewStageFromStatus(status), status, external, friendly)
@@ -310,9 +392,15 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 		friendly, _ := evt.Data["friendly_name"].(string)
 		external := z.resolveExternalID(friendly)
 		if external == "" {
-			external = friendly
+			external = canonicalExternalID(evt.Data)
 		}
-		dev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
+		var dev *model.Device
+		if external != "" {
+			dev, _ = z.repo.GetByExternal(ctx, "zigbee", external)
+		}
+		if dev == nil && friendly != "" {
+			dev, _ = z.repo.GetByExternal(ctx, "zigbee", friendly)
+		}
 		if dev != nil {
 			z.removeDevice(ctx, dev, "zigbee-event")
 		} else {
@@ -514,9 +602,15 @@ func (z *ZigbeeAdapter) handleDeviceRemoveCommand(_ paho.Client, m paho.Message)
 }
 
 func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, external string, data map[string]any) *model.Device {
+	if external == "" {
+		return nil
+	}
 	dev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
-	if dev == nil && !strings.EqualFold(external, friendly) {
-		dev, _ = z.repo.GetByExternal(ctx, "zigbee", friendly)
+	if dev == nil && friendly != "" && !strings.EqualFold(external, friendly) {
+		if legacy, _ := z.repo.GetByExternal(ctx, "zigbee", friendly); legacy != nil {
+			legacy.ExternalID = external
+			dev = legacy
+		}
 	}
 	if dev == nil {
 		name := friendly
@@ -545,13 +639,16 @@ func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, extern
 	return dev
 }
 
-func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]any, correlationID string) {
+func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]any, correlationID string) bool {
 	if dev == nil || len(state) == 0 {
-		return
+		return false
 	}
 	if correlationID != "" {
 		z.setCorrelation(dev.ID.String(), correlationID)
 	}
+	var transitionMs float64
+	var hasTransitionMs bool
+	var hasTransition bool
 	payload := map[string]any{}
 	for k, v := range state {
 		switch k {
@@ -563,15 +660,54 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 					payload["state"] = "OFF"
 				}
 			}
+		case "transition":
+			hasTransition = true
+			payload[k] = v
+		case "transition_ms":
+			hasTransitionMs = true
+			switch n := v.(type) {
+			case float64:
+				transitionMs = n
+			case float32:
+				transitionMs = float64(n)
+			case int:
+				transitionMs = float64(n)
+			case int64:
+				transitionMs = float64(n)
+			case json.Number:
+				if f, err := n.Float64(); err == nil {
+					transitionMs = f
+				}
+			default:
+				// Ignore invalid values.
+			}
 		default:
 			payload[k] = v
 		}
+	}
+	if !hasTransition && hasTransitionMs && transitionMs > 0 {
+		payload["transition"] = transitionMs / 1000.0
 	}
 	if correlationID != "" {
 		payload["correlation_id"] = correlationID
 	}
 	b, _ := json.Marshal(payload)
-	_ = z.client.Publish("zigbee2mqtt/"+dev.ExternalID+"/set", b)
+	target := z.resolveFriendlyName(dev.ExternalID)
+	if target == "" {
+		if nm := strings.TrimSpace(dev.Name); nm != "" && !strings.EqualFold(nm, dev.ExternalID) {
+			target = nm
+		}
+	}
+	if target == "" {
+		slog.Warn("zigbee command missing friendly mapping", "external", dev.ExternalID)
+		z.requestBridgeDevicesThrottled("command-missing-mapping")
+		return false
+	}
+	if err := z.client.Publish("zigbee2mqtt/"+target+"/set", b); err != nil {
+		slog.Warn("zigbee command publish failed", "external", dev.ExternalID, "target", target, "err", err)
+		return false
+	}
+	return true
 }
 
 func (z *ZigbeeAdapter) handleAdapterCommand(_ paho.Client, m paho.Message) {
@@ -614,7 +750,7 @@ func (z *ZigbeeAdapter) handleAdapterCommand(_ paho.Client, m paho.Message) {
 			state = st
 		}
 	}
-	z.forwardStateCommand(dev, state, correlationID)
+	_ = z.forwardStateCommand(dev, state, correlationID)
 	slog.Info("adapter command forwarded", "device_id", dev.ID.String(), "correlation_id", correlationID, "keys", len(state))
 }
 
@@ -630,6 +766,20 @@ func (z *ZigbeeAdapter) publishHello() error {
 			"supports_ack":         true,
 			"supports_correlation": true,
 			"supports_batch_state": true,
+			"supports_pairing":     true,
+			"supports_interview":   true,
+		},
+		"pairing": map[string]any{
+			"label":               "Zigbee (Zigbee2MQTT)",
+			"supported":           true,
+			"supports_interview":  true,
+			"default_timeout_sec": 60,
+			"instructions": []string{
+				"Reset or power-cycle the device to enter pairing mode.",
+				"Keep it close to the coordinator while pairing runs.",
+				"We will auto-register it as soon as it is detected.",
+			},
+			"cta_label": "Start Zigbee pairing",
 		},
 		"ts": time.Now().UnixMilli(),
 	}
@@ -644,9 +794,21 @@ func (z *ZigbeeAdapter) publishStatus(status, reason string) error {
 		"schema":     hdpSchema,
 		"type":       "status",
 		"adapter_id": z.adapterID,
+		"protocol":   "zigbee",
 		"status":     status,
 		"reason":     reason,
 		"version":    adapterVersion(),
+		"features": map[string]any{
+			"supports_pairing":   true,
+			"supports_interview": true,
+		},
+		"pairing": map[string]any{
+			"label":               "Zigbee (Zigbee2MQTT)",
+			"supported":           true,
+			"supports_interview":  true,
+			"default_timeout_sec": 60,
+			"cta_label":           "Start Zigbee pairing",
+		},
 		"ts":         time.Now().UnixMilli(),
 	}
 	if hb, err := json.Marshal(hdp); err == nil {
@@ -730,6 +892,8 @@ func (z *ZigbeeAdapter) publishHDPMeta(dev *model.Device) {
 		"model":        dev.Model,
 		"description":  dev.Description,
 		"icon":         dev.Icon,
+		"online":       dev.Online,
+		"last_seen":    dev.LastSeen,
 		"ts":           time.Now().UnixMilli(),
 	}
 	if len(dev.Capabilities) > 0 {
@@ -810,6 +974,9 @@ func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external, friendly
 	}
 	if external != "" {
 		hdp["external_id"] = external
+		if deviceID := z.hdpDeviceID(external); deviceID != "" {
+			hdp["device_id"] = deviceID
+		}
 	}
 	if friendly != "" {
 		hdp["friendly_name"] = friendly
@@ -875,10 +1042,9 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 	var dev *model.Device
 	dev, _ = z.repo.GetByExternal(ctx, "zigbee", external)
 	if dev == nil {
-		dev, _ = z.repo.GetByID(ctx, external)
-	}
-	if dev == nil {
-		return
+		// External Zigbee IDs are IEEE strings (e.g. 0x...) and are not UUIDs.
+		// Still allow best-effort command forwarding if we have a friendly mapping.
+		dev = &model.Device{Protocol: "zigbee", ExternalID: external, Name: external}
 	}
 	refreshProps := func(target, external string, props []string) []string {
 		out := adapterutil.UniqueStrings(props)
@@ -898,12 +1064,23 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 
 	switch command {
 	case "set_state":
-		slog.Info("hdp command", "device_id", dev.ID.String(), "external", dev.ExternalID, "corr", corr, "keys", len(args))
-		z.forwardStateCommand(dev, args, corr)
+		slog.Info("hdp command", "external", dev.ExternalID, "corr", corr, "keys", len(args))
+		ok := z.forwardStateCommand(dev, args, corr)
 		if corr != "" {
-			z.publishHDPCommandResult(dev, corr, true, "queued", "")
+			if ok {
+				z.publishHDPCommandResult(dev, corr, true, "queued", "")
+			} else {
+				z.publishHDPCommandResult(dev, corr, false, "publish_failed", "could not route/publish zigbee command")
+			}
 		}
 	case "remove_device":
+		// Removing requires a persisted device row (UUID primary key).
+		if dev.ID == uuid.Nil {
+			if corr != "" {
+				z.publishHDPCommandResult(dev, corr, false, "not_found", "device not found")
+			}
+			return
+		}
 		slog.Info("hdp remove device", "device_id", dev.ID.String(), "external", dev.ExternalID, "corr", corr)
 		z.removeDevice(ctx, dev, "hdp-command")
 		if corr != "" {
@@ -1013,9 +1190,26 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m paho.Message) {
 				if dev.ExternalID == "" {
 					continue
 				}
-				if _, ok := seen[dev.ExternalID]; ok {
+					if _, ok := seen[dev.ExternalID]; ok {
 					continue
 				}
+					// Backward-compat: legacy rows stored ExternalID as "zigbee/<ieee>".
+					// If the canonical IEEE exists in this refresh, delete the legacy row without
+					// clearing retained HDP topics (which would otherwise wipe the canonical metadata).
+					lower := strings.ToLower(dev.ExternalID)
+					if strings.HasPrefix(lower, "zigbee/") {
+						legacy := strings.TrimSpace(dev.ExternalID[len("zigbee/"):])
+						if legacy != "" {
+							if _, ok := seen[legacy]; ok {
+								if err := z.repo.DeleteDeviceAndState(ctx, dev.ID.String()); err != nil {
+									slog.Warn("zigbee legacy row delete failed", "device", dev.ExternalID, "id", dev.ID, "error", err)
+								} else {
+									slog.Info("zigbee legacy row pruned", "device", dev.ExternalID, "reason", "bridge-refresh-legacy")
+								}
+								continue
+							}
+						}
+					}
 				z.removeDevice(ctx, dev, "bridge-refresh-prune")
 			}
 			keepIDs := make([]string, 0, len(seen)+len(nonZigbeeIDs))
@@ -1067,18 +1261,19 @@ func (z *ZigbeeAdapter) upsertBridgeDevice(ctx context.Context, raw map[string]a
 	}
 	external := canonicalExternalID(raw)
 	if external == "" {
-		if friendly == "" {
-			slog.Debug("zigbee bridge device missing canonical identifier", "source", source)
-			return nil, false
-		}
-		external = strings.ToLower(strings.TrimSpace(friendly))
+		slog.Debug("zigbee bridge device missing ieee address", "source", source, "friendly", friendly)
+		return nil, false
 	}
 	if friendly != "" {
 		z.setFriendlyMapping(friendly, external)
+		z.reconcileFriendlyDevice(ctx, friendly, external)
 	}
 	dev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
 	if dev == nil && friendly != "" && !strings.EqualFold(external, friendly) {
-		dev, _ = z.repo.GetByExternal(ctx, "zigbee", friendly)
+		if legacy, _ := z.repo.GetByExternal(ctx, "zigbee", friendly); legacy != nil {
+			legacy.ExternalID = external
+			dev = legacy
+		}
 	}
 	if dev == nil {
 		name := friendly
@@ -1285,8 +1480,16 @@ func (z *ZigbeeAdapter) requestInitialStates() {
 		copyMap[friendly] = dup
 	}
 	z.metaMu.RUnlock()
-	for friendly, props := range copyMap {
-		z.requestStateSnapshotForDevice(friendly, props)
+	for key, props := range copyMap {
+		target := key
+		if isCanonicalZigbeeExternal(key) {
+			if friendly := z.resolveFriendlyName(key); friendly != "" {
+				target = friendly
+			} else {
+				continue
+			}
+		}
+		z.requestStateSnapshotForDevice(target, props)
 	}
 }
 
@@ -1322,6 +1525,11 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 	}
 	missingCaps := []string{}
 	for _, d := range devices {
+		if d.Protocol == "zigbee" && isCanonicalZigbeeExternal(d.ExternalID) {
+			if nm := strings.TrimSpace(d.Name); nm != "" && !strings.EqualFold(nm, d.ExternalID) {
+				z.setFriendlyMapping(nm, d.ExternalID)
+			}
+		}
 		stateJSON, err := z.repo.GetDeviceState(ctx, d.ID.String())
 		if err != nil {
 			continue
@@ -1332,7 +1540,9 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 		_ = z.cache.Set(ctx, d.ID.String(), stateJSON)
 		var state map[string]any
 		if err := json.Unmarshal(stateJSON, &state); err == nil && len(state) > 0 {
-			z.publishHDPState(&d, state, "")
+			if d.Protocol != "zigbee" || isCanonicalZigbeeExternal(d.ExternalID) {
+				z.publishHDPState(&d, state, "")
+			}
 		}
 		if d.Protocol == "zigbee" && d.ExternalID != "" {
 			if len(d.Capabilities) > 0 {
@@ -1373,10 +1583,20 @@ func (z *ZigbeeAdapter) primeFromDB(ctx context.Context) {
 	if len(missingCaps) > 0 {
 		unique := adapterutil.UniqueStrings(missingCaps)
 		slog.Info("zigbee requesting capability backfill", "devices", unique)
-		for _, friendly := range unique {
-			payload, _ := json.Marshal(map[string]string{"id": friendly})
+		for _, key := range unique {
+			target := strings.TrimSpace(key)
+			if isCanonicalZigbeeExternal(key) {
+				if friendly := z.resolveFriendlyName(key); friendly != "" {
+					target = friendly
+				}
+			}
+			if target == "" || isCanonicalZigbeeExternal(target) {
+				z.requestBridgeDevicesThrottled("capability-backfill")
+				continue
+			}
+			payload, _ := json.Marshal(map[string]string{"id": target})
 			if err := z.client.Publish("zigbee2mqtt/bridge/request/device", payload); err != nil {
-				slog.Debug("zigbee capability backfill publish failed", "device", friendly, "err", err)
+				slog.Debug("zigbee capability backfill publish failed", "device", target, "err", err)
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -1399,6 +1619,7 @@ func (z *ZigbeeAdapter) resolveExternalID(friendly string) string {
 	if friendly == "" {
 		return ""
 	}
+	friendly = strings.TrimSpace(friendly)
 	z.metaMu.RLock()
 	defer z.metaMu.RUnlock()
 	if external, ok := z.friendlyIndex[friendly]; ok {
@@ -1421,11 +1642,11 @@ func (z *ZigbeeAdapter) resolveFriendlyName(external string) string {
 }
 
 func (z *ZigbeeAdapter) setFriendlyMapping(friendly, external string) {
-	friendly = adapterutil.SanitizeString(strings.TrimSpace(friendly))
+	friendly = strings.TrimSpace(friendly)
 	if friendly == "" {
 		return
 	}
-	external = adapterutil.SanitizeString(strings.TrimSpace(external))
+	external = strings.TrimSpace(external)
 	z.metaMu.Lock()
 	defer z.metaMu.Unlock()
 	if current, ok := z.friendlyIndex[friendly]; ok {
@@ -1472,16 +1693,12 @@ func (z *ZigbeeAdapter) hdpDeviceID(external string) string {
 	if strings.HasPrefix(ext, "zigbee/") {
 		return ext
 	}
-	if strings.HasPrefix(ext, z.adapterID+"/") {
-		return "zigbee/" + ext
+	parts := strings.Split(ext, "/")
+	suffix := strings.TrimSpace(parts[len(parts)-1])
+	if suffix == "" {
+		return ""
 	}
-	if strings.Contains(ext, "/") {
-		return "zigbee/" + ext
-	}
-	if strings.TrimSpace(z.adapterID) != "" {
-		return fmt.Sprintf("zigbee/%s/%s", z.adapterID, ext)
-	}
-	return "zigbee/" + ext
+	return "zigbee/" + suffix
 }
 
 func (z *ZigbeeAdapter) externalFromHDP(deviceID string) (protocol, external string) {

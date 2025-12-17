@@ -33,7 +33,7 @@ func MustInitDB() {
 				adminEmail := "admin@example.com"
 				adminUser := "admin"
 				var existing User
-				resp := DB.Where("email = ?", adminEmail).Or("user_name = ?", adminUser).First(&existing)
+				resp := DB.Where(&User{Email: adminEmail}).Or(&User{UserName: adminUser}).First(&existing)
 				if resp.Error == nil {
 					slog.Info("default admin user exists", "email", existing.Email)
 				} else {

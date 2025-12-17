@@ -7,8 +7,10 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -16,6 +18,14 @@ import (
 
 type Repository struct {
 	db *gorm.DB
+}
+
+func toAnySlice(values []string) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+	return out
 }
 
 type DeviceState struct {
@@ -45,7 +55,7 @@ func (r *Repository) UpsertDevice(ctx context.Context, d *model.Device) error {
 
 func (r *Repository) GetByExternal(ctx context.Context, protocol, externalID string) (*model.Device, error) {
 	var dev model.Device
-	if err := r.db.WithContext(ctx).Where("protocol=? AND external_id=?", protocol, externalID).First(&dev).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(&model.Device{Protocol: protocol, ExternalID: externalID}).First(&dev).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -63,8 +73,12 @@ func (r *Repository) List(ctx context.Context) ([]model.Device, error) {
 }
 
 func (r *Repository) GetByID(ctx context.Context, id string) (*model.Device, error) {
+	parsed, err := uuid.Parse(strings.TrimSpace(id))
+	if err != nil {
+		return nil, nil
+	}
 	var dev model.Device
-	if err := r.db.WithContext(ctx).First(&dev, "id=?", id).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&dev, &model.Device{ID: parsed}).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -74,12 +88,16 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*model.Device, err
 }
 
 func (r *Repository) TouchOnline(ctx context.Context, id interface{}) error {
-	return r.db.WithContext(ctx).Model(&model.Device{}).Where("id=?", id).Updates(map[string]any{"online": true, "last_seen": time.Now().UTC()}).Error
+	return r.db.WithContext(ctx).Model(&model.Device{}).Where(map[string]any{"id": id}).Updates(map[string]any{"online": true, "last_seen": time.Now().UTC()}).Error
 }
 
 func (r *Repository) SetOfflineOlderThan(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
-	res := r.db.WithContext(ctx).Model(&model.Device{}).Where("last_seen < ? AND online = ?", cutoff, true).Update("online", false)
+	res := r.db.WithContext(ctx).
+		Model(&model.Device{}).
+		Where(clause.Lt{Column: clause.Column{Name: "last_seen"}, Value: cutoff}).
+		Where(map[string]any{"online": true}).
+		Update("online", false)
 	if res.Error != nil {
 		slog.Error("offline update error", "error", res.Error)
 	}
@@ -96,7 +114,7 @@ func (r *Repository) SaveDeviceState(ctx context.Context, deviceID string, state
 
 func (r *Repository) GetDeviceState(ctx context.Context, deviceID string) (json.RawMessage, error) {
 	var ds DeviceState
-	if err := r.db.WithContext(ctx).First(&ds, "device_id=?", deviceID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&ds, &DeviceState{DeviceID: deviceID}).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -106,11 +124,15 @@ func (r *Repository) GetDeviceState(ctx context.Context, deviceID string) (json.
 }
 
 func (r *Repository) DeleteDeviceAndState(ctx context.Context, id string) error {
+	parsed, err := uuid.Parse(strings.TrimSpace(id))
+	if err != nil {
+		return err
+	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&DeviceState{}, "device_id = ?", id).Error; err != nil {
+		if err := tx.Delete(&DeviceState{}, &DeviceState{DeviceID: parsed.String()}).Error; err != nil {
 			return err
 		}
-		if err := tx.Delete(&model.Device{}, "id = ?", id).Error; err != nil {
+		if err := tx.Delete(&model.Device{}, &model.Device{ID: parsed}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -132,21 +154,21 @@ func (r *Repository) deleteMatching(ctx context.Context, protocol string, extern
 	}
 	var removed []model.Device
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.Where("protocol = ?", protocol)
+		query := tx.Model(&model.Device{}).Where(&model.Device{Protocol: protocol})
 		switch op {
 		case "NOT IN":
 			if len(externalIDs) > 0 {
-				query = query.Where("external_id NOT IN ?", externalIDs)
+				query = query.Where(clause.Not(clause.IN{Column: clause.Column{Name: "external_id"}, Values: toAnySlice(externalIDs)}))
 			}
 		case "=":
 			if len(externalIDs) > 0 {
-				query = query.Where("external_id = ?", externalIDs[0])
+				query = query.Where(&model.Device{ExternalID: externalIDs[0]})
 			}
 		default:
 			return errors.New("unsupported delete operation")
 		}
 		if len(keepIDs) > 0 {
-			query = query.Where("id NOT IN ?", keepIDs)
+			query = query.Where(clause.Not(clause.IN{Column: clause.Column{Name: "id"}, Values: toAnySlice(keepIDs)}))
 		}
 		if err := query.Find(&removed).Error; err != nil {
 			return err
@@ -158,10 +180,10 @@ func (r *Repository) deleteMatching(ctx context.Context, protocol string, extern
 		for i, dev := range removed {
 			ids[i] = dev.ID.String()
 		}
-		if err := tx.Delete(&DeviceState{}, "device_id IN ?", ids).Error; err != nil {
+		if err := tx.Where(clause.IN{Column: clause.Column{Name: "device_id"}, Values: toAnySlice(ids)}).Delete(&DeviceState{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Delete(&model.Device{}, "id IN ?", ids).Error; err != nil {
+		if err := tx.Where(clause.IN{Column: clause.Column{Name: "id"}, Values: toAnySlice(ids)}).Delete(&model.Device{}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -175,7 +197,7 @@ func (r *Repository) DeleteDeviceStatesNotIn(ctx context.Context, keepIDs []stri
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&DeviceState{})
 		if len(keepIDs) > 0 {
-			query = query.Where("device_id NOT IN ?", keepIDs)
+			query = query.Where(clause.Not(clause.IN{Column: clause.Column{Name: "device_id"}, Values: toAnySlice(keepIDs)}))
 		}
 		if err := query.Find(&removed).Error; err != nil {
 			return err
@@ -187,7 +209,7 @@ func (r *Repository) DeleteDeviceStatesNotIn(ctx context.Context, keepIDs []stri
 		for i, ds := range removed {
 			ids[i] = ds.DeviceID
 		}
-		if err := tx.Delete(&DeviceState{}, "device_id IN ?", ids).Error; err != nil {
+		if err := tx.Where(clause.IN{Column: clause.Column{Name: "device_id"}, Values: toAnySlice(ids)}).Delete(&DeviceState{}).Error; err != nil {
 			return err
 		}
 		return nil

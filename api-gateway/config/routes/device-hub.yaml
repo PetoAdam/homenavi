@@ -4,14 +4,11 @@ routes:
     methods: [GET, POST]
     access: resident
     type: rest
-  - path: /api/hdp/devices/{id}
-    upstream: http://device-hub:8090/api/hdp/devices/{id}
-    methods: [PATCH, DELETE]
-    access: resident
-    type: rest
-  - path: /api/hdp/devices/{id}/commands
-    upstream: http://device-hub:8090/api/hdp/devices/{id}/commands
-    methods: [POST, PATCH]
+  # Catch-all for device-specific endpoints. HDP device IDs can contain slashes
+  # (e.g. zigbee/0x...), so we must not use single-segment params like {id}.
+  - path: /api/hdp/devices/*
+    upstream: http://device-hub:8090/api/hdp/devices/*
+    methods: [GET, POST, PATCH, DELETE]
     access: resident
     type: rest
   - path: /api/hdp/integrations

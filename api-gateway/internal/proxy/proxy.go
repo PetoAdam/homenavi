@@ -22,6 +22,8 @@ func MakeRestProxyHandler(route config.RouteConfig) http.HandlerFunc {
 	if err != nil {
 		panic("Invalid upstream URL: " + route.Upstream)
 	}
+	routePrefix := strings.TrimSuffix(route.Path, "/*")
+	upstreamPrefix := strings.TrimSuffix(upstreamURL.Path, "/*")
 	return func(w http.ResponseWriter, r *http.Request) {
 		slog.Info("proxy request", "method", r.Method, "path", r.URL.Path, "upstream", upstreamURL.String())
 		proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
@@ -30,7 +32,15 @@ func MakeRestProxyHandler(route config.RouteConfig) http.HandlerFunc {
 			origDirector(req)
 			ctx := chi.RouteContext(r.Context())
 			path := upstreamURL.Path
-			if ctx != nil {
+			// If the route uses a wildcard (/*), preserve the suffix after the route prefix.
+			// This allows proxying IDs that contain slashes (e.g. zigbee/0x...) without URL-encoding.
+			if strings.HasSuffix(route.Path, "/*") && strings.HasSuffix(upstreamURL.Path, "/*") {
+				suffix := strings.TrimPrefix(r.URL.Path, routePrefix)
+				if suffix == "" {
+					suffix = "/"
+				}
+				path = upstreamPrefix + suffix
+			} else if ctx != nil {
 				for i, key := range ctx.URLParams.Keys {
 					val := ctx.URLParams.Values[i]
 					path = strings.ReplaceAll(path, "{"+key+"}", val)
