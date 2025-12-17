@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	hdpAdapterHelloTopic  = "homenavi/hdp/adapter/hello"
+	hdpAdapterHelloTopic   = "homenavi/hdp/adapter/hello"
 	hdpAdapterStatusPrefix = "homenavi/hdp/adapter/status/"
 )
 
@@ -216,13 +216,13 @@ func (r *adapterRegistry) upsertFromHello(payload []byte) {
 		}
 	}
 	entry := adapterStatus{
-		AdapterID: adapterID,
-		Protocol:  protocol,
-		Status:    "online",
-		Reason:    "hello",
-		Version:   version,
-		LastSeen:  r.nowFn(),
-		Pairing:   pairingCfg,
+		AdapterID:       adapterID,
+		Protocol:        protocol,
+		Status:          "online",
+		Reason:          "hello",
+		Version:         version,
+		LastSeen:        r.nowFn(),
+		Pairing:         pairingCfg,
 		SupportsPairing: supportsPairing,
 	}
 	// Do not clobber a more specific status if we already have one.
