@@ -7,6 +7,8 @@ import Button from '../common/Button/Button';
 import Snackbar from '../common/Snackbar/Snackbar';
 import RoleSelect from '../common/RoleSelect/RoleSelect';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
+import PageHeader from '../common/PageHeader/PageHeader';
+import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import './Users.css';
 
 const PageSizeOptions = [10, 20, 50, 100];
@@ -79,21 +81,19 @@ function Users() {
 
   if (!isResidentOrAdmin) {
     return (
-      <div className="users-page">
-        <div className="card">
-          <div className="card-header">Users</div>
-          <div className="card-body">You do not have permission to view this page.</div>
-        </div>
-      </div>
+      <UnauthorizedView
+        title="Users"
+        message="You do not have permission to view this page."
+      />
     );
   }
 
   return (
-    <div className="p-6 users-page">
-      <div className="page-header-flat">
-        <h1 className="page-title" style={{ color: 'var(--color-white)' }}>Users</h1>
-        <div className="page-subtitle">Manage roles, lockouts, and search the directory · {data.total} total</div>
-      </div>
+    <div className="users-page">
+      <PageHeader
+        title="Users"
+        subtitle={`Manage roles, lockouts, and search the directory · ${data.total} total`}
+      />
       <MasonryDashboard>
   <GlassCard interactive={false} className="fade-in span-all" key="users-list">
           <div className="card-body">

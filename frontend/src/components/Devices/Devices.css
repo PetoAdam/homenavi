@@ -10,33 +10,10 @@
   color: var(--color-gray-900, #1f2937);
 }
 
-.page-header-flat {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  margin: 10px 10px 12px 10px;
-  padding: 0 8px;
-}
-
-.page-title {
-  font-size: 1.8rem;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  margin: 0;
-  color: var(--color-white);
-}
-
-.page-subtitle {
-  color: rgba(255, 255, 255, 0.75);
-  margin-top: 0.2rem;
-}
-
 .devices-header-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.75rem;
 }
 
 .devices-summary {
@@ -469,22 +446,6 @@
 @media (max-width: 768px) {
   .devices-page {
     padding: 0 1.25rem 3rem;
-  }
-
-  .page-header-flat {
-    margin: 8px 6px 10px 6px;
-    padding: 0 6px;
-    align-items: center;
-    text-align: center;
-  }
-
-  .page-title {
-    font-size: 1.6rem;
-  }
-
-  .page-subtitle {
-    font-size: 0.85rem;
-    max-width: 320px;
   }
 
   .devices-header-pills {
