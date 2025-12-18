@@ -11,6 +11,9 @@
 [![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml)
 [![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml)
 [![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
+[![Build History Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml)
+[![Build Zigbee Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml)
+[![Build Thread Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml)
 
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
@@ -52,13 +55,17 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 
 Current Core:
 * API Gateway (Go): Routing, JWT verification, rate limit, WebSocket upgrade.
-* Device Hub (Go): Central device inventory, capability normalization, and adapter bridge (MQTT, multi-protocol ready).
+* Device Hub (Go): Central device inventory and **HDP-only** adapter bridge over MQTT.
+* History Service (Go): Persists HDP device state into Postgres and serves query endpoints for charts.
 * Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
 * User Service (Go): Profile, roles, administrative user actions.
 * Email Service (Go): Outbound verification & notification emails.
 * Profile Picture Service (Python): Image handling (avatars, basic processing).
 * Echo Service (Python): Real-time WebSocket demo & test surface.
 * Frontend (React + Vite + PWA): Auth flows, user management, device UI, dashboards.
+* Adapters:
+	* Zigbee Adapter (Go): Zigbee2MQTT bridge that emits HDP state/metadata/events and consumes HDP commands.
+	* Thread Adapter (Go): Placeholder implementation that emits HDP hello/status/pairing and acks commands.
 * Infrastructure: PostgreSQL, Redis, Nginx, Prometheus, Jaeger, (Grafana ready).
 
 Key Design Principles:
@@ -72,7 +79,7 @@ Key Design Principles:
 
 ## 3. 🔮 Smart Home Vision (Planned/Upcoming)
 The platform roadmap includes:
-* Device Adapters: Thread, Matter, Zigbee, Z-Wave, BLE, MQTT bridge, and 3rd party integrations.
+* Device Adapters: Matter, Z-Wave, BLE, cloud integrations, and 3rd party integrations (Zigbee implemented; Thread placeholder).
 * Automation Engine: Rule graph (triggers → conditions → actions) with versioned deployments.
 * Scene & Mode Management: Grouped device state snapshots and home modes (Away / Night / Eco).
 * Scheduling & Timers: Cron-like and sunrise/sunset aware triggers.
@@ -110,12 +117,15 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 | Service | Path | Purpose | Docker Build Tag |
 |---------|------|---------|------------------|
 | API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy | `api-gateway:latest` |
-| Device Hub | `device-hub/` | Device inventory, adapter bridge (multi-protocol ready), metadata/state fan-out | `device-hub:latest` |
+| Device Hub | `device-hub/` | Device inventory, HDP bridge over MQTT, metadata/state fan-out | `device-hub:latest` |
+| History Service | `history-service/` | HDP device state persistence + query API for charts | `history-service:latest` |
 | Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic | `auth-service:latest` |
 | User Service | `user-service/` | User profiles, roles, admin operations | `user-service:latest` |
 | Email Service | `email-service/` | Sending verification / notification emails | `email-service:latest` |
 | Profile Picture | `profile-picture-service/` | Avatar upload & processing | `profile-picture-service:latest` |
 | Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `echo-service:latest` |
+| Zigbee Adapter | `zigbee-adapter/` | Zigbee2MQTT adapter emitting/consuming HDP | `zigbee-adapter:latest` |
+| Thread Adapter | `thread-adapter/` | Thread adapter placeholder (HDP hello/status/pairing) | `thread-adapter:latest` |
 | Frontend | `frontend/` | SPA & PWA client | `frontend:latest` |
 
 Support:
@@ -141,7 +151,7 @@ Implemented:
 * Metrics: Prometheus scrape (gateway, Go runtime, device hub, etc.).
 * Tracing: Jaeger via OpenTelemetry exporters.
 * Correlation: Request IDs / correlation IDs propagated across hops.
-* Health: Expose `/healthz` (liveness/readiness separation recommended for prod).
+* Health: Expose `/health` (liveness/readiness separation recommended for prod).
 * Device Hub exports its own `/metrics` endpoint and participates in the same trace pipeline.
 
 ---
@@ -201,8 +211,8 @@ openssl rsa -pubout -in keys/jwt_private.pem -out keys/jwt_public.pem
 ---
 
 ## 12. 📦 CI/CD
-* GitHub Actions per service build pipelines.
-* Docker image builds + artifact retention.
+* GitHub Actions per-service Docker build pipelines.
+* Builds produce Docker images and upload them as artifacts (image tarballs) for download/testing.
 * Future: Add lint (golangci-lint), security scanning (gosec, trivy), frontend tests.
 
 ---

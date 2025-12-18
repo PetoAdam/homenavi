@@ -49,7 +49,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promHandler)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: observability.WrapHandler(tracer, "zigbee-adapter", mux)}
 	go func() {

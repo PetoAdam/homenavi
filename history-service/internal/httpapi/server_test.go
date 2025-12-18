@@ -32,7 +32,7 @@ func newTestServer(t *testing.T) *Server {
 
 func TestHealth(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/history/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rw := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rw, req)
 	if rw.Code != http.StatusOK {
