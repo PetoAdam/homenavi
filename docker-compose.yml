@@ -234,7 +234,7 @@ services:
       - postgres
     environment:
       - DEVICE_HUB_PORT=8090
-      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -259,7 +259,7 @@ services:
       - ZIGBEE_ADAPTER_PORT=8091
       - ZIGBEE_ADAPTER_ID=zigbee-adapter-1
       - ZIGBEE_ADAPTER_VERSION=dev
-      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -280,11 +280,34 @@ services:
       - mosquitto
     environment:
       - THREAD_ADAPTER_PORT=8092
-      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
       - THREAD_ADAPTER_ID=thread-adapter-1
       - THREAD_ADAPTER_VERSION=dev
       - LOG_LEVEL=${LOG_LEVEL}
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+    networks:
+      - homenavi-network
+
+  history-service:
+    build:
+      context: ./history-service
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - postgres
+    environment:
+      - HISTORY_SERVICE_PORT=${HISTORY_SERVICE_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - HISTORY_SERVICE_MQTT_CLIENT_ID=${HISTORY_SERVICE_MQTT_CLIENT_ID}
+      - HISTORY_INGEST_RETAINED=${HISTORY_INGEST_RETAINED}
+      - HISTORY_HDP_STATE_PREFIX=${HISTORY_HDP_STATE_PREFIX}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE}
+      - LOG_LEVEL=${LOG_LEVEL}
     networks:
       - homenavi-network
 

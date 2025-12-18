@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar/Sidebar.jsx';
 import Home from './components/Home/Home.jsx';
 import Devices from './components/Devices/Devices.jsx';
+import DeviceDetail from './components/Devices/DeviceDetail.jsx';
 import Map from './components/Map/Map.jsx';
 import Spotify from './components/Spotify/Spotify.jsx';
 import Users from './components/Users/Users.jsx';
@@ -106,6 +107,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/devices" element={<Devices />} />
+            <Route path="/devices/:deviceId" element={<DeviceDetail />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/map" element={<Map />} />
             <Route path="/spotify" element={<Spotify />} />

@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+import { useNavigate } from 'react-router-dom';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
+import PageHeader from '../common/PageHeader/PageHeader';
+import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import DeviceTile from './DeviceTile';
 import { useAuth } from '../../context/AuthContext';
@@ -28,6 +31,7 @@ const FALLBACK_INTEGRATIONS = [
 ];
 
 export default function Devices() {
+  const navigate = useNavigate();
   const { user, accessToken } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
   const [metadataMode, setMetadataMode] = useState('rest');
@@ -432,20 +436,16 @@ export default function Devices() {
 
   if (!isResidentOrAdmin) {
     return (
-      <div className="devices-page">
-        <div className="card">
-          <div className="card-header">Devices</div>
-          <div className="card-body">You do not have permission to view this page.</div>
-        </div>
-      </div>
+      <UnauthorizedView
+        title="Devices"
+        message="You do not have permission to view this page."
+      />
     );
   }
 
   return (
     <div className="devices-page">
-      <div className="page-header-flat">
-        <h1 className="page-title">Devices</h1>
-        <div className="page-subtitle">{subtitleText}</div>
+      <PageHeader title="Devices" subtitle={subtitleText}>
         {connectionPills.length > 0 && (
           <div className="devices-header-pills">
             {connectionPills.map(pill => (
@@ -460,7 +460,7 @@ export default function Devices() {
             ))}
           </div>
         )}
-      </div>
+      </PageHeader>
 
       <section className="devices-summary">
         <GlassCard className="devices-summary-card">
@@ -575,6 +575,10 @@ export default function Devices() {
             onRename={handleRename}
             onUpdateIcon={handleUpdateIcon}
             onDelete={handleDeleteDevice}
+            onOpen={(dev) => {
+              if (!dev?.id) return;
+              navigate(`/devices/${encodeURIComponent(dev.id)}`);
+            }}
           />
         ))}
         {!loading && filteredDevices.length === 0 && devicesWithOverrides.length > 0 ? (

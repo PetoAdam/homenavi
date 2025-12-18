@@ -1,5 +1,17 @@
-.users-page { padding: 0 1rem; }
-.users-page .masonry-dashboard { column-count: 1 !important; }
+.users-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0 2.5rem 3rem;
+  color: var(--color-white);
+}
+
+.users-page .masonry-dashboard {
+  column-count: 1 !important;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0;
+}
 
 .fade-in { animation: fadeIn .2s ease-out; }
 .row-fade { animation: fadeIn .18s ease-out; }
@@ -53,10 +65,6 @@
 
 .pagination { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
 
-.page-header-flat { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; margin: 10px 10px 12px 10px; padding: 0 8px; }
-.page-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px; margin: 0; color: var(--color-white); }
-.page-subtitle { color: rgba(255,255,255,0.75); margin-top: 0.2rem; }
-
 /* Make toolbar and list cards span all columns to create a wide matrix */
 .span-all { width: 100%; }
 .masonry-dashboard > .span-all { break-inside: avoid; display: block; }
@@ -72,9 +80,10 @@
 /* Native select overrides removed (custom RoleSelect used) */
 
 @media (max-width: 720px) {
-  .page-header-flat { margin: 8px 6px 10px 6px; padding: 0 6px; align-items: center; text-align: center; }
-  .page-title { font-size: 1.6rem; }
-  .page-subtitle { font-size: 0.85rem; max-width: 320px; }
+  .users-page {
+    padding: 0 1.25rem 3rem;
+  }
+
   .users-toolbar { flex-wrap: wrap; justify-content: center; }
   .users-toolbar .input { flex: 1 1 100%; min-width: 0; }
   .users-toolbar > * { flex: 0 0 auto; }

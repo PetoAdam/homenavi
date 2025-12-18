@@ -18,6 +18,9 @@
   transform: translateY(-6px);
 }
 
+.device-tile-card.device-tile-clickable {
+  cursor: pointer;
+}
 .glass-card.device-tile-card:hover,
 .glass-card.device-tile-card:focus-within {
   transform: translateY(-6px);
