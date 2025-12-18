@@ -6,19 +6,15 @@ import {
   faBolt,
   faDroplet,
   faDoorOpen,
-  faFan,
   faGaugeHigh,
   faLightbulb,
   faMicrochip,
-  faMusic,
   faPalette,
   faPlug,
-  faShieldHalved,
   faSignal,
   faSliders,
   faThermometerHalf,
   faTicket,
-  faVideo,
   faWaveSquare,
   faPen,
   faCheck,
@@ -669,7 +665,7 @@ function formatControlValue(input, value) {
   }
 }
 
-export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, pending, onDelete }) {
+export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, pending, onDelete, onOpen, actionLayout = 'menu' }) {
   const capabilities = useMemo(
     () => collectCapabilities(device),
     [device],
@@ -1128,9 +1124,37 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
       : deleteModalElement)
     : null;
 
+  const isInteractiveTarget = target => {
+    if (!target || typeof target.closest !== 'function') return false;
+    return Boolean(target.closest('button, a, input, select, textarea, label, [role="menuitem"]'));
+  };
+
+  const handleCardClick = event => {
+    if (!onOpen) return;
+    if (event.defaultPrevented) return;
+    if (isInteractiveTarget(event.target)) return;
+    onOpen(device);
+  };
+
+  const handleCardKeyDown = event => {
+    if (!onOpen) return;
+    if (event.defaultPrevented) return;
+    if (isInteractiveTarget(event.target)) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onOpen(device);
+    }
+  };
+
   return (
     <>
-      <GlassCard className={`device-tile-card ${device.online ? 'device-online' : 'device-offline'}`}>
+      <GlassCard
+        className={`device-tile-card ${device.online ? 'device-online' : 'device-offline'}${onOpen ? ' device-tile-clickable' : ''}`}
+        onClick={handleCardClick}
+        onKeyDown={handleCardKeyDown}
+        role={onOpen ? 'button' : undefined}
+        tabIndex={onOpen ? 0 : undefined}
+      >
         <div className="device-tile">
         <div className="device-tile-header">
           <div className="device-title-container">
@@ -1218,42 +1242,71 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
                       </button>
                     </>
                   ) : (
-                    <div className="device-title-menu-wrapper">
-                      <button
-                        type="button"
-                        className="device-title-action device-title-edit"
-                        onClick={toggleActionMenu}
-                        aria-haspopup="true"
-                        aria-expanded={actionMenuOpen}
-                        aria-label="device -> Edit"
-                        ref={actionMenuButtonRef}
-                        title="device -> Edit"
-                        disabled={!onRename && !onDelete}
-                      >
-                        <FontAwesomeIcon icon={faPen} />
-                      </button>
-                      {actionMenuOpen ? (
-                        <div className="device-title-menu" ref={actionMenuRef}>
-                          {onRename ? (
-                            <button type="button" onClick={handleMenuRename}>
-                              <FontAwesomeIcon icon={faPen} />
-                              <span>Edit</span>
-                            </button>
-                          ) : null}
-                          {onDelete ? (
-                            <button
-                              type="button"
-                              className="danger"
-                              onClick={handleMenuDelete}
-                              disabled={deletePending}
-                            >
-                              <FontAwesomeIcon icon={faTrash} />
-                              <span>{deletePending ? 'Deleting…' : 'Delete'}</span>
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                    actionLayout === 'buttons' ? (
+                      <>
+                        {onRename ? (
+                          <button
+                            type="button"
+                            className="device-title-action device-title-edit"
+                            onClick={beginRename}
+                            aria-label="Edit"
+                            title="Edit"
+                            disabled={renamePending}
+                          >
+                            <FontAwesomeIcon icon={faPen} />
+                          </button>
+                        ) : null}
+                        {onDelete ? (
+                          <button
+                            type="button"
+                            className="device-title-action device-title-delete"
+                            onClick={openDeleteModal}
+                            aria-label="Delete"
+                            title="Delete"
+                            disabled={deletePending}
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="device-title-menu-wrapper">
+                        <button
+                          type="button"
+                          className="device-title-action device-title-edit"
+                          onClick={toggleActionMenu}
+                          aria-haspopup="true"
+                          aria-expanded={actionMenuOpen}
+                          aria-label="device -> Edit"
+                          ref={actionMenuButtonRef}
+                          title="device -> Edit"
+                          disabled={!onRename && !onDelete}
+                        >
+                          <FontAwesomeIcon icon={faPen} />
+                        </button>
+                        {actionMenuOpen ? (
+                          <div className="device-title-menu" ref={actionMenuRef}>
+                            {onRename ? (
+                              <button type="button" onClick={handleMenuRename}>
+                                <FontAwesomeIcon icon={faPen} />
+                                <span>Edit</span>
+                              </button>
+                            ) : null}
+                            {onDelete ? (
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={handleMenuDelete}
+                                disabled={deletePending}
+                              >
+                                <FontAwesomeIcon icon={faTrash} />
+                                <span>{deletePending ? 'Deleting…' : 'Delete'}</span>
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
                   )}
                 </div>
               ) : null}
