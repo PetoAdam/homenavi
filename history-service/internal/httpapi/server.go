@@ -36,7 +36,7 @@ type listStateResponse struct {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/history/health", s.handleHealth)
+	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/history/state", s.handleListState)
 	return mux
 }

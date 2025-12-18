@@ -1,6 +1,6 @@
 routes:
   - path: /api/history/health
-    upstream: http://history-service:8093/api/history/health
+    upstream: http://history-service:8093/health
     methods: [GET]
     access: resident
     type: rest

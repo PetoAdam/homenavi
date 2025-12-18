@@ -37,7 +37,7 @@ func main() {
 	// Only health endpoint retained for k8s / docker health checks.
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promHandler)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	httpapi.NewServer(repo, mClient).Register(mux)
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: observability.WrapHandler(tracer, "device-hub", mux)}
 	go func() {

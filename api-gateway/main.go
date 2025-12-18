@@ -139,7 +139,7 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 	})
 
 	r.Handle("/metrics", promHandler)
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
