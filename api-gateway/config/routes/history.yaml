@@ -1,0 +1,17 @@
+routes:
+  - path: /api/history/health
+    upstream: http://history-service:8093/api/history/health
+    methods: [GET]
+    access: resident
+    type: rest
+  - path: /api/history/state
+    upstream: http://history-service:8093/api/history/state
+    methods: [GET]
+    access: resident
+    type: rest
+  # Catch-all for future history endpoints
+  - path: /api/history/*
+    upstream: http://history-service:8093/api/history/*
+    methods: [GET, POST, PATCH, DELETE]
+    access: resident
+    type: rest
