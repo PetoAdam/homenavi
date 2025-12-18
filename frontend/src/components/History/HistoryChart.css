@@ -1,0 +1,121 @@
+.history-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  position: relative;
+}
+
+.history-chart-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.history-chart-title {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.history-chart-latest {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.history-chart-svg {
+  width: 100%;
+  height: var(--history-chart-height, 180px);
+  background: var(--color-surface-panel-soft);
+  border: 1px solid var(--color-glass-border-xlight);
+  border-radius: 14px;
+  transition: height 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.history-chart-axis {
+  fill: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-chart-axis-x {
+  fill: rgba(255, 255, 255, 0.55);
+}
+
+.history-chart-line {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2.2;
+}
+
+.history-chart-grid {
+  fill: none;
+  stroke: var(--color-glass-border-xlight);
+  stroke-width: 1;
+}
+
+.history-chart-grid-soft {
+  stroke: rgba(255, 255, 255, 0.06);
+}
+
+.history-chart-crosshair {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+}
+
+.history-chart-dot {
+  fill: var(--color-primary);
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+}
+
+.history-chart-tooltip {
+  position: absolute;
+  right: 0.1rem;
+  bottom: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 12px;
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-glass-border-xlight);
+  color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  max-width: 80%;
+  pointer-events: none;
+}
+
+.history-chart-tooltip-value {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-chart-tooltip-time {
+  margin-top: 0.15rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-chart-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.history-chart-placeholder {
+  height: var(--history-chart-height, 180px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-glass-border-xlight);
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  background: var(--color-surface-panel-soft);
+  transition: height 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-chart-svg,
+  .history-chart-placeholder {
+    transition: none;
+  }
+}

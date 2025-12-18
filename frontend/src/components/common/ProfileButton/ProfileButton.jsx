@@ -37,6 +37,15 @@ export default function ProfileButton() {
     if (user && showAuthModal) setShowAuthModal(false);
   }, [user, showAuthModal]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (user) return;
+      setShowAuthModal(true);
+    };
+    window.addEventListener('homenavi:open-auth', handler);
+    return () => window.removeEventListener('homenavi:open-auth', handler);
+  }, [user]);
+
   const doLogout = async () => {
     await handleLogout();
     setOpen(false);
