@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"auth-service/internal/constants"
 	"auth-service/internal/models/requests"
 	"auth-service/internal/models/responses"
 	"auth-service/internal/services"
@@ -42,6 +43,11 @@ func (h *RefreshHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	user, err := h.userService.GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if user.LockoutEnabled {
+		errors.WriteError(w, errors.NewAppError(http.StatusLocked, "account locked", nil).
+			WithField("reason", constants.ReasonAdminLock))
 		return
 	}
 

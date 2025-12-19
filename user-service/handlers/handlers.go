@@ -322,6 +322,7 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 			LastName          string  `json:"last_name"`
 			Role              string  `json:"role"`
 			EmailConfirmed    bool    `json:"email_confirmed"`
+			LockoutEnabled    bool    `json:"lockout_enabled"`
 			TwoFactorEnabled  bool    `json:"two_factor_enabled"`
 			TwoFactorType     string  `json:"two_factor_type"`
 			ProfilePictureURL *string `json:"profile_picture_url"`
@@ -334,6 +335,7 @@ func HandleUserGetByEmail(w http.ResponseWriter, r *http.Request) {
 			LastName:          user.LastName,
 			Role:              user.Role,
 			EmailConfirmed:    user.EmailConfirmed,
+			LockoutEnabled:    user.LockoutEnabled,
 			TwoFactorEnabled:  user.TwoFactorEnabled,
 			TwoFactorType:     user.TwoFactorType,
 			ProfilePictureURL: user.ProfilePictureURL,
