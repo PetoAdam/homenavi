@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { faUserCircle, faSignOutAlt, faCog } from '@fortawesome/free-solid-svg-icons';
+import { faSignOutAlt, faCog } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import './ProfileButton.css';
 import AuthModal from '../../Auth/AuthModal/AuthModal';
@@ -34,11 +34,32 @@ export default function ProfileButton() {
   }, [toastMsg]);
 
   useEffect(() => {
+    // Surface OAuth callback errors (set by AuthContext) via the existing toast UI.
+    try {
+      const raw = sessionStorage.getItem('homenavi:auth:oauth_error');
+      if (raw) {
+        sessionStorage.removeItem('homenavi:auth:oauth_error');
+        const payload = JSON.parse(raw);
+        if (payload?.message) setToastMsg(payload.message);
+      }
+    } catch {
+      // ignore
+    }
+
+    const handler = (e) => {
+      const msg = e?.detail?.message;
+      if (typeof msg === 'string' && msg.trim()) setToastMsg(msg);
+    };
+    window.addEventListener('homenavi:toast', handler);
+    return () => window.removeEventListener('homenavi:toast', handler);
+  }, []);
+
+  useEffect(() => {
     if (user && showAuthModal) setShowAuthModal(false);
   }, [user, showAuthModal]);
 
   useEffect(() => {
-    const handler = (e) => {
+    const handler = () => {
       if (user) return;
       setShowAuthModal(true);
     };

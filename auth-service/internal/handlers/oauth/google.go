@@ -6,19 +6,41 @@ import (
 	"net/http"
 	"time"
 
+	"auth-service/internal/constants"
+	"auth-service/internal/models/entities"
 	"auth-service/internal/services"
 )
 
-type GoogleHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+type googleAuthService interface {
+	ValidateOAuthState(state string) error
+	ExchangeGoogleOAuthCode(code, redirectURI string) (*services.GoogleUserInfo, error)
+	IssueAccessToken(user *entities.User) (string, error)
+	IssueRefreshToken(userID string) (string, error)
 }
 
-func NewGoogleHandler(authService *services.AuthService, userService *services.UserService) *GoogleHandler {
+type googleUserService interface {
+	GetUserByEmail(email string) (*entities.User, error)
+	GetUserByGoogleID(googleID string) (*entities.User, error)
+	LinkGoogleID(userID, googleID string) error
+	CreateGoogleUser(userInfo *services.GoogleUserInfo) (*entities.User, error)
+}
+
+type GoogleHandler struct {
+	authService googleAuthService
+	userService googleUserService
+}
+
+func NewGoogleHandler(authService googleAuthService, userService googleUserService) *GoogleHandler {
 	return &GoogleHandler{
 		authService: authService,
 		userService: userService,
 	}
+}
+
+func redirectOAuthLocked(w http.ResponseWriter, r *http.Request) {
+	// Keep the OAuth callback contract: redirect to frontend with an error code.
+	// Frontend reads `error` from URL params.
+	http.Redirect(w, r, "/?error=account_locked&reason="+constants.ReasonAdminLock, http.StatusTemporaryRedirect)
 }
 
 func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +79,11 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	user, err := h.userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
 		slog.Info("oauth google existing user by email", "email", userInfo.Email, "user_id", user.ID, "google_id", user.GoogleID)
+		if user.LockoutEnabled {
+			slog.Warn("oauth google blocked: account locked", "user_id", user.ID)
+			redirectOAuthLocked(w, r)
+			return
+		}
 		if user.GoogleID == "" {
 			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
 				slog.Error("oauth google link failure", "user_id", user.ID, "error", err)
@@ -72,9 +99,15 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 		}
 		// Proceed to token issuance
 		accessToken, err := h.authService.IssueAccessToken(user)
-		if err != nil { http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect); return }
+		if err != nil {
+			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+			return
+		}
 		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
-		if err != nil { http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect); return }
+		if err != nil {
+			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
+			return
+		}
 		redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
 		slog.Info("oauth google success email path", "user_id", user.ID, "ms", time.Since(started).Milliseconds())
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
@@ -85,6 +118,11 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	user, err = h.userService.GetUserByGoogleID(userInfo.ID)
 	if err == nil && user != nil {
 		slog.Info("oauth google existing user by google id", "google_id", userInfo.ID, "user_id", user.ID)
+		if user.LockoutEnabled {
+			slog.Warn("oauth google blocked: account locked", "user_id", user.ID)
+			redirectOAuthLocked(w, r)
+			return
+		}
 		accessToken, err := h.authService.IssueAccessToken(user)
 		if err != nil {
 			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
@@ -107,6 +145,11 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	user, err = h.userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
 		slog.Info("oauth google found existing user by email", "email", userInfo.Email, "user_id", user.ID, "google_id", user.GoogleID)
+		if user.LockoutEnabled {
+			slog.Warn("oauth google blocked: account locked", "user_id", user.ID)
+			redirectOAuthLocked(w, r)
+			return
+		}
 		if user.GoogleID == "" {
 			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
 				slog.Error("oauth google link failure", "user_id", user.ID, "error", err)
@@ -147,6 +190,12 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	if err != nil {
 		slog.Error("oauth google create user failed", "error", err)
 		http.Redirect(w, r, "/?error=user_creation_failed", http.StatusTemporaryRedirect)
+		return
+	}
+	if user != nil && user.LockoutEnabled {
+		// Defensive: shouldn't happen for a just-created user, but don't ever mint tokens for locked users.
+		slog.Warn("oauth google blocked: newly created account is locked", "user_id", user.ID)
+		redirectOAuthLocked(w, r)
 		return
 	}
 

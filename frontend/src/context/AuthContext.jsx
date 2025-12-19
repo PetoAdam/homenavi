@@ -34,6 +34,7 @@ export function AuthProvider({ children }) {
     const accessTokenFromUrl = urlParams.get('access_token');
     const refreshTokenFromUrl = urlParams.get('refresh_token');
     const error = urlParams.get('error');
+    const reason = urlParams.get('reason');
     
     if (accessTokenFromUrl && refreshTokenFromUrl) {
       // Handle successful Google OAuth callback
@@ -63,6 +64,9 @@ export function AuthProvider({ children }) {
         case 'oauth_exchange_failed':
           errorMessage = 'Failed to exchange OAuth code';
           break;
+        case 'account_locked':
+          errorMessage = reason === 'admin_lock' ? 'Account locked by administrator' : 'Account is locked';
+          break;
         case 'email_conflict':
           errorMessage = 'Email already registered with different Google account';
           break;
@@ -79,8 +83,17 @@ export function AuthProvider({ children }) {
       
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
-      
-      // You might want to show this error to the user
+
+      // Surface OAuth errors to the UI (ProfileButton toast).
+      // Use sessionStorage so the message survives reload and doesn't depend on effect ordering.
+      try {
+        const payload = { source: 'oauth', error, reason, message: errorMessage };
+        sessionStorage.setItem('homenavi:auth:oauth_error', JSON.stringify(payload));
+        window.dispatchEvent(new CustomEvent('homenavi:toast', { detail: payload }));
+      } catch {
+        // ignore
+      }
+
       console.error('OAuth Error:', errorMessage);
       return;
     }
@@ -210,7 +223,7 @@ export function AuthProvider({ children }) {
       await request2FAEmail(pendingUserId, null);
       setLoading(false);
       return { success: true };
-    } catch (error) {
+    } catch {
       setLoading(false);
       return { success: false, error: "Failed to request new code" };
     }

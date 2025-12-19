@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"auth-service/internal/constants"
 	"auth-service/internal/models/requests"
 	"auth-service/internal/models/responses"
 	"auth-service/internal/services"
-	"auth-service/internal/constants"
 	"auth-service/pkg/errors"
 
 	"github.com/pquerna/otp/totp"
@@ -36,7 +36,7 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-    // Check lockout status for email before validating credentials
+	// Check lockout status for email before validating credentials
 	if locked, ttl, err := h.authService.IsLoginLocked(req.Email); err == nil && locked {
 		unlockAt := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
 		errors.WriteError(w, errors.NewAppError(http.StatusLocked, "account locked", nil).
@@ -47,16 +47,16 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 	user, err := h.userService.ValidateCredentials(req.Email, req.Password)
 	if err != nil {
 		// Register failure (only for invalid credentials / unauthorized)
-		_ , _, _ = h.authService.RegisterLoginFailure(req.Email)
+		_, _, _ = h.authService.RegisterLoginFailure(req.Email)
 		if appErr, ok := err.(*errors.AppError); ok {
 			if appErr.Code == http.StatusForbidden && appErr.Message == "account is locked" {
 				if locked, ttl, _ := h.authService.IsLoginLocked(req.Email); locked {
 					unlockAt := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
 					errors.WriteError(w, errors.NewAppError(http.StatusLocked, "account locked", nil).WithFields(map[string]interface{}{"lockout_remaining": ttl, "reason": constants.ReasonLoginLockout, "unlock_at": unlockAt}))
-                } else {
+				} else {
 					// Admin lock (no TTL countdown) -> reason admin_lock
 					errors.WriteError(w, errors.NewAppError(http.StatusLocked, "account locked", nil).WithField("reason", constants.ReasonAdminLock))
-                }
+				}
 				return
 			}
 			errors.WriteError(w, appErr)
@@ -71,9 +71,8 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-    // Successful credential validation clears failure counter
-    h.authService.ClearLoginFailures(req.Email)
-
+	// Successful credential validation clears failure counter
+	h.authService.ClearLoginFailures(req.Email)
 
 	// Check if 2FA is enabled
 	if user.TwoFactorEnabled {
@@ -137,6 +136,11 @@ func (h *LoginHandler) HandleLoginFinish(w http.ResponseWriter, r *http.Request)
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
 	}
+	if user.LockoutEnabled {
+		errors.WriteError(w, errors.NewAppError(http.StatusLocked, "account locked", nil).
+			WithField("reason", constants.ReasonAdminLock))
+		return
+	}
 
 	if !user.TwoFactorEnabled {
 		errors.WriteError(w, errors.BadRequest("2FA not enabled for user"))
@@ -146,7 +150,7 @@ func (h *LoginHandler) HandleLoginFinish(w http.ResponseWriter, r *http.Request)
 	// If already in a code lockout window, short-circuit so we don't reset the TTL by re-registering failures
 	if locked, ttl, _ := h.authService.IsCodeLocked(req.UserID, user.TwoFactorType); locked {
 		unlockAt := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
-		errors.WriteError(w, errors.NewAppError(http.StatusLocked, "2fa locked", nil).WithFields(map[string]interface{}{ "lockout_remaining": ttl, "reason": constants.ReasonTwoFALockout, "unlock_at": unlockAt }))
+		errors.WriteError(w, errors.NewAppError(http.StatusLocked, "2fa locked", nil).WithFields(map[string]interface{}{"lockout_remaining": ttl, "reason": constants.ReasonTwoFALockout, "unlock_at": unlockAt}))
 		return
 	}
 

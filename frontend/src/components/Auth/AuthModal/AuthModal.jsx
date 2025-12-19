@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { faUserCircle, faEnvelope, faLock, faUser } from '@fortawesome/free-solid-svg-icons';
+import { faUserCircle, faLock } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle as faGoogleBrand } from '@fortawesome/free-brands-svg-icons';
 import { requestPasswordReset, confirmPasswordReset } from '../../../services/authService';
@@ -101,8 +101,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
         }
         // Prefer lockout messaging if reason or countdown present
         if ((result.reason && /lockout|locked/i.test(result.reason)) || result.lockoutRemaining != null) {
-          const base = 'Account locked';
-          setLoginError(base);
+          setLoginError(result.error || 'Account locked');
         } else if (result.error) {
           setLoginError(result.error);
         } else {
