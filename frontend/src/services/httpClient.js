@@ -118,6 +118,13 @@ async function post(url, data, { token, contentType = 'application/json', params
   } catch (err) { return normalizeError(err, 'POST failed'); }
 }
 
+async function put(url, data, { token, contentType = 'application/json', params } = {}) {
+  try {
+    const resp = await instance.put(url, data, { params, headers: authHeaders(token, contentType) });
+    return { success: true, data: resp.data, status: resp.status };
+  } catch (err) { return normalizeError(err, 'PUT failed'); }
+}
+
 async function patch(url, data, { token, contentType = 'application/json' } = {}) {
   try {
     const resp = await instance.patch(url, data, { headers: authHeaders(token, contentType) });
@@ -125,5 +132,5 @@ async function patch(url, data, { token, contentType = 'application/json' } = {}
   } catch (err) { return normalizeError(err, 'PATCH failed'); }
 }
 
-export const http = { get, post, patch, del, authHeaders, setAccessToken };
+export const http = { get, post, put, patch, del, authHeaders, setAccessToken };
 export default http;

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -125,6 +126,7 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(corsMiddleware())
 	r.Use(observability.MetricsAndTracingMiddleware(tracer.(trace.Tracer)))
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,4 +160,45 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 	})
 
 	return r
+}
+
+// corsMiddleware enables simple cross-origin requests for the SPA (dev server) against the API gateway.
+// Configure allowed origins via CORS_ALLOW_ORIGINS (comma-separated). If empty, any Origin is echoed.
+// This is intentionally minimal and avoids cookie credentials.
+func corsMiddleware() func(http.Handler) http.Handler {
+	allowed := map[string]bool{}
+	raw := strings.TrimSpace(os.Getenv("CORS_ALLOW_ORIGINS"))
+	if raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			v := strings.TrimSpace(o)
+			if v != "" {
+				allowed[v] = true
+			}
+		}
+	}
+
+	allowMethods := "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+	allowHeaders := "Authorization,Content-Type,X-Requested-With,X-Correlation-ID"
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" {
+				// If allow-list configured, enforce it. Otherwise echo any origin.
+				if len(allowed) == 0 || allowed[origin] {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Vary", "Origin")
+					w.Header().Set("Access-Control-Allow-Methods", allowMethods)
+					w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
+					w.Header().Set("Access-Control-Max-Age", "600")
+				}
+			}
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

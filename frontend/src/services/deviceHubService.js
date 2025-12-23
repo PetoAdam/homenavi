@@ -60,6 +60,10 @@ export async function listIntegrations(token) {
   return await http.get(`${DEVICE_HUB_BASE}/integrations`, { token });
 }
 
+export async function listDevices(token) {
+  return await http.get(`${DEVICE_HUB_BASE}/devices`, { token });
+}
+
 export async function startPairing(payload, token) {
   if (!payload || typeof payload !== 'object') {
     return { success: false, error: 'Missing pairing payload' };
@@ -92,6 +96,7 @@ export default {
   refreshDevice,
   createDevice,
   deleteDevice,
+  listDevices,
   listIntegrations,
   startPairing,
   stopPairing,

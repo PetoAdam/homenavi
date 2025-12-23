@@ -49,6 +49,7 @@ func main() {
 	r.Post("/send/verification", emailHandler.SendVerificationEmail)
 	r.Post("/send/password-reset", emailHandler.SendPasswordResetEmail)
 	r.Post("/send/2fa", emailHandler.Send2FAEmail)
+	r.Post("/send/notify", emailHandler.SendNotifyEmail)
 
 	// Start server
 	server := &http.Server{
