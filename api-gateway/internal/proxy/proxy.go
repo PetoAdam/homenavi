@@ -64,8 +64,29 @@ func MakeWebSocketProxyHandler(route config.RouteConfig) http.HandlerFunc {
 	if err != nil {
 		panic("Invalid upstream URL: " + route.Upstream)
 	}
+	routePrefix := strings.TrimSuffix(route.Path, "/*")
+	upstreamPrefix := strings.TrimSuffix(upstreamURL.Path, "/*")
 	return func(w http.ResponseWriter, r *http.Request) {
-		slog.Info("proxy websocket", "path", r.URL.Path, "upstream", upstreamURL.String())
+		// Compute upstream URL per-request (support {params} and wildcard rewriting).
+		u := *upstreamURL
+		path := upstreamURL.Path
+		ctx := chi.RouteContext(r.Context())
+		if strings.HasSuffix(route.Path, "/*") && strings.HasSuffix(upstreamURL.Path, "/*") {
+			suffix := strings.TrimPrefix(r.URL.Path, routePrefix)
+			if suffix == "" {
+				suffix = "/"
+			}
+			path = upstreamPrefix + suffix
+		} else if ctx != nil {
+			for i, key := range ctx.URLParams.Keys {
+				val := ctx.URLParams.Values[i]
+				path = strings.ReplaceAll(path, "{"+key+"}", val)
+			}
+		}
+		u.Path = path
+		u.RawQuery = r.URL.RawQuery
+
+		slog.Info("proxy websocket", "path", r.URL.Path, "upstream", u.String())
 
 		// Prepare headers for backend dial (forward subprotocols if any)
 		dialHeader := http.Header{}
@@ -74,9 +95,9 @@ func MakeWebSocketProxyHandler(route config.RouteConfig) http.HandlerFunc {
 			dialHeader.Set("Sec-WebSocket-Protocol", sp)
 		}
 
-		backendConn, backendResp, err := websocket.DefaultDialer.Dial(upstreamURL.String(), dialHeader)
+		backendConn, backendResp, err := websocket.DefaultDialer.Dial(u.String(), dialHeader)
 		if err != nil {
-			slog.Error("websocket backend dial failed", "upstream", upstreamURL.String(), "error", err)
+			slog.Error("websocket backend dial failed", "upstream", u.String(), "error", err)
 			status := http.StatusBadGateway
 			if backendResp != nil && backendResp.StatusCode != 0 {
 				status = backendResp.StatusCode

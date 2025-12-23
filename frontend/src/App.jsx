@@ -8,6 +8,7 @@ import Map from './components/Map/Map.jsx';
 import Spotify from './components/Spotify/Spotify.jsx';
 import Users from './components/Users/Users.jsx';
 import Profile from './components/Profile/Profile.jsx';
+import Automation from './components/Automation/Automation.jsx';
 import ProfileButton from './components/common/ProfileButton/ProfileButton.jsx';
 import './App.css';
 import { isPermanentSidebarWidth } from './breakpoints.js';
@@ -112,6 +113,7 @@ export default function App() {
             <Route path="/map" element={<Map />} />
             <Route path="/spotify" element={<Spotify />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/automation" element={<Automation />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>

@@ -1,0 +1,18 @@
+routes:
+  - path: /ws/automation/runs/{run_id}
+    upstream: ws://automation-service:8094/api/automation/runs/{run_id}/ws
+    methods: [GET]
+    access: resident
+    type: websocket
+
+  - path: /api/automation/health
+    upstream: http://automation-service:8094/health
+    methods: [GET]
+    access: resident
+    type: rest
+
+  - path: /api/automation/*
+    upstream: http://automation-service:8094/api/automation/*
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    access: resident
+    type: rest
