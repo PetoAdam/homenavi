@@ -9,22 +9,34 @@ export function AuthProvider({ children }) {
   const [refreshTokenValue, setRefreshTokenValue] = useState(() => localStorage.getItem('refreshToken') || null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(true);
   const [pendingUserId, setPendingUserId] = useState(null); // Store userId during 2FA flow
 
   useEffect(() => {
+    let cancelled = false;
+
     if (accessToken) {
-      getMe(accessToken).then(res => {
-        if (res.success && res.user) {
-          res.user.avatar = res.user.profile_picture_url || null;
-          setUser(res.user);
-        } else {
-          setUser(null);
-        }
-      });
+      getMe(accessToken)
+        .then(res => {
+          if (cancelled) return;
+          if (res.success && res.user) {
+            res.user.avatar = res.user.profile_picture_url || null;
+            setUser(res.user);
+          } else {
+            setUser(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled && bootstrapping) setBootstrapping(false);
+        });
     } else {
       setUser(null);
     }
-  }, [accessToken]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, bootstrapping]);
 
   // On mount, try to refresh access token if refresh token exists in localStorage
   // Also check for Google OAuth callback
@@ -114,9 +126,15 @@ export function AuthProvider({ children }) {
           localStorage.removeItem('refreshToken');
 
           clearAuthCookie();
+
+          setBootstrapping(false);
         }
       })();
+      return;
     }
+
+    // No refresh to perform; we can consider auth initialized.
+    setBootstrapping(false);
   }, []);
 
   // Auto-refresh access token
@@ -267,6 +285,7 @@ export function AuthProvider({ children }) {
       refreshToken: refreshTokenValue, 
       user, 
       loading, 
+      bootstrapping,
       handleLogin, 
       handle2FA, 
       handleSignup, 

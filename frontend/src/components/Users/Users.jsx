@@ -9,18 +9,20 @@ import RoleSelect from '../common/RoleSelect/RoleSelect';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
 import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
+import LoadingView from '../common/LoadingView/LoadingView';
 import './Users.css';
 
 const PageSizeOptions = [10, 20, 50, 100];
 
 function Users() {
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, bootstrapping } = useAuth();
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
   const [savingRoleId, setSavingRoleId] = useState(null);
   const [savingLockId, setSavingLockId] = useState(null);
+  const [activeUserId, setActiveUserId] = useState(null);
   const [toast, setToast] = useState('');
   const [err, setErr] = useState('');
   const [data, setData] = useState({ users: [], page: 1, page_size: 20, total: 0, total_pages: 0 });
@@ -79,7 +81,14 @@ function Users() {
     else setErr(res.error || 'Failed to update lockout');
   };
 
+  const toggleActiveUser = (userId) => {
+    setActiveUserId((prev) => (prev === userId ? null : userId));
+  };
+
   if (!isResidentOrAdmin) {
+    if (bootstrapping) {
+      return <LoadingView title="Users" message="Loading users…" />;
+    }
     return (
       <UnauthorizedView
         title="Users"
@@ -113,7 +122,62 @@ function Users() {
               <Button type="submit" disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
             </form>
             {err && <div className="alert error" role="alert">{err}</div>}
-            <div className="table-wrapper">
+            <div className="users-mobile-view" aria-label="Users list">
+              {loading && data.users.length === 0 && Array.from({ length: 6 }).map((_, i) => (
+                <div key={`msk-${i}`} className="users-mobile-item skeleton-row">
+                  <div className="skeleton-line" style={{ width: '100%' }} />
+                </div>
+              ))}
+              {!loading && data.users.map((u) => {
+                const canAdminChange = user?.role === 'admin';
+                const isActive = activeUserId === u.id;
+                return (
+                  <div key={u.id} className={`users-mobile-card${isActive ? ' active' : ''}`}>
+                    <button
+                      type="button"
+                      className="users-mobile-item"
+                      onClick={() => toggleActiveUser(u.id)}
+                      aria-expanded={isActive}
+                    >
+                      <div className="user-cell">
+                        <UserAvatar user={{ first_name: u.first_name, last_name: u.last_name, user_name: u.user_name, avatar: u.profile_picture_url }} size={32} />
+                        <div className="users-mobile-meta">
+                          <div className="name">{u.first_name} {u.last_name}</div>
+                          <div className="muted">@{u.user_name}</div>
+                          <div className="users-mobile-email muted">{u.email}</div>
+                        </div>
+                      </div>
+                      <div className="users-mobile-badges">
+                        <span className={`badge ${u.email_confirmed ? 'success' : 'muted'}`}>{u.email_confirmed ? 'Verified' : 'Unverified'}</span>
+                        <span className={`badge ${u.lockout_enabled ? 'error' : 'success'}`}>{u.lockout_enabled ? 'Locked' : 'Active'}</span>
+                      </div>
+                    </button>
+
+                    {isActive && (
+                      <div className="users-mobile-actions" aria-label="Manage user">
+                        <RoleSelect
+                          value={u.role}
+                          options={roles.filter(r => canAdminChange || canChangeRole(r))}
+                          disabled={savingRoleId === u.id}
+                          saving={savingRoleId === u.id}
+                          onChange={(role) => handleRoleChange(u, role)}
+                        />
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          disabled={savingLockId === u.id}
+                          onClick={() => handleToggleLockout(u)}
+                        >
+                          {savingLockId === u.id ? 'Saving…' : (u.lockout_enabled ? 'Unlock' : 'Lock')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="users-table-view table-wrapper">
               <table className="table">
                 <thead>
                   <tr>
@@ -128,7 +192,7 @@ function Users() {
                 <tbody>
                   {loading && data.users.length === 0 && Array.from({ length: 6 }).map((_, i) => (
                     <tr key={`sk-${i}`} className="row-fade skeleton-row">
-                      <td colSpan={5}><div className="skeleton-line" style={{width: '100%'}} /></td>
+                      <td colSpan={6}><div className="skeleton-line" style={{width: '100%'}} /></td>
                     </tr>
                   ))}
                   {!loading && data.users.map((u) => {

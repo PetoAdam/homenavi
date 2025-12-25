@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { faUserCircle, faLock } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle as faGoogleBrand } from '@fortawesome/free-brands-svg-icons';
 import { requestPasswordReset, confirmPasswordReset } from '../../../services/authService';
+import { getModalRoot } from '../../common/Modal/modalRoot';
 import './AuthModal.css';
 
 export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, onSignup, onCancel, onRequestNewCode, loading = false }) {
@@ -230,7 +232,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     }
   };
 
-  return (
+  const modal = (
     <div className={`auth-modal-backdrop${open ? ' open' : ''}`}>
       <div className={`auth-modal-glass${open ? ' open' : ''}`} ref={modalRef}>
         <div className="auth-modal-tabs">
@@ -558,4 +560,6 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
       </div>
     </div>
   );
+
+  return createPortal(modal, getModalRoot());
 }

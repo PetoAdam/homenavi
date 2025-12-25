@@ -101,7 +101,7 @@ export default function App() {
             minWidth: 0,
             position: 'relative',
             zIndex: 1,
-            marginLeft: isPermanentSidebar ? 'calc(320px + 2.5rem)' : 0,
+            marginLeft: isPermanentSidebar ? 'calc(320px + 1.5rem)' : 0,
             transition: 'margin-left 0.3s cubic-bezier(.4,2,.6,1)',
           }}
         >

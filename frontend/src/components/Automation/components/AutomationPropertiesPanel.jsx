@@ -1,5 +1,6 @@
 import React from 'react';
 import Button from '../../common/Button/Button';
+import GlassCard from '../../common/GlassCard/GlassCard';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLinkSlash, faTrash } from '@fortawesome/free-solid-svg-icons';
 import TriggerEditor from './nodeEditors/TriggerEditor';
@@ -28,7 +29,8 @@ export default function AutomationPropertiesPanel({
 }) {
   return (
     <div className="automation-right">
-      <div className="automation-panel-title">Properties</div>
+      <GlassCard interactive={false} className="automation-properties-card">
+        <div className="automation-panel-title">Properties</div>
 
       {selectedNode && selectedNodeId !== 'workflow' && (
         <div className="automation-props">
@@ -157,6 +159,7 @@ export default function AutomationPropertiesPanel({
       {selectedNodeId !== 'workflow' && !selectedNode && (
         <div className="muted">Click a node to edit its fields.</div>
       )}
+      </GlassCard>
     </div>
   );
 }

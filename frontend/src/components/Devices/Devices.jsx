@@ -7,6 +7,7 @@ import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
 import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
+import LoadingView from '../common/LoadingView/LoadingView';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import DeviceTile from './DeviceTile';
 import { useAuth } from '../../context/AuthContext';
@@ -32,7 +33,7 @@ const FALLBACK_INTEGRATIONS = [
 
 export default function Devices() {
   const navigate = useNavigate();
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
   const [metadataMode, setMetadataMode] = useState('rest');
   const {
@@ -435,6 +436,9 @@ export default function Devices() {
   }, [activeFilterChip, filteredDevices.length, protocolFilter, searchTerm]);
 
   if (!isResidentOrAdmin) {
+    if (bootstrapping) {
+      return <LoadingView title="Devices" message="Loading devices…" />;
+    }
     return (
       <UnauthorizedView
         title="Devices"

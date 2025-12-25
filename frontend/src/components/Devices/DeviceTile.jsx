@@ -28,6 +28,7 @@ import GlassPill from '../common/GlassPill/GlassPill';
 import { HexColorPicker } from 'react-colorful';
 import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
+import { getModalRoot } from '../common/Modal/modalRoot';
 
 const ICON_BY_CAP = {
   temperature: faThermometerHalf,
@@ -1120,7 +1121,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
 
   const deleteModal = deleteModalElement
     ? (typeof document !== 'undefined'
-      ? createPortal(deleteModalElement, document.body)
+      ? createPortal(deleteModalElement, getModalRoot())
       : deleteModalElement)
     : null;
 
