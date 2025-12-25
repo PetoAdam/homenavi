@@ -5,6 +5,7 @@ import GlassCard from '../common/GlassCard/GlassCard';
 import GlassPill from '../common/GlassPill/GlassPill';
 import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
+import LoadingView from '../common/LoadingView/LoadingView';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import { useAuth } from '../../context/AuthContext';
 import DeviceTile from './DeviceTile';
@@ -261,7 +262,7 @@ export default function DeviceDetail() {
   const encodedId = params.deviceId || '';
   const deviceId = useMemo(() => safeDecode(encodedId), [encodedId]);
 
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
   const { devices, loading, error } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest' });
@@ -565,6 +566,9 @@ export default function DeviceDetail() {
   }, [overlay, closeOverlay]);
 
   if (!isResidentOrAdmin) {
+    if (bootstrapping) {
+      return <LoadingView title="Device" message="Loading device…" />;
+    }
     return (
       <UnauthorizedView
         title="Device"

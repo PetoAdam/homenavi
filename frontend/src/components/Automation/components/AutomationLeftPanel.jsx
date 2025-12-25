@@ -34,7 +34,6 @@ export default function AutomationLeftPanel({
                         )}
                         <span>{item.label}</span>
                       </div>
-                      <div className="muted" style={{ fontSize: '0.8rem' }}>Drag or click to add</div>
                     </div>
                   );
                 })}

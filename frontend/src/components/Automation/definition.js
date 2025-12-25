@@ -538,7 +538,7 @@ export function groupPaletteItems() {
     {
       title: 'Actions',
       items: [
-        { kind: 'action.send_command', label: 'Send device command' },
+        { kind: 'action.send_command', label: 'Device command' },
         { kind: 'action.notify_email', label: 'Notify email' },
       ],
     },

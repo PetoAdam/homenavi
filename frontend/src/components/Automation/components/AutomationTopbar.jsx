@@ -37,59 +37,63 @@ export default function AutomationTopbar({
   return (
     <div className="automation-topbar">
       <div className="automation-topbar-left">
-        <div className="automation-topbar-label muted">Workflow</div>
+        <div className="automation-topbar-row automation-topbar-row-select">
+          <div className="automation-topbar-label muted">Workflow</div>
 
-        <div className="automation-topbar-select-wrap" aria-label="Workflow selector">
-          <select
-            className="input automation-topbar-select"
-            value={selectedId || ''}
-            onChange={(e) => {
-              const v = String(e.target.value || '');
-              onSelectId(v || null);
-            }}
-            aria-label="Select workflow"
-          >
-            <option value="">(new workflow)</option>
-            {workflows.map((wf) => (
-              <option key={wf.id} value={wf.id}>{wf.name}</option>
-            ))}
-          </select>
-          <span className="automation-topbar-select-icon" aria-hidden="true">
-            <FontAwesomeIcon icon={faChevronDown} />
-          </span>
+          <div className="automation-topbar-select-wrap" aria-label="Workflow selector">
+            <select
+              className="input automation-topbar-select"
+              value={selectedId || ''}
+              onChange={(e) => {
+                const v = String(e.target.value || '');
+                onSelectId(v || null);
+              }}
+              aria-label="Select workflow"
+            >
+              <option value="">(new workflow)</option>
+              {workflows.map((wf) => (
+                <option key={wf.id} value={wf.id}>{wf.name}</option>
+              ))}
+            </select>
+            <span className="automation-topbar-select-icon" aria-hidden="true">
+              <FontAwesomeIcon icon={faChevronDown} />
+            </span>
+          </div>
+
+          {(saving || lastSavedAt) && (
+            <span className="automation-topbar-saved muted">
+              {saving ? 'Saving…' : `Saved ${new Date(lastSavedAt).toLocaleTimeString()}`}
+            </span>
+          )}
         </div>
 
-        <Button
-          variant="secondary"
-          className="automation-topbar-iconbtn automation-topbar-new"
-          onClick={startNewWorkflow}
-          title="Create new workflow"
-          aria-label="Create new workflow"
-        >
-          <span className="btn-icon"><FontAwesomeIcon icon={faPlus} /></span>
-          <span className="btn-label">New</span>
-        </Button>
+        <div className="automation-topbar-row automation-topbar-row-primary">
+          <Button
+            variant="secondary"
+            className="automation-topbar-iconbtn automation-topbar-new"
+            onClick={startNewWorkflow}
+            title="Create new workflow"
+            aria-label="Create new workflow"
+          >
+            <span className="btn-icon"><FontAwesomeIcon icon={faPlus} /></span>
+            <span className="btn-label">New</span>
+          </Button>
 
-        {selectedWorkflow && (
-          <div className="automation-topbar-status">
-            <span className={`badge ${selectedWorkflow.enabled ? 'success' : 'muted'}`}>
-              {selectedWorkflow.enabled ? 'Enabled' : 'Disabled'}
-            </span>
-            <div className="automation-topbar-switch" title="Enable/disable workflow">
-              <GlassSwitch
-                checked={!!selectedWorkflow.enabled}
-                disabled={saving}
-                onChange={() => toggleEnabled()}
-              />
+          {selectedWorkflow && (
+            <div className="automation-topbar-status">
+              <span className={`badge ${selectedWorkflow.enabled ? 'success' : 'muted'}`}>
+                {selectedWorkflow.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              <div className="automation-topbar-switch" title="Enable/disable workflow">
+                <GlassSwitch
+                  checked={!!selectedWorkflow.enabled}
+                  disabled={saving}
+                  onChange={() => toggleEnabled()}
+                />
+              </div>
             </div>
-          </div>
-        )}
-
-        {(saving || lastSavedAt) && (
-          <span className="muted" style={{ fontSize: '0.85rem' }}>
-            {saving ? 'Saving…' : `Saved ${new Date(lastSavedAt).toLocaleTimeString()}`}
-          </span>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="automation-topbar-right">

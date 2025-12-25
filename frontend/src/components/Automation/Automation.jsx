@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../common/PageHeader/PageHeader';
-import GlassCard from '../common/GlassCard/GlassCard';
 import Snackbar from '../common/Snackbar/Snackbar';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
+import LoadingView from '../common/LoadingView/LoadingView';
 import useEditorHistory from './hooks/useEditorHistory';
 import useRunStream from './hooks/useRunStream';
 import useAutomationLists from './hooks/useAutomationLists';
@@ -58,7 +58,7 @@ function defaultEditorState() {
 }
 
 function Automation() {
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
   const isAdmin = user?.role === 'admin';
   const currentUserId = user?.id || user?.user_id || user?.sub || '';
@@ -423,6 +423,9 @@ function Automation() {
   const paletteGroups = useMemo(() => groupPaletteItems(), []);
 
   if (!isResidentOrAdmin) {
+    if (bootstrapping) {
+      return <LoadingView title="Automation" message="Loading automation…" />;
+    }
     return (
       <UnauthorizedView
         title="Automation"
@@ -439,101 +442,99 @@ function Automation() {
       />
 
       <div className="automation-layout">
-        <GlassCard interactive={false} className="fade-in" key="automation-editor">
-          <div className="card-body">
-            <AutomationTopbar
-              workflows={workflows}
-              selectedId={selectedId}
-              onSelectId={setSelectedId}
-              startNewWorkflow={startNewWorkflow}
-              selectedWorkflow={selectedWorkflow}
-              saving={saving}
-              lastSavedAt={lastSavedAt}
-              loading={loading}
-              devicesLoading={devicesLoading}
-              refreshAllData={refreshAllData}
-              clearCanvas={clearCanvas}
-              canUndo={canUndo}
-              undo={undo}
-              canRedo={canRedo}
-              redo={redo}
-              toggleEnabled={toggleEnabled}
-              runNow={runNow}
-              removeWorkflow={removeWorkflow}
-              isAdmin={isAdmin}
+        <div className="automation-editor-shell fade-in" key="automation-editor">
+          <AutomationTopbar
+            workflows={workflows}
+            selectedId={selectedId}
+            onSelectId={setSelectedId}
+            startNewWorkflow={startNewWorkflow}
+            selectedWorkflow={selectedWorkflow}
+            saving={saving}
+            lastSavedAt={lastSavedAt}
+            loading={loading}
+            devicesLoading={devicesLoading}
+            refreshAllData={refreshAllData}
+            clearCanvas={clearCanvas}
+            canUndo={canUndo}
+            undo={undo}
+            canRedo={canRedo}
+            redo={redo}
+            toggleEnabled={toggleEnabled}
+            runNow={runNow}
+            removeWorkflow={removeWorkflow}
+            isAdmin={isAdmin}
+          />
+
+          {err && <div className="alert error" role="alert">{err}</div>}
+
+          <div className="automation-editor">
+            <AutomationLeftPanel
+              paletteGroups={paletteGroups}
+              iconForNodeKind={iconForNodeKind}
+              onPaletteDragStart={onPaletteDragStart}
+              addNodeAtCenter={addNodeAtCenter}
             />
 
-            {err && <div className="alert error" role="alert">{err}</div>}
+            <AutomationCanvas
+              canvasRef={canvasRef}
+              onCanvasDragOver={onCanvasDragOver}
+              onCanvasDrop={onCanvasDrop}
+              onCanvasPointerDown={onCanvasPointerDown}
+              GRID_SIZE={GRID_SIZE}
+              viewport={viewport}
+              setViewport={setViewport}
+              svgWorldSize={svgWorldSize}
+              edgesToRender={edgesToRender}
+              connectMode={connectMode}
+              connectHoverId={connectHoverId}
+              setConnectHoverId={setConnectHoverId}
+              connectModeRef={connectModeRef}
+              setConnectMode={setConnectMode}
+              cancelConnect={cancelConnect}
+              deleteEdge={deleteEdge}
+              editorNodes={editor.nodes}
+              selectedNodeId={selectedNodeId}
+              setSelectedNodeId={setSelectedNodeId}
+              NODE_WIDTH={NODE_WIDTH}
+              NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
+              isTriggerNode={isTriggerNode}
+              nodeTitle={nodeTitle}
+              nodeSubtitle={nodeSubtitle}
+              nodeBodyText={nodeBodyText}
+              iconForNodeKind={iconForNodeKind}
+              deviceNameById={deviceNameById}
+              liveRunNodeStates={liveRunNodeStates}
+              commitConnection={commitConnection}
+              startConnectFromNode={startConnectFromNode}
+              onNodePointerDown={onNodePointerDown}
+              executeFromNodeTitle={executeFromNodeTitle}
+              canExecuteFromNode={canExecuteFromNode}
+              runNow={runNow}
+              canvasSize={canvasSize}
+              zoomAroundPoint={zoomAroundPoint}
+              workflowName={editor.workflowName}
+              onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+            />
 
-            <div className="automation-editor">
-              <AutomationLeftPanel
-                paletteGroups={paletteGroups}
-                iconForNodeKind={iconForNodeKind}
-                onPaletteDragStart={onPaletteDragStart}
-                addNodeAtCenter={addNodeAtCenter}
-              />
-
-              <AutomationCanvas
-                canvasRef={canvasRef}
-                onCanvasDragOver={onCanvasDragOver}
-                onCanvasDrop={onCanvasDrop}
-                onCanvasPointerDown={onCanvasPointerDown}
-                GRID_SIZE={GRID_SIZE}
-                viewport={viewport}
-                setViewport={setViewport}
-                svgWorldSize={svgWorldSize}
-                edgesToRender={edgesToRender}
-                connectMode={connectMode}
-                connectHoverId={connectHoverId}
-                setConnectHoverId={setConnectHoverId}
-                connectModeRef={connectModeRef}
-                setConnectMode={setConnectMode}
-                cancelConnect={cancelConnect}
-                deleteEdge={deleteEdge}
-                editorNodes={editor.nodes}
-                selectedNodeId={selectedNodeId}
-                setSelectedNodeId={setSelectedNodeId}
-                NODE_WIDTH={NODE_WIDTH}
-                NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
-                isTriggerNode={isTriggerNode}
-                nodeTitle={nodeTitle}
-                nodeSubtitle={nodeSubtitle}
-                nodeBodyText={nodeBodyText}
-                iconForNodeKind={iconForNodeKind}
-                deviceNameById={deviceNameById}
-                liveRunNodeStates={liveRunNodeStates}
-                commitConnection={commitConnection}
-                startConnectFromNode={startConnectFromNode}
-                onNodePointerDown={onNodePointerDown}
-                executeFromNodeTitle={executeFromNodeTitle}
-                canExecuteFromNode={canExecuteFromNode}
-                runNow={runNow}
-                canvasSize={canvasSize}
-                zoomAroundPoint={zoomAroundPoint}
-                workflowName={editor.workflowName}
-                onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
-              />
-
-              <AutomationPropertiesPanel
-                selectedNodeId={selectedNodeId}
-                selectedNode={selectedNode}
-                selectedConnections={selectedConnections}
-                isTriggerNode={isTriggerNode}
-                defaultNodeData={defaultNodeData}
-                applyEditorUpdate={applyEditorUpdate}
-                applyEditorUpdateBatched={applyEditorUpdateBatched}
-                deviceOptions={deviceOptions}
-                triggerKeyOptions={triggerKeyOptions}
-                userOptions={userOptions}
-                isAdmin={isAdmin}
-                currentUserId={currentUserId}
-                disconnectIncoming={disconnectIncoming}
-                disconnectOutgoing={disconnectOutgoing}
-                deleteSelectedNode={deleteSelectedNode}
-              />
-            </div>
+            <AutomationPropertiesPanel
+              selectedNodeId={selectedNodeId}
+              selectedNode={selectedNode}
+              selectedConnections={selectedConnections}
+              isTriggerNode={isTriggerNode}
+              defaultNodeData={defaultNodeData}
+              applyEditorUpdate={applyEditorUpdate}
+              applyEditorUpdateBatched={applyEditorUpdateBatched}
+              deviceOptions={deviceOptions}
+              triggerKeyOptions={triggerKeyOptions}
+              userOptions={userOptions}
+              isAdmin={isAdmin}
+              currentUserId={currentUserId}
+              disconnectIncoming={disconnectIncoming}
+              disconnectOutgoing={disconnectOutgoing}
+              deleteSelectedNode={deleteSelectedNode}
+            />
           </div>
-        </GlassCard>
+        </div>
 
         <AutomationRuns
           selectedWorkflow={selectedWorkflow}
