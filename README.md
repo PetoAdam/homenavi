@@ -14,6 +14,7 @@
 [![Build History Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml)
 [![Build Zigbee Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml)
 [![Build Thread Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml)
+[![Build Automation Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml)
 
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
@@ -57,6 +58,7 @@ Current Core:
 * API Gateway (Go): Routing, JWT verification, rate limit, WebSocket upgrade.
 * Device Hub (Go): Central device inventory and **HDP-only** adapter bridge over MQTT.
 * History Service (Go): Persists HDP device state into Postgres and serves query endpoints for charts.
+* Automation Service (Go): Automation/workflow orchestration (graph builder UI backend).
 * Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
 * User Service (Go): Profile, roles, administrative user actions.
 * Email Service (Go): Outbound verification & notification emails.
@@ -119,6 +121,7 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 | API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy | `api-gateway:latest` |
 | Device Hub | `device-hub/` | Device inventory, HDP bridge over MQTT, metadata/state fan-out | `device-hub:latest` |
 | History Service | `history-service/` | HDP device state persistence + query API for charts | `history-service:latest` |
+| Automation Service | `automation-service/` | Automations/workflows service | `automation-service:latest` |
 | Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic | `auth-service:latest` |
 | User Service | `user-service/` | User profiles, roles, admin operations | `user-service:latest` |
 | Email Service | `email-service/` | Sending verification / notification emails | `email-service:latest` |
@@ -184,6 +187,7 @@ Mid Term:
 * Rule/automation engine MVP
 * Scene & scheduling module
 * UI dashboards for metrics & device state
+* AI assistant service (local or cloud) for docs/config/dev support
 
 Long Term:
 * Edge node agent & secure tunneling
