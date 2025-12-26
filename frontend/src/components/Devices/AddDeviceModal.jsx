@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faCircleCheck } from '@fortawesome/free-solid-svg-icons';
 import { DEVICE_ICON_CHOICES } from './deviceIconChoices';
+import { getModalRoot } from '../common/Modal/modalRoot';
 import './AddDeviceModal.css';
 
 const CAPABILITIES_EXAMPLE = '[{ "id": "state", "kind": "binary" }]';
@@ -923,5 +924,5 @@ export default function AddDeviceModal({
     return modal;
   }
 
-  return createPortal(modal, document.body);
+  return createPortal(modal, getModalRoot());
 }

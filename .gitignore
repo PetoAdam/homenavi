@@ -12,3 +12,5 @@ zigbee2mqtt-data/configuration-pi.yaml
 # Python
 __pycache__/
 **/__pycache__/
+
+.vscode/*

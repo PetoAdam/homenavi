@@ -285,6 +285,42 @@ func (s *EmailService) getTemplate(templateName string) string {
 		return baseTemplate
 	case "2fa":
 		return baseTemplate
+	case "notify":
+		return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Subject}}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; line-height: 1.6; color: #333; background-color: #f8fafc; }
+        .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 32px 28px; text-align: center; }
+        .header h1 { font-size: 26px; font-weight: 600; margin: 0; }
+        .content { padding: 34px 28px; }
+        .greeting { font-size: 18px; margin-bottom: 16px; color: #2d3748; }
+        .message { font-size: 16px; color: #4a5568; white-space: pre-wrap; }
+        .footer { background-color: #f7fafc; padding: 26px; text-align: center; border-top: 1px solid #e2e8f0; }
+        .footer p { font-size: 14px; color: #718096; margin: 0; }
+        @media (max-width: 600px) { .container { margin: 20px; border-radius: 8px; } .header, .content, .footer { padding: 22px 18px; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{.AppName}}</h1>
+        </div>
+        <div class="content">
+            <div class="greeting">Hello {{.UserName}},</div>
+            <div class="message">{{.Message}}</div>
+        </div>
+        <div class="footer">
+            <p>This is an automated message, please do not reply.</p>
+        </div>
+    </div>
+</body>
+</html>`
 	default:
 		return baseTemplate
 	}

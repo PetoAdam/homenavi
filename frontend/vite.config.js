@@ -46,6 +46,11 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true
       },
+      '/ws/automation': {
+        target: 'ws://localhost:8080',
+        changeOrigin: true,
+        ws: true
+      },
       '/ws/hdp': {
         target: 'ws://localhost:8080',
         changeOrigin: true,

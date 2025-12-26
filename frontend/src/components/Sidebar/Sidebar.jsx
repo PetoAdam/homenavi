@@ -1,7 +1,7 @@
 import React, { forwardRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHouse, faLightbulb, faMap, faUsers } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faHouse, faLightbulb, faMap, faUsers } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import './Sidebar.css';
 import { useAuth } from '../../context/AuthContext';
@@ -12,6 +12,7 @@ const menuGroups = [
 		items: [
 			{ name: 'Home', path: '/', icon: <FontAwesomeIcon icon={faHouse} /> },
 			{ name: 'Devices', path: '/devices', icon: <FontAwesomeIcon icon={faLightbulb} /> },
+			{ name: 'Automation', path: '/automation', icon: <FontAwesomeIcon icon={faBolt} /> },
 			{ name: 'Map', path: '/map', icon: <FontAwesomeIcon icon={faMap} /> },
 		],
 	},
@@ -55,7 +56,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 						<div className="sidebar-group-header">{group.header}</div>
 						<ul className="sidebar-group-list">
 							{group.items
-								.filter(item => item.name !== 'Devices' || isResidentOrAdmin)
+								.filter(item => (item.name !== 'Devices' && item.name !== 'Automation') || isResidentOrAdmin)
 								.map(item => (
 									<li key={item.name}>
 										<button
