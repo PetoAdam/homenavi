@@ -311,6 +311,32 @@ services:
     networks:
       - homenavi-network
 
+  automation-service:
+    build:
+      context: ./automation-service
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - postgres
+    environment:
+      - AUTOMATION_SERVICE_PORT=8094
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - AUTOMATION_SERVICE_MQTT_CLIENT_ID=${AUTOMATION_SERVICE_MQTT_CLIENT_ID:-automation-service}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE}
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - USER_SERVICE_URL=http://user-service:8001
+      - EMAIL_SERVICE_URL=http://email-service:8002
+      - LOG_LEVEL=${LOG_LEVEL}
+    volumes:
+      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+    networks:
+      - homenavi-network
+
 
 volumes:
   postgres_data:

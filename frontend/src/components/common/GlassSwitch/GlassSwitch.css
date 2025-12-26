@@ -51,5 +51,5 @@
 }
 .glass-switch.checked .glass-switch-thumb {
   background: #fff;
-  transform: translateY(-50%) translateX(20px);
+  transform: translateY(-50%) translateX(calc(var(--switch-width) - var(--thumb-size) - 4px));
 }
