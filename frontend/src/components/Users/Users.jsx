@@ -144,7 +144,6 @@ function Users() {
                         <div className="users-mobile-meta">
                           <div className="name">{u.first_name} {u.last_name}</div>
                           <div className="muted">@{u.user_name}</div>
-                          <div className="users-mobile-email muted">{u.email}</div>
                         </div>
                       </div>
                       <div className="users-mobile-badges">
@@ -155,21 +154,24 @@ function Users() {
 
                     {isActive && (
                       <div className="users-mobile-actions" aria-label="Manage user">
-                        <RoleSelect
-                          value={u.role}
-                          options={roles.filter(r => canAdminChange || canChangeRole(r))}
-                          disabled={savingRoleId === u.id}
-                          saving={savingRoleId === u.id}
-                          onChange={(role) => handleRoleChange(u, role)}
-                        />
-                        <Button
-                          variant="secondary"
-                          type="button"
-                          disabled={savingLockId === u.id}
-                          onClick={() => handleToggleLockout(u)}
-                        >
-                          {savingLockId === u.id ? 'Saving…' : (u.lockout_enabled ? 'Unlock' : 'Lock')}
-                        </Button>
+                        <div className="users-mobile-email muted">{u.email}</div>
+                        <div className="users-mobile-actions-row">
+                          <RoleSelect
+                            value={u.role}
+                            options={roles.filter(r => canAdminChange || canChangeRole(r))}
+                            disabled={savingRoleId === u.id}
+                            saving={savingRoleId === u.id}
+                            onChange={(role) => handleRoleChange(u, role)}
+                          />
+                          <Button
+                            variant="secondary"
+                            type="button"
+                            disabled={savingLockId === u.id}
+                            onClick={() => handleToggleLockout(u)}
+                          >
+                            {savingLockId === u.id ? 'Saving…' : (u.lockout_enabled ? 'Unlock' : 'Lock')}
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>

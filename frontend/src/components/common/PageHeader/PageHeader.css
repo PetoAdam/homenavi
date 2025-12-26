@@ -58,21 +58,29 @@
     padding: 0 6px;
     align-items: center;
     text-align: center;
+    width: calc(100% - 12px);
+    box-sizing: border-box;
   }
 
   .page-title {
     font-size: 1.6rem;
+    width: 100%;
+    text-align: center;
   }
 
   .page-subtitle {
     font-size: 0.85rem;
     max-width: 320px;
+    width: 100%;
+    text-align: center;
   }
 
   .page-header-row {
     flex-direction: column;
     align-items: center;
     gap: 0.6rem;
+    width: 100%;
+    justify-content: center;
   }
 
   /* No-back headers: centered on mobile */
