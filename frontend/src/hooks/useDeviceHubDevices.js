@@ -462,7 +462,7 @@ export default function useDeviceHubDevices(options = {}) {
         if (!protocol) return;
         const status = data.stage || data.status || 'in_progress';
         const session = {
-          id: data.id || `${protocol}-${Date.now()}`,
+          id: data.id || protocol,
           protocol,
           status,
           active: status !== 'completed' && status !== 'failed' && status !== 'timeout' && status !== 'stopped',

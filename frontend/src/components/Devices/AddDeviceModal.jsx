@@ -248,9 +248,6 @@ export default function AddDeviceModal({
     if (!activePairing || !activePairing.protocol) return null;
     const session = pairingSessions?.[activePairing.protocol];
     if (!session) return null;
-    if (activePairing.id && session.id && session.id !== activePairing.id) {
-      return null;
-    }
     return session;
   }, [activePairing, pairingSessions]);
 
@@ -338,9 +335,12 @@ export default function AddDeviceModal({
     try {
       setPairingStartPending(true);
       setPairingError(null);
-      const timeout = pairingProfile?.default_timeout_sec
+      const configuredTimeout = pairingProfile?.default_timeout_sec
         || pairingProfile?.defaultTimeoutSec
         || 60;
+      const timeout = selectedProtocol.trim().toLowerCase() === 'zigbee'
+        ? Math.max(180, configuredTimeout)
+        : configuredTimeout;
       const payload = {
         protocol: selectedProtocol.trim().toLowerCase(),
         timeout,
@@ -448,6 +448,12 @@ export default function AddDeviceModal({
     }
 
     const session = activePairingSession || activePairing;
+    const sessionStatusForTimer = (activePairingSession?.status || '').toLowerCase();
+    if (['interviewing', 'interview_complete', 'completed'].includes(sessionStatusForTimer)) {
+      // Once the interview begins, the permit-join timeout is no longer a useful UX signal.
+      setSecondsRemaining(null);
+      return;
+    }
     const expirationRaw = session?.expiresAt || session?.expires_at;
     if (!expirationRaw) {
       setSecondsRemaining(null);
