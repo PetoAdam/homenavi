@@ -1460,7 +1460,10 @@ func (s *Server) shouldAcceptPairingCandidate(session *pairingSession, dev *mode
 	if session == nil || dev == nil {
 		return false
 	}
-	if session.DeviceID != "" && session.DeviceID != dev.ID.String() {
+	// Once we've accepted a candidate device for this pairing session, do not accept
+	// any further candidates (including the same device again). This prevents status
+	// regressions like interview -> device_detected.
+	if session.DeviceID != "" {
 		return false
 	}
 	if len(session.knownDevices) > 0 {
