@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { screenToWorld } from '../automationUtils';
 
@@ -16,7 +16,7 @@ export default function useAutomationConnectMode({
   const [connectMode, setConnectMode] = useState(null);
   const [connectHoverId, setConnectHoverId] = useState(null);
 
-  const commitConnection = (fromId, toId) => {
+  const commitConnection = useCallback((fromId, toId) => {
     const from = String(fromId);
     const to = String(toId);
     if (!from || !to || from === to) return;
@@ -32,13 +32,13 @@ export default function useAutomationConnectMode({
       if (exists) return prev;
       return { ...prev, edges: [...edges, { from, to }] };
     });
-  };
+  }, [applyEditorUpdate, isTriggerNode]);
 
-  const cancelConnect = () => {
+  const cancelConnect = useCallback(() => {
     connectModeRef.current = null;
     setConnectMode(null);
     setConnectHoverId(null);
-  };
+  }, []);
 
   const beginConnect = ({ fromId, mode }) => {
     const nodes = Array.isArray(editorNodes) ? editorNodes : [];
@@ -140,7 +140,7 @@ export default function useAutomationConnectMode({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [connectMode, viewport, editorNodes, canvasRef, isTriggerNode, nodeHeaderHeight]);
+  }, [connectMode, viewport, editorNodes, canvasRef, commitConnection, cancelConnect, isTriggerNode, nodeHeaderHeight]);
 
   useEffect(() => {
     if (!connectMode) return;
@@ -149,7 +149,7 @@ export default function useAutomationConnectMode({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [connectMode]);
+  }, [connectMode, cancelConnect]);
 
   return {
     connectModeRef,

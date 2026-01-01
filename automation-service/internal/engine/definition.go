@@ -70,7 +70,7 @@ type EdgeDef struct {
 type TriggerManual struct{}
 
 type TriggerDeviceState struct {
-	DeviceID       string          `json:"device_id"`
+	Targets        NodeTargets     `json:"targets"`
 	Key            string          `json:"key,omitempty"`
 	Op             string          `json:"op,omitempty"`    // exists|eq|neq|gt|gte|lt|lte
 	Value          json.RawMessage `json:"value,omitempty"` // for comparisons
@@ -84,11 +84,21 @@ type TriggerSchedule struct {
 }
 
 type ActionSendCommand struct {
-	DeviceID         string         `json:"device_id"`
+	Targets          NodeTargets    `json:"targets"`
 	Command          string         `json:"command"`
 	Args             map[string]any `json:"args,omitempty"`
 	WaitForResult    bool           `json:"wait_for_result,omitempty"`
 	ResultTimeoutSec int            `json:"result_timeout_sec,omitempty"`
+}
+
+// NodeTargets defines the runtime target selection for trigger/action nodes.
+// v1 supports:
+// - {"type":"device","ids":["zigbee/0x...", ...]}
+// - {"type":"selector","selector":"tag:kitchen"}
+type NodeTargets struct {
+	Type     string   `json:"type"`
+	IDs      []string `json:"ids,omitempty"`
+	Selector string   `json:"selector,omitempty"`
 }
 
 type ActionNotifyEmail struct {
@@ -197,6 +207,10 @@ func (d *Definition) NormalizeAndValidate() error {
 		if !a.WaitForResult {
 			continue
 		}
+		// wait_for_result is only supported for single-device targets.
+		if err := validateTargets(a.Targets, true); err != nil {
+			return fmt.Errorf("action.send_command wait_for_result: %w", err)
+		}
 		if len(outgoing[n.ID]) != 0 {
 			return fmt.Errorf("action.send_command wait_for_result is only supported on leaf nodes (node %s)", n.ID)
 		}
@@ -223,8 +237,8 @@ func validateNode(n NodeDef) error {
 		if err := json.Unmarshal(n.Data, &t); err != nil {
 			return fmt.Errorf("trigger.device_state data must be valid json object")
 		}
-		if strings.TrimSpace(t.DeviceID) == "" {
-			return errors.New("trigger.device_state.device_id is required")
+		if err := validateTargets(t.Targets, false); err != nil {
+			return fmt.Errorf("trigger.device_state.targets: %w", err)
 		}
 		t.Op = strings.ToLower(strings.TrimSpace(t.Op))
 		if t.Op == "" {
@@ -250,8 +264,8 @@ func validateNode(n NodeDef) error {
 		if err := json.Unmarshal(n.Data, &a); err != nil {
 			return fmt.Errorf("action.send_command data must be valid json object")
 		}
-		if strings.TrimSpace(a.DeviceID) == "" {
-			return errors.New("action.send_command.device_id is required")
+		if err := validateTargets(a.Targets, a.WaitForResult); err != nil {
+			return fmt.Errorf("action.send_command.targets: %w", err)
 		}
 		if strings.TrimSpace(a.Command) == "" {
 			a.Command = "set_state"
@@ -372,4 +386,45 @@ func validateAcyclic(nodes map[string]NodeDef, edges []EdgeDef) error {
 		}
 	}
 	return nil
+}
+
+func validateTargets(t NodeTargets, requireSingleDevice bool) error {
+	typ := strings.ToLower(strings.TrimSpace(t.Type))
+	switch typ {
+	case "device":
+		ids := make([]string, 0, len(t.IDs))
+		seen := map[string]struct{}{}
+		for _, raw := range t.IDs {
+			id := strings.TrimSpace(raw)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			return errors.New("targets.ids is required")
+		}
+		if requireSingleDevice && len(ids) != 1 {
+			return errors.New("targets.ids must contain exactly 1 device when wait_for_result is enabled")
+		}
+		return nil
+	case "selector":
+		sel := strings.TrimSpace(t.Selector)
+		if sel == "" {
+			return errors.New("targets.selector is required")
+		}
+		if requireSingleDevice {
+			return errors.New("wait_for_result is not supported for selector targets")
+		}
+		return nil
+	default:
+		if typ == "" {
+			return errors.New("targets.type is required")
+		}
+		return errors.New("unsupported targets.type")
+	}
 }

@@ -131,6 +131,69 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.devices-toolbar-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-right: 0.8rem;
+}
+
+.devices-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 21, 32, 0.82);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.devices-group-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.devices-group-toggle.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.devices-group-toggle:focus-visible {
+  outline: 2px solid rgba(34, 197, 94, 0.6);
+  outline-offset: 2px;
+}
+
+.devices-toolbar-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.devices-toolbar-filter span {
+  font-size: 0.7rem;
+}
+
+.devices-toolbar-filter select {
+  appearance: none;
+  background: rgba(15, 21, 32, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.devices-toolbar-filter select:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .devices-integrations-label {
   text-transform: uppercase;
   font-size: 0.7rem;
@@ -323,6 +386,27 @@
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 2.2rem;
   align-items: stretch;
+}
+
+.devices-group-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.25rem;
+  margin: -0.6rem 0 -1.2rem;
+}
+
+.devices-group-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.devices-group-count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .device-filter-empty-card {

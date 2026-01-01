@@ -46,7 +46,7 @@ export default function useAutomationCanvas({
     const opts = { passive: false, capture: true };
     window.addEventListener('wheel', onWheelCapture, opts);
     return () => window.removeEventListener('wheel', onWheelCapture, opts);
-  }, []);
+  }, [canvasRef]);
 
   useEffect(() => {
     const canvasEl = canvasRef.current;
@@ -61,7 +61,7 @@ export default function useAutomationCanvas({
 
     ro.observe(canvasEl);
     return () => ro.disconnect();
-  }, []);
+  }, [canvasRef]);
 
   useEffect(() => {
     if (!dragState) return;
@@ -99,7 +99,7 @@ export default function useAutomationCanvas({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [dragState]);
+  }, [canvasRef, commitExternalSnapshot, dragState, setEditor, viewport]);
 
   useEffect(() => {
     if (!panState) return;

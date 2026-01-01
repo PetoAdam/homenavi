@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  getMe, 
   requestEmailVerify, 
   confirmEmailVerify,
   request2FAEmail,
@@ -12,7 +11,6 @@ import {
   uploadProfilePicture
 } from '../../services/authService';
 import './UserSettings.css';
-import axios from 'axios';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
 
 export default function UserSettings({ onClose }) {
@@ -506,19 +504,4 @@ export default function UserSettings({ onClose }) {
       </div>
     </div>
   );
-}
-
-// Patch user function (moved here from authService for clarity)
-async function patchUser(userId, patch, accessToken) {
-  try {
-    const resp = await axios.patch(`/api/users/${userId}`, patch, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    return { success: true, data: resp.data };
-  } catch (err) {
-    return { success: false, error: err.response?.data || 'Update failed' };
-  }
 }

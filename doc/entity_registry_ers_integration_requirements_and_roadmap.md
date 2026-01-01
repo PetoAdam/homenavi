@@ -1,4 +1,4 @@
-# Entity Registry (HEM) Integration — Requirements + Detailed Roadmap
+# Entity Registry (ERS) Integration — Requirements + Detailed Roadmap
 
 This document defines the requirements/featureset for integrating a canonical Home Entity Model into Homenavi, implemented as `entity-registry-service`, and a detailed rollout plan.
 
@@ -9,7 +9,7 @@ Service name (docker/compose + discovery): `entity-registry-service`
 ## Scope boundaries (explicit)
 
 - Single-home only for now.
-- `/api/hem/*` is resident-only.
+- `/api/ers/*` is resident-only.
 - Entity Registry is REST-first.
 - Realtime remains via HDP MQTT-over-WS (`/ws/hdp`) and automation run streams.
 - Automations store selectors only; resolution happens at run time.
@@ -55,7 +55,7 @@ Selector syntax (v1):
 - `room:<slug-or-id>`
 
 Required endpoint:
-- `POST /api/hem/selectors/resolve`
+- `POST /api/ers/selectors/resolve`
   - Input: selector string
   - Output: resolved targets (at minimum: list of HDP external IDs; optionally also Entity Registry IDs)
 
@@ -82,23 +82,23 @@ Non-goals for v1 (can be phase-2+):
 ## External API (target state)
 
 All resident-only:
-- `GET /api/hem/home`
-- `GET|POST /api/hem/rooms`
-- `PATCH|DELETE /api/hem/rooms/{room_id}`
-- `GET|POST /api/hem/tags`
-- `DELETE /api/hem/tags/{tag_id}`
-- `PUT /api/hem/tags/{tag_id}/members`
-- `GET|POST /api/hem/devices`
-- `GET|PATCH|DELETE /api/hem/devices/{device_id}`
-- `PUT /api/hem/devices/{device_id}/bindings/hdp`
-- `POST /api/hem/selectors/resolve`
+- `GET /api/ers/home`
+- `GET|POST /api/ers/rooms`
+- `PATCH|DELETE /api/ers/rooms/{room_id}`
+- `GET|POST /api/ers/tags`
+- `DELETE /api/ers/tags/{tag_id}`
+- `PUT /api/ers/tags/{tag_id}/members`
+- `GET|POST /api/ers/devices`
+- `GET|PATCH|DELETE /api/ers/devices/{device_id}`
+- `PUT /api/ers/devices/{device_id}/bindings/hdp`
+- `POST /api/ers/selectors/resolve`
 
 ## Service integration points
 
 ### API Gateway
 
-Add: `api-gateway/config/routes/hem.yaml`
-- `/api/hem/*` → `http://entity-registry-service:<port>/api/hem/*`
+Add: `api-gateway/config/routes/ers.yaml`
+- `/api/ers/*` → `http://entity-registry-service:<port>/api/ers/*`
 
 ### Frontend
 
@@ -112,7 +112,7 @@ Add: `api-gateway/config/routes/hem.yaml`
   - `targets: { type: "device", ids: [...] }`
   - `targets: { type: "selector", selector: "tag:kitchen" }`
 - At run time:
-  - resolve selector by calling `POST /api/hem/selectors/resolve`
+  - resolve selector by calling `POST /api/ers/selectors/resolve`
   - execute against resolved HDP IDs
 
 ## Detailed roadmap
@@ -121,7 +121,7 @@ Add: `api-gateway/config/routes/hem.yaml`
 - Confirm:
   - selector strings: `tag:kitchen`, `room:living`
   - resolve output format (dual output -> resolve HDP too)
-  - API path versioning (plain `/api/hem` for now)
+  - API path versioning (plain `/api/ers` for now)
 
 Deliverables:
 - Final API spec (OpenAPI optional).
@@ -150,7 +150,7 @@ Deliverables:
 - Functional REST surface behind gateway.
 
 ### Milestone 3 — Selector resolver v1 (2–4 days)
-- Implement `POST /api/hem/selectors/resolve`:
+- Implement `POST /api/ers/selectors/resolve`:
   - `tag:<slug>` resolves to bound HDP IDs of devices with that tag
   - `room:<id>` resolves to bound HDP IDs of devices in that room
 
@@ -160,7 +160,7 @@ Deliverables:
 ### Milestone 4 — Frontend integration (4–8 days)
 - Add Entity Registry client service module.
 - Update Devices page:
-  - read devices from `/api/hem/devices`
+  - read devices from `/api/ers/devices`
   - keep using `/api/hdp/*` for pairing/integrations
   - keep realtime via `/ws/hdp` and map by binding
 
@@ -192,7 +192,7 @@ Deliverables:
 
 ## Followup:
 
-- Add working Map service on top of HEM
+- Add working Map service on top of ERS
 - Custom Dashboard widgets for the home page with per user configuration for them (eg:turn on living room lights widgets)
 - AI assistant service + UI integration
 - Installer / Admin api in the future

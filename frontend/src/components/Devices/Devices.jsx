@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faMagnifyingGlass, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassMetric from '../common/GlassMetric/GlassMetric';
@@ -9,10 +9,10 @@ import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../common/LoadingView/LoadingView';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
+import useErsInventory from '../../hooks/useErsInventory';
 import DeviceTile from './DeviceTile';
 import { useAuth } from '../../context/AuthContext';
 import {
-  renameDevice as renameDeviceApi,
   sendDeviceCommand as sendDeviceCommandApi,
   createDevice as createDeviceApi,
   listIntegrations as listIntegrationsApi,
@@ -21,7 +21,14 @@ import {
   startPairing as startPairingApi,
   stopPairing as stopPairingApi,
 } from '../../services/deviceHubService';
+import {
+  createErsDevice as createErsDeviceApi,
+  patchErsDevice as patchErsDeviceApi,
+  deleteErsDevice as deleteErsDeviceApi,
+  setErsDeviceHdpBindings as setErsDeviceHdpBindingsApi,
+} from '../../services/entityRegistryService';
 import AddDeviceModal from './AddDeviceModal';
+import { loadDevicesListPrefs, normalizeDevicesListPrefs, saveDevicesListPrefs } from './devicesListPrefs';
 import './Devices.css';
 
 const FALLBACK_INTEGRATIONS = [
@@ -35,28 +42,75 @@ export default function Devices() {
   const navigate = useNavigate();
   const { user, accessToken, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
-  const [metadataMode, setMetadataMode] = useState('rest');
+
+  const initialPrefsRef = React.useRef(null);
+  if (initialPrefsRef.current === null) {
+    initialPrefsRef.current = normalizeDevicesListPrefs(loadDevicesListPrefs());
+  }
+  const initialPrefs = initialPrefsRef.current;
+
+  const [metadataMode, setMetadataMode] = useState(initialPrefs.metadataMode);
+  const [groupByRoom, setGroupByRoom] = useState(initialPrefs.groupByRoom);
   const {
-    devices,
-    stats,
-    loading,
-    error,
+    devices: realtimeDevices,
+    loading: realtimeLoading,
+    error: realtimeError,
     connectionInfo,
-    renameDevice: renameDeviceWs,
     pairingSessions,
     pairingConfig,
     refreshPairings,
   } = useDeviceHubDevices({ enabled: isResidentOrAdmin, metadataMode });
-  const [pendingCommands, setPendingCommands] = useState({}); // { [deviceId]: { corr, timerId } }
+
+  const {
+    devices,
+    rooms,
+    tags,
+    loading: ersLoading,
+    error: ersError,
+    refresh: refreshErs,
+  } = useErsInventory({ enabled: isResidentOrAdmin, accessToken, realtimeDevices });
+
+  const stats = useMemo(() => {
+    const total = devices.length;
+    if (total === 0) {
+      return { total: 0, online: 0, withState: 0, sensors: 0 };
+    }
+    let online = 0;
+    let withState = 0;
+    let sensors = 0;
+    devices.forEach(dev => {
+      if (dev.online) online += 1;
+      if (dev.stateHasValues) withState += 1;
+      if (Array.isArray(dev.capabilities) && dev.capabilities.some(cap => (cap.kind || '').toLowerCase() === 'numeric')) {
+        sensors += 1;
+      }
+    });
+    return { total, online, withState, sensors };
+  }, [devices]);
+
+  const [pendingCommands, setPendingCommands] = useState({}); // { [hdpId]: { corr, timerId } }
   const [commandError, setCommandError] = useState(null);
   const [integrations, setIntegrations] = useState([]);
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
   const [integrationsError, setIntegrationsError] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [iconOverrides, setIconOverrides] = useState({});
-  const [protocolFilter, setProtocolFilter] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [protocolFilter, setProtocolFilter] = useState(initialPrefs.protocolFilter);
+  const [roomFilter, setRoomFilter] = useState(initialPrefs.roomFilter);
+  const [tagFilter, setTagFilter] = useState(initialPrefs.tagFilter);
+  const [searchTerm, setSearchTerm] = useState(initialPrefs.searchTerm);
   const openAddModal = useCallback(() => setShowAddModal(true), []);
+
+  useEffect(() => {
+    saveDevicesListPrefs({
+      metadataMode,
+      groupByRoom,
+      protocolFilter,
+      roomFilter,
+      tagFilter,
+      searchTerm,
+    });
+  }, [groupByRoom, metadataMode, protocolFilter, roomFilter, searchTerm, tagFilter]);
 
   const integrationsErrorDisplay = useMemo(() => {
     if (!integrationsError) return null;
@@ -74,16 +128,16 @@ export default function Devices() {
     const pills = [];
     const metadataStatus = connectionInfo?.metadata || { connected: false };
     const metadataLabel = metadataMode === 'rest'
-      ? 'Metadata: REST'
-      : 'Metadata: WebSocket';
+      ? 'HDP metadata: REST'
+      : 'HDP metadata: WebSocket';
     pills.push({
       key: 'metadata',
       text: metadataLabel,
       tone: metadataStatus.connected ? 'success' : 'warning',
       icon: faSatelliteDish,
       title: metadataMode === 'rest'
-        ? 'Click to switch to WebSocket-only metadata'
-        : 'Click to switch back to REST bootstrap',
+        ? 'Device Hub metadata uses REST bootstrap (state is still WebSocket). Click to switch to WebSocket-only metadata.'
+        : 'Device Hub metadata uses WebSocket-only metadata (state is still WebSocket). Click to switch back to REST bootstrap.',
       onClick: toggleMetadataMode,
     });
     if (connectionInfo?.state) {
@@ -198,28 +252,18 @@ export default function Devices() {
   }, [devices]);
 
   const handleRename = async (device, name) => {
-    if (!device?.id) {
+    if (!device?.ersId) {
       throw new Error('Device not ready for rename');
     }
     const trimmed = typeof name === 'string' ? name.trim() : '';
-    let wsError = null;
-    if (typeof renameDeviceWs === 'function') {
-      try {
-        await renameDeviceWs(device.id, trimmed);
-        return { status: 'queued', device_id: device.id, name: trimmed };
-      } catch (err) {
-        wsError = err;
-        console.warn('WebSocket rename failed, falling back to HTTP', err);
-      }
-    }
     if (!accessToken) {
-      throw wsError || new Error('Authentication required to rename device');
+      throw new Error('Authentication required to rename device');
     }
-    const res = await renameDeviceApi(device.id, trimmed, accessToken);
+    const res = await patchErsDeviceApi(device.ersId, { name: trimmed }, accessToken);
     if (!res.success) {
-      const message = res.error || wsError?.message || 'Unable to rename device';
-      throw new Error(message);
+      throw new Error(res.error || 'Unable to rename device');
     }
+    refreshErs?.();
     return res.data;
   };
 
@@ -227,12 +271,33 @@ export default function Devices() {
     if (!accessToken) {
       throw new Error('Authentication required');
     }
-    const res = await createDeviceApi(payload, accessToken);
+    const { name: ersName, ...hdpPayload } = (payload && typeof payload === 'object') ? payload : {};
+    const res = await createDeviceApi(hdpPayload, accessToken);
     if (!res.success) {
       throw new Error(res.error || 'Failed to create device');
     }
+
+    const created = res.data || {};
+    const hdpId = created.device_id || created.deviceId || created.id || payload?.identifier || '';
+    const name = (typeof ersName === 'string' && ersName.trim()) ? ersName.trim() : hdpId;
+    const description = payload?.description || created.description || '';
+
+    // Best effort: create the canonical logical device in ERS and bind it to the newly-created HDP ID.
+    const ersRes = await createErsDeviceApi({ name, description }, accessToken);
+    if (!ersRes.success) {
+      throw new Error(ersRes.error || 'Created device, but failed to register it in Entity Registry');
+    }
+    const ersId = ersRes.data?.id;
+    if (ersId && hdpId) {
+      const bindRes = await setErsDeviceHdpBindingsApi(ersId, [hdpId], accessToken);
+      if (!bindRes.success) {
+        throw new Error(bindRes.error || 'Created device, but failed to bind it in Entity Registry');
+      }
+    }
+
+    refreshErs?.();
     return res.data;
-  }, [accessToken]);
+  }, [accessToken, refreshErs]);
 
   const handleUpdateIcon = useCallback(async (device, iconKey) => {
     if (!device?.id) {
@@ -259,18 +324,28 @@ export default function Devices() {
   }, [accessToken]);
 
   const handleDeleteDevice = useCallback(async (device, options = {}) => {
-    if (!device?.id) {
+    if (!device?.ersId) {
       throw new Error('Device not ready for deletion');
     }
     if (!accessToken) {
       throw new Error('Authentication required');
     }
-    const res = await deleteDeviceApi(device.id, accessToken, options);
+
+    // Preserve existing UX: a force delete should attempt to remove the physical HDP device too.
+    if (options?.force && device?.id) {
+      const hdpRes = await deleteDeviceApi(device.id, accessToken, options);
+      if (!hdpRes.success) {
+        throw new Error(hdpRes.error || 'Unable to delete physical device');
+      }
+    }
+
+    const res = await deleteErsDeviceApi(device.ersId, accessToken);
     if (!res.success) {
       throw new Error(res.error || 'Unable to delete device');
     }
+    refreshErs?.();
     return res.data;
-  }, [accessToken]);
+  }, [accessToken, refreshErs]);
 
   const handleStartPairing = useCallback(async payload => {
     if (!accessToken) {
@@ -329,6 +404,29 @@ export default function Devices() {
       return { ...device, icon: override };
     });
   }, [devices, iconOverrides]);
+
+  const groupedDevices = useMemo(() => {
+    const groups = new Map();
+    devicesWithOverrides.forEach(device => {
+      const key = (device?.roomName || '').trim() || 'Unassigned';
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(device);
+    });
+
+    const keys = Array.from(groups.keys()).sort((a, b) => {
+      if (a === 'Unassigned') return 1;
+      if (b === 'Unassigned') return -1;
+      return a.localeCompare(b, undefined, { sensitivity: 'base' });
+    });
+
+    return keys.map(key => ({
+      key,
+      title: key,
+      devices: groups.get(key) || [],
+    }));
+  }, [devicesWithOverrides]);
 
   const protocolCounts = useMemo(() => {
     return devicesWithOverrides.reduce((acc, device) => {
@@ -394,10 +492,32 @@ export default function Devices() {
 
   const filteredDevices = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) {
-      return filteredByProtocol;
+    let base = filteredByProtocol;
+
+    if (roomFilter !== 'all') {
+      base = base.filter(device => {
+        const roomId = (device?.room?.id || device?.room_id || '').toString();
+        if (roomFilter === 'none') {
+          return !roomId;
+        }
+        return roomId === roomFilter;
+      });
     }
-    return filteredByProtocol.filter(device => {
+
+    if (tagFilter !== 'all') {
+      base = base.filter(device => {
+        const tags = Array.isArray(device?.tags) ? device.tags : [];
+        if (tagFilter === 'none') {
+          return tags.length === 0;
+        }
+        return tags.some(t => (t?.id || '').toString() === tagFilter);
+      });
+    }
+
+    if (!query) {
+      return base;
+    }
+    return base.filter(device => {
       const haystack = [
         device.displayName,
         device.name,
@@ -411,7 +531,15 @@ export default function Devices() {
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [filteredByProtocol, searchTerm]);
+  }, [filteredByProtocol, roomFilter, searchTerm, tagFilter]);
+
+  const flatDevices = useMemo(() => {
+    return [...filteredDevices].sort((a, b) => {
+      const aName = (a?.displayName || a?.name || '').trim();
+      const bName = (b?.displayName || b?.name || '').trim();
+      return aName.localeCompare(bName, undefined, { sensitivity: 'base' });
+    });
+  }, [filteredDevices]);
 
   const activeFilterChip = useMemo(() => {
     if (protocolFilter === 'all') {
@@ -425,6 +553,14 @@ export default function Devices() {
     if (protocolFilter !== 'all') {
       clauses.push(`protocol ${activeFilterChip?.label || protocolFilter}`);
     }
+    if (roomFilter !== 'all') {
+      const room = (Array.isArray(rooms) ? rooms : []).find(r => (r?.id || '').toString() === roomFilter);
+      clauses.push(roomFilter === 'none' ? 'no room' : `room ${(room?.name || '').trim() || roomFilter}`);
+    }
+    if (tagFilter !== 'all') {
+      const tag = (Array.isArray(tags) ? tags : []).find(t => (t?.id || '').toString() === tagFilter);
+      clauses.push(tagFilter === 'none' ? 'no tags' : `tag ${(tag?.name || '').trim() || tagFilter}`);
+    }
     const trimmed = searchTerm.trim();
     if (trimmed) {
       clauses.push(`matching "${trimmed}"`);
@@ -433,7 +569,7 @@ export default function Devices() {
       return null;
     }
     return `Showing ${filteredDevices.length} ${filteredDevices.length === 1 ? 'device' : 'devices'} for ${clauses.join(' and ')}.`;
-  }, [activeFilterChip, filteredDevices.length, protocolFilter, searchTerm]);
+  }, [activeFilterChip, filteredDevices.length, protocolFilter, roomFilter, rooms, searchTerm, tagFilter, tags]);
 
   if (!isResidentOrAdmin) {
     if (bootstrapping) {
@@ -522,9 +658,9 @@ export default function Devices() {
         </GlassCard>
       </section>
 
-      {(error || commandError) && (
+      {(realtimeError || ersError || commandError) && (
         <GlassCard className="devices-error-card" interactive={false}>
-          <div className="devices-error-text">{commandError || error}</div>
+          <div className="devices-error-text">{commandError || ersError || realtimeError}</div>
         </GlassCard>
       )}
 
@@ -544,20 +680,54 @@ export default function Devices() {
           ) : null}
         </div>
         <div className="devices-toolbar-meta">
+          <div className="devices-toolbar-filters">
+            <label className="devices-toolbar-filter">
+              <span>Room</span>
+              <select value={roomFilter} onChange={e => setRoomFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="none">None</option>
+                {(Array.isArray(rooms) ? rooms : []).map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="devices-toolbar-filter">
+              <span>Tag</span>
+              <select value={tagFilter} onChange={e => setTagFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="none">None</option>
+                {(Array.isArray(tags) ? tags : []).map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={[
+                'devices-group-toggle',
+                groupByRoom ? 'active' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={() => setGroupByRoom(prev => !prev)}
+              title={groupByRoom ? 'Click to show a flat list' : 'Click to group devices by room'}
+            >
+              <FontAwesomeIcon icon={faLayerGroup} />
+              <span>Group by room</span>
+            </button>
+          </div>
           <span>{filteredDevices.length} visible</span>
         </div>
       </div>
 
-      {loading && !devices.length ? (
+      {(ersLoading || realtimeLoading) && !devices.length ? (
         <GlassCard className="devices-loading-card" interactive={false}>
           <div className="devices-loading">
             <div className="devices-spinner" />
-            <span>Connecting to Device Hub…</span>
+            <span>Loading devices…</span>
           </div>
         </GlassCard>
       ) : null}
 
-      {!loading && devices.length === 0 ? (
+      {!ersLoading && !realtimeLoading && devices.length === 0 ? (
         <GlassCard className="devices-empty-card" interactive={false}>
           <div className="devices-empty">No devices discovered yet. Start pairing to see devices show up here.</div>
         </GlassCard>
@@ -570,22 +740,54 @@ export default function Devices() {
       ) : null}
 
       <section className="devices-grid">
-        {filteredDevices.map(device => (
-          <DeviceTile
-            key={device.id || device.key || device.externalId || device.name}
-            device={device}
-            pending={Boolean(device.id && pendingCommands[device.id])}
-            onCommand={handleCommand}
-            onRename={handleRename}
-            onUpdateIcon={handleUpdateIcon}
-            onDelete={handleDeleteDevice}
-            onOpen={(dev) => {
-              if (!dev?.id) return;
-              navigate(`/devices/${encodeURIComponent(dev.id)}`);
-            }}
-          />
-        ))}
-        {!loading && filteredDevices.length === 0 && devicesWithOverrides.length > 0 ? (
+        {groupByRoom
+          ? groupedDevices
+            .filter(group => group.devices.some(dev => filteredDevices.includes(dev)))
+            .map(group => {
+              const groupFiltered = group.devices.filter(dev => filteredDevices.includes(dev));
+              if (groupFiltered.length === 0) return null;
+              return (
+                <React.Fragment key={`group-${group.key}`}>
+                  <div className="devices-group-header">
+                    <span className="devices-group-title">{group.title}</span>
+                    <span className="devices-group-count">{groupFiltered.length}</span>
+                  </div>
+                  {groupFiltered.map(device => (
+                    <DeviceTile
+                      key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
+                      device={device}
+                      pending={Boolean(device.id && pendingCommands[device.id])}
+                      onCommand={handleCommand}
+                      onRename={handleRename}
+                      onUpdateIcon={handleUpdateIcon}
+                      onDelete={handleDeleteDevice}
+                      onOpen={(dev) => {
+                        const id = dev?.hdpId || dev?.id;
+                        if (!id) return;
+                        navigate(`/devices/${encodeURIComponent(id)}`);
+                      }}
+                    />
+                  ))}
+                </React.Fragment>
+              );
+            })
+          : flatDevices.map(device => (
+            <DeviceTile
+              key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
+              device={device}
+              pending={Boolean(device.id && pendingCommands[device.id])}
+              onCommand={handleCommand}
+              onRename={handleRename}
+              onUpdateIcon={handleUpdateIcon}
+              onDelete={handleDeleteDevice}
+              onOpen={(dev) => {
+                const id = dev?.hdpId || dev?.id;
+                if (!id) return;
+                navigate(`/devices/${encodeURIComponent(id)}`);
+              }}
+            />
+          ))}
+        {!ersLoading && !realtimeLoading && filteredDevices.length === 0 && devicesWithOverrides.length > 0 ? (
           <GlassCard className="device-filter-empty-card" interactive={false}>
             <div className="devices-filter-empty-text">
               No devices found for the current filters{searchTerm.trim() ? ` and "${searchTerm.trim()}" search` : ''}.

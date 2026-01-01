@@ -55,11 +55,6 @@ export default defineConfig({
         target: 'ws://localhost:8080',
         changeOrigin: true,
         ws: true
-      },
-      '/ws/devices': {
-        target: 'ws://localhost:8080',
-        changeOrigin: true,
-        ws: true
       }
     }
   }

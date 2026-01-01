@@ -114,7 +114,6 @@ Base: `/api/automation` (access: resident)
 - `GET /ws/echo` (access: auth)
 
 ### MQTT-over-WS (Mosquitto)
-- `GET /ws/devices` (access: auth) → `ws://mosquitto:9001/`
 - `GET /ws/hdp` (access: auth) → `ws://mosquitto:9001/`
 
 Notes:

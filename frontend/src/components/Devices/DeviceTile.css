@@ -362,6 +362,17 @@
   gap: 0.5rem;
 }
 
+.device-grouping-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.device-grouping-pill-row .glass-pill {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+}
+
 .device-state-pills {
   display: flex;
   flex-wrap: wrap;

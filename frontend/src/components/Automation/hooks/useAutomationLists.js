@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { listRuns, listWorkflows } from '../../../services/automationService';
-import { listDevices } from '../../../services/deviceHubService';
 
 export default function useAutomationLists({ accessToken, onError } = {}) {
   const [loading, setLoading] = useState(false);
@@ -17,9 +16,6 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsLimit, setRunsLimit] = useState(5);
-
-  const [devices, setDevices] = useState([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
 
   const fetchWorkflows = async () => {
     if (!accessToken) return;
@@ -69,20 +65,8 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     setWorkflows(prev => (Array.isArray(prev) ? prev.filter(w => w?.id !== id) : []));
   };
 
-  const fetchDevices = async () => {
-    if (!accessToken) return;
-    setDevicesLoading(true);
-    const res = await listDevices(accessToken);
-    setDevicesLoading(false);
-    if (res.success) {
-      setDevices(Array.isArray(res.data) ? res.data : (res.data?.devices || []));
-    } else {
-      setDevices([]);
-    }
-  };
-
   const refreshAllData = async () => {
-    await Promise.all([fetchWorkflows(), fetchDevices()]);
+    await Promise.all([fetchWorkflows()]);
   };
 
   const fetchRuns = async (workflowId, runLimit = runsLimit) => {
@@ -101,7 +85,6 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
 
   useEffect(() => {
     fetchWorkflows();
-    fetchDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
@@ -132,10 +115,6 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     runsLimit,
     setRunsLimit,
     fetchRuns,
-
-    devices,
-    devicesLoading,
-    fetchDevices,
 
     refreshAllData,
   };

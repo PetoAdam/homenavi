@@ -1,0 +1,48 @@
+.chip-multi-select-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-multi-select-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-glass-border-xlight);
+  background: var(--color-surface-panel-alt);
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+.chip-multi-select-btn {
+  border: 1px solid var(--color-glass-border-xlight);
+  background: var(--color-surface-panel-alt);
+  color: inherit;
+  cursor: pointer;
+}
+
+.chip-multi-select-btn.active {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface-panel-alt));
+  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-glass-border-xlight));
+}
+
+.chip-multi-select-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chip-multi-select-btn:focus-visible {
+  outline: 2px solid var(--color-glass-border-light);
+  outline-offset: 2px;
+}
+
+.chip-multi-select-empty {
+  opacity: 0.8;
+  font-weight: 600;
+}
+
+.chip-multi-select-disabled {
+  opacity: 0.8;
+}

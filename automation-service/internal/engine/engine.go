@@ -27,6 +27,11 @@ type Engine struct {
 
 	httpClient      *http.Client
 	emailServiceURL string
+	ersServiceURL   string
+
+	selMu         sync.Mutex
+	selectorTTL   time.Duration
+	selectorCache map[string]cachedSelector
 
 	mu          sync.RWMutex
 	workflows   map[uuid.UUID]store.Workflow
@@ -40,9 +45,15 @@ type Engine struct {
 	reloadEvery time.Duration
 }
 
+type cachedSelector struct {
+	FetchedAt time.Time
+	IDs       []string
+}
+
 type Options struct {
 	HTTPClient      *http.Client
 	EmailServiceURL string
+	ERSServiceURL   string
 }
 
 func New(repo *store.Repo, mq *mqtt.Client, opts Options) *Engine {
@@ -57,12 +68,15 @@ func New(repo *store.Repo, mq *mqtt.Client, opts Options) *Engine {
 		events:          NewRunEventHub(),
 		httpClient:      hc,
 		emailServiceURL: strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
+		ersServiceURL:   strings.TrimRight(strings.TrimSpace(opts.ERSServiceURL), "/"),
 		workflows:       map[uuid.UUID]store.Workflow{},
 		defs:            map[uuid.UUID]Definition{},
 		lastFiredAt:     map[string]time.Time{},
 		cron:            c,
 		cronEntries:     map[string]cron.EntryID{},
 		cronSpecs:       map[string]string{},
+		selectorTTL:     15 * time.Second,
+		selectorCache:   map[string]cachedSelector{},
 		reloadEvery:     10 * time.Second,
 	}
 }
@@ -289,7 +303,9 @@ func (e *Engine) handleState(ctx context.Context, m mqtt.Message) {
 			if t.IgnoreRetained && m.Retained() {
 				continue
 			}
-			if strings.TrimSpace(t.DeviceID) != st.DeviceID {
+			// Match device_id against runtime targets (device list or selector).
+			ok, err := e.targetMatchesDevice(ctx, t.Targets, st.DeviceID)
+			if err != nil || !ok {
 				continue
 			}
 			candidates = append(candidates, match{wfID: id, triggerNodeID: n.ID, trigger: t})
@@ -307,6 +323,124 @@ func (e *Engine) handleState(ctx context.Context, m mqtt.Message) {
 		}
 		_, _ = e.StartWorkflowRun(ctx, c.wfID, c.triggerNodeID, map[string]any{"type": "state", "trigger_node_id": c.triggerNodeID, "device_id": st.DeviceID, "state": st.State, "ts": st.TS, "retained": m.Retained()})
 	}
+}
+
+func (e *Engine) targetMatchesDevice(ctx context.Context, targets NodeTargets, deviceID string) (bool, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return false, nil
+	}
+	typ := strings.ToLower(strings.TrimSpace(targets.Type))
+	switch typ {
+	case "device":
+		for _, raw := range targets.IDs {
+			if strings.TrimSpace(raw) == deviceID {
+				return true, nil
+			}
+		}
+		return false, nil
+	case "selector":
+		ids, err := e.resolveSelector(ctx, targets.Selector)
+		if err != nil {
+			return false, err
+		}
+		for _, id := range ids {
+			if id == deviceID {
+				return true, nil
+			}
+		}
+		return false, nil
+	default:
+		return false, nil
+	}
+}
+
+func (e *Engine) resolveTargets(ctx context.Context, targets NodeTargets) ([]string, error) {
+	typ := strings.ToLower(strings.TrimSpace(targets.Type))
+	switch typ {
+	case "device":
+		out := make([]string, 0, len(targets.IDs))
+		seen := map[string]struct{}{}
+		for _, raw := range targets.IDs {
+			id := strings.TrimSpace(raw)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+		return out, nil
+	case "selector":
+		return e.resolveSelector(ctx, targets.Selector)
+	default:
+		return nil, errors.New("unsupported targets")
+	}
+}
+
+func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string, error) {
+	sel := strings.TrimSpace(selector)
+	if sel == "" {
+		return []string{}, nil
+	}
+	if e.ersServiceURL == "" {
+		return nil, errors.New("ERS service url not configured")
+	}
+
+	// Cache.
+	e.selMu.Lock()
+	if cached, ok := e.selectorCache[sel]; ok {
+		if time.Since(cached.FetchedAt) < e.selectorTTL {
+			out := append([]string(nil), cached.IDs...)
+			e.selMu.Unlock()
+			return out, nil
+		}
+	}
+	e.selMu.Unlock()
+
+	body, _ := json.Marshal(map[string]any{"selector": sel})
+	url := e.ersServiceURL + "/api/ers/selectors/resolve"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		HDPExternalIDs []string `json:"hdp_external_ids"`
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("selector resolve failed: %s", resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, errors.New("invalid selector response")
+	}
+
+	ids := make([]string, 0, len(out.HDPExternalIDs))
+	seen := map[string]struct{}{}
+	for _, raw := range out.HDPExternalIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	e.selMu.Lock()
+	e.selectorCache[sel] = cachedSelector{FetchedAt: time.Now(), IDs: ids}
+	e.selMu.Unlock()
+
+	return ids, nil
 }
 
 func (e *Engine) handleCommandResult(ctx context.Context, m mqtt.Message) {
@@ -543,34 +677,44 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 				finish("failed", "invalid node data")
 				return errors.New("invalid node data")
 			}
-			deviceID := strings.TrimSpace(a.DeviceID)
-			if deviceID == "" {
-				finish("failed", "device_id required")
-				return errors.New("device_id required")
+			deviceIDs, err := e.resolveTargets(ctx, a.Targets)
+			if err != nil {
+				finish("failed", err.Error())
+				return err
+			}
+			if len(deviceIDs) == 0 {
+				finish("success", "")
+				return nil
 			}
 			cmdName := strings.TrimSpace(a.Command)
 			if cmdName == "" {
 				cmdName = "set_state"
 			}
-			corr := fmt.Sprintf("auto-%s-%s-%d", wfID.String(), n.ID, time.Now().UTC().UnixMilli())
-			cmd := HDPCommand{Schema: "hdp.v1", Type: "command", DeviceID: deviceID, Command: cmdName, Args: a.Args, Corr: corr, TS: time.Now().UTC().UnixMilli()}
-			b, _ := json.Marshal(cmd)
-			topic := "homenavi/hdp/device/command/" + deviceID
-			if err := e.mq.Publish(topic, b); err != nil {
-				finish("failed", err.Error())
-				return err
+
+			// Publish to each target.
+			baseTS := time.Now().UTC().UnixMilli()
+			for _, deviceID := range deviceIDs {
+				corr := fmt.Sprintf("auto-%s-%s-%s-%d", wfID.String(), n.ID, deviceID, baseTS)
+				cmd := HDPCommand{Schema: "hdp.v1", Type: "command", DeviceID: deviceID, Command: cmdName, Args: a.Args, Corr: corr, TS: baseTS}
+				b, _ := json.Marshal(cmd)
+				topic := "homenavi/hdp/device/command/" + deviceID
+				if err := e.mq.Publish(topic, b); err != nil {
+					finish("failed", err.Error())
+					return err
+				}
+
+				if a.WaitForResult {
+					timeout := a.ResultTimeoutSec
+					if timeout <= 0 {
+						timeout = 15
+					}
+					exp := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
+					_ = e.repo.UpsertPendingCorr(ctx, &store.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
+					finish("success", "")
+					return errWaitForResult
+				}
 			}
 			finish("success", "")
-
-			if a.WaitForResult {
-				timeout := a.ResultTimeoutSec
-				if timeout <= 0 {
-					timeout = 15
-				}
-				exp := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
-				_ = e.repo.UpsertPendingCorr(ctx, &store.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
-				return errWaitForResult
-			}
 
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {

@@ -54,6 +54,10 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 
 ## 2. 🧩 Architecture Overview
 
+Further reading:
+* [ERS / HDP / Device Hub — How it works (current)](doc/ers_hdp_devicehub_overview.md)
+* [Architecture diagram (current)](doc/architecture_diagram.md)
+
 Current Core:
 * API Gateway (Go): Routing, JWT verification, rate limit, WebSocket upgrade.
 * Device Hub (Go): Central device inventory and **HDP-only** adapter bridge over MQTT.

@@ -1,4 +1,11 @@
 routes:
+  # MQTT-over-WebSocket endpoint used by the frontend for realtime HDP data.
+  - path: /ws/hdp
+    upstream: ws://mosquitto:9001/
+    methods: [GET]
+    access: auth
+    type: websocket-mqtt
+
   - path: /api/hdp/devices
     upstream: http://device-hub:8090/api/hdp/devices
     methods: [GET, POST]

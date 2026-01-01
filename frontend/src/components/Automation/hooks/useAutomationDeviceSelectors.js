@@ -35,7 +35,8 @@ export default function useAutomationDeviceSelectors({ devices, selectedNode }) 
 
   const triggerKeyOptions = useMemo(() => {
     if (!selectedNode || String(selectedNode.kind || '') !== 'trigger.device_state') return [];
-    const deviceId = String(selectedNode?.data?.device_id || '').trim();
+    const targetsType = String(selectedNode?.data?.targets?.type || 'device').toLowerCase();
+    const deviceId = targetsType === 'device' ? String(selectedNode?.data?.targets?.ids?.[0] || '').trim() : '';
     if (!deviceId) return [];
     const dev = deviceById.get(deviceId)?.raw;
     const state = dev?.state;

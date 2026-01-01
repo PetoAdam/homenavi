@@ -19,6 +19,7 @@ type Config struct {
 	JWTPublicKeyPath string
 	UserServiceURL   string
 	EmailServiceURL  string
+	ERSServiceURL    string
 	Postgres         Postgres
 }
 
@@ -31,6 +32,7 @@ func Load() Config {
 		JWTPublicKeyPath: getenv("JWT_PUBLIC_KEY_PATH", ""),
 		UserServiceURL:   getenv("USER_SERVICE_URL", "http://user-service:8001"),
 		EmailServiceURL:  getenv("EMAIL_SERVICE_URL", "http://email-service:8002"),
+		ERSServiceURL:    getenv("ERS_SERVICE_URL", "http://entity-registry-service:8095"),
 		Postgres: Postgres{
 			User:     getenv("POSTGRES_USER", ""),
 			Password: getenv("POSTGRES_PASSWORD", ""),

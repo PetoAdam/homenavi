@@ -16,21 +16,18 @@ type commandResponse struct {
 }
 
 type deviceUpdateRequest struct {
-	Name *string `json:"name"`
 	Icon *string `json:"icon"`
 }
 
 type deviceUpdateResponse struct {
 	Status   string `json:"status"`
 	DeviceID string `json:"device_id"`
-	Name     string `json:"name,omitempty"`
 	Icon     string `json:"icon,omitempty"`
 }
 
 type deviceCreateRequest struct {
 	Protocol     string          `json:"protocol"`
 	ExternalID   string          `json:"external_id"`
-	Name         string          `json:"name"`
 	Type         string          `json:"type"`
 	Manufacturer string          `json:"manufacturer"`
 	Model        string          `json:"model"`

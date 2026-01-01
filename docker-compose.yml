@@ -41,6 +41,7 @@ services:
     environment:
       - AUTH_SERVICE_PORT=8000
       - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - ERS_SERVICE_URL=http://entity-registry-service:8095
       - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
       - REDIS_ADDR=${REDIS_ADDR}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
@@ -243,6 +244,24 @@ services:
       - DEVICE_HUB_ENABLE_THREAD=true
       - LOG_LEVEL=${LOG_LEVEL}
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+    networks:
+      - homenavi-network
+    # No ports exposed; internal only
+
+  entity-registry-service:
+    build: ./entity-registry-service
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      - ENTITY_REGISTRY_PORT=8095
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - DEVICE_HUB_URL=http://device-hub:8090
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
     networks:
       - homenavi-network
     # No ports exposed; internal only

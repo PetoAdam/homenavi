@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { listUsers, patchUser as updateUser, lockoutUser } from '../../services/authService';
 import MasonryDashboard from '../Home/MasonryDashboard/MasonryDashboard';
@@ -28,7 +28,7 @@ function Users() {
   const [data, setData] = useState({ users: [], page: 1, page_size: 20, total: 0, total_pages: 0 });
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     setErr('');
@@ -36,9 +36,10 @@ function Users() {
     setLoading(false);
     if (res.success) setData(res.data);
     else setErr(res.error || 'Failed to fetch users');
-  };
-
-  useEffect(() => { fetchUsers(); /* eslint-disable-next-line */ }, [accessToken, page, pageSize]);
+  }, [accessToken, page, pageSize, query]);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const onSearch = (e) => {
     e.preventDefault();

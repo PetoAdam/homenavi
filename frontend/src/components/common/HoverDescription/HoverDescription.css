@@ -1,0 +1,29 @@
+.hover-desc-anchor {
+  display: inline-flex;
+  align-items: center;
+}
+
+.hover-desc-pop {
+  position: fixed;
+  z-index: 50;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--color-surface-panel-alt);
+  border: 1px solid var(--color-glass-border-xlight);
+  box-shadow: 0 10px 30px 0 var(--color-shadow-card);
+  color: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+}
+
+.hover-desc-title {
+  font-weight: 900;
+  letter-spacing: -0.2px;
+  margin-bottom: 4px;
+}
+
+.hover-desc-body {
+  font-size: 0.9rem;
+  line-height: 1.25rem;
+  color: rgba(255, 255, 255, 0.78);
+}
