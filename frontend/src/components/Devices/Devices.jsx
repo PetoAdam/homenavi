@@ -24,7 +24,6 @@ import {
 import {
   createErsDevice as createErsDeviceApi,
   patchErsDevice as patchErsDeviceApi,
-  deleteErsDevice as deleteErsDeviceApi,
   setErsDeviceHdpBindings as setErsDeviceHdpBindingsApi,
 } from '../../services/entityRegistryService';
 import AddDeviceModal from './AddDeviceModal';
@@ -324,27 +323,23 @@ export default function Devices() {
   }, [accessToken]);
 
   const handleDeleteDevice = useCallback(async (device, options = {}) => {
-    if (!device?.ersId) {
-      throw new Error('Device not ready for deletion');
-    }
     if (!accessToken) {
       throw new Error('Authentication required');
     }
 
-    // Preserve existing UX: a force delete should attempt to remove the physical HDP device too.
-    if (options?.force && device?.id) {
-      const hdpRes = await deleteDeviceApi(device.id, accessToken, options);
-      if (!hdpRes.success) {
-        throw new Error(hdpRes.error || 'Unable to delete physical device');
-      }
+    if (!device?.id) {
+      throw new Error('Device not ready for deletion');
     }
 
-    const res = await deleteErsDeviceApi(device.ersId, accessToken);
-    if (!res.success) {
-      throw new Error(res.error || 'Unable to delete device');
+    // Always delete via HDP so the owning adapter can perform protocol-specific removal.
+    const hdpRes = await deleteDeviceApi(device.id, accessToken, options);
+    if (!hdpRes.success) {
+      throw new Error(hdpRes.error || 'Unable to delete device');
     }
+
+    // ERS is auto-managed from HDP device_removed events.
     refreshErs?.();
-    return res.data;
+    return hdpRes.data;
   }, [accessToken, refreshErs]);
 
   const handleStartPairing = useCallback(async payload => {

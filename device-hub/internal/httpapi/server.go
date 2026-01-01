@@ -777,15 +777,14 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 		hdpID = canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
 	}
 	force := queryBool(r.URL.Query().Get("force"))
-	protocol := normalizeProtocol(dev.Protocol)
-	if protocol == "zigbee" && !force {
+	// Delegate physical removal to the owning adapter via HDP.
+	// This is intentionally protocol-agnostic: adapters decide what "remove" means.
+	if !force {
 		if err := s.requestProtocolRemoval(dev); err != nil {
-			slog.Error("protocol removal failed", "device_id", dev.ID, "protocol", protocol, "error", err)
+			slog.Error("protocol removal failed", "device_id", dev.ID, "protocol", normalizeProtocol(dev.Protocol), "error", err)
 			http.Error(w, "could not request protocol removal", http.StatusBadGateway)
 			return
 		}
-		writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": hdpID, "protocol": protocol})
-		return
 	}
 	if err := s.repo.DeleteDeviceAndState(r.Context(), dev.ID.String()); err != nil {
 		slog.Error("device delete failed", "device_id", deviceID, "error", err)
@@ -1423,16 +1422,16 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 		session.Status = "device_joined"
 		session.awaitingInterview = true
 		updated = true
-	case "interview_started":
+	case "interview_started", "interviewing":
 		session.Status = "interviewing"
 		session.awaitingInterview = true
 		updated = true
-	case "interview_succeeded", "interview_complete":
+	case "interview_succeeded", "interview_complete", "completed":
 		session.Status = "interview_complete"
 		session.awaitingInterview = false
 		updated = true
 		finalStatus = "completed"
-	case "interview_failed":
+	case "interview_failed", "failed":
 		session.Status = "failed"
 		session.Active = false
 		session.awaitingInterview = false
@@ -1556,26 +1555,28 @@ func (s *Server) requestProtocolRemoval(dev *model.Device) error {
 	if dev == nil {
 		return errors.New("device is required")
 	}
-	protocol := normalizeProtocol(dev.Protocol)
-	switch protocol {
-	case "zigbee":
-		hdpID := canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
-		payload := map[string]any{
-			"schema":      hdpSchema,
-			"type":        "command",
-			"device_id":   hdpID,
-			"command":     "remove_device",
-			"ts":          time.Now().UnixMilli(),
-			"corr":        uuid.NewString(),
-			"external_id": dev.ExternalID,
-		}
-		if b, err := json.Marshal(payload); err == nil {
-			return s.mqtt.Publish(hdpCommandPrefix+hdpID, b)
-		}
-		return nil
-	default:
-		return unsupportedProtocolError{protocol: protocol}
+	if s == nil || s.mqtt == nil {
+		return errors.New("mqtt client unavailable")
 	}
+	hdpID := canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
+	if strings.TrimSpace(hdpID) == "" {
+		return errors.New("device_id missing")
+	}
+	payload := map[string]any{
+		"schema":      hdpSchema,
+		"type":        "command",
+		"device_id":   hdpID,
+		"protocol":    dev.Protocol,
+		"command":     "remove_device",
+		"ts":          time.Now().UnixMilli(),
+		"corr":        uuid.NewString(),
+		"external_id": dev.ExternalID,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return s.mqtt.Publish(hdpCommandPrefix+hdpID, b)
 }
 
 func (s *Server) handlePairingCandidate(dev *model.Device) {

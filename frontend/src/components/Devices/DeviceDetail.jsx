@@ -477,8 +477,11 @@ export default function DeviceDetail() {
     }
     const res = await deleteDevice(dev.id, accessToken, options);
     if (!res.success) throw new Error(res.error || 'Unable to delete device');
+
+    // ERS is auto-managed from HDP device_removed events; refresh is best-effort.
+    await refreshErs?.();
     navigate('/devices');
-  }, [accessToken, navigate]);
+  }, [accessToken, navigate, refreshErs]);
 
   const saveGrouping = useCallback(async () => {
     if (!accessToken) {

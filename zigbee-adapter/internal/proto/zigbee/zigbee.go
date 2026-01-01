@@ -389,6 +389,14 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 			stage := interviewStageFromStatus(status)
 			z.publishPairingProgress(stage, status, external, friendly)
 			if stage == "interview_complete" {
+				// If pairing was started via HDP permit_join, stop the timer now.
+				// Otherwise a later permit_join timeout would overwrite a successful pairing.
+				z.pairingMu.Lock()
+				active := z.pairingActive
+				z.pairingMu.Unlock()
+				if active {
+					z.stopPairing()
+				}
 				// Frontend advances the pairing flow only once it sees a terminal "completed" stage.
 				z.publishPairingProgress("completed", status, external, friendly)
 			}
@@ -593,19 +601,26 @@ func (z *ZigbeeAdapter) handleDeviceRemoveCommand(_ paho.Client, m paho.Message)
 		slog.Warn("zigbee remove command missing target", "device_id", req.DeviceID)
 		return
 	}
+	if err := z.publishZigbee2MQTTRemove(target, true); err != nil {
+		slog.Warn("zigbee remove publish failed", "target", target, "error", err)
+	}
+}
+
+func (z *ZigbeeAdapter) publishZigbee2MQTTRemove(target string, force bool) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
 	payload := map[string]any{
 		"id":    target,
 		"block": false,
-		"force": true,
+		"force": force,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		slog.Warn("zigbee remove payload encode failed", "target", target, "error", err)
-		return
+		return err
 	}
-	if err := z.client.Publish("zigbee2mqtt/bridge/request/device/remove", data); err != nil {
-		slog.Warn("zigbee remove publish failed", "target", target, "error", err)
-	}
+	return z.client.Publish("zigbee2mqtt/bridge/request/device/remove", data)
 }
 
 func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, external string, data map[string]any) *model.Device {
@@ -1079,6 +1094,17 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 		}
 	case "remove_device":
 		// Removing requires a persisted device row (UUID primary key).
+		target := external
+		if friendly := z.resolveFriendlyName(external); friendly != "" {
+			target = friendly
+		} else if dev != nil {
+			if nm := strings.TrimSpace(dev.Name); nm != "" && !strings.EqualFold(nm, dev.ExternalID) {
+				target = nm
+			}
+		}
+		if err := z.publishZigbee2MQTTRemove(target, true); err != nil {
+			slog.Warn("zigbee2mqtt remove request failed", "target", target, "external", external, "error", err)
+		}
 		if dev.ID == uuid.Nil {
 			if corr != "" {
 				z.publishHDPCommandResult(dev, corr, false, "not_found", "device not found")
