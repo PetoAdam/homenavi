@@ -27,7 +27,7 @@ func TestBridgeLifecycleStage(t *testing.T) {
 	if got := bridgeLifecycleStage("device_joined"); got != "device_joined" {
 		t.Fatalf("unexpected stage %q", got)
 	}
-	if got := bridgeLifecycleStage("device_announce"); got != "device_announced" {
+	if got := bridgeLifecycleStage("device_announce"); got != "device_detected" {
 		t.Fatalf("unexpected stage %q", got)
 	}
 	if got := bridgeLifecycleStage("other"); got != "" {
@@ -37,10 +37,10 @@ func TestBridgeLifecycleStage(t *testing.T) {
 
 func TestInterviewStageFromStatus(t *testing.T) {
 	cases := map[string]string{
-		"started":    "interview_started",
-		"SUCCESS":    "interview_succeeded",
-		"failed":     "interview_failed",
-		"unexpected": "interview_started",
+		"started":    "interviewing",
+		"SUCCESS":    "interview_complete",
+		"failed":     "failed",
+		"unexpected": "interviewing",
 	}
 	for input, want := range cases {
 		if got := interviewStageFromStatus(input); got != want {

@@ -386,9 +386,14 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 		z.reconcileFriendlyDevice(ctx, friendly, external)
 		status := adapterutil.StringField(evt.Data, "status")
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
-			z.publishPairingProgress(interviewStageFromStatus(status), status, external, friendly)
+			stage := interviewStageFromStatus(status)
+			z.publishPairingProgress(stage, status, external, friendly)
+			if stage == "interview_complete" {
+				// Frontend advances the pairing flow only once it sees a terminal "completed" stage.
+				z.publishPairingProgress("completed", status, external, friendly)
+			}
 		}
-	case "device_removed":
+	case "device_removed", "device_leave", "device_left":
 		friendly, _ := evt.Data["friendly_name"].(string)
 		external := z.resolveExternalID(friendly)
 		if external == "" {
@@ -504,6 +509,7 @@ func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 		z.pairingCancel = cancel
 		z.pairingMu.Unlock()
 		_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(fmt.Sprintf(`{"value":true,"time":%d}`, cmd.Timeout)))
+		z.publishPairingProgress("active", "active", "", "")
 		go func(timeout int, c context.Context) {
 			select {
 			case <-time.After(time.Duration(timeout) * time.Second):
@@ -525,6 +531,7 @@ func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 			return
 		}
 		z.stopPairing()
+		z.publishPairingProgress("stopped", "stopped", "", "")
 	}
 }
 
@@ -688,9 +695,9 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 	if !hasTransition && hasTransitionMs && transitionMs > 0 {
 		payload["transition"] = transitionMs / 1000.0
 	}
-	if correlationID != "" {
-		payload["correlation_id"] = correlationID
-	}
+	// Do not forward correlation_id to Zigbee2MQTT: it is not a standard writable property and
+	// causes noisy "No converter available" errors. We still echo correlation_id back to the
+	// UI by attaching it to the *next* HDP state publish (see setCorrelation/consumeCorrelation).
 	b, _ := json.Marshal(payload)
 	target := z.resolveFriendlyName(dev.ExternalID)
 	if target == "" {
@@ -987,7 +994,8 @@ func bridgeLifecycleStage(eventType string) string {
 	case "device_joined":
 		return "device_joined"
 	case "device_announce":
-		return "device_announced"
+		// Zigbee2MQTT may emit announce shortly after join; treat it as "detected".
+		return "device_detected"
 	default:
 		return ""
 	}
@@ -996,13 +1004,13 @@ func bridgeLifecycleStage(eventType string) string {
 func interviewStageFromStatus(status string) string {
 	switch strings.ToLower(status) {
 	case "started", "interview_started":
-		return "interview_started"
+		return "interviewing"
 	case "successful", "success", "completed", "complete":
-		return "interview_succeeded"
+		return "interview_complete"
 	case "failed", "failure", "error":
-		return "interview_failed"
+		return "failed"
 	default:
-		return "interview_started"
+		return "interviewing"
 	}
 }
 
