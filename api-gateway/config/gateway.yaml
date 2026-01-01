@@ -1,5 +1,8 @@
 listen_addr: ":8080"
-jwt_secret: "changeme"
+# Auth note:
+# - API Gateway currently validates JWTs using RS256 and requires `JWT_PUBLIC_KEY_PATH` to be set (see `api-gateway/main.go`).
+# - `jwt_secret` is legacy HS256 support and should not be used as a committed default.
+jwt_secret: ""
 log_level: "info"
 rate_limit:
   enabled: true

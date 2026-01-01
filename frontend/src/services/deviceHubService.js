@@ -12,10 +12,6 @@ export async function updateDevice(deviceId, payload, token) {
   return await http.patch(`${DEVICE_HUB_BASE}/devices/${deviceId}`, payload, { token });
 }
 
-export async function renameDevice(deviceId, name, token) {
-  return updateDevice(deviceId, { name }, token);
-}
-
 export async function setDeviceIcon(deviceId, icon, token) {
   const normalized = typeof icon === 'string' ? icon.trim() : '';
   const payload = normalized ? { icon: normalized } : { icon: '' };
@@ -89,7 +85,6 @@ export async function listPairingConfig(token) {
 }
 
 export default {
-  renameDevice,
   updateDevice,
   setDeviceIcon,
   sendDeviceCommand,

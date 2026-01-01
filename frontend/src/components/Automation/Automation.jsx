@@ -13,6 +13,8 @@ import useAutomationConnectMode from './hooks/useAutomationConnectMode';
 import useAutomationEditorLoader from './hooks/useAutomationEditorLoader';
 import useAutomationHotkeys from './hooks/useAutomationHotkeys';
 import useAutomationWorkflowActions from './hooks/useAutomationWorkflowActions';
+import useErsInventory from '../../hooks/useErsInventory';
+import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import {
   createWorkflow,
   deleteWorkflow,
@@ -125,17 +127,44 @@ function Automation() {
     runsLimit,
     setRunsLimit,
     fetchRuns,
-    devices,
-    devicesLoading,
     refreshAllData,
   } = useAutomationLists({ accessToken, onError: setErr });
+
+  const {
+    devices: realtimeDevices,
+    loading: realtimeLoading,
+    error: realtimeError,
+  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest' });
+
+  const {
+    devices: ersMergedDevices,
+    loading: ersInventoryLoading,
+    error: ersInventoryError,
+    refresh: refreshErsInventory,
+  } = useErsInventory({ enabled: Boolean(isResidentOrAdmin && accessToken), accessToken, realtimeDevices });
+
+  const mergedDevicesLoading = Boolean(realtimeLoading || ersInventoryLoading);
+
+  useEffect(() => {
+    if (!realtimeError) return;
+    setErr(realtimeError);
+  }, [realtimeError]);
+
+  useEffect(() => {
+    if (!ersInventoryError) return;
+    setErr(ersInventoryError);
+  }, [ersInventoryError]);
+
+  const refreshAllDataWithInventory = async () => {
+    await refreshAllData();
+    await refreshErsInventory?.();
+  };
 
   const [selectedNodeId, setSelectedNodeId] = useState('workflow'); // workflow|nodeId
   const {
     editor,
     setEditor,
     editorRef,
-    historyVersion,
     resetHistory,
     applyEditorUpdate,
     applyEditorUpdateBatched,
@@ -299,7 +328,7 @@ function Automation() {
 
 
   const { deviceOptions, deviceNameById, triggerKeyOptions } = useAutomationDeviceSelectors({
-    devices,
+    devices: ersMergedDevices,
     selectedNode,
   });
 
@@ -399,7 +428,7 @@ function Automation() {
   const svgWorldSize = useMemo(() => {
     return computeSvgWorldSize({
       nodes: editor.nodes,
-      canvasSize,
+      canvasSize: { width: canvasSize.width, height: canvasSize.height },
       viewportScale: viewport.scale,
       nodeWidth: NODE_WIDTH,
       nodeHeaderHeight: NODE_HEADER_HEIGHT,
@@ -452,8 +481,8 @@ function Automation() {
             saving={saving}
             lastSavedAt={lastSavedAt}
             loading={loading}
-            devicesLoading={devicesLoading}
-            refreshAllData={refreshAllData}
+            devicesLoading={mergedDevicesLoading}
+            refreshAllData={refreshAllDataWithInventory}
             clearCanvas={clearCanvas}
             canUndo={canUndo}
             undo={undo}

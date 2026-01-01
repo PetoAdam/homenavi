@@ -18,6 +18,33 @@ export function defaultWorkflowName() {
   return `Workflow ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function normalizeTargets(raw) {
+  const t = (raw && typeof raw === 'object') ? raw : {};
+  const type = String(t.type || '').trim().toLowerCase();
+  if (type === 'selector') {
+    return { type: 'selector', selector: String(t.selector || '').trim(), ids: [] };
+  }
+  const ids = Array.isArray(t.ids) ? t.ids : [];
+  const out = [];
+  const seen = new Set();
+  ids.forEach((x) => {
+    const v = String(x || '').trim();
+    if (!v) return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  });
+  return { type: 'device', ids: out, selector: '' };
+}
+
+function describeTargets(targets) {
+  const t = normalizeTargets(targets);
+  if (t.type === 'selector') return t.selector ? `selector ${t.selector}` : 'selector —';
+  if (t.ids.length === 1) return `device ${t.ids[0]}`;
+  if (t.ids.length > 1) return `${t.ids.length} devices`;
+  return 'device —';
+}
+
 export function defaultNodeData(kind) {
   const k = String(kind || '').toLowerCase();
   if (k === 'trigger.manual') {
@@ -25,7 +52,7 @@ export function defaultNodeData(kind) {
   }
   if (k === 'trigger.device_state') {
     return {
-      device_id: '',
+      targets: { type: 'device', ids: [], selector: '' },
       key: '',
       op: 'exists',
       value: null,
@@ -57,7 +84,7 @@ export function defaultNodeData(kind) {
   }
   if (k === 'action.send_command') {
     return {
-      device_id: '',
+      targets: { type: 'device', ids: [], selector: '' },
       command: 'set_state',
       args: { state: 'ON' },
       wait_for_result: false,
@@ -164,13 +191,17 @@ export function buildDefinitionFromEditor(editor) {
     }
   }
 
-  // Ensure action device_id required.
+  // Ensure action targets required.
   for (const n of nodes) {
     const kind = String(n.kind || '').toLowerCase();
     if (kind === 'action.send_command') {
-      const deviceId = String(n?.data?.device_id || '').trim();
-      if (!deviceId) {
-        throw new Error('Send Command node requires device_id');
+      const targets = normalizeTargets(n?.data?.targets);
+      if (targets.type === 'selector') {
+        if (!targets.selector) throw new Error('Send Command node requires selector');
+        if (n?.data?.wait_for_result) throw new Error('wait_for_result is not supported for selector targets');
+      } else {
+        if (targets.ids.length === 0) throw new Error('Send Command node requires a target device');
+        if (n?.data?.wait_for_result && targets.ids.length !== 1) throw new Error('wait_for_result requires exactly one target device');
       }
     }
     if (kind === 'action.notify_email') {
@@ -186,9 +217,11 @@ export function buildDefinitionFromEditor(editor) {
       if (!message) throw new Error('Notify Email node requires message');
     }
     if (kind === 'trigger.device_state') {
-      const deviceId = String(n?.data?.device_id || '').trim();
-      if (!deviceId) {
-        throw new Error('Device state trigger requires device_id');
+      const targets = normalizeTargets(n?.data?.targets);
+      if (targets.type === 'selector') {
+        if (!targets.selector) throw new Error('Device state trigger requires selector');
+      } else if (targets.ids.length === 0) {
+        throw new Error('Device state trigger requires a target device');
       }
     }
     if (kind === 'trigger.schedule') {
@@ -225,6 +258,7 @@ export function buildDefinitionFromEditor(editor) {
 
     // Normalize certain UI-backed fields into canonical keys.
     if (String(n.kind).toLowerCase() === 'action.send_command') {
+      data.targets = normalizeTargets(data.targets);
       // If UI has raw json args text, parse into args.
       const mode = String(data?.ui?.args_mode || 'builder').toLowerCase();
       if (mode === 'json') {
@@ -309,7 +343,7 @@ export function buildDefinitionFromEditor(editor) {
     }
 
     if (String(n.kind).toLowerCase() === 'trigger.device_state') {
-      data.device_id = String(data?.device_id || '').trim();
+      data.targets = normalizeTargets(data.targets);
       data.key = String(data?.key || '').trim();
       const op = String(data?.op || 'exists').trim().toLowerCase() || 'exists';
       data.op = op;
@@ -438,17 +472,15 @@ export function nodeSubtitle(node) {
   const kind = String(node?.kind || '').toLowerCase();
   if (kind === 'trigger.manual') return 'Manual';
   if (kind === 'trigger.device_state') {
-    const d = String(node?.data?.device_id || '').trim();
-    return d ? `Device: ${d}` : 'Device state';
+    return `Device state • ${describeTargets(node?.data?.targets)}`;
   }
   if (kind === 'trigger.schedule') {
     const c = String(node?.data?.cron || '').trim();
     return c ? `Cron: ${c}` : 'Schedule';
   }
   if (kind === 'action.send_command') {
-    const d = String(node?.data?.device_id || '').trim();
     const c = String(node?.data?.command || '').trim();
-    return `${d ? `Device: ${d}` : 'Device'}${c ? ` • ${c}` : ''}`;
+    return `${describeTargets(node?.data?.targets)}${c ? ` • ${c}` : ''}`;
   }
   if (kind === 'action.notify_email') {
     const ids = Array.isArray(node?.data?.user_ids) ? node.data.user_ids : [];
@@ -477,17 +509,15 @@ export function nodeBodyText(node) {
   if (kind === 'trigger.device_state') {
     const key = String(node?.data?.key || '').trim();
     const op = String(node?.data?.op || 'exists').trim() || 'exists';
-    const d = String(node?.data?.device_id || '').trim();
-    return `${d ? `device: ${d}` : 'device: —'}${key ? ` • ${key} ${op}` : ''}`;
+    return `${describeTargets(node?.data?.targets)}${key ? ` • ${key} ${op}` : ''}`;
   }
   if (kind === 'trigger.schedule') {
     const c = String(node?.data?.cron || '').trim();
     return c ? `cron: ${c}` : 'cron: —';
   }
   if (kind === 'action.send_command') {
-    const d = String(node?.data?.device_id || '').trim();
     const c = String(node?.data?.command || '').trim() || 'set_state';
-    return `${d ? `device: ${d}` : 'device: —'} • cmd: ${c}`;
+    return `${describeTargets(node?.data?.targets)} • cmd: ${c}`;
   }
   if (kind === 'action.notify_email') {
     const subject = String(node?.data?.subject || '').trim();

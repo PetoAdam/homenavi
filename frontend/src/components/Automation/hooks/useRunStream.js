@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * WebSocket-driven live run highlighting.
@@ -23,16 +23,16 @@ export default function useRunStream({ onToast, onError } = {}) {
     onErrorRef.current = onError;
   }, [onError]);
 
-  const clearLiveRunHighlights = () => {
+  const clearLiveRunHighlights = useCallback(() => {
     for (const t of liveRunTimersRef.current.values()) {
       window.clearTimeout(t);
     }
     liveRunTimersRef.current.clear();
     setLiveRunNodeStates({});
     liveRunRef.current = { runId: null, finished: false };
-  };
+  }, []);
 
-  const closeRunWs = () => {
+  const closeRunWs = useCallback(() => {
     const ws = runWsRef.current;
     runWsRef.current = null;
     if (!ws) return;
@@ -45,7 +45,7 @@ export default function useRunStream({ onToast, onError } = {}) {
     } catch {
       // ignore
     }
-  };
+  }, []);
 
   const setLiveNodeState = (nodeId, state, { clearAfterMs } = {}) => {
     const id = String(nodeId || '').trim();
@@ -199,7 +199,6 @@ export default function useRunStream({ onToast, onError } = {}) {
             return;
           }
         }
-        // eslint-disable-next-line no-await-in-loop
         await new Promise(r => window.setTimeout(r, 850));
       }
     })();
@@ -211,8 +210,7 @@ export default function useRunStream({ onToast, onError } = {}) {
       closeRunWs();
       clearLiveRunHighlights();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clearLiveRunHighlights, closeRunWs]);
 
   return {
     liveRunNodeStates,

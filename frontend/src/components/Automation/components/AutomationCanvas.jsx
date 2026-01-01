@@ -139,7 +139,8 @@ export default function AutomationCanvas({
             let bodyText = nodeBodyText(node);
 
             if (kind === 'trigger.device_state' || kind === 'action.send_command') {
-              const deviceId = String(node?.data?.device_id || '').trim();
+              const targetsType = String(node?.data?.targets?.type || 'device').toLowerCase();
+              const deviceId = targetsType === 'device' ? String(node?.data?.targets?.ids?.[0] || '').trim() : '';
               const deviceName = deviceId ? (deviceNameById.get(deviceId) || deviceId) : '';
               if (kind === 'trigger.device_state') {
                 subtitle = deviceName ? `Device: ${deviceName}` : 'Device state';

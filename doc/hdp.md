@@ -93,7 +93,6 @@ Topic: `homenavi/hdp/device/metadata/<device_id>` (retained)
   "type": "metadata",
   "device_id": "zigbee/0x0017880104abcd",
   "protocol": "zigbee",
-  "name": "Hallway Light",
   "manufacturer": "Philips",
   "model": "LWB010",
   "description": "optional",
@@ -103,6 +102,45 @@ Topic: `homenavi/hdp/device/metadata/<device_id>` (retained)
   "ts": 1734114123123
 }
 ```
+
+Notes:
+
+- HDP does not carry user-facing device names. Device names live in ERS (Entity Registry) and are merged into the UI there.
+
+## Discovery + Naming Architecture (ERS canonical)
+
+This repo follows a strict boundary:
+
+- **HDP / adapters / device-hub**: realtime identity, metadata, capabilities, online, state, events.
+- **ERS (Entity Registry)**: canonical entities and all user-facing naming (and other user-owned metadata).
+
+### Terms
+
+- **HDP `device_id`**: stable identity for a physical device, `protocol/<external>`.
+- **ERS device**: a canonical inventory record that may bind to one or more HDP external ids via `hdp_external_ids`.
+
+### Auto-discovery (no user action)
+
+1. Adapter discovers/knows a device and publishes retained HDP `metadata` and `state` for its `device_id`.
+2. Device-hub ingests these frames and exposes the device list/state to clients (HTTP and/or websocket), **without any user-facing name**.
+3. ERS periodically reconciles against device-hub’s discovered HDP devices:
+  - If an HDP `device_id` is not yet bound to any ERS device, ERS can create a new ERS device.
+  - ERS should set `hdp_external_ids: ["<device_id>"]` to bind.
+  - ERS assigns a default name (e.g. `"Philips LWB010"`, `"Zigbee device"`, or a short-id fallback). Any later rename remains purely in ERS.
+4. Frontend uses **ERS inventory** as the canonical list and merges realtime state by matching `hdpId` / `device_id`.
+
+### Pairing (user action)
+
+Pairing is protocol-specific and driven by adapters (via `pairing_command` and `pairing_progress`). The recommended flow:
+
+1. User starts pairing: publish `pairing_command` (`action: "start"`).
+2. Adapter emits `pairing_progress` frames; when a `device_id` becomes known, it is included in progress.
+3. Once the device is present (either via a `pairing_progress` stage indicating completion or via seeing retained `metadata/state`), the UI (or a backend reconciler) creates/binds an ERS device for that `device_id`.
+4. UI prompts the user to set the device name; the name is persisted in ERS only.
+
+### Suggested names (optional)
+
+If the UI needs a human-friendly placeholder during pairing, derive it client-side from non-user fields (e.g. `manufacturer`, `model`, `protocol`), but do not add any `name`/`friendly_name` field to HDP frames.
 
 ### `event`
 
@@ -194,7 +232,6 @@ Topic: `homenavi/hdp/pairing/progress/<protocol>`
   "status": "in_progress",
   "external_id": "0x0017880104abcd",
   "device_id": "zigbee/0x0017880104abcd",
-  "friendly_name": "optional",
   "ts": 1734114123123
 }
 ```

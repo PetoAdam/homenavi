@@ -56,7 +56,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 						<div className="sidebar-group-header">{group.header}</div>
 						<ul className="sidebar-group-list">
 							{group.items
-								.filter(item => (item.name !== 'Devices' && item.name !== 'Automation') || isResidentOrAdmin)
+								.filter(item => (item.name !== 'Devices' && item.name !== 'Automation' && item.name !== 'Map') || isResidentOrAdmin)
 								.map(item => (
 									<li key={item.name}>
 										<button

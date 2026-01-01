@@ -11,16 +11,21 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
     const commandMode = String(selectedNode.data?.ui?.command_mode || (cmd === 'set_state' ? 'set_state' : 'custom'));
     const effectiveArgsMode = commandMode === 'custom' ? 'json' : (selectedNode.data?.ui?.args_mode || 'builder');
 
+    const targetsType = String(selectedNode.data?.targets?.type || 'device').toLowerCase();
+    const selectedDeviceId = targetsType === 'device' && Array.isArray(selectedNode.data?.targets?.ids)
+      ? String(selectedNode.data?.targets?.ids?.[0] || '')
+      : '';
+
     return (
       <div className="automation-props">
         <div className="field">
           <label className="label">Device ID</label>
           <select
             className="input"
-            value={selectedNode.data?.device_id || ''}
+            value={selectedDeviceId}
             onChange={(e) => {
               const v = e.target.value;
-              this.setSelectedNodeData({ device_id: v });
+              this.setSelectedNodeData({ targets: { type: 'device', ids: v ? [v] : [], selector: '' } });
             }}
           >
             <option value="">Select a device…</option>

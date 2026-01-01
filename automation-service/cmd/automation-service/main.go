@@ -62,7 +62,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	eng := engine.New(repo, mq, engine.Options{EmailServiceURL: cfg.EmailServiceURL})
+	eng := engine.New(repo, mq, engine.Options{EmailServiceURL: cfg.EmailServiceURL, ERSServiceURL: cfg.ERSServiceURL})
 	if err := eng.Start(ctx); err != nil {
 		slog.Error("engine start failed", "error", err)
 		os.Exit(1)

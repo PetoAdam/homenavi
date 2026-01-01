@@ -3,12 +3,8 @@ import './Greeting.css';
 import { useAuth } from '../../../context/AuthContext';
 
 export default function Greeting({ children, showProfileTextButton }) {
-  let user = {};
-  try {
-    user = useAuth()?.user || {};
-  } catch (e) {
-    user = {};
-  }
+  const auth = useAuth();
+  const user = auth?.user || {};
   const name = user?.first_name || user?.user_name || user?.name;
   return (
     <div

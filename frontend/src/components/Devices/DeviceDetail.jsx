@@ -1,15 +1,19 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { faChartLine } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faChartLine, faCheck, faHouse, faPen, faPlus, faStar, faTag, faTags, faTrash, faXmark } from '@fortawesome/free-solid-svg-icons';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassPill from '../common/GlassPill/GlassPill';
 import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../common/LoadingView/LoadingView';
+import ChipMultiSelect from '../common/ChipMultiSelect/ChipMultiSelect';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
+import useErsInventory from '../../hooks/useErsInventory';
 import { useAuth } from '../../context/AuthContext';
 import DeviceTile from './DeviceTile';
-import { deleteDevice, renameDevice, sendDeviceCommand, setDeviceIcon } from '../../services/deviceHubService';
+import { deleteDevice, sendDeviceCommand, setDeviceIcon } from '../../services/deviceHubService';
+import { createErsTag, deleteErsTag, patchErsDevice, setErsDeviceTags } from '../../services/entityRegistryService';
 import { listStatePoints } from '../../services/historyService';
 import HistoryChart from '../History/HistoryChart';
 import './DeviceDetail.css';
@@ -256,6 +260,40 @@ function extractMetricSeries(points) {
     .sort((a, b) => a.key.localeCompare(b.key, undefined, { sensitivity: 'base' }));
 }
 
+function readFavoriteFieldsFromErsMeta(ersDevice) {
+  const meta = ersDevice?.meta && typeof ersDevice.meta === 'object' ? ersDevice.meta : null;
+  const mapMeta = meta?.map && typeof meta.map === 'object' ? meta.map : null;
+  if (!mapMeta) return [];
+  const rawArray = mapMeta.favorite_fields ?? mapMeta.favoriteFields ?? mapMeta.favorite_keys ?? mapMeta.favoriteKeys;
+  const rawSingle = mapMeta.favorite_field ?? mapMeta.favoriteField ?? mapMeta.favorite_key ?? mapMeta.favoriteKey;
+  const normalize = (value) => (typeof value === 'string' ? value.trim() : '');
+  const out = [];
+  if (Array.isArray(rawArray)) {
+    rawArray.forEach(v => {
+      const s = normalize(v);
+      if (s) out.push(s);
+    });
+  }
+  if (out.length === 0) {
+    const s = normalize(rawSingle);
+    if (s) out.push(s);
+  }
+  return Array.from(new Set(out));
+}
+
+function collectFavoriteFieldOptionsFromDevice(device) {
+  const state = device?.state && typeof device.state === 'object' && !Array.isArray(device.state) ? device.state : null;
+  if (!state) return [];
+  const reserved = new Set([
+    'schema', 'device_id', 'deviceid', 'external_id', 'externalid', 'protocol', 'topic', 'retained',
+    'ts', 'timestamp', 'time', 'received_at', 'receivedat',
+    'capabilities',
+  ]);
+  return Object.keys(state)
+    .filter(k => k && !reserved.has(k.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
 export default function DeviceDetail() {
   const navigate = useNavigate();
   const params = useParams();
@@ -265,14 +303,132 @@ export default function DeviceDetail() {
   const { user, accessToken, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
-  const { devices, loading, error } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest' });
+  const {
+    devices: realtimeDevices,
+    loading: realtimeLoading,
+    error: realtimeError,
+  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest' });
+
+  const {
+    devices: ersMergedDevices,
+    rooms: ersRooms,
+    tags: ersTags,
+    loading: ersLoading,
+    error: ersError,
+    refresh: refreshErs,
+  } = useErsInventory({ enabled: Boolean(isResidentOrAdmin), accessToken, realtimeDevices: realtimeDevices });
+
+  const ersDevice = useMemo(() => {
+    if (!deviceId) return null;
+    const items = Array.isArray(ersMergedDevices) ? ersMergedDevices : [];
+    return items.find(d => d?.hdpId === deviceId || d?.id === deviceId) || null;
+  }, [deviceId, ersMergedDevices]);
 
   const device = useMemo(() => {
-    if (!devices?.length) return null;
-    return devices.find(d => d.id === deviceId) || null;
-  }, [devices, deviceId]);
+    if (!realtimeDevices?.length) return null;
+    return realtimeDevices.find(d => d.id === deviceId) || null;
+  }, [realtimeDevices, deviceId]);
+
+  const resolvedDevice = useMemo(() => ersDevice || device || null, [ersDevice, device]);
+  const loading = Boolean(realtimeLoading || ersLoading);
+  const error = realtimeError || ersError || '';
 
   const [pendingCommand, setPendingCommand] = useState(false);
+
+  const [ersMetaSaving, setErsMetaSaving] = useState(false);
+  const [ersMetaError, setErsMetaError] = useState('');
+  const [groupingEditing, setGroupingEditing] = useState(false);
+  const [editRoomId, setEditRoomId] = useState('');
+  const [editTagIds, setEditTagIds] = useState([]);
+  const [newTagName, setNewTagName] = useState('');
+
+  const [favoriteSaving, setFavoriteSaving] = useState(false);
+  const [favoriteError, setFavoriteError] = useState('');
+  const [favoriteFields, setFavoriteFields] = useState([]);
+
+  const currentRoomId = useMemo(() => (
+    (ersDevice?.room?.id || ersDevice?.room_id || '').toString()
+  ), [ersDevice?.room?.id, ersDevice?.room_id]);
+
+  const currentTagIds = useMemo(() => (
+    (Array.isArray(ersDevice?.tags) ? ersDevice.tags : [])
+      .map(t => (t?.id || '').toString())
+      .filter(Boolean)
+  ), [ersDevice?.tags]);
+
+  const currentRoomName = useMemo(() => {
+    const rid = currentRoomId;
+    if (!rid) return 'None';
+    const room = (Array.isArray(ersRooms) ? ersRooms : []).find(r => (r?.id || '').toString() === rid);
+    return room?.name || ersDevice?.room?.name || 'None';
+  }, [currentRoomId, ersRooms, ersDevice?.room?.name]);
+
+  const currentTags = useMemo(() => {
+    const ids = new Set(currentTagIds);
+    return (Array.isArray(ersTags) ? ersTags : [])
+      .filter(t => ids.has((t?.id || '').toString()))
+      .map(t => ({ id: (t?.id || '').toString(), name: t?.name || '' }))
+      .filter(t => t.id && t.name);
+  }, [currentTagIds, ersTags]);
+
+  const tagOptions = useMemo(() => (
+    (Array.isArray(ersTags) ? ersTags : [])
+      .slice()
+      .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }))
+      .map(t => ({ value: (t?.id || '').toString(), label: t?.name || '' }))
+      .filter(t => t.value && t.label)
+  ), [ersTags]);
+
+  useEffect(() => {
+    // Reset edit mode when switching devices.
+    setGroupingEditing(false);
+    setEditRoomId('');
+    setEditTagIds([]);
+    setNewTagName('');
+    setErsMetaError('');
+    setFavoriteError('');
+  }, [ersDevice?.ersId]);
+
+  useEffect(() => {
+    setFavoriteFields(readFavoriteFieldsFromErsMeta(ersDevice));
+  }, [ersDevice]);
+
+  const favoriteFieldOptions = useMemo(() => (
+    collectFavoriteFieldOptionsFromDevice(device)
+  ), [device]);
+
+  const saveFavoriteFields = useCallback(async (nextValues) => {
+    if (!accessToken) {
+      setFavoriteError('Authentication required');
+      return;
+    }
+    if (!ersDevice?.ersId) {
+      setFavoriteError('This device is not registered in ERS yet.');
+      return;
+    }
+    const list = Array.isArray(nextValues) ? nextValues : [];
+    const normalized = list.map(v => (typeof v === 'string' ? v.trim() : '')).filter(Boolean);
+    const deduped = Array.from(new Set(normalized));
+    setFavoriteSaving(true);
+    setFavoriteError('');
+    try {
+      const res = await patchErsDevice(ersDevice.ersId, {
+        meta: { map: { favorite_fields: deduped.length ? deduped : null } },
+      }, accessToken);
+      if (!res.success) throw new Error(res.error || 'Unable to save favorite field');
+      await refreshErs();
+    } catch (err) {
+      setFavoriteError(err?.message || 'Unable to save favorite field');
+    } finally {
+      setFavoriteSaving(false);
+    }
+  }, [accessToken, ersDevice?.ersId, refreshErs]);
+
+  useEffect(() => {
+    if (!groupingEditing) return;
+    setEditRoomId(currentRoomId);
+    setEditTagIds(currentTagIds);
+  }, [currentRoomId, currentTagIds, groupingEditing]);
 
   const handleCommand = useCallback(async (dev, payload) => {
     if (!dev?.id) return;
@@ -290,15 +446,19 @@ export default function DeviceDetail() {
   }, [accessToken]);
 
   const handleRename = useCallback(async (dev, name) => {
-    if (!dev?.id) return;
+    const ersId = dev?.ersId || ersDevice?.ersId;
+    if (!ersId) {
+      throw new Error('Device not ready for rename');
+    }
     if (!accessToken) {
       throw new Error('Authentication required');
     }
     const trimmed = typeof name === 'string' ? name.trim() : '';
-    const res = await renameDevice(dev.id, trimmed, accessToken);
+    const res = await patchErsDevice(ersId, { name: trimmed }, accessToken);
     if (!res.success) throw new Error(res.error || 'Unable to rename device');
+    await refreshErs();
     return res.data;
-  }, [accessToken]);
+  }, [accessToken, ersDevice?.ersId, refreshErs]);
 
   const handleUpdateIcon = useCallback(async (dev, iconKey) => {
     if (!dev?.id) return;
@@ -319,6 +479,90 @@ export default function DeviceDetail() {
     if (!res.success) throw new Error(res.error || 'Unable to delete device');
     navigate('/devices');
   }, [accessToken, navigate]);
+
+  const saveGrouping = useCallback(async () => {
+    if (!accessToken) {
+      setErsMetaError('Authentication required');
+      return;
+    }
+    if (!ersDevice?.ersId) return;
+    setErsMetaSaving(true);
+    setErsMetaError('');
+    try {
+      const nextRoom = editRoomId ? editRoomId : null;
+      const roomChanged = (currentRoomId || '') !== (editRoomId || '');
+      const nextTags = Array.isArray(editTagIds) ? editTagIds : [];
+      const tagsChanged = JSON.stringify([...currentTagIds].sort()) !== JSON.stringify([...nextTags].map(String).sort());
+
+      if (roomChanged) {
+        const res = await patchErsDevice(ersDevice.ersId, { room_id: nextRoom }, accessToken);
+        if (!res.success) throw new Error(res.error || 'Unable to update room');
+      }
+
+      if (tagsChanged) {
+        const res = await setErsDeviceTags(ersDevice.ersId, nextTags, accessToken);
+        if (!res.success) throw new Error(res.error || 'Unable to update tags');
+      }
+
+      await refreshErs();
+      setGroupingEditing(false);
+      setNewTagName('');
+    } catch (err) {
+      setErsMetaError(err?.message || 'Unable to update grouping');
+    } finally {
+      setErsMetaSaving(false);
+    }
+  }, [accessToken, currentRoomId, currentTagIds, editRoomId, editTagIds, ersDevice?.ersId, refreshErs]);
+
+  const handleCreateTag = useCallback(async () => {
+    const name = typeof newTagName === 'string' ? newTagName.trim() : '';
+    if (!name) return;
+    if (!accessToken) {
+      setErsMetaError('Authentication required');
+      return;
+    }
+    setErsMetaSaving(true);
+    setErsMetaError('');
+    try {
+      const res = await createErsTag({ name }, accessToken);
+      if (!res.success) throw new Error(res.error || 'Unable to create tag');
+      const createdId = (res.data?.id || '').toString();
+      await refreshErs();
+      if (createdId) {
+        setEditTagIds(prev => (prev.includes(createdId) ? prev : [...prev, createdId]));
+      }
+      setNewTagName('');
+    } catch (err) {
+      setErsMetaError(err?.message || 'Unable to create tag');
+    } finally {
+      setErsMetaSaving(false);
+    }
+  }, [accessToken, newTagName, refreshErs]);
+
+  const handleDeleteTag = useCallback(async (tagId, tagName) => {
+    const id = typeof tagId === 'string' ? tagId.trim() : '';
+    if (!id) return;
+    if (!accessToken) {
+      setErsMetaError('Authentication required');
+      return;
+    }
+    const label = typeof tagName === 'string' && tagName.trim() ? tagName.trim() : 'this tag';
+    const ok = window.confirm(`Delete tag "${label}"? This removes it from all devices.`);
+    if (!ok) return;
+
+    setErsMetaSaving(true);
+    setErsMetaError('');
+    try {
+      const res = await deleteErsTag(id, accessToken);
+      if (!res.success) throw new Error(res.error || 'Unable to delete tag');
+      setEditTagIds(prev => (Array.isArray(prev) ? prev.filter(x => x !== id) : []));
+      await refreshErs();
+    } catch (err) {
+      setErsMetaError(err?.message || 'Unable to delete tag');
+    } finally {
+      setErsMetaSaving(false);
+    }
+  }, [accessToken, refreshErs]);
 
   const [rangePreset, setRangePreset] = useState('24h');
   const [fromLocal, setFromLocal] = useState('');
@@ -404,12 +648,20 @@ export default function DeviceDetail() {
   const canQueryHistory = Boolean(isResidentOrAdmin && accessToken && deviceId);
 
   useEffect(() => {
+    // Switching devices should re-run the default history query.
+    autoFetchedRef.current = false;
+    setHistoryPoints([]);
+    setHistoryError(null);
+  }, [deviceId]);
+
+  useEffect(() => {
     if (!canQueryHistory) return;
     if (autoFetchedRef.current) return;
+    if (!fromLocal || !toLocal) return;
     // Auto-run once so the page doesn't look empty with the default "Last 24 hours" range.
     autoFetchedRef.current = true;
     fetchHistory();
-  }, [canQueryHistory, fetchHistory]);
+  }, [canQueryHistory, fetchHistory, fromLocal, toLocal]);
 
   const metrics = useMemo(() => {
     const raw = extractMetricSeries(historyPoints);
@@ -556,7 +808,7 @@ export default function DeviceDetail() {
     document.body.classList.add('overlay-open');
     // focus overlay card when opened
     const focusTimeout = setTimeout(() => {
-      try { overlayCardRef.current?.focus?.(); } catch (err) {}
+      overlayCardRef.current?.focus?.();
     }, 40);
     return () => {
       clearTimeout(focusTimeout);
@@ -593,13 +845,13 @@ export default function DeviceDetail() {
         </GlassCard>
       ) : null}
 
-      {loading && !device ? (
+      {loading && !resolvedDevice ? (
         <GlassCard className="device-detail-loading" interactive={false}>
           <div className="device-detail-loading-text">Loading device…</div>
         </GlassCard>
       ) : null}
 
-      {!loading && !device ? (
+      {!loading && !resolvedDevice ? (
         <GlassCard className="device-detail-missing" interactive={false}>
           <div className="device-detail-missing-text">Device not found.</div>
         </GlassCard>
@@ -607,9 +859,9 @@ export default function DeviceDetail() {
 
       <div className="device-detail-grid">
         <div className="device-detail-grid-left">
-          {device ? (
+          {resolvedDevice ? (
             <DeviceTile
-              device={device}
+              device={resolvedDevice}
               pending={pendingCommand}
               onCommand={handleCommand}
               onRename={handleRename}
@@ -621,11 +873,212 @@ export default function DeviceDetail() {
         </div>
 
         <div className="device-detail-grid-right">
+          <GlassCard className="device-ers-meta-card" interactive={false}>
+            <div className="device-history-header">
+              <div className="device-history-title">
+                <span className="device-history-icon">
+                  <FontAwesomeIcon icon={faTags} />
+                </span>
+                <span>Grouping</span>
+              </div>
+              {groupingEditing ? (
+                <div className="device-title-actions">
+                  <button
+                    type="button"
+                    className="device-title-action device-title-cancel"
+                    onClick={() => {
+                      setGroupingEditing(false);
+                      setErsMetaError('');
+                      setNewTagName('');
+                    }}
+                    disabled={ersMetaSaving}
+                    title="Cancel"
+                  >
+                    <FontAwesomeIcon icon={faXmark} />
+                  </button>
+                  <button
+                    type="button"
+                    className="device-title-action device-title-save"
+                    onClick={saveGrouping}
+                    disabled={ersMetaSaving}
+                    title="Save"
+                  >
+                    <FontAwesomeIcon icon={faCheck} />
+                  </button>
+                </div>
+              ) : (
+                <div className="device-title-actions">
+                  <button
+                    type="button"
+                    className="device-title-action device-title-edit"
+                    onClick={() => {
+                      if (!ersDevice) return;
+                      setGroupingEditing(true);
+                      setErsMetaError('');
+                    }}
+                    disabled={!ersDevice || ersMetaSaving}
+                    title="Edit grouping"
+                  >
+                    <FontAwesomeIcon icon={faPen} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {ersError ? <div className="device-history-error">{ersError}</div> : null}
+            {ersMetaError ? <div className="device-history-error">{ersMetaError}</div> : null}
+
+            {ersLoading && !ersDevice ? (
+              <div className="device-history-empty-text">Loading ERS metadata…</div>
+            ) : null}
+
+            {!ersLoading && !ersDevice ? (
+              <div className="device-history-empty-text">This device is not registered in ERS yet.</div>
+            ) : null}
+
+            {ersDevice ? (
+              <div className="device-history-controls">
+                {!groupingEditing ? (
+                  <div className="device-grouping-row" role="group" aria-label="Room and tags">
+                    <div className="device-grouping-row-main">
+                      <GlassPill icon={faHouse} text={currentRoomName || 'None'} tone="default" />
+                      <span className="device-grouping-divider" aria-hidden="true" />
+                      <div className="device-grouping-tags">
+                        {currentTags.length > 0 ? (
+                          currentTags.map(t => (
+                            <GlassPill key={t.id} icon={faTag} text={t.name} tone="default" />
+                          ))
+                        ) : (
+                          <GlassPill icon={faTag} text="None" tone="default" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label className="device-history-field device-history-field--range">
+                      <span>Room</span>
+                      <select
+                        value={editRoomId}
+                        onChange={e => setEditRoomId(e.target.value)}
+                        disabled={ersMetaSaving}
+                      >
+                        <option value="">None</option>
+                        {(Array.isArray(ersRooms) ? ersRooms : [])
+                          .slice()
+                          .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''))
+                          .map(r => (
+                            <option key={r.id} value={r.id}>{r.name}</option>
+                          ))}
+                      </select>
+                    </label>
+
+                    <label className="device-history-field device-history-field--limit">
+                      <span>Tags</span>
+                      <ChipMultiSelect
+                        ariaLabel="Tags"
+                        options={tagOptions}
+                        value={Array.isArray(editTagIds) ? editTagIds : []}
+                        disabled={ersMetaSaving}
+                        onChange={(selected) => {
+                          setEditTagIds(Array.isArray(selected) ? selected : []);
+                        }}
+                        emptyText="No tags"
+                      />
+
+                      {tagOptions.length > 0 ? (
+                        <div style={{ marginTop: '0.5rem' }}>
+                          <div className="device-history-empty-text" style={{ marginTop: 0 }}>
+                            Delete a tag (removes it from all devices)
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                            {tagOptions.map(t => (
+                              <GlassPill
+                                key={`delete-tag-${t.value}`}
+                                icon={faTrash}
+                                text={t.label}
+                                tone="danger"
+                                onClick={!ersMetaSaving ? () => handleDeleteTag(t.value, t.label) : undefined}
+                                title={`Delete tag: ${t.label}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </label>
+
+                    <div className="device-history-field device-history-field--limit" style={{ alignItems: 'flex-start' }}>
+                      <span>Add new tag</span>
+                      <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          type="text"
+                          className="input"
+                          placeholder="New tag name"
+                          value={newTagName}
+                          onChange={e => setNewTagName(e.target.value)}
+                          disabled={ersMetaSaving}
+                          style={{ minWidth: 200 }}
+                        />
+                        <GlassPill
+                          icon={faPlus}
+                          text={ersMetaSaving ? 'Saving…' : 'Add new tag'}
+                          tone={ersMetaSaving ? 'warning' : 'success'}
+                          onClick={!ersMetaSaving && newTagName.trim() ? handleCreateTag : undefined}
+                          title="Create a new tag"
+                        />
+                        <div className="device-history-empty-text" style={{ marginTop: 0 }}>
+                          {editTagIds.length} selected
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </GlassCard>
+
+          <GlassCard className="device-ers-meta-card" interactive={false}>
+            <div className="device-history-header">
+              <div className="device-history-title">
+                <span className="device-history-icon">
+                  <FontAwesomeIcon icon={faStar} />
+                </span>
+                <span>Map display</span>
+              </div>
+            </div>
+
+            {ersError ? <div className="device-history-error">{ersError}</div> : null}
+            {favoriteError ? <div className="device-history-error">{favoriteError}</div> : null}
+
+            {!ersDevice ? (
+              <div className="device-history-empty-text">ERS metadata unavailable for this device.</div>
+            ) : (
+              <div className="device-history-controls">
+                <div className="device-history-field device-history-field--range">
+                  <div className="device-history-field-label">Favorite fields</div>
+                  <ChipMultiSelect
+                    ariaLabel="Favorite fields"
+                    options={favoriteFieldOptions}
+                    value={Array.isArray(favoriteFields) ? favoriteFields : []}
+                    disabled={favoriteSaving}
+                    onChange={(selected) => {
+                      setFavoriteFields(selected);
+                      void saveFavoriteFields(selected);
+                    }}
+                  />
+                </div>
+                <div className="device-history-help-text">
+                  Pick the state fields you care about most; they will always be shown on the map next to the marker.
+                </div>
+              </div>
+            )}
+          </GlassCard>
+
           <GlassCard className="device-history-controls-card" interactive={false}>
             <div className="device-history-header">
               <div className="device-history-title">
                 <span className="device-history-icon">
-                  <span aria-hidden="true">▦</span>
+                  <FontAwesomeIcon icon={faChartLine} />
                 </span>
                 <span>History</span>
               </div>

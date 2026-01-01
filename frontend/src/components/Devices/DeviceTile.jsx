@@ -7,12 +7,14 @@ import {
   faDroplet,
   faDoorOpen,
   faGaugeHigh,
+  faHouse,
   faLightbulb,
   faMicrochip,
   faPalette,
   faPlug,
   faSignal,
   faSliders,
+  faTag,
   faThermometerHalf,
   faTicket,
   faWaveSquare,
@@ -28,6 +30,7 @@ import GlassPill from '../common/GlassPill/GlassPill';
 import { HexColorPicker } from 'react-colorful';
 import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
+import { formatBinaryStateValue as formatBinaryStateValueShared } from '../../utils/stateFormat';
 import { getModalRoot } from '../common/Modal/modalRoot';
 
 const ICON_BY_CAP = {
@@ -72,6 +75,16 @@ function formatObjectValue(obj) {
   return Object.entries(obj)
     .map(([key, value]) => `${key}:${value}`)
     .join(' ');
+}
+
+function normalizeTagLabel(tag) {
+  if (!tag) return '';
+  if (typeof tag === 'string') return tag.trim();
+  if (typeof tag === 'object') {
+    const name = typeof tag.name === 'string' ? tag.name.trim() : '';
+    return name;
+  }
+  return '';
 }
 
 function formatRelativeTime(date) {
@@ -207,51 +220,7 @@ function isCapabilityWritable(cap) {
 }
 
 function formatBinaryStateValue(key, raw) {
-  if (raw === undefined || raw === null || raw === '') {
-    return '—';
-  }
-  let bool;
-  if (typeof raw === 'boolean') {
-    bool = raw;
-  } else if (typeof raw === 'number') {
-    bool = raw !== 0;
-  } else if (typeof raw === 'string') {
-    const lowered = raw.trim().toLowerCase();
-    if (['true', 'on', '1', 'yes', 'enabled', 'detected', 'active', 'closed', 'present'].includes(lowered)) {
-      bool = true;
-    } else if (['false', 'off', '0', 'no', 'disabled', 'clear', 'inactive', 'open', 'absent'].includes(lowered)) {
-      bool = false;
-    }
-  }
-  if (bool === undefined) {
-    bool = toControlBoolean(raw);
-  }
-  const normalizedKey = (key || '').toString().toLowerCase();
-  switch (normalizedKey) {
-  case 'contact':
-    return bool ? 'Closed' : 'Open';
-  case 'open':
-    return bool ? 'Open' : 'Closed';
-  case 'closed':
-    return bool ? 'Closed' : 'Open';
-  case 'occupancy':
-  case 'motion':
-  case 'presence':
-    return bool ? 'Detected' : 'Clear';
-  case 'water_leak':
-  case 'leak':
-  case 'moisture':
-    return bool ? 'Leak' : 'Dry';
-  case 'smoke':
-    return bool ? 'Smoke' : 'Clear';
-  case 'tamper':
-    return bool ? 'Tamper' : 'Secure';
-  case 'battery_low':
-  case 'low_battery':
-    return bool ? 'Low' : 'OK';
-  default:
-    return bool ? 'On' : 'Off';
-  }
+  return formatBinaryStateValueShared(key, raw);
 }
 
 function formatBinaryCapabilityValue(cap, raw) {
@@ -1339,6 +1308,34 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
           <GlassPill icon={faMicrochip} text={device.protocol?.toUpperCase() || 'Unknown'} />
           <GlassPill icon={faTicket} text={`${capabilities.length} capabilities`} />
           {device.firmware ? <GlassPill text={`FW ${device.firmware}`} tone="default" /> : null}
+        </div>
+
+        <div className="device-grouping-pill-row" aria-label="Room and tags">
+          <GlassPill
+            icon={faHouse}
+            text={(typeof device.roomName === 'string' && device.roomName.trim())
+              || (typeof device.room?.name === 'string' && device.room.name.trim())
+              || 'None'}
+            tone="default"
+          />
+          {(() => {
+            const all = (Array.isArray(device.tags) ? device.tags : [])
+              .map(normalizeTagLabel)
+              .filter(Boolean);
+            const visible = all.slice(0, 3);
+            const extra = Math.max(0, all.length - visible.length);
+            const keyBase = device.id || device.ersId || device.externalId || device.key;
+            return (
+              <>
+                {visible.map((name) => (
+                  <GlassPill key={`tag-${keyBase}-${name}`} icon={faTag} text={name} tone="default" />
+                ))}
+                {extra > 0 ? (
+                  <GlassPill key={`tag-more-${keyBase}`} icon={faTag} text={`+${extra} more`} tone="default" />
+                ) : null}
+              </>
+            );
+          })()}
         </div>
 
         {binaryMetrics.length > 0 ? (

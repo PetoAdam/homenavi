@@ -887,7 +887,6 @@ func (z *ZigbeeAdapter) publishHDPMeta(dev *model.Device) {
 		"type":         "metadata",
 		"device_id":    deviceID,
 		"protocol":     "zigbee",
-		"name":         dev.Name,
 		"manufacturer": dev.Manufacturer,
 		"model":        dev.Model,
 		"description":  dev.Description,
@@ -960,7 +959,7 @@ func (z *ZigbeeAdapter) publishHDPCommandResult(dev *model.Device, corr string, 
 	}
 }
 
-func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external, friendly string) {
+func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external string, _ string) {
 	if stage == "" {
 		return
 	}
@@ -977,9 +976,6 @@ func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external, friendly
 		if deviceID := z.hdpDeviceID(external); deviceID != "" {
 			hdp["device_id"] = deviceID
 		}
-	}
-	if friendly != "" {
-		hdp["friendly_name"] = friendly
 	}
 	if b, err := json.Marshal(hdp); err == nil {
 		_ = z.client.Publish(hdpPairingProgressTopic, b)

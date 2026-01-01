@@ -261,10 +261,10 @@ export default class TriggerEditor extends BaseNodeEditor {
               <label className="label">Device ID</label>
               <select
                 className="input"
-                value={selectedNode.data?.device_id || ''}
+                value={String(selectedNode.data?.targets?.type || 'device').toLowerCase() === 'device' ? String(selectedNode.data?.targets?.ids?.[0] || '') : ''}
                 onChange={(e) => {
                   const v = e.target.value;
-                  this.setSelectedNodeData({ device_id: v });
+                  this.setSelectedNodeData({ targets: { type: 'device', ids: v ? [v] : [], selector: '' } });
                 }}
               >
                 <option value="">Select a device…</option>

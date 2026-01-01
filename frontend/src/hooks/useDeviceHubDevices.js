@@ -181,7 +181,7 @@ function shouldIncludeDevice(raw) {
   if (!raw || typeof raw !== 'object') return false;
   if (raw.__hasMetadata) return true;
   if (raw.metadataUpdatedAt) return true;
-  if (raw.name || raw.manufacturer || raw.model || raw.description || raw.protocol) return true;
+  if (raw.manufacturer || raw.model || raw.description || raw.protocol) return true;
   if (ensureArray(raw.capabilities).length > 0) return true;
   if (ensureArray(raw.inputs).length > 0) return true;
   return Object.keys(ensureStateObject(raw._last_state)).length > 0;
@@ -213,9 +213,6 @@ function transformEntry(key, raw) {
   })();
   const externalId = raw.device_id || raw.deviceId || raw.external_id || raw.externalId || raw.externalID || raw.external || key;
   const hdpId = raw.hdpId || raw.device_id || raw.deviceId || externalId || key;
-  const trimmedName = typeof raw.name === 'string' ? raw.name.trim() : '';
-  const fallbackName = [raw.manufacturer, raw.model].filter(Boolean).join(' ') || externalId || key;
-  const displayName = trimmedName || fallbackName;
   const icon = typeof raw.icon === 'string' ? raw.icon : (raw.metadata?.icon || '');
   return {
     key,
@@ -224,8 +221,6 @@ function transformEntry(key, raw) {
     hdpId,
     id: hdpId,
     protocol: raw.protocol || '',
-    name: trimmedName,
-    displayName,
     type: raw.type || '',
     manufacturer: raw.manufacturer || '',
     model: raw.model || '',
@@ -314,7 +309,11 @@ export default function useDeviceHubDevices(options = {}) {
           nextDevices.push(entry);
         }
       });
-      nextDevices.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+      nextDevices.sort((a, b) => {
+        const aKey = String(a?.hdpId || a?.externalId || a?.id || '').toLowerCase();
+        const bKey = String(b?.hdpId || b?.externalId || b?.id || '').toLowerCase();
+        return aKey.localeCompare(bKey, undefined, { sensitivity: 'base' });
+      });
       setDevices(nextDevices);
       setStats(computeStats(nextDevices));
       setLoading(false);
@@ -490,7 +489,6 @@ export default function useDeviceHubDevices(options = {}) {
           externalId: mapKey,
           hdpId: mapKey,
           protocol: data.protocol || prev.protocol || norm.protocol || (mapKey.includes('/') ? mapKey.split('/')[0] : ''),
-          name: data.name ?? prev.name,
           manufacturer: data.manufacturer ?? prev.manufacturer,
           model: data.model ?? prev.model,
           firmware: data.firmware ?? prev.firmware,
@@ -652,7 +650,7 @@ export default function useDeviceHubDevices(options = {}) {
       stateClientRef.current?.disconnect?.();
       stateClientRef.current = null;
     };
-  }, [enabled, loadInitialDevices, connectRealtime]);
+  }, [enabled, loadInitialDevices, connectRealtime, metadataMode]);
 
   const sendDeviceCommand = useCallback((deviceId, statePatch) => new Promise((resolve, reject) => {
     const client = stateClientRef.current;

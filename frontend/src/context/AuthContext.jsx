@@ -135,7 +135,7 @@ export function AuthProvider({ children }) {
 
     // No refresh to perform; we can consider auth initialized.
     setBootstrapping(false);
-  }, []);
+  }, [accessToken, refreshTokenValue]);
 
   // Auto-refresh access token
   useEffect(() => {
@@ -299,6 +299,7 @@ export function AuthProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext);
 }

@@ -218,7 +218,6 @@ export default function AddDeviceModal({
   );
   const pairingTitleLabel = pairingProfile?.label || selectedProtocolLabel;
   const selectedIcon = form.icon || 'auto';
-  const selectedIconMeta = useMemo(() => DEVICE_ICON_CHOICES.find(choice => choice.key === selectedIcon), [selectedIcon]);
   const identifierPreview = useMemo(() => buildIdentifier(selectedProtocol, form.name, form.identifier), [selectedProtocol, form.name, form.identifier]);
   const handleIdentifierChange = useCallback(event => {
     const next = event.target.value.replaceAll('/', '');
@@ -371,7 +370,7 @@ export default function AddDeviceModal({
     } finally {
       setPairingStartPending(false);
     }
-  }, [pairingSupported, activeSessionForSelected, onStartPairing, selectedProtocol, buildPairingMetadata]);
+  }, [pairingSupported, activeSessionForSelected, onStartPairing, selectedProtocol, pairingProfile, buildPairingMetadata]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -599,7 +598,6 @@ export default function AddDeviceModal({
             <div className="add-device-pairing-meta">
               <span className="add-device-pairing-label">Metadata applied after join</span>
               <div className="add-device-pairing-meta-grid">
-                {pairingMeta.name ? <span><strong>Name:</strong> {pairingMeta.name}</span> : null}
                 {pairingMeta.type ? <span><strong>Type:</strong> {pairingMeta.type}</span> : null}
                 {pairingMeta.manufacturer ? <span><strong>Mfr:</strong> {pairingMeta.manufacturer}</span> : null}
                 {pairingMeta.model ? <span><strong>Model:</strong> {pairingMeta.model}</span> : null}

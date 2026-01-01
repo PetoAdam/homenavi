@@ -1,0 +1,12 @@
+routes:
+  - path: /api/ers/*
+    upstream: http://entity-registry-service:8095/api/ers/*
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    access: resident
+    type: rest
+
+  - path: /ws/ers
+    upstream: ws://entity-registry-service:8095/ws/ers
+    methods: [GET]
+    access: resident
+    type: websocket

@@ -44,7 +44,6 @@ type PairingConfig struct {
 }
 
 type pairingMetadata struct {
-	Name         string `json:"name,omitempty"`
 	Icon         string `json:"icon,omitempty"`
 	Description  string `json:"description,omitempty"`
 	Type         string `json:"type,omitempty"`
@@ -218,10 +217,6 @@ func (s *Server) upsertMetadataFromHDP(deviceID string, payload map[string]any) 
 		dev = &model.Device{ExternalID: normExt, Protocol: proto}
 	}
 	changed := false
-	if name := strings.TrimSpace(asString(payload["name"])); name != "" && dev.Name != name {
-		dev.Name = name
-		changed = true
-	}
 	if m := strings.TrimSpace(asString(payload["manufacturer"])); m != "" && dev.Manufacturer != m {
 		dev.Manufacturer = m
 		changed = true
@@ -466,7 +461,6 @@ type deviceListItem struct {
 	DeviceID     string          `json:"device_id"`
 	Protocol     string          `json:"protocol"`
 	ExternalID   string          `json:"external_id"`
-	Name         string          `json:"name"`
 	Type         string          `json:"type"`
 	Manufacturer string          `json:"manufacturer"`
 	Model        string          `json:"model"`
@@ -534,7 +528,6 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 			DeviceID:     canonicalHDPDeviceID(d.Protocol, d.ExternalID),
 			Protocol:     d.Protocol,
 			ExternalID:   d.ExternalID,
-			Name:         d.Name,
 			Type:         d.Type,
 			Manufacturer: d.Manufacturer,
 			Model:        d.Model,
@@ -593,7 +586,6 @@ func (s *Server) handleDeviceCreate(w http.ResponseWriter, r *http.Request) {
 	dev := &model.Device{
 		Protocol:     protocol,
 		ExternalID:   external,
-		Name:         strings.TrimSpace(req.Name),
 		Type:         strings.TrimSpace(req.Type),
 		Manufacturer: strings.TrimSpace(req.Manufacturer),
 		Model:        strings.TrimSpace(req.Model),
@@ -710,7 +702,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if req.Name == nil && req.Icon == nil {
+	if req.Icon == nil {
 		http.Error(w, "no updatable fields provided", http.StatusBadRequest)
 		return
 	}
@@ -725,17 +717,6 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		return
 	}
 	updated := false
-	if req.Name != nil {
-		trimmed := strings.TrimSpace(*req.Name)
-		if trimmed == "" {
-			http.Error(w, "name cannot be empty", http.StatusBadRequest)
-			return
-		}
-		if dev.Name != trimmed {
-			dev.Name = trimmed
-			updated = true
-		}
-	}
 	if req.Icon != nil {
 		icon := strings.TrimSpace(*req.Icon)
 		if dev.Icon != icon {
@@ -747,7 +728,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		if hdpID == "" {
 			hdpID = canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
 		}
-		writeJSON(w, http.StatusOK, deviceUpdateResponse{Status: "unchanged", DeviceID: hdpID, Name: dev.Name, Icon: dev.Icon})
+		writeJSON(w, http.StatusOK, deviceUpdateResponse{Status: "unchanged", DeviceID: hdpID, Icon: dev.Icon})
 		return
 	}
 	if err := s.repo.UpsertDevice(r.Context(), dev); err != nil {
@@ -759,7 +740,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 	if hdpID == "" {
 		hdpID = canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
 	}
-	writeJSON(w, http.StatusOK, deviceUpdateResponse{Status: "updated", DeviceID: hdpID, Name: dev.Name, Icon: dev.Icon})
+	writeJSON(w, http.StatusOK, deviceUpdateResponse{Status: "updated", DeviceID: hdpID, Icon: dev.Icon})
 }
 
 func (s *Server) handleDeviceGet(w http.ResponseWriter, r *http.Request, deviceID string) {
@@ -1030,7 +1011,6 @@ func (s *Server) publishHDPMeta(dev *model.Device) {
 		"type":         "metadata",
 		"device_id":    hdpID,
 		"protocol":     dev.Protocol,
-		"name":         dev.Name,
 		"manufacturer": dev.Manufacturer,
 		"model":        dev.Model,
 		"description":  dev.Description,
@@ -1527,7 +1507,6 @@ func sanitizePairingMetadata(meta pairingMetadata) pairingMetadata {
 		return strings.TrimSpace(v)
 	}
 	return pairingMetadata{
-		Name:         trim(meta.Name),
 		Icon:         strings.ToLower(trim(meta.Icon)),
 		Description:  trim(meta.Description),
 		Type:         trim(meta.Type),
@@ -1654,10 +1633,6 @@ func (s *Server) applyPairingMetadata(deviceID string, meta pairingMetadata) {
 		return
 	}
 	changed := false
-	if trimmed.Name != "" && trimmed.Name != dev.Name {
-		dev.Name = trimmed.Name
-		changed = true
-	}
 	if trimmed.Description != "" && trimmed.Description != dev.Description {
 		dev.Description = trimmed.Description
 		changed = true
@@ -1708,7 +1683,6 @@ func (s *Server) buildDeviceItem(ctx context.Context, d *model.Device) (deviceLi
 		DeviceID:     canonicalHDPDeviceID(d.Protocol, d.ExternalID),
 		Protocol:     d.Protocol,
 		ExternalID:   d.ExternalID,
-		Name:         d.Name,
 		Type:         d.Type,
 		Manufacturer: d.Manufacturer,
 		Model:        d.Model,
