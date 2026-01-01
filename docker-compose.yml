@@ -8,21 +8,21 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:80"
+      - "${FRONTEND_HOST_PORT}:${FRONTEND_CONTAINER_PORT}"
     restart: unless-stopped
     networks:
       - homenavi-network
   api-gateway:
     build: ./api-gateway
     ports:
-      - "8080:8080"
+      - "${API_GATEWAY_HOST_PORT}:${API_GATEWAY_PORT}"
     restart: unless-stopped
     environment:
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
-      - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - AUTH_SERVICE_URL=http://auth-service:${AUTH_SERVICE_PORT}
+      - USER_SERVICE_URL=http://user-service:${USER_SERVICE_PORT}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-      - REDIS_ADDR=${REDIS_ADDR}
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - REDIS_ADDR=redis:${REDIS_PORT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
@@ -39,18 +39,18 @@ services:
   # ports:
   #   - "8000:8000"
     environment:
-      - AUTH_SERVICE_PORT=8000
-      - USER_SERVICE_URL=${USER_SERVICE_URL}
-      - ERS_SERVICE_URL=http://entity-registry-service:8095
+      - AUTH_SERVICE_PORT=${AUTH_SERVICE_PORT}
+      - USER_SERVICE_URL=http://user-service:${USER_SERVICE_PORT}
+      - ERS_SERVICE_URL=http://entity-registry-service:${ENTITY_REGISTRY_PORT}
       - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
-      - REDIS_ADDR=${REDIS_ADDR}
+      - REDIS_ADDR=redis:${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-      - EMAIL_SERVICE_URL=http://email-service:8002
-      - PROFILE_PICTURE_SERVICE_URL=http://profile-picture-service:8000
+      - EMAIL_SERVICE_URL=http://email-service:${EMAIL_SERVICE_PORT}
+      - PROFILE_PICTURE_SERVICE_URL=http://profile-picture-service:${PROFILE_PICTURE_SERVICE_PORT}
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
       - GOOGLE_OAUTH_REDIRECT_URL=${GOOGLE_OAUTH_REDIRECT_URL}
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     volumes:
       - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
     depends_on:
@@ -78,7 +78,7 @@ services:
     networks:
       - homenavi-network
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_HOST_PORT}:${PROMETHEUS_PORT}"
 
   grafana:
     image: grafana/grafana
@@ -88,7 +88,7 @@ services:
     depends_on:
       - prometheus
     ports:
-      - "3000:3000"
+      - "${GRAFANA_HOST_PORT}:${GRAFANA_PORT}"
 
   jaeger:
     image: jaegertracing/all-in-one
@@ -96,13 +96,13 @@ services:
     networks:
       - homenavi-network
     ports:
-      - "16686:16686"
-      - "14268:14268"
+      - "${JAEGER_UI_HOST_PORT}:${JAEGER_UI_PORT}"
+      - "${JAEGER_COLLECTOR_HOST_PORT}:${JAEGER_COLLECTOR_PORT}"
 
   nginx:
     image: nginx:1.25-alpine
     ports:
-      - "80:80"
+      - "${NGINX_HOST_PORT}:${NGINX_PORT}"
     volumes:
       - ./nginx/nginx.conf.dev.template:/etc/nginx/nginx.conf.dev.template:ro
       - ./nginx/nginx.conf.prod.template:/etc/nginx/nginx.conf.prod.template:ro
@@ -143,13 +143,14 @@ services:
   # ports:
   #   - "8001:8001"
     environment:
+      - USER_SERVICE_PORT=${USER_SERVICE_PORT}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     depends_on:
       - postgres
     networks:
@@ -160,6 +161,8 @@ services:
   profile-picture-service:
     build: ./profile-picture-service
     restart: unless-stopped
+    environment:
+      - PROFILE_PICTURE_SERVICE_PORT=${PROFILE_PICTURE_SERVICE_PORT}
     volumes:
       - profile-pictures:/uploads
     networks:
@@ -172,14 +175,14 @@ services:
     build: ./email-service
     restart: unless-stopped
     environment:
-      - EMAIL_SERVICE_PORT=8002
+      - EMAIL_SERVICE_PORT=${EMAIL_SERVICE_PORT}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USERNAME=${SMTP_USERNAME}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - FROM_EMAIL=${FROM_EMAIL:-noreply@homenavi.org}
       - FROM_NAME=${FROM_NAME:-Homenavi}
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     networks:
       - homenavi-network
   # DEV:
@@ -208,8 +211,8 @@ services:
       - ./mosquitto/entrypoint.sh:/docker-entrypoint-nochown.sh:ro
     entrypoint: ["/bin/sh", "/docker-entrypoint-nochown.sh"]
     ports:
-      - "1883:1883"
-      - "9001:9001" # optional websocket listener if enabled in config
+      - "${MQTT_HOST_PORT}:${MQTT_PORT}"
+      - "${MQTT_WS_HOST_PORT}:${MQTT_WS_PORT}" # optional websocket listener if enabled in config
 
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
@@ -234,8 +237,8 @@ services:
       - mosquitto
       - postgres
     environment:
-      - DEVICE_HUB_PORT=8090
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - DEVICE_HUB_PORT=${DEVICE_HUB_PORT}
+      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -243,7 +246,7 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - DEVICE_HUB_ENABLE_THREAD=true
       - LOG_LEVEL=${LOG_LEVEL}
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     networks:
       - homenavi-network
     # No ports exposed; internal only
@@ -254,9 +257,9 @@ services:
     depends_on:
       - postgres
     environment:
-      - ENTITY_REGISTRY_PORT=8095
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
-      - DEVICE_HUB_URL=http://device-hub:8090
+      - ENTITY_REGISTRY_PORT=${ENTITY_REGISTRY_PORT}
+      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - DEVICE_HUB_URL=http://device-hub:${DEVICE_HUB_PORT}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -275,19 +278,19 @@ services:
       - postgres
       - redis
     environment:
-      - ZIGBEE_ADAPTER_PORT=8091
+      - ZIGBEE_ADAPTER_PORT=${ZIGBEE_ADAPTER_PORT}
       - ZIGBEE_ADAPTER_ID=zigbee-adapter-1
       - ZIGBEE_ADAPTER_VERSION=dev
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
-      - REDIS_ADDR=${REDIS_ADDR}
+      - REDIS_ADDR=redis:${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - LOG_LEVEL=${LOG_LEVEL}
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     networks:
       - homenavi-network
 
@@ -298,12 +301,12 @@ services:
     depends_on:
       - mosquitto
     environment:
-      - THREAD_ADAPTER_PORT=8092
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - THREAD_ADAPTER_PORT=${THREAD_ADAPTER_PORT}
+      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
       - THREAD_ADAPTER_ID=thread-adapter-1
       - THREAD_ADAPTER_VERSION=dev
       - LOG_LEVEL=${LOG_LEVEL}
-      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     networks:
       - homenavi-network
 
@@ -316,7 +319,7 @@ services:
       - postgres
     environment:
       - HISTORY_SERVICE_PORT=${HISTORY_SERVICE_PORT}
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
       - HISTORY_SERVICE_MQTT_CLIENT_ID=${HISTORY_SERVICE_MQTT_CLIENT_ID}
       - HISTORY_INGEST_RETAINED=${HISTORY_INGEST_RETAINED}
       - HISTORY_HDP_STATE_PREFIX=${HISTORY_HDP_STATE_PREFIX}
@@ -338,8 +341,8 @@ services:
       - mosquitto
       - postgres
     environment:
-      - AUTOMATION_SERVICE_PORT=8094
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
+      - AUTOMATION_SERVICE_PORT=${AUTOMATION_SERVICE_PORT}
+      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
       - AUTOMATION_SERVICE_MQTT_CLIENT_ID=${AUTOMATION_SERVICE_MQTT_CLIENT_ID:-automation-service}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -348,8 +351,8 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_SSLMODE=${POSTGRES_SSLMODE}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-      - USER_SERVICE_URL=http://user-service:8001
-      - EMAIL_SERVICE_URL=http://email-service:8002
+      - USER_SERVICE_URL=http://user-service:${USER_SERVICE_PORT}
+      - EMAIL_SERVICE_URL=http://email-service:${EMAIL_SERVICE_PORT}
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
