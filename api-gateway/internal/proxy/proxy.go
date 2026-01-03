@@ -90,6 +90,14 @@ func MakeWebSocketProxyHandler(route config.RouteConfig) http.HandlerFunc {
 
 		// Prepare headers for backend dial (forward subprotocols if any)
 		dialHeader := http.Header{}
+		// Forward auth material so backend services that validate JWTs can authenticate WS connections.
+		// (Browsers typically send auth via Cookie for WS; some clients may use Authorization.)
+		if cookie := r.Header.Get("Cookie"); cookie != "" {
+			dialHeader.Set("Cookie", cookie)
+		}
+		if auth := r.Header.Get("Authorization"); auth != "" {
+			dialHeader.Set("Authorization", auth)
+		}
 		if sp := r.Header.Get("Sec-WebSocket-Protocol"); sp != "" {
 			// Forward exactly what client asked for; backend will pick one.
 			dialHeader.Set("Sec-WebSocket-Protocol", sp)

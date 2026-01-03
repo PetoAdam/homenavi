@@ -1,0 +1,49 @@
+routes:
+  # Health check (public for monitoring)
+  - path: /api/assistant/health
+    upstream: http://assistant-service:8096/health
+    methods: [GET]
+    access: public
+    type: rest
+
+  # List and create conversations
+  - path: /api/assistant/conversations
+    upstream: http://assistant-service:8096/api/assistant/conversations
+    methods: [GET, POST]
+    access: resident
+    type: rest
+
+  # Get, update, or delete a specific conversation
+  - path: /api/assistant/conversations/*
+    upstream: http://assistant-service:8096/api/assistant/conversations/*
+    methods: [GET, PUT, DELETE]
+    access: resident
+    type: rest
+
+  # Merged devices (ERS+HDP) for debugging/clients
+  - path: /api/assistant/devices
+    upstream: http://assistant-service:8096/api/assistant/devices
+    methods: [GET]
+    access: resident
+    type: rest
+
+  # Rooms from ERS for debugging/clients
+  - path: /api/assistant/rooms
+    upstream: http://assistant-service:8096/api/assistant/rooms
+    methods: [GET]
+    access: resident
+    type: rest
+
+  # WebSocket for real-time chat with streaming responses
+  - path: /ws/assistant
+    upstream: ws://assistant-service:8096/ws/assistant
+    methods: [GET]
+    access: resident
+    type: websocket
+
+  # Admin endpoints for model management and configuration
+  - path: /api/assistant/admin/*
+    upstream: http://assistant-service:8096/api/assistant/admin/*
+    methods: [GET, POST, PUT, DELETE]
+    access: admin
+    type: rest

@@ -7,3 +7,10 @@ advanced:
 frontend:
   enabled: false
 version: 4
+
+# Zigbee coordinator settings (required for Zigbee2MQTT to start)
+# serial:
+#   # Common ports: /dev/ttyACM0 (Sonoff ZBDongle-P/E), /dev/ttyUSB0, etc.
+#   port: /dev/ttyACM0
+#   # Optional, depends on coordinator chipset. Examples: zstack, ezsp, deconz
+#   # adapter: zstack
