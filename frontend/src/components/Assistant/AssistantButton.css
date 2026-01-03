@@ -1,0 +1,190 @@
+/* =============================================================================
+   AI Assistant Button - Apple Intelligence Inspired Design
+   ============================================================================= */
+
+.assistant-button {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 1000;
+
+  /* Size */
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  padding: 0;
+  border: none;
+
+  /* Glass morphism background */
+  background: linear-gradient(
+    135deg,
+    rgba(var(--color-success-rgb), 0.25) 0%,
+    rgba(57, 170, 121, 0.15) 50%,
+    rgba(120, 80, 220, 0.2) 100%
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+
+  /* Shadow with glow */
+  box-shadow:
+    0 4px 24px rgba(var(--color-success-rgb), 0.3),
+    0 0 40px rgba(var(--color-success-rgb), 0.1),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1);
+
+  /* Cursor & transition */
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assistant-button:hover {
+  transform: scale(1.08);
+  box-shadow:
+    0 6px 32px rgba(var(--color-success-rgb), 0.4),
+    0 0 60px rgba(var(--color-success-rgb), 0.15);
+}
+
+.assistant-button:active {
+  transform: scale(0.95);
+}
+
+.assistant-button.open {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--color-success-rgb), 0.35) 0%,
+    rgba(57, 170, 121, 0.25) 50%,
+    rgba(120, 80, 220, 0.3) 100%
+  );
+}
+
+/* Animated gradient border ring */
+.assistant-button::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from var(--gradient-angle, 0deg),
+    rgba(var(--color-success-rgb), 0.6),
+    rgba(120, 80, 220, 0.5),
+    rgba(59, 130, 246, 0.5),
+    rgba(var(--color-success-rgb), 0.6)
+  );
+  z-index: -1;
+  animation: rotate-gradient 4s linear infinite;
+  opacity: 0.8;
+}
+
+.assistant-button::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  background: var(--color-bg);
+  z-index: -1;
+}
+
+@property --gradient-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes rotate-gradient {
+  from { --gradient-angle: 0deg; }
+  to { --gradient-angle: 360deg; }
+}
+
+/* AI Icon styles */
+.assistant-button-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assistant-button-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* AI Orb animation */
+.ai-orb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(var(--color-success-rgb), 0.8) 50%,
+    rgba(120, 80, 220, 0.7) 100%
+  );
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(var(--color-success-rgb), 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px 4px rgba(var(--color-success-rgb), 0.2);
+  }
+}
+
+/* Processing state - AI is thinking */
+.assistant-button.processing .ai-orb,
+.assistant-button.processing .assistant-button-icon svg {
+  animation: processing-pulse 1s ease-in-out infinite;
+}
+
+@keyframes processing-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.95);
+  }
+}
+
+/* Notification badge */
+.assistant-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--color-primary);
+  border-radius: 10px;
+  border: 2px solid var(--color-bg);
+  font-size: 10px;
+  font-weight: 600;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: badge-pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes badge-pop {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .assistant-button {
+    bottom: 80px;
+    left: 16px;
+    width: 52px;
+    height: 52px;
+  }
+}

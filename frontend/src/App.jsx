@@ -10,6 +10,7 @@ import Users from './components/Users/Users.jsx';
 import Profile from './components/Profile/Profile.jsx';
 import Automation from './components/Automation/Automation.jsx';
 import ProfileButton from './components/common/ProfileButton/ProfileButton.jsx';
+import { AssistantButton } from './components/Assistant';
 import './App.css';
 import { isPermanentSidebarWidth } from './breakpoints.js';
 import { AuthProvider } from './context/AuthContext';
@@ -117,6 +118,8 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
+        {/* AI Assistant floating button */}
+        <AssistantButton />
       </div>
     </AuthProvider>
   );

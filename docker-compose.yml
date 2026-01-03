@@ -359,6 +359,65 @@ services:
     networks:
       - homenavi-network
 
+  # =============================================================================
+  # AI/LLM Services
+  # =============================================================================
+  
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    networks:
+      - homenavi-network
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+    # GPU support - uncomment for NVIDIA GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # DEV: expose for direct testing (e.g., curl localhost:11434/api/tags)
+    # ports:
+    #   - "11434:11434"
+
+  assistant-service:
+    build: ./assistant-service
+    restart: unless-stopped
+    networks:
+      - homenavi-network
+    environment:
+      - TZ=${TZ:-Europe/Budapest}
+      - ASSISTANT_PORT=${ASSISTANT_PORT:-8020}
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - REDIS_ADDR=redis:${REDIS_PORT}
+      - DEVICE_HUB_URL=http://device-hub:${DEVICE_HUB_PORT}
+      - AUTOMATION_SERVICE_URL=http://automation-service:${AUTOMATION_SERVICE_PORT}
+      - ERS_SERVICE_URL=http://entity-registry-service:${ENTITY_REGISTRY_PORT}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+    volumes:
+      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+    depends_on:
+      - postgres
+      - ollama
+      - redis
+    # DEV: expose directly
+    # ports:
+    #   - "8020:8020"
+
 
 volumes:
   postgres_data:
@@ -366,6 +425,7 @@ volumes:
   profile-pictures:
   mosquitto_data:
   mosquitto_logs:
+  ollama_models:
 
 networks:
   homenavi-network:
