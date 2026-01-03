@@ -92,7 +92,7 @@ func TestOllamaClient_Models(t *testing.T) {
 
 func TestOllamaClient_Chat(t *testing.T) {
 	expectedResponse := "Hello! I'm an AI assistant."
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/chat" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -104,14 +104,14 @@ func TestOllamaClient_Chat(t *testing.T) {
 		// Verify request body
 		var req map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&req)
-		
+
 		if req["model"] != "test-model" {
 			t.Errorf("expected model test-model, got %v", req["model"])
 		}
 
 		// Send streaming response
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		
+
 		tokens := strings.Split(expectedResponse, " ")
 		for i, token := range tokens {
 			if i > 0 {
@@ -145,10 +145,10 @@ func TestOllamaClient_Chat(t *testing.T) {
 
 func TestOllamaClient_ChatStream(t *testing.T) {
 	tokens := []string{"Hello", " there", "!"}
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		
+
 		for i, token := range tokens {
 			chunk := map[string]interface{}{
 				"message": map[string]string{"content": token},
@@ -215,7 +215,7 @@ func TestOllamaClient_ChatStream_Cancellation(t *testing.T) {
 
 func TestOllamaClient_GetModel(t *testing.T) {
 	client := llm.NewOllamaClient("http://localhost:11434", "my-model", 4096)
-	
+
 	if got := client.GetModel(); got != "my-model" {
 		t.Errorf("GetModel() = %q, want %q", got, "my-model")
 	}
