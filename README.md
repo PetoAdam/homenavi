@@ -196,7 +196,13 @@ Test: `python3 test-websocket.py` (see root script).
 4. Expose metrics, health, and (optionally) tracing.
 5. Use JWT for auth; validate only needed claims.
 
-Planned: Extension/Plugin manifest so services self-register capabilities and metrics. Marketplace-style extension discovery is on the roadmap.
+For dashboard widgets & third‑party integrations (planned direction):
+* The frontend is **not** intended to dynamically load arbitrary React bundles from the backend.
+* Instead, integrations should publish a **manifest + catalog** (widgets and automation steps) and render third‑party widgets in a **sandboxed iframe**.
+* Host data access should go through a **widget proxy** (scoped, short‑lived tokens; allow-listed operations), not raw access to user JWT.
+* The dashboard catalog will be served from a backend endpoint (`GET /api/widgets/catalog`) and can merge first‑party + integration-provided widgets.
+
+See the detailed architecture/roadmap: `doc/dashboard_widgets_integrations_marketplace_roadmap.md`.
 
 ---
 
