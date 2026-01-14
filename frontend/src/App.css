@@ -81,3 +81,23 @@ body::before {
   opacity: 0.7;
   filter: blur(48px) saturate(120%);
 }
+
+/* Route transition wrapper (used by App.jsx) */
+.hn-route-view {
+  animation: hn-route-fade-in 220ms ease both;
+}
+
+@keyframes hn-route-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hn-route-view {
+    animation: none;
+  }
+}
