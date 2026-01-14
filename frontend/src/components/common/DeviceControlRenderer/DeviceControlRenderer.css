@@ -1,0 +1,359 @@
+/**
+ * Styles for DeviceControlRenderer - shared control rendering component.
+ * Used by both DeviceTile (Devices page) and DeviceWidget (Dashboard).
+ */
+
+/* ─────────────────────────────────────────────────────────────────────
+   Control List Layout
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-control-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+/* Cards layout - styled as individual cards */
+.dcr-layout-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.65rem;
+  align-content: center;
+}
+
+.dcr-layout-cards .dcr-control {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.55rem;
+  min-height: 92px;
+  padding: 0.75rem 0.85rem;
+}
+
+.dcr-layout-cards .dcr-control-label {
+  width: 100%;
+}
+
+.dcr-layout-cards .dcr-control-label span {
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dcr-layout-cards .glass-switch {
+  align-self: flex-end;
+}
+
+.dcr-layout-cards .dcr-control-select,
+.dcr-layout-cards .dcr-control-number {
+  width: 100%;
+  min-width: 0;
+}
+
+.dcr-layout-cards .dcr-control-wide {
+  grid-column: 1 / -1;
+}
+
+/* List layout - simple rows */
+.dcr-layout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dcr-layout-list .dcr-control {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.dcr-layout-list .dcr-control:first-child {
+  padding-top: 0;
+}
+
+.dcr-layout-list .dcr-control:last-child {
+  padding-bottom: 0;
+}
+
+.dcr-layout-list .dcr-control-wide {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Single Control
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-control {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dcr-control-wide {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.dcr-control-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 0;
+}
+
+.dcr-control-label svg {
+  font-size: 0.82rem;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.dcr-control-label span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dcr-control-value {
+  margin-left: auto;
+  opacity: 0.7;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Slider Control
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-control-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.dcr-control-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-glass-bg-light);
+  outline: none;
+  cursor: pointer;
+}
+
+.dcr-control-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-glass-border);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.dcr-control-range::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.dcr-control-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-glass-border);
+  cursor: pointer;
+}
+
+.dcr-control-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  opacity: 0.5;
+  padding: 0 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Select Control
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-control-select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-glass-bg-light);
+  border: 1px solid var(--color-glass-border-xlight);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  min-width: 100px;
+}
+
+.dcr-control-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Number Control
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-control-number {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(var(--color-glass-bg-rgb), 0.5);
+  border: 1px solid rgba(var(--color-glass-border-rgb), 0.4);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  width: 80px;
+  text-align: right;
+}
+
+.dcr-control-number:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Color Control
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-color-control {
+  position: relative;
+}
+
+.dcr-color-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.dcr-color-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(var(--color-glass-bg-rgb), 0.5);
+  border: 1px solid rgba(var(--color-glass-border-rgb), 0.4);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  width: 100%;
+  transition: border-color 0.15s ease;
+}
+
+.dcr-color-toggle:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.dcr-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid rgba(var(--color-glass-border-rgb), 0.5);
+  flex-shrink: 0;
+}
+
+.dcr-color-popover {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(var(--color-glass-bg-rgb), 0.9);
+  border-radius: 10px;
+  border: 1px solid rgba(var(--color-glass-border-rgb), 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dcr-color-popover .react-colorful {
+  width: 100%;
+  height: 150px;
+}
+
+.dcr-color-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dcr-color-input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(var(--color-glass-bg-rgb), 0.5);
+  border: 1px solid rgba(var(--color-glass-border-rgb), 0.4);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+
+.dcr-color-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dcr-color-cancel,
+.dcr-color-apply {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+}
+
+.dcr-color-cancel {
+  background: rgba(var(--color-glass-bg-rgb), 0.6);
+  color: var(--color-text);
+}
+
+.dcr-color-apply {
+  background: var(--color-primary);
+  color: white;
+}
+
+.dcr-color-apply:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Toggle for showing more controls
+   ───────────────────────────────────────────────────────────────────── */
+
+.dcr-controls-toggle {
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(var(--color-glass-bg-rgb), 0.3);
+  border: 1px solid rgba(var(--color-glass-border-rgb), 0.2);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: center;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.dcr-controls-toggle:hover {
+  opacity: 1;
+}

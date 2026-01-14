@@ -1,5 +1,59 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import './HistoryChart.css';
+
+function buildMonotoneSpline(points) {
+  const pts = Array.isArray(points) ? points : [];
+  if (pts.length < 2) return { dLine: '', dArea: '' };
+
+  // Ensure strictly increasing x to avoid divide-by-zero.
+  const p = pts
+    .map(v => ({ x: Number(v.x), y: Number(v.y) }))
+    .filter(v => Number.isFinite(v.x) && Number.isFinite(v.y))
+    .sort((a, b) => a.x - b.x);
+
+  if (p.length < 2) return { dLine: '', dArea: '' };
+
+  const n = p.length;
+  const dx = new Array(n - 1);
+  const dy = new Array(n - 1);
+  const m = new Array(n - 1);
+
+  for (let i = 0; i < n - 1; i += 1) {
+    dx[i] = p[i + 1].x - p[i].x;
+    dy[i] = p[i + 1].y - p[i].y;
+    m[i] = dx[i] !== 0 ? dy[i] / dx[i] : 0;
+  }
+
+  // Tangents (Fritsch-Carlson monotone cubic)
+  const t = new Array(n);
+  t[0] = m[0];
+  t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i += 1) {
+    if (m[i - 1] === 0 || m[i] === 0 || (m[i - 1] > 0) !== (m[i] > 0)) {
+      t[i] = 0;
+    } else {
+      const w1 = 2 * dx[i] + dx[i - 1];
+      const w2 = dx[i] + 2 * dx[i - 1];
+      t[i] = (w1 + w2) / ((w1 / m[i - 1]) + (w2 / m[i]));
+    }
+  }
+
+  let dLine = `M ${p[0].x.toFixed(2)} ${p[0].y.toFixed(2)}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const x0 = p[i].x;
+    const y0 = p[i].y;
+    const x1 = p[i + 1].x;
+    const y1 = p[i + 1].y;
+    const h = x1 - x0;
+    const c1x = x0 + h / 3;
+    const c1y = y0 + (t[i] * h) / 3;
+    const c2x = x1 - h / 3;
+    const c2y = y1 - (t[i + 1] * h) / 3;
+    dLine += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+
+  return { dLine, dArea: '' };
+}
 
 function isBooleanLikeString(value) {
   if (typeof value !== 'string') return false;
@@ -83,6 +137,7 @@ function formatTooltipTime(ts) {
 export default function HistoryChart({ title, series, height = 180, unit = '' }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
+  const gradientId = useId();
 
   const model = useMemo(() => {
     const points = Array.isArray(series) ? series : [];
@@ -167,7 +222,22 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
       return null;
     }
 
-    const d = booleanMode
+    const yBase = height - paddingBottom;
+
+    const drawPoints = (!booleanMode && svgPoints.length >= 3)
+      ? svgPoints.map((p, idx) => {
+        if (idx === 0 || idx === svgPoints.length - 1) return p;
+        const prev = svgPoints[idx - 1];
+        const next = svgPoints[idx + 1];
+        // Light smoothing in SVG space: reduces jaggedness without changing tooltip/raw values.
+        const y = ((prev.y + (2 * p.y) + next.y) / 4);
+        return { ...p, y };
+      })
+      : svgPoints;
+
+    const spline = booleanMode ? null : buildMonotoneSpline(drawPoints);
+
+    const dLine = booleanMode
       ? svgPoints
         .map((p, idx) => {
           if (idx === 0) {
@@ -178,9 +248,17 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
           return `L ${p.x.toFixed(2)} ${prev.y.toFixed(2)} L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
         })
         .join(' ')
-      : svgPoints
-        .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
-        .join(' ');
+      : spline.dLine;
+
+    const dArea = booleanMode ? '' : (() => {
+      if (!drawPoints.length) return '';
+      const first = drawPoints[0];
+      const last = drawPoints[drawPoints.length - 1];
+      const line = spline?.dLine || '';
+      if (!line) return '';
+      const withoutMove = line.replace(/^M [^ ]+ [^ ]+/, '');
+      return `M ${first.x.toFixed(2)} ${yBase.toFixed(2)} L ${first.x.toFixed(2)} ${first.y.toFixed(2)} ${withoutMove} L ${last.x.toFixed(2)} ${yBase.toFixed(2)} Z`;
+    })();
 
     const latest = svgPoints[svgPoints.length - 1];
     const latestValue = latest?.raw?.value;
@@ -188,7 +266,8 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
     return {
       width,
       height,
-      d,
+      dLine,
+      dArea,
       latestValue,
       minY: yMin,
       maxY: yMax,
@@ -198,6 +277,7 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
       paddingRight,
       paddingTop,
       paddingBottom,
+      yBase,
       booleanMode,
       svgPoints,
     };
@@ -246,6 +326,39 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
 
   const onMouseLeave = () => setHover(null);
 
+  const yTicks = useMemo(() => {
+    if (!model) return [];
+    if (model.booleanMode) {
+      return [0, 0.5, 1].map(v => ({
+        value: v,
+        y: model.paddingTop + (model.height - model.paddingTop - model.paddingBottom) * (1 - ((v - model.minY) / (model.maxY - model.minY))),
+        label: formatAxisNumber(v, { booleanMode: true }),
+      }));
+    }
+    const ticks = 5;
+    const res = [];
+    for (let i = 0; i < ticks; i += 1) {
+      const frac = i / (ticks - 1);
+      const v = model.minY + (model.maxY - model.minY) * (1 - frac);
+      const y = model.paddingTop + (model.height - model.paddingTop - model.paddingBottom) * frac;
+      res.push({ value: v, y, label: formatAxisNumber(v, { booleanMode: false }) });
+    }
+    return res;
+  }, [model]);
+
+  const xTicks = useMemo(() => {
+    if (!model) return [];
+    const ticks = 4;
+    const res = [];
+    for (let i = 0; i < ticks; i += 1) {
+      const frac = i / (ticks - 1);
+      const x = model.paddingLeft + (model.width - model.paddingLeft - model.paddingRight) * frac;
+      const ts = model.minX + (model.maxX - model.minX) * frac;
+      res.push({ x, ts, label: formatTimeLabel(ts) });
+    }
+    return res;
+  }, [model]);
+
   if (!model) {
     return (
       <div className="history-chart-empty">
@@ -275,69 +388,54 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
       >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.28" />
+            <stop offset="65%" stopColor="var(--color-primary)" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
         <path
           className="history-chart-grid"
           d={`M ${model.paddingLeft} ${model.height - model.paddingBottom} L ${model.width - model.paddingRight} ${model.height - model.paddingBottom}`}
         />
 
-        {/* grid lines */}
-        {[0.25, 0.5, 0.75].map(frac => {
-          const y = model.paddingTop + (model.height - model.paddingTop - model.paddingBottom) * frac;
-          return (
+        {/* grid + axis ticks */}
+        {yTicks.map((t, idx) => (
+          <React.Fragment key={`y-${idx}`}>
             <path
-              key={`h-${frac}`}
               className="history-chart-grid history-chart-grid-soft"
-              d={`M ${model.paddingLeft} ${y.toFixed(2)} L ${model.width - model.paddingRight} ${y.toFixed(2)}`}
+              d={`M ${model.paddingLeft} ${t.y.toFixed(2)} L ${model.width - model.paddingRight} ${t.y.toFixed(2)}`}
             />
-          );
-        })}
-        {[0.5].map(frac => {
-          const x = model.paddingLeft + (model.width - model.paddingLeft - model.paddingRight) * frac;
-          return (
-            <path
-              key={`v-${frac}`}
-              className="history-chart-grid history-chart-grid-soft"
-              d={`M ${x.toFixed(2)} ${model.paddingTop} L ${x.toFixed(2)} ${model.height - model.paddingBottom}`}
-            />
-          );
-        })}
+            <text
+              className="history-chart-axis"
+              x={8}
+              y={t.y}
+              textAnchor="start"
+              dominantBaseline="middle"
+            >
+              {t.label}
+            </text>
+          </React.Fragment>
+        ))}
 
-        <text
-          className="history-chart-axis"
-          x={8}
-          y={model.paddingTop + 8}
-          textAnchor="start"
-          dominantBaseline="hanging"
-        >
-          {formatAxisNumber(model.maxY, { booleanMode: model.booleanMode })}
-        </text>
-        <text
-          className="history-chart-axis"
-          x={8}
-          y={model.height - model.paddingBottom - 2}
-          textAnchor="start"
-          dominantBaseline="ideographic"
-        >
-          {formatAxisNumber(model.minY, { booleanMode: model.booleanMode })}
-        </text>
-        <text
-          className="history-chart-axis history-chart-axis-x"
-          x={model.paddingLeft}
-          y={model.height - 10}
-          textAnchor="start"
-          dominantBaseline="ideographic"
-        >
-          {formatTimeLabel(model.minX)}
-        </text>
-        <text
-          className="history-chart-axis history-chart-axis-x"
-          x={model.width - model.paddingRight}
-          y={model.height - 10}
-          textAnchor="end"
-          dominantBaseline="ideographic"
-        >
-          {formatTimeLabel(model.maxX)}
-        </text>
+        {xTicks.map((t, idx) => (
+          <React.Fragment key={`x-${idx}`}>
+            <path
+              className="history-chart-grid history-chart-grid-soft"
+              d={`M ${t.x.toFixed(2)} ${model.paddingTop} L ${t.x.toFixed(2)} ${model.height - model.paddingBottom}`}
+            />
+            <text
+              className="history-chart-axis history-chart-axis-x"
+              x={t.x}
+              y={model.height - 10}
+              textAnchor={idx === 0 ? 'start' : (idx === xTicks.length - 1 ? 'end' : 'middle')}
+              dominantBaseline="ideographic"
+            >
+              {t.label}
+            </text>
+          </React.Fragment>
+        ))}
 
         {hover ? (
           <>
@@ -353,7 +451,14 @@ export default function HistoryChart({ title, series, height = 180, unit = '' })
           </>
         ) : null}
 
-        <path className="history-chart-line" d={model.d} />
+        {model.dArea ? (
+          <path
+            className="history-chart-area"
+            d={model.dArea}
+            fill={`url(#${gradientId})`}
+          />
+        ) : null}
+        <path className="history-chart-line" d={model.dLine} />
       </svg>
 
       {hover ? (

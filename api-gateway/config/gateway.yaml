@@ -6,6 +6,6 @@ jwt_secret: ""
 log_level: "info"
 rate_limit:
   enabled: true
-  rps: 10
-  burst: 15
+  rps: 60
+  burst: 120
 routes: []

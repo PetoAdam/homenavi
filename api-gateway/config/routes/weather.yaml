@@ -1,0 +1,18 @@
+routes:
+  - path: /api/weather
+    upstream: http://weather-service:8095/api/weather
+    methods: [GET]
+    access: resident
+    type: rest
+
+  - path: /api/weather/search
+    upstream: http://weather-service:8095/api/weather/search
+    methods: [GET]
+    access: resident
+    type: rest
+
+  - path: /api/weather/reverse
+    upstream: http://weather-service:8095/api/weather/reverse
+    methods: [GET]
+    access: resident
+    type: rest

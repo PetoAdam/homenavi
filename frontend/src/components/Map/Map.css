@@ -1,5 +1,15 @@
 .map-page {
-  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0 1.5rem 3rem;
+  color: var(--color-white);
+}
+
+@media (max-width: 720px) {
+  .map-page {
+    padding: 0 0.75rem 2.5rem;
+  }
 }
 
 .map-layout {

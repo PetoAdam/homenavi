@@ -30,7 +30,7 @@ export default function Map() {
   }
 
   return (
-    <div className="automation-page map-page">
+    <div className="map-page">
       <PageHeader title="Map" subtitle="Draw rooms and place devices" />
 
       {c.editEnabled ? (

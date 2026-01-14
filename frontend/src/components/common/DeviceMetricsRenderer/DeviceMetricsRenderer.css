@@ -1,0 +1,82 @@
+/**
+ * Styles for DeviceMetricsRenderer - shared metrics display component.
+ */
+
+.dmr-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Binary Metrics (Pills)
+   ───────────────────────────────────────────────────────────────────── */
+
+.dmr-binary-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Numeric Metrics
+   ───────────────────────────────────────────────────────────────────── */
+
+.dmr-numeric-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.dmr-layout-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 0.65rem;
+  align-content: center;
+}
+
+.dmr-layout-cards .glass-metric {
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dmr-layout-list {
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dmr-layout-list .glass-metric {
+  flex-direction: row;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Toggle for showing more metrics
+   ───────────────────────────────────────────────────────────────────── */
+
+.dmr-metrics-toggle {
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-glass-bg-light);
+  border: 1px solid var(--color-glass-border-xlight);
+  color: var(--color-white);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  text-align: center;
+  opacity: 0.8;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.dmr-metrics-toggle:hover {
+  opacity: 1;
+  background: var(--color-glass-bg);
+}

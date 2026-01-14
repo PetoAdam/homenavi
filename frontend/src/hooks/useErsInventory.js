@@ -72,6 +72,31 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     let ws;
     let reconnectTimer;
     let refreshTimer;
+    let pollTimer;
+    let reconnectAttempt = 0;
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    };
+
+    const clearRefreshTimer = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = null;
+    };
+
+    const clearPollTimer = () => {
+      if (pollTimer) window.clearInterval(pollTimer);
+      pollTimer = null;
+    };
+
+    const ensurePolling = () => {
+      if (pollTimer) return;
+      pollTimer = window.setInterval(() => {
+        if (cancelled) return;
+        refresh({ showLoading: false });
+      }, 15000);
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -80,21 +105,38 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
         const wsUrl = `${proto}://${window.location.host}/ws/ers`;
         ws = new WebSocket(wsUrl);
 
+        ws.onopen = () => {
+          reconnectAttempt = 0;
+          clearPollTimer();
+        };
+
         ws.onmessage = () => {
           if (cancelled) return;
-          if (refreshTimer) window.clearTimeout(refreshTimer);
+          clearRefreshTimer();
           refreshTimer = window.setTimeout(() => {
             refresh({ showLoading: false });
           }, 150);
         };
 
+        ws.onerror = () => {
+          // Let onclose handle backoff + polling.
+          try {
+            ws?.close();
+          } catch {
+            // ignore
+          }
+        };
+
         ws.onclose = () => {
           if (cancelled) return;
-          if (reconnectTimer) window.clearTimeout(reconnectTimer);
-          reconnectTimer = window.setTimeout(connect, 1000);
+          ensurePolling();
+          clearReconnectTimer();
+          const delay = Math.min(30000, 1000 * (2 ** reconnectAttempt));
+          reconnectAttempt = Math.min(reconnectAttempt + 1, 6);
+          reconnectTimer = window.setTimeout(connect, delay);
         };
       } catch {
-        // ignore
+        ensurePolling();
       }
     };
 
@@ -102,8 +144,9 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
 
     return () => {
       cancelled = true;
-      if (reconnectTimer) window.clearTimeout(reconnectTimer);
-      if (refreshTimer) window.clearTimeout(refreshTimer);
+      clearReconnectTimer();
+      clearRefreshTimer();
+      clearPollTimer();
       try {
         ws?.close();
       } catch {

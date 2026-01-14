@@ -1,0 +1,134 @@
+/* MapWidget - Home map preview widget */
+/* Fills space and centers the map preview */
+
+.map-widget {
+  cursor: pointer;
+}
+
+.map-widget:not(.widget-shell--edit-mode):hover {
+  transform: translateY(-1px);
+}
+
+.map-widget__content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+}
+
+/* Preview area - Centered and fills available space */
+.map-widget__preview {
+  width: 100%;
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-glass-bg-ultra);
+  border: 1px solid var(--color-glass-border-xlight);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.map-widget:not(.widget-shell--edit-mode):hover .map-widget__preview {
+  border-color: var(--color-glass-border-light);
+}
+
+.map-widget__svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Room shapes */
+.map-widget__room {
+  cursor: pointer;
+  transition: fill 0.15s, stroke 0.15s;
+}
+
+.map-widget__room:hover {
+  fill: var(--color-glass-bg) !important;
+  stroke: var(--color-primary) !important;
+}
+
+/* Room labels */
+.map-widget__room-label {
+  font-size: 10px;
+  fill: var(--color-secondary-light);
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Device dots */
+.map-widget__device {
+  cursor: pointer;
+  transition: fill 0.15s, opacity 0.15s;
+}
+
+.map-widget__device:hover {
+  fill: var(--color-success) !important;
+  opacity: 1 !important;
+}
+
+/* Device labels */
+.map-widget__device-label {
+  font-size: 9px;
+  fill: var(--color-white);
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.map-widget__device-state {
+  fill: var(--color-secondary-light);
+  font-size: 8px;
+}
+
+.map-widget__device-favorite {
+  fill: var(--color-secondary-light);
+  font-size: 8px;
+}
+
+/* Device tooltip hint */
+.map-widget__device-tooltip {
+  position: absolute;
+  padding: 4px 8px;
+  background: var(--color-surface-overlay);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--color-white);
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.map-widget__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--color-secondary-light);
+  font-size: 0.85rem;
+}
+
+.map-widget__empty-icon {
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+/* Actions */
+.map-widget__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.map-widget__open-btn {
+  font-size: 0.8rem;
+}

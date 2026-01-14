@@ -29,6 +29,7 @@ services:
     depends_on:
       - auth-service
       - user-service
+      - dashboard-service
     networks:
       - homenavi-network
 
@@ -151,6 +152,25 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+    depends_on:
+      - postgres
+    networks:
+      - homenavi-network
+    volumes:
+      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+
+  dashboard-service:
+    build:
+      context: ./dashboard-service
+    restart: unless-stopped
+    environment:
+      - DASHBOARD_SERVICE_PORT=${DASHBOARD_SERVICE_PORT:-8097}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
     depends_on:
       - postgres
     networks:
@@ -356,6 +376,18 @@ services:
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+    networks:
+      - homenavi-network
+
+  weather-service:
+    build:
+      context: ./weather-service
+    restart: unless-stopped
+    environment:
+      - PORT=${WEATHER_SERVICE_PORT:-8095}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      - CACHE_TTL_MINUTES=${WEATHER_CACHE_TTL_MINUTES:-15}
+      - LOG_LEVEL=${LOG_LEVEL}
     networks:
       - homenavi-network
 
