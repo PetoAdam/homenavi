@@ -1,0 +1,24 @@
+routes:
+  - path: /api/widgets/catalog
+    upstream: http://dashboard-service:8097/api/widgets/catalog
+    methods: [GET]
+    access: resident
+    type: rest
+
+  - path: /api/widgets/weather
+    upstream: http://dashboard-service:8097/api/widgets/weather
+    methods: [GET]
+    access: resident
+    type: rest
+
+  - path: /api/dashboard/default
+    upstream: http://dashboard-service:8097/api/dashboard/default
+    methods: [GET, PUT]
+    access: admin
+    type: rest
+
+  - path: /api/dashboard/*
+    upstream: http://dashboard-service:8097/api/dashboard/*
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    access: resident
+    type: rest

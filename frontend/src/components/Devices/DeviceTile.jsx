@@ -27,7 +27,8 @@ import GlassCard from '../common/GlassCard/GlassCard';
 import GlassSwitch from '../common/GlassSwitch/GlassSwitch';
 import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
-import { HexColorPicker } from 'react-colorful';
+import ColorPickerControl from '../common/ColorPickerControl/ColorPickerControl';
+import { normalizeColorHex } from '../../utils/colorHex';
 import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
 import { formatBinaryStateValue as formatBinaryStateValueShared } from '../../utils/stateFormat';
@@ -469,44 +470,9 @@ function resolveDeviceIcon(device, capabilities) {
   return faMicrochip;
 }
 
-function clampColorByte(v) {
-  if (Number.isNaN(v)) return 0;
-  return Math.min(255, Math.max(0, Math.round(Number(v))));
-}
-
-function rgbToHex(r, g, b) {
-  const toHex = value => clampColorByte(value).toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
-}
-
-function extractHexColor(value) {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (/^#[0-9a-f]{6}$/i.test(trimmed)) return trimmed.toUpperCase();
-    if (/^[0-9a-f]{6}$/i.test(trimmed)) return `#${trimmed.toUpperCase()}`;
-    return null;
-  }
-  if (value && typeof value === 'object') {
-    if (typeof value.hex === 'string') {
-      return extractHexColor(value.hex);
-    }
-    if (
-      typeof value.r === 'number'
-      && typeof value.g === 'number'
-      && typeof value.b === 'number'
-    ) {
-      return rgbToHex(value.r, value.g, value.b);
-    }
-  }
-  return null;
-}
-
-function normalizeColorHex(value, fallback = '#FFFFFF') {
-  return extractHexColor(value) || fallback;
-}
-
 function extractStateColorHex(raw) {
-  return extractHexColor(raw);
+  const normalized = normalizeColorHex(raw, '');
+  return normalized || null;
 }
 
 function toControlBoolean(value) {
@@ -748,7 +714,6 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
   const hiddenControlsCount = Math.max(interactiveInputs.length - CONTROL_COLLAPSE_COUNT, 0);
 
   const [controlValues, setControlValues] = useState(() => buildInitialControlValues(device, normalizedInputs));
-  const [activeColorInput, setActiveColorInput] = useState(null);
   const [colorDrafts, setColorDrafts] = useState({});
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(device.displayName || '');
@@ -805,7 +770,6 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
       });
       return merged;
     });
-    setActiveColorInput(null);
     setColorDrafts({});
     setIsEditingName(false);
     setNameDraft(device.displayName || '');
@@ -1466,88 +1430,19 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
               case 'color': {
                 const draft = colorDrafts[key];
                 const normalizedValue = normalizeColorHex(draft?.current ?? value);
-                const isActive = activeColorInput === key;
-                const openPicker = () => {
-                  if (pending) return;
-                  setActiveColorInput(key);
-                  setColorDrafts(prev => ({
-                    ...prev,
-                    [key]: {
-                      initial: normalizeColorHex(value ?? '#FFFFFF'),
-                      current: normalizeColorHex(value ?? '#FFFFFF'),
-                    },
-                  }));
-                };
-                const closePicker = () => {
-                  setActiveColorInput(prev => (prev === key ? null : prev));
-                  setColorDrafts(prev => {
-                    const next = { ...prev };
-                    delete next[key];
-                    return next;
-                  });
-                };
-                const updateDraft = hex => {
-                  const normalized = normalizeColorHex(hex);
-                  setColorDrafts(prev => ({
-                    ...prev,
-                    [key]: {
-                      initial: prev[key]?.initial ?? normalizeColorHex(value ?? '#FFFFFF'),
-                      current: normalized,
-                    },
-                  }));
-                };
-                const applyDraft = () => {
-                  const finalHex = normalizeColorHex(colorDrafts[key]?.current ?? value ?? '#FFFFFF');
-                  updateControlValue(input, finalHex);
-                  handleInputCommand(input, finalHex);
-                  closePicker();
-                };
                 return (
-                  <div
-                    className={`device-control device-color-control device-control-wide${isActive ? ' device-color-active' : ''}`}
+                  <ColorPickerControl
                     key={key}
-                  >
-                    <div className="device-control-label">
-                      <FontAwesomeIcon icon={icon} />
-                      <span>{label}</span>
-                      <span className="device-control-value">{normalizedValue}</span>
-                    </div>
-                    <div className="device-color-summary">
-                      <button
-                        type="button"
-                        className="device-color-toggle"
-                        onClick={() => (isActive ? closePicker() : openPicker())}
-                        disabled={pending}
-                      >
-                        <span className="device-color-swatch" style={{ backgroundColor: normalizedValue }} />
-                        <span>{isActive ? 'Close picker' : 'Adjust color'}</span>
-                      </button>
-                    </div>
-                    {isActive ? (
-                      <div className="device-color-popover">
-                        <HexColorPicker color={normalizedValue} onChange={updateDraft} />
-                        <div className="device-color-actions">
-                          <input
-                            type="text"
-                            className="device-color-input"
-                            value={normalizedValue}
-                            onChange={e => updateDraft(e.target.value)}
-                          />
-                          <div className="device-color-buttons">
-                            <button type="button" className="device-color-cancel" onClick={closePicker}>Cancel</button>
-                            <button
-                              type="button"
-                              className="device-color-apply"
-                              onClick={applyDraft}
-                              disabled={pending}
-                            >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                    containerClassName="device-control device-control-wide"
+                    labelRowClassName="device-control-label"
+                    label={label}
+                    icon={icon}
+                    value={normalizedValue}
+                    pending={pending}
+                    dataKey={key}
+                    onChange={(hex) => updateControlValue(input, hex)}
+                    onCommit={(hex) => handleInputCommand(input, hex)}
+                  />
                 );
               }
               default:

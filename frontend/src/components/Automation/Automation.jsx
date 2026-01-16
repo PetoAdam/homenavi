@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../common/PageHeader/PageHeader';
 import Snackbar from '../common/Snackbar/Snackbar';
@@ -60,6 +61,7 @@ function defaultEditorState() {
 }
 
 function Automation() {
+  const { workflowId: workflowIdParam } = useParams();
   const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
   const isAdmin = user?.role === 'admin';
@@ -129,6 +131,14 @@ function Automation() {
     fetchRuns,
     refreshAllData,
   } = useAutomationLists({ accessToken, onError: setErr });
+
+  // Allow deep-linking to a specific workflow.
+  useEffect(() => {
+    const id = String(workflowIdParam || '').trim();
+    if (!id) return;
+    if (selectedId === id) return;
+    setSelectedId(id);
+  }, [workflowIdParam, selectedId, setSelectedId]);
 
   const {
     devices: realtimeDevices,

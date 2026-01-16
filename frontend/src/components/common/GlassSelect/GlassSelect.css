@@ -1,0 +1,120 @@
+.glass-select {
+  position: relative;
+}
+
+.glass-select__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  border: 1.5px solid rgba(60, 70, 90, 0.38);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--color-white);
+  cursor: pointer;
+}
+
+.glass-select__trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.glass-select__trigger:focus-visible {
+  outline: 2px solid var(--color-glass-border-light);
+  outline-offset: 2px;
+}
+
+.glass-select__value {
+  min-width: 0;
+  text-align: left;
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.glass-select__value--placeholder {
+  color: var(--color-secondary-light);
+  font-weight: 600;
+}
+
+.glass-select__chev {
+  opacity: 0.8;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.glass-select__chev.open {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+.glass-select__menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 9999;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--color-glass-border-xlight);
+  background: var(--color-surface-panel-alt);
+  backdrop-filter: blur(18px) saturate(120%);
+  max-height: 260px;
+  overflow: auto;
+}
+
+/* Render menu in a portal so it can escape overflow/stacking contexts */
+.glass-select__menu--portal {
+  position: fixed;
+  left: auto;
+  right: auto;
+  top: auto;
+  z-index: 10050;
+}
+
+.glass-select__option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-white);
+  cursor: pointer;
+}
+
+.glass-select__option:hover {
+  background: var(--color-glass-bg-light);
+  border-color: var(--color-glass-border-xlight);
+}
+
+.glass-select__option.active {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface-panel-alt));
+  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-glass-border-xlight));
+}
+
+.glass-select__option-label {
+  min-width: 0;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.glass-select__check {
+  opacity: 0.95;
+}
+
+.glass-select__empty {
+  padding: 10px;
+  color: var(--color-secondary-light);
+  font-weight: 600;
+}

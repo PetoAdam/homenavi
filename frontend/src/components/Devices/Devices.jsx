@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faMagnifyingGlass, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassMetric from '../common/GlassMetric/GlassMetric';
@@ -8,6 +8,7 @@ import GlassPill from '../common/GlassPill/GlassPill';
 import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../common/LoadingView/LoadingView';
+import SearchBar from '../common/SearchBar/SearchBar';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../hooks/useErsInventory';
 import DeviceTile from './DeviceTile';
@@ -660,20 +661,14 @@ export default function Devices() {
       )}
 
       <div className="devices-toolbar">
-        <div className="devices-search">
-          <FontAwesomeIcon icon={faMagnifyingGlass} className="devices-search-icon" />
-          <input
-            type="search"
-            placeholder="Search by name, model, protocol…"
-            value={searchTerm}
-            onChange={event => setSearchTerm(event.target.value)}
-          />
-          {searchTerm ? (
-            <button type="button" className="devices-search-clear" onClick={() => setSearchTerm('')}>
-              Clear
-            </button>
-          ) : null}
-        </div>
+        <SearchBar
+          value={searchTerm}
+          onChange={setSearchTerm}
+          onClear={() => setSearchTerm('')}
+          placeholder="Search by name, model, protocol…"
+          ariaLabel="Search devices"
+          className="devices-search"
+        />
         <div className="devices-toolbar-meta">
           <div className="devices-toolbar-filters">
             <label className="devices-toolbar-filter">

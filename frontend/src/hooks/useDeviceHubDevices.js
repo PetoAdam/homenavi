@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Paho from 'paho-mqtt';
+import { getSharedMqttConnection } from '../services/realtime/sharedMqtt';
 
 const HDP_SCHEMA = 'hdp.v1';
 const HDP_ROOT = 'homenavi/hdp/';
@@ -12,37 +12,6 @@ const COMMAND_RESULT_PREFIX = `${HDP_ROOT}device/command_result/`;
 const REALTIME_PATH = '/ws/hdp';
 
 const textDecoder = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
-
-function resolveGatewayUrl() {
-  const override = import.meta.env.VITE_GATEWAY_ORIGIN;
-  try {
-    if (override) {
-      return new URL(override);
-    }
-  } catch (err) {
-    console.warn('Invalid VITE_GATEWAY_ORIGIN, falling back to window.origin', err);
-  }
-  return new URL(window.location.origin);
-}
-
-function joinPath(basePath, suffix) {
-  const base = (!basePath || basePath === '/') ? '' : basePath.replace(/\/$/, '');
-  const next = suffix.startsWith('/') ? suffix : `/${suffix}`;
-  return `${base}${next}`;
-}
-
-function buildWsConfig(path) {
-  const gateway = resolveGatewayUrl();
-  const useSSL = gateway.protocol === 'https:' || gateway.protocol === 'wss:';
-  const port = gateway.port ? Number(gateway.port) : (useSSL ? 443 : 80);
-  const fullPath = joinPath(gateway.pathname, path);
-  return {
-    host: gateway.hostname,
-    port,
-    path: fullPath,
-    useSSL,
-  };
-}
 
 function safeParseJSON(value) {
   if (!value) return null;
@@ -272,7 +241,7 @@ export default function useDeviceHubDevices(options = {}) {
   const [pairingConfig, setPairingConfig] = useState({});
 
   const devicesRef = useRef(new Map());
-  const stateClientRef = useRef(null);
+  const mqttConnRef = useRef(null);
   const updateScheduledRef = useRef(false);
   const mountedRef = useRef(false);
   const enabledRef = useRef(enabled);
@@ -425,199 +394,133 @@ export default function useDeviceHubDevices(options = {}) {
     }
   }, [metadataMode, schedulePublish]);
 
-  const connectRealtime = useCallback(() => {
-    if (!enabledRef.current) {
+  const handleRealtimeMessage = useCallback(({ topic, payloadString, payloadBytes }) => {
+    if (!enabledRef.current || !topic) return;
+
+    const payload = typeof payloadString === 'string' && payloadString
+      ? payloadString
+      : (textDecoder && payloadBytes ? textDecoder.decode(payloadBytes) : '');
+
+    if (topic.startsWith(PAIRING_PREFIX)) {
+      const data = safeParseJSON(payload) || {};
+      const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
+      if (!protocol) return;
+      const status = data.stage || data.status || 'in_progress';
+      const session = {
+        id: data.id || protocol,
+        protocol,
+        status,
+        active: status !== 'completed' && status !== 'failed' && status !== 'timeout' && status !== 'stopped',
+        metadata: data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {},
+      };
+      setPairingSessions(prev => ({ ...prev, [protocol]: session }));
       return;
     }
-    const cfg = buildWsConfig(REALTIME_PATH);
-    const client = new Paho.Client(cfg.host, Number(cfg.port), cfg.path, `rt-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
-    stateClientRef.current = client;
 
-    client.onConnectionLost = response => {
-      console.warn('Realtime connection lost', response);
-      setStateStatus({ connected: false });
-      if (metadataMode === 'ws') {
-        setMetadataStatus({ connected: false, source: 'ws' });
+    if (topic.startsWith(METADATA_PREFIX)) {
+      const data = safeParseJSON(payload);
+      if (!data || typeof data !== 'object') return;
+      const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(METADATA_PREFIX.length));
+      const mapKey = norm.hdpId || '';
+      if (!mapKey) return;
+      const prev = devicesRef.current.get(mapKey) || {};
+      const online = typeof data.online === 'boolean' ? data.online : prev.online;
+      const lastSeen = data.last_seen ?? data.lastSeen ?? prev.last_seen;
+      const merged = {
+        ...prev,
+        id: mapKey,
+        mapKey,
+        device_id: mapKey,
+        externalId: mapKey,
+        hdpId: mapKey,
+        protocol: data.protocol || prev.protocol || norm.protocol || (mapKey.includes('/') ? mapKey.split('/')[0] : ''),
+        manufacturer: data.manufacturer ?? prev.manufacturer,
+        model: data.model ?? prev.model,
+        firmware: data.firmware ?? prev.firmware,
+        description: normalizeDescription(data.description ?? prev.description),
+        icon: data.icon ?? prev.icon,
+        capabilities: ensureArray(data.capabilities ?? prev.capabilities),
+        inputs: ensureArray(data.inputs ?? prev.inputs),
+        online: typeof online === 'boolean' ? online : Boolean(prev.online),
+        last_seen: lastSeen,
+        metadataUpdatedAt: Date.now(),
+        __hasMetadata: true,
+      };
+      devicesRef.current.set(mapKey, merged);
+      schedulePublish();
+      return;
+    }
+
+    if (topic.startsWith(EVENT_PREFIX)) {
+      const data = safeParseJSON(payload);
+      if (!data || typeof data !== 'object') return;
+      const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(EVENT_PREFIX.length));
+      const mapKey = norm.hdpId || '';
+      if (!mapKey) return;
+      if (data.event === 'device_removed') {
+        const removed = devicesRef.current.delete(mapKey);
+        if (removed) {
+          schedulePublish();
+        }
       }
-      if (!enabledRef.current) {
+      return;
+    }
+
+    if (topic.startsWith(COMMAND_RESULT_PREFIX)) {
+      const data = safeParseJSON(payload) || {};
+      const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(COMMAND_RESULT_PREFIX.length));
+      const mapKey = norm.hdpId || '';
+      if (!mapKey) return;
+      const result = {
+        corr: data.corr || data.correlation_id || '',
+        success: typeof data.success === 'boolean' ? data.success : true,
+        status: data.status || '',
+        error: data.error || null,
+        ts: data.ts || Date.now(),
+      };
+      const prev = devicesRef.current.get(mapKey) || {};
+      devicesRef.current.set(mapKey, { ...prev, id: mapKey, mapKey, device_id: mapKey, externalId: mapKey, hdpId: mapKey, __lastCommandResult: result });
+      schedulePublish();
+      return;
+    }
+
+    if (topic.startsWith(STATE_PREFIX)) {
+      const stateEnvelope = safeParseJSON(payload) || {};
+      const norm = normalizeDeviceId(stateEnvelope.device_id || topic.slice(STATE_PREFIX.length));
+      const mapKey = norm.hdpId || '';
+      if (!mapKey) return;
+      const stateObj = ensureStateObject(stateEnvelope.state || stateEnvelope.data || stateEnvelope);
+      if (!Object.keys(stateObj).length) return;
+      const prev = devicesRef.current.get(mapKey) || {};
+      const incomingTs = Number(stateEnvelope.ts || stateEnvelope.timestamp || Date.now());
+      const prevTs = prev.stateUpdatedAt instanceof Date
+        ? prev.stateUpdatedAt.getTime()
+        : typeof prev.stateUpdatedAt === 'number'
+          ? prev.stateUpdatedAt
+          : 0;
+      if (prevTs && incomingTs && incomingTs < prevTs) {
+        // Drop stale state to avoid UI flicker (older MQTT state overriding optimistic UI).
         return;
       }
-      setTimeout(() => {
-        if (enabledRef.current) {
-          connectRealtime();
-        }
-      }, 1500);
-    };
-
-    client.onMessageArrived = message => {
-      if (!enabledRef.current || !message || !message.destinationName) return;
-      const topic = message.destinationName;
-      const payload = typeof message.payloadString === 'string'
-        ? message.payloadString
-        : (textDecoder && message.payloadBytes ? textDecoder.decode(message.payloadBytes) : '');
-
-      if (topic.startsWith(PAIRING_PREFIX)) {
-        const data = safeParseJSON(payload) || {};
-        const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
-        if (!protocol) return;
-        const status = data.stage || data.status || 'in_progress';
-        const session = {
-          id: data.id || protocol,
-          protocol,
-          status,
-          active: status !== 'completed' && status !== 'failed' && status !== 'timeout' && status !== 'stopped',
-          metadata: data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {},
-        };
-        setPairingSessions(prev => ({ ...prev, [protocol]: session }));
-        return;
+      const merged = {
+        ...prev,
+        id: mapKey,
+        mapKey,
+        device_id: mapKey,
+        externalId: mapKey,
+        hdpId: mapKey,
+        _last_state: stateObj,
+        last_seen: incomingTs || Date.now(),
+        stateUpdatedAt: incomingTs || Date.now(),
+        online: true,
+      };
+      if (prev.__hasMetadata) {
+        merged.__hasMetadata = true;
       }
-
-      if (topic.startsWith(METADATA_PREFIX)) {
-        const data = safeParseJSON(payload);
-        if (!data || typeof data !== 'object') return;
-        const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(METADATA_PREFIX.length));
-        const mapKey = norm.hdpId || '';
-        if (!mapKey) return;
-        const prev = devicesRef.current.get(mapKey) || {};
-        const online = typeof data.online === 'boolean' ? data.online : prev.online;
-        const lastSeen = data.last_seen ?? data.lastSeen ?? prev.last_seen;
-        const merged = {
-          ...prev,
-          id: mapKey,
-          mapKey,
-          device_id: mapKey,
-          externalId: mapKey,
-          hdpId: mapKey,
-          protocol: data.protocol || prev.protocol || norm.protocol || (mapKey.includes('/') ? mapKey.split('/')[0] : ''),
-          manufacturer: data.manufacturer ?? prev.manufacturer,
-          model: data.model ?? prev.model,
-          firmware: data.firmware ?? prev.firmware,
-          description: normalizeDescription(data.description ?? prev.description),
-          icon: data.icon ?? prev.icon,
-          capabilities: ensureArray(data.capabilities ?? prev.capabilities),
-          inputs: ensureArray(data.inputs ?? prev.inputs),
-          online: typeof online === 'boolean' ? online : Boolean(prev.online),
-          last_seen: lastSeen,
-          metadataUpdatedAt: Date.now(),
-          __hasMetadata: true,
-        };
-        devicesRef.current.set(mapKey, merged);
-        schedulePublish();
-        return;
-      }
-
-      if (topic.startsWith(EVENT_PREFIX)) {
-        const data = safeParseJSON(payload);
-        if (!data || typeof data !== 'object') return;
-        const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(EVENT_PREFIX.length));
-        const mapKey = norm.hdpId || '';
-        if (!mapKey) return;
-        if (data.event === 'device_removed') {
-          const removed = devicesRef.current.delete(mapKey);
-          if (removed) {
-            schedulePublish();
-          }
-        }
-        return;
-      }
-
-      if (topic.startsWith(COMMAND_RESULT_PREFIX)) {
-        const data = safeParseJSON(payload) || {};
-        const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(COMMAND_RESULT_PREFIX.length));
-        const mapKey = norm.hdpId || '';
-        if (!mapKey) return;
-        const result = {
-          corr: data.corr || data.correlation_id || '',
-          success: typeof data.success === 'boolean' ? data.success : true,
-          status: data.status || '',
-          error: data.error || null,
-          ts: data.ts || Date.now(),
-        };
-        const prev = devicesRef.current.get(mapKey) || {};
-        devicesRef.current.set(mapKey, { ...prev, id: mapKey, mapKey, device_id: mapKey, externalId: mapKey, hdpId: mapKey, __lastCommandResult: result });
-        schedulePublish();
-        return;
-      }
-
-      if (topic.startsWith(STATE_PREFIX)) {
-        const stateEnvelope = safeParseJSON(payload) || {};
-        const norm = normalizeDeviceId(stateEnvelope.device_id || topic.slice(STATE_PREFIX.length));
-        const mapKey = norm.hdpId || '';
-        if (!mapKey) return;
-        const stateObj = ensureStateObject(stateEnvelope.state || stateEnvelope.data || stateEnvelope);
-        if (!Object.keys(stateObj).length) return;
-        const prev = devicesRef.current.get(mapKey) || {};
-        const incomingTs = Number(stateEnvelope.ts || stateEnvelope.timestamp || Date.now());
-        const prevTs = prev.stateUpdatedAt instanceof Date
-          ? prev.stateUpdatedAt.getTime()
-          : typeof prev.stateUpdatedAt === 'number'
-            ? prev.stateUpdatedAt
-            : 0;
-        if (prevTs && incomingTs && incomingTs < prevTs) {
-          // Drop stale state to avoid UI flicker (older MQTT state overriding optimistic UI).
-          return;
-        }
-        const merged = {
-          ...prev,
-          id: mapKey,
-          mapKey,
-          device_id: mapKey,
-          externalId: mapKey,
-          hdpId: mapKey,
-          _last_state: stateObj,
-          last_seen: incomingTs || Date.now(),
-          stateUpdatedAt: incomingTs || Date.now(),
-          online: true,
-        };
-        if (prev.__hasMetadata) {
-          merged.__hasMetadata = true;
-        }
-        devicesRef.current.set(mapKey, merged);
-        schedulePublish();
-      }
-    };
-
-    client.connect({
-      useSSL: cfg.useSSL,
-      timeout: 6,
-      mqttVersion: 4,
-      cleanSession: true,
-      onSuccess: () => {
-        if (!mountedRef.current || !enabledRef.current) {
-          client.disconnect();
-          return;
-        }
-        client.subscribe(STATE_PREFIX + '#', { qos: 0 });
-        client.subscribe(METADATA_PREFIX + '#', { qos: 0 });
-        client.subscribe(EVENT_PREFIX + '#', { qos: 0 });
-        client.subscribe(PAIRING_PREFIX + '#', { qos: 0 });
-        client.subscribe(COMMAND_RESULT_PREFIX + '#', { qos: 0 });
-        setStateStatus({ connected: true });
-        if (metadataMode === 'ws') {
-          setMetadataStatus({ connected: true, source: 'ws' });
-          setLoading(false);
-        }
-      },
-      onFailure: err => {
-        console.warn('Realtime connection failed', err);
-        client.disconnect();
-        setStateStatus({ connected: false });
-        if (metadataMode === 'ws') {
-          setMetadataStatus({ connected: false, source: 'ws' });
-          setLoading(false);
-        }
-        setError(prev => prev || 'Unable to connect to device stream');
-        if (!enabledRef.current) {
-          return;
-        }
-        setTimeout(() => {
-          if (enabledRef.current) {
-            connectRealtime();
-          }
-        }, 2000);
-      },
-    });
-  }, [metadataMode, schedulePublish]);
+      devicesRef.current.set(mapKey, merged);
+      schedulePublish();
+    }
+  }, [schedulePublish]);
 
   useEffect(() => {
     devicesRef.current = new Map();
@@ -625,8 +528,7 @@ export default function useDeviceHubDevices(options = {}) {
     updateScheduledRef.current = false;
 
     if (!enabled) {
-      stateClientRef.current?.disconnect?.();
-      stateClientRef.current = null;
+      mqttConnRef.current = null;
       setDevices([]);
       setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
       setMetadataStatus({ connected: false, source: metadataMode });
@@ -644,17 +546,49 @@ export default function useDeviceHubDevices(options = {}) {
     setLoading(true);
 
     loadInitialDevices();
-    connectRealtime();
+
+    const conn = getSharedMqttConnection({ path: REALTIME_PATH, clientIdPrefix: 'rt' });
+    mqttConnRef.current = conn;
+
+    const unsubStatus = conn.onStatus(({ connected, status }) => {
+      if (!mountedRef.current || !enabledRef.current) return;
+      setStateStatus({ connected: Boolean(connected) });
+      if (metadataMode === 'ws') {
+        setMetadataStatus({ connected: Boolean(connected), source: 'ws' });
+        setLoading(false);
+      }
+      if (!connected && (status === 'error' || status === 'disconnected')) {
+        setError(prev => prev || 'Unable to connect to device stream');
+      }
+      if (connected) {
+        setError(prev => (prev && prev.includes('device stream') ? null : prev));
+      }
+    });
+
+    const unsubs = [
+      conn.subscribe(STATE_PREFIX + '#', handleRealtimeMessage),
+      conn.subscribe(METADATA_PREFIX + '#', handleRealtimeMessage),
+      conn.subscribe(EVENT_PREFIX + '#', handleRealtimeMessage),
+      conn.subscribe(PAIRING_PREFIX + '#', handleRealtimeMessage),
+      conn.subscribe(COMMAND_RESULT_PREFIX + '#', handleRealtimeMessage),
+    ];
 
     return () => {
-      stateClientRef.current?.disconnect?.();
-      stateClientRef.current = null;
+      unsubs.forEach(fn => {
+        try {
+          fn();
+        } catch {
+          // ignore
+        }
+      });
+      unsubStatus();
+      mqttConnRef.current = null;
     };
-  }, [enabled, loadInitialDevices, connectRealtime, metadataMode]);
+  }, [enabled, loadInitialDevices, metadataMode, handleRealtimeMessage]);
 
   const sendDeviceCommand = useCallback((deviceId, statePatch) => new Promise((resolve, reject) => {
-    const client = stateClientRef.current;
-    if (!client || typeof client.isConnected !== 'function' || !client.isConnected()) {
+    const conn = mqttConnRef.current;
+    if (!conn || typeof conn.isConnected !== 'function' || !conn.isConnected()) {
       reject(new Error('Not connected to device command channel'));
       return;
     }
@@ -686,11 +620,7 @@ export default function useDeviceHubDevices(options = {}) {
         ts: Date.now(),
         corr,
       };
-      const message = new Paho.Message(JSON.stringify(envelope));
-      message.destinationName = `${COMMAND_PREFIX}${targetId}`;
-      message.qos = 0;
-      message.retained = false;
-      client.send(message);
+      conn.publish(`${COMMAND_PREFIX}${targetId}`, JSON.stringify(envelope), { qos: 0, retained: false });
       resolve();
     } catch (err) {
       reject(err);
