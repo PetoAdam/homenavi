@@ -11,6 +11,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { listWorkflows, runWorkflow, getRun } from '../../../../services/automationService';
+import { getSharedWebSocket, wsUrlForPath } from '../../../../services/realtime/sharedWebSocket';
 import WidgetShell from '../../../common/WidgetShell/WidgetShell';
 import GlassPill from '../../../common/GlassPill/GlassPill';
 import ProgressBar from '../../../common/ProgressBar/ProgressBar';
@@ -42,7 +43,7 @@ export default function AutomationWidget({
 
   const pollTimeoutRef = useRef(null);
   const runTokenRef = useRef(0);
-  const wsRef = useRef(null);
+  const wsUnsubRef = useRef(null);
   
   // Track if user is dragging to prevent navigation (must be with other hooks)
   const [isDragging, setIsDragging] = useState(false);
@@ -57,11 +58,11 @@ export default function AutomationWidget({
         pollTimeoutRef.current = null;
       }
       try {
-        wsRef.current?.close();
+        wsUnsubRef.current?.();
       } catch {
         // ignore
       }
-      wsRef.current = null;
+      wsUnsubRef.current = null;
     };
   }, []);
 
@@ -138,11 +139,11 @@ export default function AutomationWidget({
       pollTimeoutRef.current = null;
     }
     try {
-      wsRef.current?.close();
+      wsUnsubRef.current?.();
     } catch {
       // ignore
     }
-    wsRef.current = null;
+    wsUnsubRef.current = null;
 
     setRunning(true);
     setRunResult(null);
@@ -167,12 +168,10 @@ export default function AutomationWidget({
 
       // Live stage updates via WS; poll remains as fallback.
       try {
-        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsUrl = `${proto}://${window.location.host}/api/automation/runs/${encodeURIComponent(runId)}/ws`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        const wsUrl = wsUrlForPath(`/ws/automation/runs/${encodeURIComponent(runId)}`);
+        const channel = getSharedWebSocket(wsUrl);
 
-        ws.onmessage = (ev) => {
+        wsUnsubRef.current = channel.subscribe((ev) => {
           if (token !== runTokenRef.current) return;
           let msg;
           try {
@@ -202,17 +201,13 @@ export default function AutomationWidget({
             setRunResult(ok ? { success: true } : { success: false, error: 'Workflow failed' });
             setRunning(false);
             try {
-              wsRef.current?.close();
+              wsUnsubRef.current?.();
             } catch {
               // ignore
             }
-            wsRef.current = null;
+            wsUnsubRef.current = null;
           }
-        };
-
-        ws.onclose = () => {
-          // leave fallback poll running
-        };
+        });
       } catch {
         // ignore
       }
