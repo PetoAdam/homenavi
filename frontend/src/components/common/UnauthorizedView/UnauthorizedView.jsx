@@ -9,10 +9,11 @@ export default function UnauthorizedView({
   title = 'Unauthorized',
   message = 'You do not have permission to view this page.',
   className = '',
+  hideHeader = false,
 }) {
   return (
     <div className={['unauthorized-page', className].filter(Boolean).join(' ')}>
-      <PageHeader title={title} subtitle="Sign in with a resident account to continue." />
+      {!hideHeader && <PageHeader title={title} subtitle="Sign in with a resident account to continue." />}
       <GlassCard interactive={false} className="unauthorized-card">
         <div className="unauthorized-body">
           <div className="unauthorized-icon" aria-hidden="true">

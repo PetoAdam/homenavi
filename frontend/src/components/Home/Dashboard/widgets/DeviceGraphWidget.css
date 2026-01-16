@@ -1,0 +1,31 @@
+/* DeviceGraphWidget - History chart as a dashboard widget */
+
+.device-graph-widget__content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.device-graph-widget__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  text-align: center;
+  color: var(--color-secondary-light);
+  font-size: 0.9rem;
+}
+
+.device-graph-widget__empty-icon {
+  font-size: 2.3rem;
+  opacity: 0.5;
+  color: var(--color-primary);
+}
+
+.device-graph-widget__empty-text {
+  max-width: 280px;
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar/Sidebar.jsx';
 import Home from './components/Home/Home.jsx';
 import Devices from './components/Devices/Devices.jsx';
@@ -15,6 +15,7 @@ import { isPermanentSidebarWidth } from './breakpoints.js';
 import { AuthProvider } from './context/AuthContext';
 
 export default function App() {
+  const location = useLocation();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isPermanentSidebar = isPermanentSidebarWidth(windowWidth);
@@ -105,17 +106,20 @@ export default function App() {
             transition: 'margin-left 0.3s cubic-bezier(.4,2,.6,1)',
           }}
         >
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/devices" element={<Devices />} />
-            <Route path="/devices/:deviceId" element={<DeviceDetail />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/map" element={<Map />} />
-            <Route path="/spotify" element={<Spotify />} />
-            <Route path="/users" element={<Users />} />
-            <Route path="/automation" element={<Automation />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
+          <div className="hn-route-view" key={location.pathname}>
+            <Routes location={location}>
+              <Route path="/" element={<Home />} />
+              <Route path="/devices" element={<Devices />} />
+              <Route path="/devices/:deviceId" element={<DeviceDetail />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/map" element={<Map />} />
+              <Route path="/spotify" element={<Spotify />} />
+              <Route path="/users" element={<Users />} />
+              <Route path="/automation" element={<Automation />} />
+              <Route path="/automation/:workflowId" element={<Automation />} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </div>
         </main>
       </div>
     </AuthProvider>

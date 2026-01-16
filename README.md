@@ -15,7 +15,8 @@
 [![Build Zigbee Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml)
 [![Build Thread Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml)
 [![Build Automation Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml)
-[![Build Entity Regsitry Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml)
+[![Build Entity Registry Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml)
+[![Build Weather Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml)
 
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
@@ -25,7 +26,7 @@ Welcome to Homenavi – your open, hackable smart home solution. Built with a mo
 ## Table of Contents
 1. 🚀 Why Homenavi
 2. 🧩 Architecture Overview
-3. 🔮 Smart Home Vision (Planned/Upcoming)
+3. 🔮 Smart Home Vision (Current + Upcoming)
 4. 🐳 Quickstart
 5. 📂 Service Directory
 6. 🔒 Security & Auth
@@ -64,8 +65,11 @@ Current Core:
 * Device Hub (Go): Central device inventory and **HDP-only** adapter bridge over MQTT.
 * History Service (Go): Persists HDP device state into Postgres and serves query endpoints for charts.
 * Automation Service (Go): Automation/workflow orchestration (graph builder UI backend).
+* Weather Service (Go): Cached weather API used by the frontend via the gateway.
 * Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
 * User Service (Go): Profile, roles, administrative user actions.
+* Dashboard Service (Go): Stores per-user dashboards and widget configuration.
+* Entity Registry Service (Go): Home inventory primitives (rooms/tags/devices) and discovery surface.
 * Email Service (Go): Outbound verification & notification emails.
 * Profile Picture Service (Python): Image handling (avatars, basic processing).
 * Echo Service (Python): Real-time WebSocket demo & test surface.
@@ -82,20 +86,28 @@ Key Design Principles:
 * Incremental addition of domain (devices, automations, adapters) without core rewrites.
 * SPA frontend with history fallback (direct links work out of the box).
 
+Current Features (Implemented):
+* **Device abstraction via HDP v1:** adapters translate protocol payloads into a single internal contract consumed by core services. See `doc/hdp.md`.
+* **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Thread adapter placeholder using the same HDP surfaces.
+* **ERS + Device Hub boundary:** ERS owns names/rooms/tags/map metadata; device-hub owns realtime telemetry, pairing, commands. See `doc/ers_hdp_devicehub_overview.md`.
+* **Customizable UI dashboards:** widget-based Home dashboard with Edit mode + per-user persistence via Dashboard Service. See `doc/dashboard_ui_functional_spec.md`.
+* **Automation engine + scheduling:** rule/workflow engine with manual triggers and **cron schedule triggers**, plus run tracking and live run stream via websocket. (APIs documented in `doc/external_api_surface.md`.)
+
 ---
 
-## 3. 🔮 Smart Home Vision (Planned/Upcoming)
-The platform roadmap includes:
-* Device Adapters: Matter, Z-Wave, BLE, cloud integrations, and 3rd party integrations (Zigbee implemented; Thread placeholder).
-* Automation Engine: Rule graph (triggers → conditions → actions) with versioned deployments.
-* Scene & Mode Management: Grouped device state snapshots and home modes (Away / Night / Eco).
-* Scheduling & Timers: Cron-like and sunrise/sunset aware triggers.
-* Presence & Energy Modules: Occupancy inference; energy usage aggregation.
-* Plugin SDK: Custom services registering capabilities & metrics automatically with the gateway.
-* Edge Nodes: Lightweight agent pushing device state/events to the core cluster.
-* Marketplace-style extension discovery (planned).
+## 3. 🔮 Smart Home Vision (Current + Upcoming)
+Homenavi’s “vision” is already partially implemented (dashboards, HDP-based adapters, automations). The next steps are about **expanding capabilities** and **hardening extensibility**:
 
-These are intentionally referenced now to frame the architecture decisions already in place. Contributions and feedback on these modules are welcome!
+Upcoming focus areas:
+* **More adapters / protocol coverage:** Matter, Z-Wave, BLE, and cloud integrations.
+* **Automation evolution:** versioned deployments, richer trigger/action/condition library, improved editor UX, and safe integration-provided automation steps.
+* **Smarter scheduling:** beyond cron (sunrise/sunset and other home-aware schedules).
+* **Scene & Mode Management:** grouped device state snapshots and home modes (Away / Night / Eco).
+* **Presence & Energy modules:** occupancy inference; energy usage aggregation.
+* **Integration marketplace model:** verified/unverified integrations, secure sandboxing for third-party widgets.
+* **Edge nodes:** lightweight agents pushing device state/events to the core cluster.
+
+Contributions and feedback on these modules are welcome!
 
 ---
 
@@ -123,18 +135,21 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 ## 5. 📂 Service Directory
 | Service | Path | Purpose | Docker Build Tag |
 |---------|------|---------|------------------|
-| API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy | `api-gateway:latest` |
-| Device Hub | `device-hub/` | Device inventory, HDP bridge over MQTT, metadata/state fan-out | `device-hub:latest` |
-| History Service | `history-service/` | HDP device state persistence + query API for charts | `history-service:latest` |
-| Automation Service | `automation-service/` | Automations/workflows service | `automation-service:latest` |
-| Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic | `auth-service:latest` |
-| User Service | `user-service/` | User profiles, roles, admin operations | `user-service:latest` |
-| Email Service | `email-service/` | Sending verification / notification emails | `email-service:latest` |
-| Profile Picture | `profile-picture-service/` | Avatar upload & processing | `profile-picture-service:latest` |
-| Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `echo-service:latest` |
-| Zigbee Adapter | `zigbee-adapter/` | Zigbee2MQTT adapter emitting/consuming HDP | `zigbee-adapter:latest` |
-| Thread Adapter | `thread-adapter/` | Thread adapter placeholder (HDP hello/status/pairing) | `thread-adapter:latest` |
-| Frontend | `frontend/` | SPA & PWA client | `frontend:latest` |
+| API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy | `homenavi-api-gateway:latest` |
+| Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic | `homenavi-auth-service:latest` |
+| User Service | `user-service/` | User profiles, roles, admin operations | `homenavi-user-service:latest` |
+| Dashboard Service | `dashboard-service/` | Per-user dashboards + widget persistence | `homenavi-dashboard-service:latest` |
+| Entity Registry Service | `entity-registry-service/` | Home inventory primitives and discovery surface | `homenavi-entity-registry-service:latest` |
+| Device Hub | `device-hub/` | Device inventory, HDP bridge over MQTT, metadata/state fan-out | `homenavi-device-hub:latest` |
+| History Service | `history-service/` | HDP device state persistence + query API for charts | `homenavi-history-service:latest` |
+| Automation Service | `automation-service/` | Automations/workflows service | `homenavi-automation-service:latest` |
+| Weather Service | `weather-service/` | Cached weather API (OpenWeather) | `homenavi-weather-service:latest` |
+| Email Service | `email-service/` | Sending verification / notification emails | `homenavi-email-service:latest` |
+| Profile Picture | `profile-picture-service/` | Avatar upload & processing | `homenavi-profile-picture-service:latest` |
+| Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `homenavi-echo-service:latest` |
+| Zigbee Adapter | `zigbee-adapter/` | Zigbee2MQTT adapter emitting/consuming HDP | `homenavi-zigbee-adapter:latest` |
+| Thread Adapter | `thread-adapter/` | Thread adapter placeholder (HDP hello/status/pairing) | `homenavi-thread-adapter:latest` |
+| Frontend | `frontend/` | SPA & PWA client | `homenavi-frontend:latest` |
 
 Support:
 * `nginx/` reverse proxy templates.
@@ -181,23 +196,30 @@ Test: `python3 test-websocket.py` (see root script).
 4. Expose metrics, health, and (optionally) tracing.
 5. Use JWT for auth; validate only needed claims.
 
-Planned: Extension/Plugin manifest so services self-register capabilities and metrics. Marketplace-style extension discovery is on the roadmap.
+For dashboard widgets & third‑party integrations (planned direction):
+* The frontend is **not** intended to dynamically load arbitrary React bundles from the backend.
+* Instead, integrations should publish a **manifest + catalog** (widgets and automation steps) and render third‑party widgets in a **sandboxed iframe**.
+* Host data access should go through a **widget proxy** (scoped, short‑lived tokens; allow-listed operations), not raw access to user JWT.
+* The dashboard catalog will be served from a backend endpoint (`GET /api/widgets/catalog`) and can merge first‑party + integration-provided widgets.
+
+See the detailed architecture/roadmap: `doc/dashboard_widgets_integrations_marketplace_roadmap.md`.
 
 ---
 
 ## 10. 🗺️ Roadmap (Condensed)
 
 Mid Term:
-* Device adapter abstraction (multi-protocol, MQTT bridge)
-* Rule/automation engine MVP
-* Scene & scheduling module
-* UI dashboards for metrics & device state
+* More adapters (Matter/Z-Wave/BLE) and cloud integrations
+* Automation: versioning, richer step library, editor UX improvements
+* Scheduling upgrades (sunrise/sunset and other home-aware schedules)
+* Scenes & home modes (Away / Night / Eco)
+* Third-party integrations groundwork (catalog, sandboxing, verification model)
 * AI assistant service (local or cloud) for docs/config/dev support
 
 Long Term:
 * Edge node agent & secure tunneling
 * Energy analytics & occupancy inference
-* Plugin SDK & extension marketplace
+* Plugin SDK + extension marketplace
 
 ---
 
@@ -207,6 +229,9 @@ Environment variables (selected):
 * Database connection vars (PostgreSQL)
 * Redis host/port
 * Email provider / SMTP credentials (for Email Service)
+* Weather:
+	* `OPENWEATHER_API_KEY` (required for real weather data)
+	* `WEATHER_CACHE_TTL_MINUTES` (optional, defaults to 15)
 
 Example: `cp .env.example .env` then edit. In production avoid storing secrets directly in env files—use a secrets manager.
 
@@ -240,7 +265,7 @@ Issues: https://github.com/PetoAdam/homenavi/issues
 ## 14. ❓ FAQ
 **Can I run it on a Raspberry Pi?** Yes—multi-arch images are the target; optimize build flags if needed.
 
-**Is it production ready?** Homenavi is under active development. The core authentication and user management features are stable, but always review the code for your specific use case. Device & automation layers are forthcoming—treat as early platform.
+**Is it production ready?** Homenavi is under active development. The core authentication and user management features are stable, and device + automation layers are implemented, but the platform is still evolving—review the code for your specific use case.
 
 **Can I add my own device protocol now?** Yes, via a custom service publishing REST/WS endpoints through the gateway. The platform is designed to support new adapters and integrations with minimal changes.
 

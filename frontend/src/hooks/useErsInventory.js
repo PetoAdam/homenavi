@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { listErsDevices, listErsRooms, listErsTags } from '../services/entityRegistryService';
+import { getSharedWebSocket, wsUrlForPath } from '../services/realtime/sharedWebSocket';
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -69,46 +70,57 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     if (!enabled) return undefined;
 
     let cancelled = false;
-    let ws;
-    let reconnectTimer;
     let refreshTimer;
+    let pollTimer;
 
-    const connect = () => {
-      if (cancelled) return;
-      try {
-        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsUrl = `${proto}://${window.location.host}/ws/ers`;
-        ws = new WebSocket(wsUrl);
-
-        ws.onmessage = () => {
-          if (cancelled) return;
-          if (refreshTimer) window.clearTimeout(refreshTimer);
-          refreshTimer = window.setTimeout(() => {
-            refresh({ showLoading: false });
-          }, 150);
-        };
-
-        ws.onclose = () => {
-          if (cancelled) return;
-          if (reconnectTimer) window.clearTimeout(reconnectTimer);
-          reconnectTimer = window.setTimeout(connect, 1000);
-        };
-      } catch {
-        // ignore
-      }
+    const clearRefreshTimer = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = null;
     };
 
-    connect();
+    const clearPollTimer = () => {
+      if (pollTimer) window.clearInterval(pollTimer);
+      pollTimer = null;
+    };
+
+    const ensurePolling = () => {
+      if (pollTimer) return;
+      pollTimer = window.setInterval(() => {
+        if (cancelled) return;
+        refresh({ showLoading: false });
+      }, 15000);
+    };
+
+    const wsUrl = wsUrlForPath('/ws/ers');
+    const channel = getSharedWebSocket(wsUrl);
+
+    const unsubMessage = channel.subscribe(() => {
+      if (cancelled) return;
+      clearRefreshTimer();
+      refreshTimer = window.setTimeout(() => {
+        refresh({ showLoading: false });
+      }, 150);
+    });
+
+    const unsubStatus = channel.onStatus(({ status }) => {
+      if (cancelled) return;
+      if (status === 'open') {
+        clearPollTimer();
+      } else if (status === 'closed' || status === 'error') {
+        ensurePolling();
+      }
+    });
+
+    // Safety net until the shared WS opens (or if it's blocked).
+    ensurePolling();
 
     return () => {
       cancelled = true;
-      if (reconnectTimer) window.clearTimeout(reconnectTimer);
-      if (refreshTimer) window.clearTimeout(refreshTimer);
-      try {
-        ws?.close();
-      } catch {
-        // ignore
-      }
+      clearRefreshTimer();
+      clearPollTimer();
+
+      unsubMessage();
+      unsubStatus();
     };
   }, [enabled, refresh]);
 

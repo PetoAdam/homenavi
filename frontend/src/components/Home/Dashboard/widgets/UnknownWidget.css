@@ -1,0 +1,40 @@
+/* UnknownWidget - Fallback for unrecognized widget types */
+
+.unknown-widget {
+  min-height: 100px;
+}
+
+.unknown-widget__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  text-align: center;
+  padding: 16px;
+}
+
+.unknown-widget__icon {
+  font-size: 2.5rem;
+  color: var(--color-secondary-light);
+  opacity: 0.5;
+}
+
+.unknown-widget__message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.unknown-widget__title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--color-white);
+}
+
+.unknown-widget__type {
+  font-size: 0.8rem;
+  color: var(--color-secondary-light);
+  font-family: monospace;
+}
