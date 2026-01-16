@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getSharedWebSocket, wsUrlForPath } from '../../../services/realtime/sharedWebSocket';
 
 /**
  * WebSocket-driven live run highlighting.
@@ -10,7 +11,7 @@ export default function useRunStream({ onToast, onError } = {}) {
   const [liveRunNodeStates, setLiveRunNodeStates] = useState({}); // nodeId -> 'active'|'done'|'failed'
 
   const liveRunTimersRef = useRef(new Map());
-  const runWsRef = useRef(null);
+  const runWsCleanupRef = useRef(null);
   const liveRunRef = useRef({ runId: null, finished: false });
   const pollTokenRef = useRef(0);
 
@@ -33,18 +34,12 @@ export default function useRunStream({ onToast, onError } = {}) {
   }, []);
 
   const closeRunWs = useCallback(() => {
-    const ws = runWsRef.current;
-    runWsRef.current = null;
-    if (!ws) return;
     try {
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onerror = null;
-      ws.onclose = null;
-      ws.close();
+      runWsCleanupRef.current?.();
     } catch {
       // ignore
     }
+    runWsCleanupRef.current = null;
   }, []);
 
   const setLiveNodeState = (nodeId, state, { clearAfterMs } = {}) => {
@@ -98,12 +93,10 @@ export default function useRunStream({ onToast, onError } = {}) {
 
     // Connect WebSocket for live step events.
     try {
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsUrl = `${proto}://${window.location.host}/ws/automation/runs/${encodeURIComponent(id)}`;
-      const ws = new WebSocket(wsUrl);
-      runWsRef.current = ws;
+      const wsUrl = wsUrlForPath(`/ws/automation/runs/${encodeURIComponent(id)}`);
+      const channel = getSharedWebSocket(wsUrl);
 
-      ws.onmessage = (ev) => {
+      const unsubMessage = channel.subscribe((ev) => {
         let msg;
         try {
           msg = JSON.parse(String(ev.data || ''));
@@ -154,10 +147,11 @@ export default function useRunStream({ onToast, onError } = {}) {
           }
           safeRefreshRuns();
         }
-      };
+      });
 
-      ws.onclose = async () => {
+      const unsubStatus = channel.onStatus(async ({ status: wsStatus }) => {
         // If the WS drops early, fall back to checking run status.
+        if (wsStatus !== 'closed' && wsStatus !== 'error') return;
         if (token !== pollTokenRef.current) return;
         const current = liveRunRef.current;
         if (!current?.runId) return;
@@ -173,6 +167,11 @@ export default function useRunStream({ onToast, onError } = {}) {
           }
           safeRefreshRuns();
         }
+      });
+
+      runWsCleanupRef.current = () => {
+        unsubMessage();
+        unsubStatus();
       };
     } catch {
       // ignore; we'll just fall back to polling.
