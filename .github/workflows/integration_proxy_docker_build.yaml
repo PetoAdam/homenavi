@@ -1,0 +1,32 @@
+name: Build Integration Proxy Docker Image
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./integration-proxy
+          file: ./integration-proxy/Dockerfile
+          push: false
+          tags: homenavi-integration-proxy:latest
+
+      - name: Save Docker image to tarball
+        run: docker save homenavi-integration-proxy:latest | gzip > homenavi-integration-proxy-latest.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homenavi-integration-proxy-latest
+          path: homenavi-integration-proxy-latest.tar.gz
