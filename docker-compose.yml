@@ -165,6 +165,7 @@ services:
     restart: unless-stopped
     environment:
       - DASHBOARD_SERVICE_PORT=${DASHBOARD_SERVICE_PORT:-8097}
+      - INTEGRATION_PROXY_URL=http://integration-proxy:8099
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -388,6 +389,21 @@ services:
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
       - CACHE_TTL_MINUTES=${WEATHER_CACHE_TTL_MINUTES:-15}
       - LOG_LEVEL=${LOG_LEVEL}
+    networks:
+      - homenavi-network
+
+  integration-proxy:
+    build:
+      context: ./integration-proxy
+    restart: unless-stopped
+    environment:
+      - INTEGRATIONS_CONFIG_PATH=/config/installed.yaml
+      - INTEGRATIONS_SCHEMA_PATH=/config/homenavi-integration.schema.json
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+    volumes:
+      - ${INTEGRATIONS_CONFIG_FILE:-./integrations/config/installed.example.yaml}:/config/installed.yaml:ro
+      - ./integrations/spec/homenavi-integration.schema.json:/config/homenavi-integration.schema.json:ro
+      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
     networks:
       - homenavi-network
 

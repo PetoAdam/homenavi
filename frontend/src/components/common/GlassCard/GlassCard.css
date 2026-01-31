@@ -24,6 +24,33 @@
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
 }
 
+/* Variant used for iframe-based widgets and other edge-to-edge content. */
+.glass-card--flush {
+  padding: 0;
+  min-width: 0;
+}
+
+.glass-card--flush .card-content {
+  gap: 0;
+  border-radius: inherit;
+}
+
+/* Iframe-heavy widgets can blur on transform/filter; keep hover animation without transforms. */
+.glass-card--flush:hover {
+  border: 1.4px solid var(--color-primary);
+  transform: none;
+  filter: none;
+  box-shadow: 0 10px 36px 0 rgba(0,0,0,0.22);
+}
+
+/* In the dashboard, avoid transforms/filters to prevent iframe blur while keeping hover animation. */
+.dashboard__widget-wrapper .glass-card:hover {
+  transform: none;
+  filter: none;
+  border: 1.4px solid var(--color-primary);
+  box-shadow: 0 10px 36px 0 rgba(0,0,0,0.22);
+}
+
 .glass-card:hover {
   border: 1.4px solid var(--color-primary);
   transform: translateY(-1px) scale(1.01);

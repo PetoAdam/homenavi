@@ -12,9 +12,10 @@ type PostgresConfig struct {
 }
 
 type Config struct {
-	Port             string
-	JWTPublicKeyPath string
-	Postgres         PostgresConfig
+	Port                string
+	JWTPublicKeyPath    string
+	IntegrationProxyURL string
+	Postgres            PostgresConfig
 }
 
 func getenv(key, def string) string {
@@ -27,8 +28,9 @@ func getenv(key, def string) string {
 
 func Load() Config {
 	return Config{
-		Port:             getenv("DASHBOARD_SERVICE_PORT", "8097"),
-		JWTPublicKeyPath: getenv("JWT_PUBLIC_KEY_PATH", ""),
+		Port:                getenv("DASHBOARD_SERVICE_PORT", "8097"),
+		JWTPublicKeyPath:    getenv("JWT_PUBLIC_KEY_PATH", ""),
+		IntegrationProxyURL: getenv("INTEGRATION_PROXY_URL", ""),
 		Postgres: PostgresConfig{
 			User:     getenv("POSTGRES_USER", "postgres"),
 			Password: getenv("POSTGRES_PASSWORD", "postgres"),

@@ -1,0 +1,51 @@
+name: 'Homenavi Integration Verify'
+description: 'Validates a Homenavi integration repository for structure + manifest compatibility.'
+inputs:
+  manifest_path:
+    description: 'Path to homenavi-integration.json'
+    required: false
+    default: 'manifest/homenavi-integration.json'
+  run_tests:
+    description: 'Run standard integration tests (go test + frontend build + manifest validator)'
+    required: false
+    default: 'true'
+  frontend_dir:
+    description: 'Relative path to the integration frontend package'
+    required: false
+    default: 'src/frontend'
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify integration manifest + structure
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${GITHUB_ACTION_PATH}"
+        go run ./verifier \
+          --repo-root "${GITHUB_WORKSPACE}" \
+          --manifest "${GITHUB_WORKSPACE}/${{ inputs.manifest_path }}" \
+          --schema "${GITHUB_ACTION_PATH}/homenavi-integration.schema.json"
+    - name: Run integration test checklist
+      if: ${{ inputs.run_tests == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${GITHUB_WORKSPACE}"
+
+        if [ -f "go.mod" ]; then
+          echo "Running go test ./..."
+          go test ./...
+        fi
+
+        if [ -f "cmd/validate-manifest/main.go" ]; then
+          echo "Running manifest validator"
+          go run ./cmd/validate-manifest
+        fi
+
+        if [ -f "${{ inputs.frontend_dir }}/package.json" ]; then
+          echo "Building frontend in ${{ inputs.frontend_dir }}"
+          pushd "${{ inputs.frontend_dir }}" > /dev/null
+          npm install
+          npm run build
+          popd > /dev/null
+        fi

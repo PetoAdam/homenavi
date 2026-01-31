@@ -1,0 +1,14 @@
+name: Release Thread Adapter Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: thread-adapter
+      context: ./thread-adapter
+      dockerfile: ./thread-adapter/Dockerfile
+    secrets: inherit
