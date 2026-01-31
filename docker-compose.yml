@@ -4,6 +4,8 @@ services:
   # For local debugging you can temporarily uncomment the 'ports' blocks (marked DEV) below.
   # DO NOT commit uncommented internal service ports to main.
   frontend:
+    image: ghcr.io/petoadam/homenavi-frontend:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -13,6 +15,8 @@ services:
     networks:
       - homenavi-network
   api-gateway:
+    image: ghcr.io/petoadam/homenavi-api-gateway:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./api-gateway
     ports:
       - "${API_GATEWAY_HOST_PORT}:${API_GATEWAY_PORT}"
@@ -34,6 +38,8 @@ services:
       - homenavi-network
 
   auth-service:
+    image: ghcr.io/petoadam/homenavi-auth-service:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./auth-service
     restart: unless-stopped
   # DEV: expose directly (e.g. curl localhost:8000)
@@ -137,6 +143,8 @@ services:
   #   - "5432:5432"
 
   user-service:
+    image: ghcr.io/petoadam/homenavi-user-service:${HN_VERSION:-latest}
+    pull_policy: always
     build: 
       context: ./user-service
     restart: unless-stopped
@@ -160,6 +168,8 @@ services:
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
 
   dashboard-service:
+    image: ghcr.io/petoadam/homenavi-dashboard-service:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./dashboard-service
     restart: unless-stopped
@@ -180,6 +190,8 @@ services:
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
 
   profile-picture-service:
+    image: ghcr.io/petoadam/homenavi-profile-picture-service:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./profile-picture-service
     restart: unless-stopped
     environment:
@@ -193,6 +205,8 @@ services:
   #   - "8086:8000"
 
   email-service:
+    image: ghcr.io/petoadam/homenavi-email-service:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./email-service
     restart: unless-stopped
     environment:
@@ -211,6 +225,8 @@ services:
   #   - "8002:8002"
 
   echo-service:
+    image: ghcr.io/petoadam/homenavi-echo-service:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./echo-service
     restart: unless-stopped
     networks:
@@ -252,6 +268,8 @@ services:
     # NOTE: Web UI disabled for minimal attack surface; can enable via configuration.yaml if needed
 
   device-hub:
+    image: ghcr.io/petoadam/homenavi-device-hub:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./device-hub
     restart: unless-stopped
     depends_on:
@@ -273,6 +291,8 @@ services:
     # No ports exposed; internal only
 
   entity-registry-service:
+    image: ghcr.io/petoadam/homenavi-entity-registry-service:${HN_VERSION:-latest}
+    pull_policy: always
     build: ./entity-registry-service
     restart: unless-stopped
     depends_on:
@@ -291,6 +311,8 @@ services:
     # No ports exposed; internal only
 
   zigbee-adapter:
+    image: ghcr.io/petoadam/homenavi-zigbee-adapter:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./zigbee-adapter
     restart: unless-stopped
@@ -316,6 +338,8 @@ services:
       - homenavi-network
 
   thread-adapter:
+    image: ghcr.io/petoadam/homenavi-thread-adapter:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./thread-adapter
     restart: unless-stopped
@@ -332,6 +356,8 @@ services:
       - homenavi-network
 
   history-service:
+    image: ghcr.io/petoadam/homenavi-history-service:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./history-service
     restart: unless-stopped
@@ -355,6 +381,8 @@ services:
       - homenavi-network
 
   automation-service:
+    image: ghcr.io/petoadam/homenavi-automation-service:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./automation-service
     restart: unless-stopped
@@ -381,6 +409,8 @@ services:
       - homenavi-network
 
   weather-service:
+    image: ghcr.io/petoadam/homenavi-weather-service:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./weather-service
     restart: unless-stopped
@@ -393,6 +423,8 @@ services:
       - homenavi-network
 
   integration-proxy:
+    image: ghcr.io/petoadam/homenavi-integration-proxy:${HN_VERSION:-latest}
+    pull_policy: always
     build:
       context: ./integration-proxy
     restart: unless-stopped
