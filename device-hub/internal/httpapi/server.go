@@ -1171,9 +1171,29 @@ func (s *Server) snapshotPairings() []pairingSession {
 	s.pairingMu.Lock()
 	defer s.pairingMu.Unlock()
 	result := make([]pairingSession, 0, len(s.pairings))
+	var expired []pairingSession
+	now := time.Now().UTC()
 	for _, session := range s.pairings {
+		if session.Active && !session.ExpiresAt.IsZero() && !session.ExpiresAt.After(now) {
+			session.Active = false
+			session.Status = "timeout"
+			session.ExpiresAt = now
+			if session.cancel != nil {
+				session.cancel()
+				session.cancel = nil
+			}
+			expired = append(expired, session.clone())
+		}
 		clone := session.clone()
 		result = append(result, clone)
+	}
+	if len(expired) > 0 {
+		go func(items []pairingSession) {
+			for _, item := range items {
+				_ = s.publishPairingCommand(item.Protocol, "stop", 0)
+				s.emitPairingEvent(item)
+			}
+		}(expired)
 	}
 	return result
 }
