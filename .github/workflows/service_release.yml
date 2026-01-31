@@ -28,6 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Compute registry owner
+        id: owner
+        run: echo "owner_lower=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -49,8 +53,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/homenavi-${{ inputs.service }}:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/homenavi-${{ inputs.service }}:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner_lower }}/homenavi-${{ inputs.service }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner_lower }}/homenavi-${{ inputs.service }}:latest
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
