@@ -287,11 +287,17 @@ export default function AddDeviceModal({
   }, [activePairing, onStopPairing, resetFlow]);
 
   const handleClose = useCallback(() => {
-    if (flowStep === 'pairing' && activePairing && typeof onStopPairing === 'function') {
-      onStopPairing(activePairing.protocol).catch(() => {});
+    if (typeof onStopPairing === 'function') {
+      const protocolToStop = activePairing?.protocol
+        || activePairingSession?.protocol
+        || (activeSessionForSelected?.active ? activeSessionForSelected.protocol : '')
+        || '';
+      if (protocolToStop) {
+        onStopPairing(protocolToStop).catch(() => {});
+      }
     }
     onClose?.();
-  }, [flowStep, activePairing, onStopPairing, onClose]);
+  }, [activePairing, activePairingSession, activeSessionForSelected, onStopPairing, onClose]);
 
   const handleSuccessDismiss = useCallback(() => {
     resetFlow();
@@ -426,11 +432,17 @@ export default function AddDeviceModal({
   }, [open, pairingSessions]);
 
   useEffect(() => {
-    if (open || !activePairing || !onStopPairing) {
+    if (open || !onStopPairing) {
       return;
     }
-    onStopPairing(activePairing.protocol).catch(() => {});
-  }, [open, activePairing, onStopPairing]);
+    const protocolToStop = activePairing?.protocol
+      || activePairingSession?.protocol
+      || (activeSessionForSelected?.active ? activeSessionForSelected.protocol : '')
+      || '';
+    if (protocolToStop) {
+      onStopPairing(protocolToStop).catch(() => {});
+    }
+  }, [open, activePairing, activePairingSession, activeSessionForSelected, onStopPairing]);
 
   useEffect(() => {
     if (!open) {
