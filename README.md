@@ -17,6 +17,7 @@
 [![Build Automation Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml)
 [![Build Entity Registry Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml)
 [![Build Weather Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml)
+[![Build Integration Proxy Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml)
 
 Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
