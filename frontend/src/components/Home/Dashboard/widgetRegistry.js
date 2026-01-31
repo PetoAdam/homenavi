@@ -90,6 +90,14 @@ export function getWidgetDefaultHeight(widgetType, catalog) {
   const metaHeight = meta?.default_height ?? meta?.defaultHeight;
   if (metaHeight !== undefined) return clampWidgetHeight(metaHeight);
 
+  const sizeHint = (meta?.default_size_hint || meta?.defaultSizeHint || '').toString().toLowerCase();
+  if (sizeHint) {
+    // Rough mapping to grid rows (ROW_HEIGHT based).
+    if (sizeHint === 'sm') return 3;
+    if (sizeHint === 'md') return 5;
+    if (sizeHint === 'lg') return 7;
+  }
+
   // Back-compat: if metadata isn't available yet, fall back to component defaults.
   const C = WIDGET_RENDERERS[widgetType];
   if (!C) return 4;

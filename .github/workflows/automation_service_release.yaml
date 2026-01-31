@@ -1,0 +1,14 @@
+name: Release Automation Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: automation-service
+      context: ./automation-service
+      dockerfile: ./automation-service/Dockerfile
+    secrets: inherit

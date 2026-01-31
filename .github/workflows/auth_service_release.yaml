@@ -1,0 +1,14 @@
+name: Release Auth Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: auth-service
+      context: ./auth-service
+      dockerfile: ./auth-service/Dockerfile
+    secrets: inherit

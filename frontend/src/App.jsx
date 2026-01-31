@@ -6,6 +6,7 @@ import Devices from './components/Devices/Devices.jsx';
 import DeviceDetail from './components/Devices/DeviceDetail.jsx';
 import Map from './components/Map/Map.jsx';
 import Spotify from './components/Spotify/Spotify.jsx';
+import IntegrationHost from './components/Integrations/IntegrationHost.jsx';
 import Users from './components/Users/Users.jsx';
 import Profile from './components/Profile/Profile.jsx';
 import Automation from './components/Automation/Automation.jsx';
@@ -114,6 +115,11 @@ export default function App() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/map" element={<Map />} />
               <Route path="/spotify" element={<Spotify />} />
+              {/*
+                Host route for embedding integrations inside the app shell.
+                NOTE: /integrations/* is reserved for proxied integration content (nginx -> integration-proxy).
+              */}
+              <Route path="/apps/:integrationId/*" element={<IntegrationHost />} />
               <Route path="/users" element={<Users />} />
               <Route path="/automation" element={<Automation />} />
               <Route path="/automation/:workflowId" element={<Automation />} />

@@ -448,6 +448,7 @@ export default function Dashboard() {
                 instanceId={item.instance_id}
                 widgetType={item.widget_type}
                 settings={item.settings || {}}
+                catalog={catalog}
                 enabled={item.enabled !== false}
                 editMode={editMode}
                 onSettings={() => handleWidgetSettings(item.instance_id)}

@@ -3,7 +3,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,11 +18,26 @@ import (
 )
 
 type Server struct {
-	repo *store.Repo
+	repo                *store.Repo
+	integrationProxyURL string
+	client              *http.Client
 }
 
-func NewServer(repo *store.Repo) *Server {
-	return &Server{repo: repo}
+type ServerOptions struct {
+	IntegrationProxyURL string
+	HTTPClient          *http.Client
+}
+
+func NewServer(repo *store.Repo, opts ServerOptions) *Server {
+	client := opts.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 3 * time.Second}
+	}
+	return &Server{
+		repo:                repo,
+		integrationProxyURL: strings.TrimSpace(opts.IntegrationProxyURL),
+		client:              client,
+	}
 }
 
 type jsonErr struct {
@@ -151,11 +168,12 @@ func (s *Server) handleWeather(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
-	catalog := []store.WidgetType{
+	base := []store.WidgetType{
 		{
 			ID:          "homenavi.weather",
 			DisplayName: "Weather",
 			Description: "Local weather overview.",
+			Icon:        "sun",
 			DefaultSize: "md",
 			Verified:    true,
 			Source:      "first_party",
@@ -164,6 +182,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			ID:          "homenavi.map",
 			DisplayName: "Map",
 			Description: "Rooms and placed devices.",
+			Icon:        "map",
 			DefaultSize: "lg",
 			Verified:    true,
 			Source:      "first_party",
@@ -172,6 +191,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			ID:          "homenavi.device",
 			DisplayName: "Device",
 			Description: "A configurable device widget.",
+			Icon:        "lightbulb",
 			DefaultSize: "md",
 			Verified:    true,
 			Source:      "first_party",
@@ -189,6 +209,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			ID:          "homenavi.device.graph",
 			DisplayName: "Device Graph",
 			Description: "A time-series chart for a device metric.",
+			Icon:        "chart",
 			DefaultSize: "md",
 			Verified:    true,
 			Source:      "first_party",
@@ -205,6 +226,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			ID:          "homenavi.automation.manual_trigger",
 			DisplayName: "Automation Trigger",
 			Description: "Run a manual automation workflow.",
+			Icon:        "bolt",
 			DefaultSize: "sm",
 			Verified:    true,
 			Source:      "first_party",
@@ -216,7 +238,123 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 	}
-	writeJSON(w, http.StatusOK, catalog)
+
+	// Merge in integration widgets discovered from integration-proxy.
+	merged := make([]store.WidgetType, 0, len(base)+8)
+	byID := map[string]struct{}{}
+	for _, w := range base {
+		if strings.TrimSpace(w.ID) == "" {
+			continue
+		}
+		byID[w.ID] = struct{}{}
+		merged = append(merged, w)
+	}
+
+	if strings.TrimSpace(s.integrationProxyURL) != "" {
+		widgets, err := s.fetchIntegrationWidgets(r.Context(), r)
+		if err == nil {
+			for _, w := range widgets {
+				if strings.TrimSpace(w.ID) == "" {
+					continue
+				}
+				if _, ok := byID[w.ID]; ok {
+					continue
+				}
+				byID[w.ID] = struct{}{}
+				merged = append(merged, w)
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, merged)
+}
+
+type integrationRegistry struct {
+	Integrations []struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+		Icon        string `json:"icon,omitempty"`
+		Widgets     []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+			Description string `json:"description,omitempty"`
+			Icon        string `json:"icon,omitempty"`
+			DefaultSize string `json:"default_size_hint,omitempty"`
+			EntryURL    string `json:"entry_url,omitempty"`
+			Verified    bool   `json:"verified"`
+			Source      string `json:"source"`
+		} `json:"widgets"`
+	} `json:"integrations"`
+}
+
+func (s *Server) fetchIntegrationWidgets(ctx context.Context, in *http.Request) ([]store.WidgetType, error) {
+	base := strings.TrimRight(strings.TrimSpace(s.integrationProxyURL), "/")
+	if base == "" {
+		return nil, errors.New("integration proxy url empty")
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return nil, err
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/integrations/registry.json"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	// integration-proxy now requires resident/admin for all integration paths.
+	// Forward the caller's auth so the catalog merge works for authenticated users.
+	if in != nil {
+		if auth := strings.TrimSpace(in.Header.Get("Authorization")); auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		if c, err := in.Cookie("auth_token"); err == nil && strings.TrimSpace(c.Value) != "" {
+			req.AddCookie(c)
+		}
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("integration registry fetch failed")
+	}
+
+	var reg integrationRegistry
+	if err := json.NewDecoder(resp.Body).Decode(&reg); err != nil {
+		return nil, err
+	}
+
+	out := make([]store.WidgetType, 0, 16)
+	for _, integ := range reg.Integrations {
+		fallbackIcon := strings.TrimSpace(integ.Icon)
+		for _, w := range integ.Widgets {
+			icon := strings.TrimSpace(w.Icon)
+			if icon == "" {
+				icon = fallbackIcon
+			}
+			entryURL := strings.TrimSpace(w.EntryURL)
+			var entry *store.WidgetEntry
+			if entryURL != "" {
+				entry = &store.WidgetEntry{Kind: "iframe", URL: entryURL}
+			}
+			out = append(out, store.WidgetType{
+				ID:          w.ID,
+				DisplayName: w.DisplayName,
+				Description: w.Description,
+				Icon:        icon,
+				DefaultSize: w.DefaultSize,
+				EntryURL:    entryURL,
+				Entry:       entry,
+				Verified:    w.Verified,
+				Source:      "integration",
+			})
+		}
+	}
+	return out, nil
 }
 
 func parseUserIDFromClaims(r *http.Request) (uuid.UUID, bool) {

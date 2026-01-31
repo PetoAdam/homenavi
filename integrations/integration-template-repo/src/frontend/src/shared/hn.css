@@ -1,0 +1,122 @@
+:root {
+  --hn-bg: #242e3a;
+  --hn-bg-secondary: #32404d;
+  --hn-card: rgba(255, 255, 255, 0.13);
+  --hn-card-strong: rgba(255, 255, 255, 0.18);
+  --hn-border: rgba(255, 255, 255, 0.32);
+  --hn-text: rgba(255, 255, 255, 0.95);
+  --hn-muted: rgba(255, 255, 255, 0.72);
+  --hn-accent: #60a5fa;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: radial-gradient(1200px 700px at 15% 0%, rgba(96, 165, 250, 0.18), transparent 55%),
+              radial-gradient(1000px 700px at 85% 40%, rgba(148, 163, 184, 0.20), transparent 60%),
+              var(--hn-bg);
+  color: var(--hn-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+a { color: inherit; }
+
+.hn-shell {
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.hn-card {
+  border: 1px solid var(--hn-border);
+  background: var(--hn-card);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+.hn-card.glass-strong {
+  background: var(--hn-card-strong);
+}
+
+.hn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hn-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.hn-subtitle {
+  font-size: 13px;
+  color: var(--hn-muted);
+  margin-top: 6px;
+}
+
+.hn-section {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--hn-border);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.hn-counter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.hn-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hn-stat-label {
+  font-size: 12px;
+  color: var(--hn-muted);
+}
+
+.hn-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.hn-btn {
+  border: 1px solid var(--hn-border);
+  background: var(--hn-card-strong);
+  color: var(--hn-text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.hn-btn:hover {
+  border-color: var(--hn-accent);
+  transform: translateY(-1px);
+}
+
+.hn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hn-border);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--hn-muted);
+  font-size: 12px;
+}

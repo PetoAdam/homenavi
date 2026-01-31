@@ -1,0 +1,42 @@
+name: Verify Integration
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Homenavi verify
+        uses: PetoAdam/homenavi/.github/actions/integration-verify@main
+        with:
+          manifest_path: manifest/homenavi-integration.json
+
+      - name: gosec
+        uses: securego/gosec@v2.22.0
+        with:
+          args: ./...
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: homenavi-integration:latest

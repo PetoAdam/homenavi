@@ -9,6 +9,9 @@ devices_snapshot.json
 docker-compose-pi.yml
 zigbee2mqtt-data/configuration-pi.yaml
 
+# Deployment-local integration installation config
+integrations/config/installed.yaml
+
 # Python
 __pycache__/
 **/__pycache__/

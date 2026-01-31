@@ -1,0 +1,14 @@
+# Example installed integrations config.
+#
+# Copy this to installed.yaml (or keep it elsewhere and point
+# INTEGRATIONS_CONFIG_FILE at it) and list your running integrations.
+
+# Example integration item (uncomment to use):
+# integrations:
+#   - id: hello-homenavi
+#     upstream: http://hello-homenavi:8099
+#
+# Note: inside Docker Compose you can omit host port mappings entirely.
+# The proxy should point at the container port (default 8099).
+
+integrations: []

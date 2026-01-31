@@ -25,6 +25,16 @@ http {
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers HIGH:!aNULL:!MD5;
 
+        location = /integrations { return 301 /integrations/; }
+        location /integrations/ {
+            set $integration_proxy_upstream http://integration-proxy:8099;
+            proxy_pass $integration_proxy_upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
         location /ws/ {
             set $api_gateway_upstream http://api-gateway:8080;
             proxy_pass $api_gateway_upstream;

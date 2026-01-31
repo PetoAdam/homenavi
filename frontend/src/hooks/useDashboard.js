@@ -75,7 +75,8 @@ export default function useDashboard({ enabled, accessToken }) {
       }
 
       if (catRes.success) {
-        setCatalog(Array.isArray(catRes.data) ? catRes.data : []);
+        const base = Array.isArray(catRes.data) ? catRes.data : [];
+        setCatalog(base);
       } else {
         // Temporary fallback until backend catalog is always available.
         setCatalog(listLocalWidgetCatalog());

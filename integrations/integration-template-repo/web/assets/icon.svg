@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hello Homenavi">
+  <g fill="#ffffff" opacity="0.95">
+    <path d="M32 13l2.3 7.1 7.4.1-6 4.3 2.2 7.2-5.9-4.2-5.9 4.2 2.2-7.2-6-4.3 7.4-.1L32 13z"/>
+    <path d="M18 36l1.6 5 5.2.1-4.2 3.1 1.5 5-4.1-3-4.1 3 1.5-5-4.2-3.1 5.2-.1L18 36z"/>
+    <path d="M46 34l1.7 5.3 5.5.1-4.4 3.2 1.6 5.4-4.4-3.2-4.4 3.2 1.6-5.4-4.4-3.2 5.5-.1L46 34z"/>
+  </g>
+</svg>
