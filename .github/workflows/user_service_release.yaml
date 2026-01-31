@@ -1,0 +1,14 @@
+name: Release User Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: user-service
+      context: ./user-service
+      dockerfile: ./user-service/Dockerfile
+    secrets: inherit

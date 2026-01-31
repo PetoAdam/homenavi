@@ -1,0 +1,14 @@
+name: Release Weather Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: weather-service
+      context: ./weather-service
+      dockerfile: ./weather-service/Dockerfile
+    secrets: inherit

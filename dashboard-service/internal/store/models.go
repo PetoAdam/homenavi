@@ -35,7 +35,16 @@ type WidgetType struct {
 	Description    string         `json:"description"`
 	Icon           string         `json:"icon,omitempty"`
 	DefaultSize    string         `json:"default_size_hint,omitempty"`
+	EntryURL       string         `json:"entry_url,omitempty"`
+	Entry          *WidgetEntry   `json:"entry,omitempty"`
 	SettingsSchema map[string]any `json:"settings_schema,omitempty"`
 	Verified       bool           `json:"verified"`
 	Source         string         `json:"source"`
+}
+
+// WidgetEntry is a structured widget entry point.
+// For iframe widgets, URL should be an absolute path (e.g. /integrations/<id>/widgets/foo/).
+type WidgetEntry struct {
+	Kind string `json:"kind"`
+	URL  string `json:"url"`
 }

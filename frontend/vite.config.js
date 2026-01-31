@@ -9,10 +9,17 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        navigateFallbackDenylist: [/^\/api\//],
+        // IMPORTANT: exclude platform endpoints from SPA navigation fallback.
+        // Otherwise the service worker can respond with index.html for these URLs,
+        // which breaks integration iframes and API calls.
+        navigateFallbackDenylist: [/^\/api\//, /^\/integrations\//, /^\/ws\//, /^\/uploads\//],
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,
+            handler: 'NetworkOnly'
+          },
+          {
+            urlPattern: /^\/integrations\//,
             handler: 'NetworkOnly'
           }
         ]
@@ -44,6 +51,12 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
+        changeOrigin: true
+      },
+      // When running the frontend dev server, proxy integration content through nginx
+      // so that /integrations/* does not fall back to index.html.
+      '/integrations': {
+        target: 'http://localhost',
         changeOrigin: true
       },
       '/ws/automation': {

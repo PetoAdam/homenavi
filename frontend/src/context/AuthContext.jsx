@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { login, finish2FA, signup, refreshToken, logout, getMe, request2FAEmail } from '../services/authService';
 import { setAuthCookie, clearAuthCookie } from '../services/authCookie';
+import { setAccessToken as setHttpAccessToken } from '../services/httpClient';
 
 const AuthContext = createContext();
 
@@ -37,6 +38,11 @@ export function AuthProvider({ children }) {
       cancelled = true;
     };
   }, [accessToken, bootstrapping]);
+
+  // Keep the shared HTTP client in sync with auth state.
+  useEffect(() => {
+    setHttpAccessToken(accessToken);
+  }, [accessToken]);
 
   // On mount, try to refresh access token if refresh token exists in localStorage
   // Also check for Google OAuth callback
@@ -260,6 +266,8 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('refreshToken');
 
     clearAuthCookie();
+
+    setHttpAccessToken(null);
     
     setUser(null);
     setPendingUserId(null); // Clear pending userId

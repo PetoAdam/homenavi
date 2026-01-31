@@ -1,0 +1,14 @@
+name: Release Frontend Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: frontend
+      context: ./frontend
+      dockerfile: ./frontend/Dockerfile
+    secrets: inherit

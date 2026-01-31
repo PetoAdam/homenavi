@@ -1,0 +1,14 @@
+name: Release Zigbee Adapter Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: zigbee-adapter
+      context: ./zigbee-adapter
+      dockerfile: ./zigbee-adapter/Dockerfile
+    secrets: inherit

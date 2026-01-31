@@ -27,6 +27,8 @@ export default function WidgetShell({
   onRemove,
   className = '',
   interactive = true,
+  flush = false,
+  showHeader = true,
   ...props
 }) {
   // Handle 401/403 errors
@@ -56,7 +58,7 @@ export default function WidgetShell({
 
   return (
     <GlassCard
-      className={`widget-shell ${editMode ? 'widget-shell--edit-mode' : ''} ${className}`}
+      className={`widget-shell ${flush ? 'glass-card--flush' : ''} ${editMode ? 'widget-shell--edit-mode' : ''} ${className}`}
       interactive={interactive && !editMode}
       {...props}
     >
@@ -98,7 +100,7 @@ export default function WidgetShell({
       {/* Widget content wrapper */}
       <div className={`widget-shell__content ${editMode ? 'widget-shell__content--muted' : ''}`}>
         {/* Optional header */}
-        {(title || subtitle) && (
+        {showHeader && (title || subtitle) && (
           <div className="widget-shell__header">
             {title && (
               <div className="widget-shell__title-row">
