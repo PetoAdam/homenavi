@@ -1,0 +1,16 @@
+# OS / editor
+.DS_Store
+*.swp
+
+# Node
+src/frontend/node_modules/
+src/frontend/dist/
+
+# Exported build output (kept empty in git)
+web/ui/*
+!web/ui/.gitkeep
+web/widgets/**/*
+!web/widgets/**/.gitkeep
+
+# Secrets
+.env

@@ -1,0 +1,14 @@
+name: Release Email Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: email-service
+      context: ./email-service
+      dockerfile: ./email-service/Dockerfile
+    secrets: inherit

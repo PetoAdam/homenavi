@@ -1,0 +1,22 @@
+.integration-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0 1.5rem 3rem;
+  color: var(--color-white);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.integration-page iframe {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .integration-page {
+    padding: 0 1rem 2.5rem;
+  }
+}

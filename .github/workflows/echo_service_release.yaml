@@ -1,0 +1,14 @@
+name: Release Echo Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: echo-service
+      context: ./echo-service
+      dockerfile: ./echo-service/Dockerfile
+    secrets: inherit

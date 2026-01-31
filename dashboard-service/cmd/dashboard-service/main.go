@@ -49,7 +49,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := httpapi.NewServer(repo)
+	srv := httpapi.NewServer(repo, httpapi.ServerOptions{
+		IntegrationProxyURL: cfg.IntegrationProxyURL,
+	})
 
 	r := chi.NewRouter()
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

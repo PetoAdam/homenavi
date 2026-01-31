@@ -1,0 +1,14 @@
+name: Release API Gateway Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: api-gateway
+      context: ./api-gateway
+      dockerfile: ./api-gateway/Dockerfile
+    secrets: inherit

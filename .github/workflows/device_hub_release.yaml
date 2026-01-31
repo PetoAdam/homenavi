@@ -1,0 +1,14 @@
+name: Release Device Hub Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: device-hub
+      context: ./device-hub
+      dockerfile: ./device-hub/Dockerfile
+    secrets: inherit

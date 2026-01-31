@@ -1,0 +1,14 @@
+name: Release Profile Picture Service Docker Image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: profile-picture-service
+      context: ./profile-picture-service
+      dockerfile: ./profile-picture-service/Dockerfile
+    secrets: inherit

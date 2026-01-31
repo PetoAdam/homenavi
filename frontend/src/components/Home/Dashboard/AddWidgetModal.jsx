@@ -8,9 +8,13 @@ import {
   faLightbulb,
   faChartLine,
   faBolt,
+  faPlug,
+  faStar,
+  faMusic,
   faCheck,
   faQuestionCircle,
 } from '@fortawesome/free-solid-svg-icons';
+import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import { getModalRoot } from '../../common/Modal/modalRoot';
 import SearchBar from '../../common/SearchBar/SearchBar';
 import './AddWidgetModal.css';
@@ -24,8 +28,22 @@ const WIDGET_ICONS = {
   'homenavi.automation.manual_trigger': faBolt,
 };
 
-function getWidgetIcon(widgetType) {
-  return WIDGET_ICONS[widgetType] || faQuestionCircle;
+const ICONS_BY_NAME = {
+  sun: faSun,
+  map: faMap,
+  lightbulb: faLightbulb,
+  chart: faChartLine,
+  bolt: faBolt,
+  plug: faPlug,
+  sparkles: faStar,
+  music: faMusic,
+  spotify: faSpotify,
+};
+
+function getWidgetIcon(widget) {
+  const byID = WIDGET_ICONS[widget?.id];
+  const key = (widget?.icon || '').toLowerCase().trim();
+  return ICONS_BY_NAME[key] || byID || faQuestionCircle;
 }
 
 export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
@@ -101,7 +119,7 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
           {filteredCatalog.map((widget) => (
             <div key={widget.id} className="add-widget-modal__item">
               <div className="add-widget-modal__item-icon">
-                <FontAwesomeIcon icon={getWidgetIcon(widget.id)} />
+                <FontAwesomeIcon icon={getWidgetIcon(widget)} />
               </div>
               <div className="add-widget-modal__item-info">
                 <span className="add-widget-modal__item-name">

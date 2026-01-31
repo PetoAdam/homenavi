@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "hello-homenavi",
+  "name": "Hello Homenavi",
+  "version": "0.1.0",
+  "publisher": "Example",
+  "homepage": "https://homenavi.org",
+  "verified": false,
+  "ui": {
+    "sidebar": {
+      "enabled": true,
+      "path": "/ui/",
+      "label": "Hello",
+      "icon": "/assets/icon.svg"
+    }
+  },
+  "widgets": [
+    {
+      "type": "integration.hello_homenavi.hello",
+      "display_name": "Hello Homenavi",
+      "description": "Minimal widget example.",
+      "entry": { "kind": "iframe", "url": "/widgets/hello/" },
+      "requested_scopes": []
+    }
+  ]
+}

@@ -3,8 +3,6 @@
 
 **A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.**
 
-![Homenavi dashboard](doc/resources/dashboard.png)
-
 [![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml)
 [![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml)
 [![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml)
@@ -192,19 +190,26 @@ Test: `python3 test-websocket.py` (see root script).
 ---
 
 ## 9. 🔌 Extending the Platform
-1. Create a new service directory or external repo.
-2. Add container to `docker-compose.yml` (or helm chart later).
-3. Register route(s) in `api-gateway` config `gateway.yaml` / routes.*.yaml.
-4. Expose metrics, health, and (optionally) tracing.
-5. Use JWT for auth; validate only needed claims.
+Integrations are **containers** that expose a manifest and optional UI surfaces:
 
-For dashboard widgets & third‑party integrations (planned direction):
-* The frontend is **not** intended to dynamically load arbitrary React bundles from the backend.
-* Instead, integrations should publish a **manifest + catalog** (widgets and automation steps) and render third‑party widgets in a **sandboxed iframe**.
-* Host data access should go through a **widget proxy** (scoped, short‑lived tokens; allow-listed operations), not raw access to user JWT.
-* The dashboard catalog will be served from a backend endpoint (`GET /api/widgets/catalog`) and can merge first‑party + integration-provided widgets.
+- The integration runs in the same Docker network as the stack.
+- `integration-proxy` reads `integrations/config/installed.yaml` and proxies `/integrations/<id>/...`.
+- The dashboard catalog merges integration widgets from `GET /integrations/registry.json`.
 
-See the detailed architecture/roadmap: `doc/dashboard_widgets_integrations_marketplace_roadmap.md`.
+Template structure (clean layout for devs):
+
+- `integrations/integration-template-repo/src/backend` → backend server code
+- `integrations/integration-template-repo/src/backend/cmd/integration` → backend entrypoint
+- `integrations/integration-template-repo/src/frontend` → tab + widget UI code
+- `integrations/integration-template-repo/web` → built assets (ui/widgets) + static assets
+
+Current runtime model:
+
+- Integrations publish `/.well-known/homenavi-integration.json` (manifest).
+- UI surfaces are rendered in sandboxed iframes (tab + widget).
+- Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
+
+See the detailed architecture/roadmap: [doc/dashboard_widgets_integrations_marketplace_roadmap.md](doc/dashboard_widgets_integrations_marketplace_roadmap.md).
 
 ---
 
