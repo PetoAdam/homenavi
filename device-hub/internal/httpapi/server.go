@@ -1395,6 +1395,32 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	if proto == "" {
 		return
 	}
+	stage = strings.TrimSpace(strings.ToLower(stage))
+	status = strings.TrimSpace(strings.ToLower(status))
+	if stage == "timeout" || stage == "stopped" || stage == "failed" || stage == "error" || stage == "completed" ||
+		status == "timeout" || status == "stopped" || status == "failed" || status == "error" || status == "completed" {
+		s.pairingMu.Lock()
+		session, ok := s.pairings[proto]
+		if !ok || !session.Active {
+			s.pairingMu.Unlock()
+			return
+		}
+		if stage != "" {
+			session.Status = stage
+		} else if status != "" {
+			session.Status = status
+		}
+		session.Active = false
+		session.ExpiresAt = time.Now().UTC()
+		if session.cancel != nil {
+			session.cancel()
+			session.cancel = nil
+		}
+		snapshot := session.clone()
+		s.pairingMu.Unlock()
+		s.emitPairingEvent(snapshot)
+		return
+	}
 	if !s.supportsInterviewTracking(proto) {
 		return
 	}
