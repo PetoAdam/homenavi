@@ -403,6 +403,13 @@ export default function useDeviceHubDevices(options = {}) {
 
     if (topic.startsWith(PAIRING_PREFIX)) {
       const data = safeParseJSON(payload) || {};
+      const origin = typeof data.origin === 'string' ? data.origin.toLowerCase() : '';
+      if (origin && origin !== 'device-hub') {
+        return;
+      }
+      if (!origin) {
+        return;
+      }
       const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
       if (!protocol) return;
       const status = data.stage || data.status || 'in_progress';
