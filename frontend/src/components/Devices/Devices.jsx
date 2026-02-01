@@ -348,6 +348,20 @@ export default function Devices() {
     if (!accessToken) {
       throw new Error('Authentication required');
     }
+    if (payload?.protocol) {
+      const listRes = await listPairingsApi(accessToken);
+      if (listRes.success && Array.isArray(listRes.data)) {
+        const activeSession = listRes.data.find(item => {
+          const protocol = (item?.protocol || '').toLowerCase();
+          const isActive = Boolean(item?.active);
+          return protocol && protocol === payload.protocol.toLowerCase() && isActive;
+        });
+        if (activeSession) {
+          refreshPairings?.();
+          return activeSession;
+        }
+      }
+    }
     const res = await startPairingApi(payload, accessToken);
     if (!res.success) {
       if (res.status === 409) {
