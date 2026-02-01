@@ -413,14 +413,23 @@ export default function useDeviceHubDevices(options = {}) {
       const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
       if (!protocol) return;
       const status = data.stage || data.status || 'in_progress';
+      const sessionId = data.id || protocol;
+      const isTerminal = ['completed', 'failed', 'timeout', 'stopped', 'error'].includes(String(status).toLowerCase());
+      const isActive = !isTerminal;
       const session = {
-        id: data.id || protocol,
+        id: sessionId,
         protocol,
         status,
-        active: status !== 'completed' && status !== 'failed' && status !== 'timeout' && status !== 'stopped',
+        active: isActive,
         metadata: data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {},
       };
-      setPairingSessions(prev => ({ ...prev, [protocol]: session }));
+      setPairingSessions(prev => {
+        const existing = prev?.[protocol];
+        if (existing?.active && isTerminal && sessionId && existing.id && sessionId !== existing.id) {
+          return prev;
+        }
+        return { ...prev, [protocol]: session };
+      });
       return;
     }
 
