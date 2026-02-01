@@ -21,6 +21,7 @@ import {
   deleteDevice as deleteDeviceApi,
   startPairing as startPairingApi,
   stopPairing as stopPairingApi,
+  listPairings as listPairingsApi,
 } from '../../services/deviceHubService';
 import {
   createErsDevice as createErsDeviceApi,
@@ -349,6 +350,16 @@ export default function Devices() {
     }
     const res = await startPairingApi(payload, accessToken);
     if (!res.success) {
+      if (res.status === 409) {
+        const listRes = await listPairingsApi(accessToken);
+        if (listRes.success && Array.isArray(listRes.data)) {
+          const match = listRes.data.find(item => (item?.protocol || '').toLowerCase() === (payload?.protocol || '').toLowerCase());
+          if (match) {
+            refreshPairings?.();
+            return match;
+          }
+        }
+      }
       throw new Error(res.error || 'Unable to start pairing');
     }
     refreshPairings?.();

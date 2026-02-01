@@ -1221,9 +1221,27 @@ func (s *Server) startPairing(protocol string, timeout int, metadata pairingMeta
 	}
 	s.pairingMu.Lock()
 	if existing, ok := s.pairings[protocol]; ok && existing.Active {
+		if !existing.ExpiresAt.IsZero() && !existing.ExpiresAt.After(now) {
+			existing.Active = false
+			existing.Status = "timeout"
+			existing.ExpiresAt = now
+			if existing.cancel != nil {
+				existing.cancel()
+				existing.cancel = nil
+			}
+			expired := existing.clone()
+			s.pairingMu.Unlock()
+			_ = s.publishPairingCommand(protocol, "stop", 0)
+			s.emitPairingEvent(expired)
+		} else {
+			clone := existing.clone()
+			s.pairingMu.Unlock()
+			return &clone, nil
+		}
+	} else {
 		s.pairingMu.Unlock()
-		return nil, errPairingActive
 	}
+	s.pairingMu.Lock()
 	s.pairings[protocol] = session
 	s.pairingMu.Unlock()
 	if err := s.publishPairingCommand(protocol, "start", timeout); err != nil {
