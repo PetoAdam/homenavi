@@ -516,7 +516,7 @@ func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 		z.pairingActive = true
 		z.pairingCancel = cancel
 		z.pairingMu.Unlock()
-		_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(fmt.Sprintf(`{"value":true,"time":%d}`, cmd.Timeout)))
+		_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(fmt.Sprintf(`{"time":%d}`, cmd.Timeout)))
 		z.publishPairingProgress("active", "active", "", "")
 		go func(timeout int, c context.Context) {
 			select {
@@ -552,7 +552,7 @@ func (z *ZigbeeAdapter) stopPairing() {
 	if cancel != nil {
 		cancel()
 	}
-	_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(`{"value":false}`))
+	_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(`{"time":0}`))
 }
 
 func (z *ZigbeeAdapter) handleDeviceRemoveCommand(_ paho.Client, m paho.Message) {
