@@ -210,6 +210,12 @@ Current runtime model:
 - UI surfaces are rendered in sandboxed iframes (tab + widget).
 - Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
 
+### Integration secrets (admin-managed)
+
+Integrations must declare the secrets they require in the manifest via a `secrets` array. The Admin → Integrations page uses this list to render write-only secret fields and sends values to each integration’s admin endpoint.
+
+Each integration stores secrets in its own file (default `config/integration.secrets.json` in the integration repo/container, configurable with `INTEGRATION_SECRETS_PATH`). This prevents integrations from seeing each other’s secrets.
+
 See the detailed architecture/roadmap: [doc/dashboard_widgets_integrations_marketplace_roadmap.md](doc/dashboard_widgets_integrations_marketplace_roadmap.md).
 
 ---

@@ -11,6 +11,9 @@ type Server struct {
 	WebFS        fs.FS
 	ManifestJSON []byte
 	counter      *CounterStore
+	SecretStore  *SecretStore
+	SecretSpecs  []SecretSpec
+	AdminAuth    *AdminAuth
 }
 
 func mustSub(fsys fs.FS, dir string) fs.FS {
@@ -39,6 +42,9 @@ func (s *Server) Routes() http.Handler {
 		s.counter = NewCounterStore()
 	}
 	RegisterAPIRoutes(mux, s.counter)
+	if s.SecretStore != nil {
+		NewSecretsAPI(s.SecretStore, s.SecretSpecs, s.AdminAuth).Register(mux)
+	}
 
 	assets := http.FileServer(http.FS(mustSub(s.WebFS, "assets")))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", assets))

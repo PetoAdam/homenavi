@@ -14,3 +14,4 @@ web/widgets/**/*
 
 # Secrets
 .env
+config/integration.secrets.json

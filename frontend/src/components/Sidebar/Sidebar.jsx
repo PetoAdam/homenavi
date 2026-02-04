@@ -69,6 +69,13 @@ const MAIN_GROUP = {
 	],
 };
 
+const ADMIN_GROUP = {
+	header: 'Admin',
+	items: [
+		{ name: 'Integrations', path: '/admin/integrations', icon: <FontAwesomeIcon icon={faPlug} /> },
+	],
+};
+
 const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanentSidebar }, ref) {
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -76,6 +83,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 	const [integrations, setIntegrations] = useState([]);
 
 	const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
+	const isAdmin = user && user.role === 'admin';
 
 	useEffect(() => {
 		let alive = true;
@@ -103,14 +111,18 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 			return { name, path: route, icon };
 		});
 
-		return [
+		const groups = [
 			MAIN_GROUP,
 			{
 				header: 'Integrations',
 				items: integrationItems,
 			},
 		];
-	}, [integrations]);
+		if (isAdmin) {
+			groups.push(ADMIN_GROUP);
+		}
+		return groups;
+	}, [integrations, isAdmin]);
 
 	return (
 		<aside

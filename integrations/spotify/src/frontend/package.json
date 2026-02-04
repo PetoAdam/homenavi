@@ -1,0 +1,27 @@
+{
+  "name": "homenavi-spotify-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^6.7.2",
+    "@fortawesome/free-brands-svg-icons": "^6.7.2",
+    "@fortawesome/free-solid-svg-icons": "^6.7.2",
+    "@fortawesome/react-fontawesome": "^0.2.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "scripts": {
+    "dev:tab": "HN_TARGET=tab vite",
+    "dev:widget": "HN_TARGET=widget vite",
+    "build:tab": "HN_TARGET=tab vite build",
+    "build:widget": "HN_TARGET=widget vite build",
+    "build": "npm run build:tab && npm run build:widget && node ./scripts/export-build.mjs",
+    "preview:tab": "HN_TARGET=tab vite preview",
+    "preview:widget": "HN_TARGET=widget vite preview"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.3.1"
+  }
+}

@@ -11,6 +11,10 @@ This is the frontend for the Homenavi project, built with [React](https://react.
 - 🎉 FontAwesome icon support
 - 📱 Installable as a Progressive Web App (PWA)
 
+## Integration secrets (admin-managed)
+
+Integrations declare required secrets in their manifests. The Admin → Integrations page renders write-only secret fields and sends values to each integration’s admin endpoint. Values are never read back.
+
 ## Dependencies
 
 - **react** `^19.0.0`
