@@ -43,7 +43,7 @@ func main() {
 		logger.Fatalf("load schema: %v", err)
 	}
 
-	s := server.New(logger, validator, *schemaPath, *configPath)
+	s := server.New(logger, validator, pubKey, *schemaPath, *configPath)
 	for _, ic := range cfg.Integrations {
 		if err := s.AddIntegration(ic); err != nil {
 			logger.Fatalf("add integration %q: %v", ic.ID, err)

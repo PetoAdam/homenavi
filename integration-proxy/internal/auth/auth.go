@@ -49,13 +49,53 @@ func RequireResident(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 				writeJSONError(w, http.StatusUnauthorized, "invalid claims")
 				return
 			}
-			if !roleAtLeast("resident", strings.TrimSpace(claims.Role)) {
+			if !RoleAtLeast("resident", strings.TrimSpace(claims.Role)) {
 				writeJSONError(w, http.StatusForbidden, "forbidden")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func RequireAdmin(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL != nil && r.URL.Path == "/healthz" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			role, err := RoleFromRequest(pubKey, r)
+			if err != nil {
+				writeJSONError(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
+			if !RoleAtLeast("admin", role) {
+				writeJSONError(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func RoleFromRequest(pubKey *rsa.PublicKey, r *http.Request) (string, error) {
+	tokenStr := extractToken(r)
+	if tokenStr == "" {
+		return "", jwt.ErrTokenMalformed
+	}
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return pubKey, nil
+	})
+	if err != nil || !token.Valid {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+	return strings.TrimSpace(claims.Role), nil
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
@@ -75,7 +115,7 @@ func extractToken(r *http.Request) string {
 	return ""
 }
 
-func roleAtLeast(required, actual string) bool {
+func RoleAtLeast(required, actual string) bool {
 	roleRank := map[string]int{
 		"public":   0,
 		"user":     1,

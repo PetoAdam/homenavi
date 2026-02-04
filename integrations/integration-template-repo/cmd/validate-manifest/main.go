@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
@@ -20,7 +21,8 @@ func main() {
 		schemaPath = "spec/homenavi-integration.schema.json"
 	}
 
-	schemaBytes, err := os.ReadFile(schemaPath)
+	schemaPath = filepath.Clean(schemaPath)
+	schemaBytes, err := os.ReadFile(schemaPath) // #nosec G304 -- path comes from env/config
 	if err != nil {
 		log.Fatalf("read schema: %v", err)
 	}
@@ -33,7 +35,8 @@ func main() {
 		log.Fatalf("compile schema: %v", err)
 	}
 
-	manifestBytes, err := os.ReadFile(manifestPath)
+	manifestPath = filepath.Clean(manifestPath)
+	manifestBytes, err := os.ReadFile(manifestPath) // #nosec G304 -- path comes from env/config
 	if err != nil {
 		log.Fatalf("read manifest: %v", err)
 	}

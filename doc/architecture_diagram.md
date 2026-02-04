@@ -11,79 +11,79 @@ This repo is easiest to understand as three planes:
 ```mermaid
 flowchart TB
   %% Client plane
-  subgraph Client[Client plane]
-    Browser[Browser (Frontend PWA)]
+  subgraph Client["Client plane"]
+    Browser["Frontend PWA (Browser)"]
   end
 
   %% Edge / device plane
-  subgraph Edge[Edge / device plane]
-    Zigbee[Zigbee Adapter]
-    Thread[Thread Adapter]
+  subgraph Edge["Edge / device plane"]
+    Zigbee["Zigbee Adapter"]
+    Thread["Thread Adapter"]
   end
 
   %% Core plane
-  subgraph Core[Core plane]
-    Nginx[Nginx]
-    Gateway[API Gateway]
+  subgraph Core["Core plane"]
+    Nginx["Nginx"]
+    Gateway["API Gateway"]
 
-    Auth[Auth Service]
-    User[User Service]
-    DeviceHub[Device Hub]
-    History[History Service]
-    Automation[Automation Service]
-    ERS[Entity Registry (ERS)]
+    Auth["Auth Service"]
+    User["User Service"]
+    DeviceHub["Device Hub"]
+    History["History Service"]
+    Automation["Automation Service"]
+    ERS["Entity Registry (ERS)"]
 
-    Echo[Echo Service]
-    Email[Email Service]
-    ProfilePic[Profile Picture Service]
+    Echo["Echo Service"]
+    Email["Email Service"]
+    ProfilePic["Profile Picture Service"]
 
-    Mosquitto[Mosquitto (MQTT broker)]
-    Postgres[(PostgreSQL)]
-    Redis[(Redis)]
+    Mosquitto["Mosquitto (MQTT broker)"]
+    Postgres[("PostgreSQL")]
+    Redis[("Redis")]
 
-    Prom[Prometheus]
-    Jaeger[Jaeger]
+    Prom["Prometheus"]
+    Jaeger["Jaeger"]
   end
 
   %% Entry points
   Browser -->|HTTP| Nginx
-  Nginx -->|/ (SPA) static assets| Browser
-  Nginx -->|/api/* + /ws/*| Gateway
+  Nginx -->|"/ (SPA) static assets"| Browser
+  Nginx -->|"/api/* + /ws/*"| Gateway
 
   %% Gateway → services (REST)
   Gateway -->|REST| Auth
   Gateway -->|REST| User
-  Gateway -->|REST /api/hdp/*| DeviceHub
+  Gateway -->|"REST /api/hdp/*"| DeviceHub
   Gateway -->|REST| History
   Gateway -->|REST| Automation
-  Gateway -->|REST /api/ers/*| ERS
+  Gateway -->|"REST /api/ers/*"| ERS
   Gateway -->|REST| Email
   Gateway -->|REST| ProfilePic
 
   %% WebSockets
-  Browser <-->|WS /ws/ers| Gateway
-  Gateway <-->|WS upstream| ERS
+  Browser <-->|"WS /ws/ers"| Gateway
+  Gateway <-->|"WS upstream"| ERS
 
-  Browser <-->|MQTT-over-WS /ws/hdp| Gateway
-  Gateway <-->|MQTT-over-WS upstream| Mosquitto
+  Browser <-->|"MQTT-over-WS /ws/hdp"| Gateway
+  Gateway <-->|"MQTT-over-WS upstream"| Mosquitto
 
-  Browser <-->|WS (demo)| Gateway
-  Gateway <-->|WS upstream| Echo
+  Browser <-->|"WS demo"| Gateway
+  Gateway <-->|"WS upstream"| Echo
 
   %% MQTT (HDP)
-  Zigbee <-->|MQTT (HDP topics)| Mosquitto
-  Thread <-->|MQTT (HDP topics)| Mosquitto
-  DeviceHub <-->|MQTT subscribe/publish| Mosquitto
-  ERS <-->|MQTT subscribe (auto-import)| Mosquitto
+  Zigbee <-->|"MQTT (HDP topics)"| Mosquitto
+  Thread <-->|"MQTT (HDP topics)"| Mosquitto
+  DeviceHub <-->|"MQTT subscribe/publish"| Mosquitto
+  ERS <-->|"MQTT subscribe (auto-import)"| Mosquitto
 
   %% Persistence
   User -->|SQL| Postgres
-  Auth -->|SQL (tokens/users etc.)| Postgres
-  History -->|SQL (state history)| Postgres
-  ERS -->|SQL (inventory)| Postgres
+  Auth -->|"SQL (tokens/users etc.)"| Postgres
+  History -->|"SQL (state history)"| Postgres
+  ERS -->|"SQL (inventory)"| Postgres
 
-  Gateway -->|rate limit/session| Redis
-  Auth -->|lockouts/2FA state| Redis
+  Gateway -->|"rate limit/session"| Redis
+  Auth -->|"lockouts/2FA state"| Redis
 
   %% Observability
   Gateway -->|metrics| Prom

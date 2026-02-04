@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,13 +11,17 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
 
+	"homenavi/integration-proxy/internal/auth"
 	"homenavi/integration-proxy/internal/config"
 	"homenavi/integration-proxy/internal/models"
 )
@@ -27,25 +32,38 @@ type Server struct {
 	upstreams   map[string]*url.URL
 	manifests   map[string]models.Manifest
 	manifestErr map[string]string
+	installStat map[string]installStatus
 	mu          sync.RWMutex
 	client      *http.Client
 	validator   *jsonschema.Schema
+	pubKey      *rsa.PublicKey
 	schemaPath  string
 	configPath  string
 }
 
-func New(logger *log.Logger, validator *jsonschema.Schema, schemaPath, configPath string) *Server {
-	return &Server{
+type installStatus struct {
+	ID       string    `json:"id"`
+	Stage    string    `json:"stage"`
+	Progress int       `json:"progress"`
+	Message  string    `json:"message,omitempty"`
+	Updated  time.Time `json:"updated_at"`
+}
+
+func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey, schemaPath, configPath string) *Server {
+	s := &Server{
 		logger:      logger,
 		proxies:     make(map[string]*httputil.ReverseProxy),
 		upstreams:   make(map[string]*url.URL),
 		manifests:   make(map[string]models.Manifest),
 		manifestErr: make(map[string]string),
+		installStat: make(map[string]installStatus),
 		client:      &http.Client{Timeout: 8 * time.Second},
 		validator:   validator,
+		pubKey:      pubKey,
 		schemaPath:  schemaPath,
 		configPath:  configPath,
 	}
+	return s
 }
 
 func (s *Server) Routes() http.Handler {
@@ -53,8 +71,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/integrations/registry.json", s.handleRegistry)
 	mux.HandleFunc("/registry.json", s.handleRegistry)
+	mux.HandleFunc("/integrations/marketplace.json", s.handleMarketplace)
+	mux.HandleFunc("/marketplace.json", s.handleMarketplace)
 	mux.HandleFunc("/integrations/reload", s.handleReload)
 	mux.HandleFunc("/reload", s.handleReload)
+	mux.HandleFunc("/integrations/restart-all", s.handleRestartAll)
+	mux.HandleFunc("/integrations/restart/", s.handleRestartIntegration)
+	mux.HandleFunc("/integrations/install", s.handleInstall)
+	mux.HandleFunc("/integrations/uninstall", s.handleUninstall)
+	mux.HandleFunc("/integrations/install-status/", s.handleInstallStatus)
 	mux.HandleFunc("/integrations/", s.handleProxy)
 	mux.HandleFunc("/", s.handleProxy)
 	return mux
@@ -198,6 +223,7 @@ func (s *Server) ReloadFromConfig() error {
 	s.upstreams = make(map[string]*url.URL)
 	s.manifests = make(map[string]models.Manifest)
 	s.manifestErr = make(map[string]string)
+	s.installStat = make(map[string]installStatus)
 	s.mu.Unlock()
 
 	for _, ic := range cfg.Integrations {
@@ -214,15 +240,435 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	go func() {
+		if err := s.ReloadFromConfig(); err != nil {
+			s.logger.Printf("reload failed: %v", err)
+		}
+	}()
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued"})
+}
+
+func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	go func() {
+		ctx := context.Background()
+		if err := s.ReloadFromConfig(); err != nil {
+			s.logger.Printf("restart-all reload failed: %v", err)
+		}
+		cfg, cfgErr := config.Load(s.configPath)
+		marketplace, mpErr := config.LoadMarketplace(s.marketplacePath())
+		if cfgErr == nil && mpErr == nil && s.composeEnabled() {
+			for _, ic := range cfg.Integrations {
+				id := strings.TrimSpace(ic.ID)
+				if id == "" {
+					continue
+				}
+				composeFile := ""
+				for _, entry := range marketplace.Integrations {
+					if strings.TrimSpace(entry.ID) == id {
+						if filePath, err := s.resolveComposeFile(id, entry); err == nil {
+							composeFile = filePath
+						} else {
+							s.logger.Printf("restart-all resolve compose failed id=%s err=%v", id, err)
+						}
+						break
+					}
+				}
+				if strings.TrimSpace(composeFile) == "" {
+					continue
+				}
+				composeFile = s.expandComposePath(composeFile)
+				if err := s.runCompose(ctx, composeFile, "restart", id); err != nil {
+					s.logger.Printf("restart-all failed id=%s err=%v", id, err)
+				}
+			}
+		}
+		s.refreshAll(ctx)
+	}()
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued"})
+}
+
+func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/integrations/restart/")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	s.mu.RLock()
+	_, ok := s.upstreams[id]
+	s.mu.RUnlock()
+	if !ok {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "unknown integration", "code": http.StatusNotFound})
+		return
+	}
+	go func() {
+		ctx := context.Background()
+		s.setInstallStatus(id, "restarting", 60, "Restarting integration")
+		composeFile := ""
+		if s.composeEnabled() {
+			if marketplace, err := config.LoadMarketplace(s.marketplacePath()); err == nil {
+				for _, entry := range marketplace.Integrations {
+					if strings.TrimSpace(entry.ID) == id {
+						if filePath, err := s.resolveComposeFile(id, entry); err == nil {
+							composeFile = filePath
+						} else {
+							s.logger.Printf("restart %s resolve compose failed: %v", id, err)
+						}
+						break
+					}
+				}
+			}
+		}
+		if strings.TrimSpace(composeFile) != "" {
+			composeFile = s.expandComposePath(composeFile)
+			if err := s.runCompose(ctx, composeFile, "restart", id); err != nil {
+				s.logger.Printf("restart %s failed: %v", id, err)
+				s.setInstallStatus(id, "error", 100, "Restart failed")
+			} else {
+				s.setInstallStatus(id, "restarted", 100, "Restarted")
+			}
+		}
+		s.refreshManifestFromUpstream(ctx, id)
+	}()
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued"})
+}
+
+func (s *Server) handleMarketplace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	marketplace, err := config.LoadMarketplace(s.marketplacePath())
+	if err != nil {
+		s.logger.Printf("marketplace load failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	installed := map[string]bool{}
+	if strings.TrimSpace(s.configPath) != "" {
+		if cfg, err := config.Load(s.configPath); err == nil {
+			for _, ic := range cfg.Integrations {
+				installed[ic.ID] = true
+			}
+		} else {
+			s.logger.Printf("marketplace installed load failed: %v", err)
+		}
+	}
+	items := make([]models.MarketplaceIntegration, 0, len(marketplace.Integrations))
+	for _, entry := range marketplace.Integrations {
+		id := strings.TrimSpace(entry.ID)
+		if id == "" {
+			continue
+		}
+		items = append(items, models.MarketplaceIntegration{
+			ID:          id,
+			DisplayName: entry.DisplayName,
+			Description: entry.Description,
+			Icon:        entry.Icon,
+			Version:     entry.Version,
+			Publisher:   entry.Publisher,
+			Homepage:    entry.Homepage,
+			Installed:   installed[id],
+		})
+	}
+	resp := models.Marketplace{GeneratedAt: time.Now().UTC(), Integrations: items}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		ID       string `json:"id"`
+		Upstream string `json:"upstream"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid json", "code": http.StatusBadRequest})
+		return
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	if strings.TrimSpace(s.configPath) == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "config path unavailable", "code": http.StatusInternalServerError})
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to load config", "code": http.StatusInternalServerError})
+		return
+	}
+	for _, ic := range cfg.Integrations {
+		if ic.ID == id {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration already installed", "code": http.StatusConflict})
+			return
+		}
+	}
+	upstream := strings.TrimSpace(req.Upstream)
+	composeFile := ""
+	marketplace, err := config.LoadMarketplace(s.marketplacePath())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to load marketplace", "code": http.StatusInternalServerError})
+		return
+	}
+	for _, entry := range marketplace.Integrations {
+		if strings.TrimSpace(entry.ID) == id {
+			if upstream == "" {
+				upstream = strings.TrimSpace(entry.Upstream)
+			}
+			composeFile, err = s.resolveComposeFile(id, entry)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
+				return
+			}
+			break
+		}
+	}
+	composeFile = s.expandComposePath(composeFile)
+	if upstream == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing upstream", "code": http.StatusBadRequest})
+		return
+	}
+	if strings.TrimSpace(composeFile) != "" {
+		if err := s.ensureSecretsFile(id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare secrets file", "code": http.StatusInternalServerError, "detail": err.Error()})
+			s.setInstallStatus(id, "error", 100, err.Error())
+			return
+		}
+	}
+	s.setInstallStatus(id, "writing-config", 20, "Updating installed integrations")
+	cfg.Integrations = append(cfg.Integrations, config.IntegrationConfig{ID: id, Upstream: upstream})
+	if err := config.Save(s.configPath, cfg); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to write config", "code": http.StatusInternalServerError, "detail": err.Error()})
+		s.setInstallStatus(id, "error", 100, err.Error())
+		return
+	}
+	s.setInstallStatus(id, "starting", 45, "Starting integration")
+	if strings.TrimSpace(composeFile) != "" {
+		if err := s.composeInstall(r.Context(), composeFile, id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to start integration", "code": http.StatusInternalServerError, "detail": err.Error()})
+			s.setInstallStatus(id, "error", 100, err.Error())
+			return
+		}
+	}
+	s.setInstallStatus(id, "reloading", 70, "Reloading integration proxy")
 	if err := s.ReloadFromConfig(); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error(), "code": http.StatusInternalServerError})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to reload", "code": http.StatusInternalServerError})
+		s.setInstallStatus(id, "error", 100, err.Error())
+		return
+	}
+	s.setInstallStatus(id, "ready", 100, "Installed")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "installed", "id": id})
+}
+
+func (s *Server) ensureSecretsFile(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.Contains(id, "/") || strings.Contains(id, "..") {
+		return fmt.Errorf("invalid integration id")
+	}
+	root := strings.TrimSpace(os.Getenv("INTEGRATIONS_ROOT"))
+	if root == "" {
+		return nil
+	}
+	secretsDir := filepath.Join(root, "integrations", "secrets")
+	if err := os.MkdirAll(secretsDir, 0o755); err != nil {
+		return err
+	}
+	secretsPath := filepath.Join(secretsDir, fmt.Sprintf("%s.secrets.json", id))
+	info, err := os.Stat(secretsPath)
+	if err == nil {
+		if info.IsDir() {
+			if err := os.RemoveAll(secretsPath); err != nil {
+				return err
+			}
+			return os.WriteFile(secretsPath, []byte("{}\n"), 0o644)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return os.WriteFile(secretsPath, []byte("{}\n"), 0o644)
+}
+
+func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid json", "code": http.StatusBadRequest})
+		return
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	if strings.TrimSpace(s.configPath) == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "config path unavailable", "code": http.StatusInternalServerError})
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to load config", "code": http.StatusInternalServerError})
+		return
+	}
+	updated := make([]config.IntegrationConfig, 0, len(cfg.Integrations))
+	found := false
+	for _, ic := range cfg.Integrations {
+		if ic.ID == id {
+			found = true
+			continue
+		}
+		updated = append(updated, ic)
+	}
+	if !found {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration not installed", "code": http.StatusNotFound})
+		return
+	}
+	composeFile := ""
+	if marketplace, err := config.LoadMarketplace(s.marketplacePath()); err == nil {
+		for _, entry := range marketplace.Integrations {
+			if strings.TrimSpace(entry.ID) == id {
+				composeFile, err = s.resolveComposeFile(id, entry)
+				if err != nil {
+					w.Header().Set("Content-Type", "application/json; charset=utf-8")
+					w.WriteHeader(http.StatusInternalServerError)
+					_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
+					return
+				}
+				break
+			}
+		}
+	}
+	composeFile = s.expandComposePath(composeFile)
+	cfg.Integrations = updated
+	if err := config.Save(s.configPath, cfg); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to write config", "code": http.StatusInternalServerError, "detail": err.Error()})
+		return
+	}
+	if strings.TrimSpace(composeFile) != "" {
+		if err := s.composeUninstall(r.Context(), composeFile, id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to stop integration", "code": http.StatusInternalServerError, "detail": err.Error()})
+			return
+		}
+	}
+	if err := s.ReloadFromConfig(); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to reload", "code": http.StatusInternalServerError})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "uninstalled", "id": id})
+}
+
+func (s *Server) handleInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/integrations/install-status/")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	status, ok := s.getInstallStatus(id)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "status not found", "code": http.StatusNotFound})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (s *Server) refreshAll(ctx context.Context) {
@@ -238,6 +684,147 @@ func (s *Server) refreshAll(ctx context.Context) {
 	}
 }
 
+func (s *Server) marketplacePath() string {
+	if strings.TrimSpace(s.configPath) == "" {
+		return ""
+	}
+	dir := path.Dir(s.configPath)
+	return path.Join(dir, "marketplace.yaml")
+}
+
+func (s *Server) setInstallStatus(id, stage string, progress int, message string) {
+	if strings.TrimSpace(id) == "" {
+		return
+	}
+	s.mu.Lock()
+	s.installStat[id] = installStatus{ID: id, Stage: stage, Progress: progress, Message: message, Updated: time.Now().UTC()}
+	s.mu.Unlock()
+}
+
+func (s *Server) getInstallStatus(id string) (installStatus, bool) {
+	s.mu.RLock()
+	status, ok := s.installStat[id]
+	s.mu.RUnlock()
+	return status, ok
+}
+
+func (s *Server) composeEnabled() bool {
+	val := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_ENABLED"))
+	if val != "" {
+		val = strings.ToLower(val)
+		return val == "1" || val == "true" || val == "yes"
+	}
+	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+		return true
+	}
+	return false
+}
+
+func (s *Server) composeBaseArgs(fileOverride string) ([]string, error) {
+	file := strings.TrimSpace(fileOverride)
+	if file == "" {
+		file = strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_FILE"))
+	}
+	if file == "" {
+		file = strings.TrimSpace(os.Getenv("DOCKER_COMPOSE_FILE"))
+	}
+	project := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_PROJECT"))
+	if file == "" {
+		return nil, fmt.Errorf("compose file not configured")
+	}
+	args := []string{"compose", "-f", file}
+	if envFile := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_ENV_FILE")); envFile != "" {
+		args = append(args, "--env-file", envFile)
+	}
+	if project != "" {
+		args = append(args, "-p", project)
+	}
+	return args, nil
+}
+
+func (s *Server) resolveComposeFile(id string, entry config.MarketplaceIntegration) (string, error) {
+	composeFile := strings.TrimSpace(entry.ComposeFile)
+	if composeFile != "" {
+		return composeFile, nil
+	}
+	composeYAML := strings.TrimSpace(entry.ComposeYAML)
+	if composeYAML == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(s.configPath) == "" {
+		return "", fmt.Errorf("config path unavailable")
+	}
+	baseDir := filepath.Dir(s.configPath)
+	composeDir := filepath.Join(baseDir, "compose")
+	if err := os.MkdirAll(composeDir, 0o755); err != nil {
+		return "", err
+	}
+	filePath := filepath.Join(composeDir, fmt.Sprintf("%s.yml", id))
+	if err := os.WriteFile(filePath, []byte(composeYAML+"\n"), 0o644); err != nil {
+		return "", err
+	}
+	return filePath, nil
+}
+
+func (s *Server) expandComposePath(pathRaw string) string {
+	pathRaw = strings.TrimSpace(pathRaw)
+	if pathRaw == "" {
+		return ""
+	}
+	root := strings.TrimSpace(os.Getenv("INTEGRATIONS_ROOT"))
+	if root == "" {
+		return pathRaw
+	}
+	replaced := strings.ReplaceAll(pathRaw, "${INTEGRATIONS_ROOT}", root)
+	if replaced == pathRaw {
+		replaced = strings.ReplaceAll(pathRaw, "$INTEGRATIONS_ROOT", root)
+	}
+	return replaced
+}
+
+func (s *Server) runCompose(ctx context.Context, composeFile string, args ...string) error {
+	if !s.composeEnabled() {
+		return nil
+	}
+	base, err := s.composeBaseArgs(composeFile)
+	if err != nil {
+		return err
+	}
+	bin := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_BIN"))
+	if bin == "" {
+		bin = "docker"
+	}
+	cmd := exec.CommandContext(ctx, bin, append(base, args...)...)
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("compose %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (s *Server) composeInstall(ctx context.Context, composeFile, id string) error {
+	if !s.composeEnabled() {
+		return nil
+	}
+	s.setInstallStatus(id, "pulling", 35, "Pulling container image")
+	if err := s.runCompose(ctx, composeFile, "pull", id); err != nil {
+		return err
+	}
+	s.setInstallStatus(id, "starting", 55, "Starting container")
+	return s.runCompose(ctx, composeFile, "up", "-d", id)
+}
+
+func (s *Server) composeUninstall(ctx context.Context, composeFile, id string) error {
+	if !s.composeEnabled() {
+		return nil
+	}
+	if err := s.runCompose(ctx, composeFile, "stop", id); err != nil {
+		return err
+	}
+	return s.runCompose(ctx, composeFile, "rm", "-f", id)
+}
+
 func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	ids := make([]string, 0, len(s.proxies))
@@ -246,10 +833,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.RUnlock()
 
-	// refresh manifests on-demand
-	for _, id := range ids {
-		s.refreshManifestFromUpstream(r.Context(), id)
-	}
+	// Manifest refresh happens in the background loop or via explicit reload.
 
 	reg := models.Registry{GeneratedAt: time.Now().UTC(), Integrations: make([]models.RegistryIntegration, 0)}
 	for _, id := range ids {
@@ -261,6 +845,13 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			if errMsg != "" {
 				s.logger.Printf("manifest unavailable id=%s err=%s", id, errMsg)
 			}
+			reg.Integrations = append(reg.Integrations, models.RegistryIntegration{
+				ID:            id,
+				DisplayName:   id,
+				Route:         "/apps/" + id,
+				DefaultUIPath: "/ui/",
+				Widgets:       []models.RegistryWidget{},
+			})
 			continue
 		}
 
@@ -283,9 +874,11 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		regInt := models.RegistryIntegration{
 			ID:            id,
 			DisplayName:   firstNonEmpty(strings.TrimSpace(m.UI.Sidebar.Label), strings.TrimSpace(m.Name), id),
+			Description:   strings.TrimSpace(m.Description),
 			Icon:          icon,
 			Route:         "/apps/" + id,
 			DefaultUIPath: defPath,
+			Secrets:       append([]models.SecretSpec{}, m.Secrets...),
 		}
 
 		for _, wdg := range m.Widgets {
@@ -301,7 +894,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 				ID:          wid,
 				DisplayName: firstNonEmpty(strings.TrimSpace(wdg.DisplayName), wid),
 				Description: strings.TrimSpace(wdg.Description),
-				Icon:        strings.TrimSpace(m.UI.Sidebar.Icon),
+				Icon:        icon,
 				EntryURL:    entryURL,
 				Verified:    false,
 				Source:      "integration",
@@ -310,10 +903,93 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		reg.Integrations = append(reg.Integrations, regInt)
 	}
 
+	// Optional query filtering + pagination
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	if q != "" {
+		filtered := make([]models.RegistryIntegration, 0, len(reg.Integrations))
+		for _, it := range reg.Integrations {
+			if strings.Contains(strings.ToLower(it.DisplayName), q) ||
+				strings.Contains(strings.ToLower(it.ID), q) ||
+				strings.Contains(strings.ToLower(it.Route), q) {
+				filtered = append(filtered, it)
+			}
+		}
+		reg.Integrations = filtered
+	}
+
+	page := clampInt(queryInt(r, "page", 1), 1, 1000000)
+	pageSize := clampInt(queryInt(r, "page_size", 50), 1, 200)
+	reg.Total = len(reg.Integrations)
+	reg.Page = page
+	reg.PageSize = pageSize
+	if reg.Total == 0 {
+		reg.TotalPages = 0
+	} else {
+		reg.TotalPages = (reg.Total + pageSize - 1) / pageSize
+	}
+	start := (page - 1) * pageSize
+	if start < 0 {
+		start = 0
+	}
+	end := start + pageSize
+	if start >= reg.Total {
+		reg.Integrations = []models.RegistryIntegration{}
+	} else {
+		if end > reg.Total {
+			end = reg.Total
+		}
+		reg.Integrations = reg.Integrations[start:end]
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(reg)
+}
+
+func queryInt(r *http.Request, key string, def int) int {
+	if r == nil {
+		return def
+	}
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return def
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return val
+}
+
+func clampInt(val, minVal, maxVal int) int {
+	if val < minVal {
+		return minVal
+	}
+	if val > maxVal {
+		return maxVal
+	}
+	return val
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if s.pubKey == nil {
+		return true
+	}
+	role, err := auth.RoleFromRequest(s.pubKey, r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid token", "code": http.StatusUnauthorized})
+		return false
+	}
+	if !auth.RoleAtLeast("admin", role) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "forbidden", "code": http.StatusForbidden})
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
