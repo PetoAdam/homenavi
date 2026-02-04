@@ -26,6 +26,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("read manifest: %v", err)
 	}
+	secretSpecs := backend.ParseSecretSpecs(manifestJSON)
+	secretStore := backend.NewSecretStore(backend.DefaultSecretsPath())
+	adminAuth, err := backend.NewAdminAuthFromEnv()
+	if err != nil {
+		log.Fatalf("load admin auth: %v", err)
+	}
 
 	webDir := os.Getenv("WEB_DIR")
 	if webDir == "" {
@@ -37,7 +43,13 @@ func main() {
 		log.Fatalf("web dir error: %v", err)
 	}
 
-	s := &backend.Server{WebFS: webFS, ManifestJSON: manifestJSON}
+	s := &backend.Server{
+		WebFS:        webFS,
+		ManifestJSON: manifestJSON,
+		SecretStore:  secretStore,
+		SecretSpecs:  secretSpecs,
+		AdminAuth:    adminAuth,
+	}
 	h := s.Routes()
 
 	h = ratelimit.NewIPRateLimiter(10, 20)(h)
