@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/homenavi/integration-template/internal/ratelimit"
 	"github.com/homenavi/integration-template/internal/security"
@@ -22,9 +23,16 @@ func main() {
 	if manifestPath == "" {
 		manifestPath = "manifest/homenavi-integration.json"
 	}
-	manifestJSON, err := os.ReadFile(manifestPath)
+	manifestPath = filepath.Clean(manifestPath)
+	manifestJSON, err := os.ReadFile(manifestPath) // #nosec G304 -- path comes from env/config
 	if err != nil {
 		log.Fatalf("read manifest: %v", err)
+	}
+	secretSpecs := backend.ParseSecretSpecs(manifestJSON)
+	secretStore := backend.NewSecretStore(backend.DefaultSecretsPath())
+	adminAuth, err := backend.NewAdminAuthFromEnv()
+	if err != nil {
+		log.Fatalf("load admin auth: %v", err)
 	}
 
 	webDir := os.Getenv("WEB_DIR")
@@ -37,7 +45,13 @@ func main() {
 		log.Fatalf("web dir error: %v", err)
 	}
 
-	s := &backend.Server{WebFS: webFS, ManifestJSON: manifestJSON}
+	s := &backend.Server{
+		WebFS:        webFS,
+		ManifestJSON: manifestJSON,
+		SecretStore:  secretStore,
+		SecretSpecs:  secretSpecs,
+		AdminAuth:    adminAuth,
+	}
 	h := s.Routes()
 
 	h = ratelimit.NewIPRateLimiter(10, 20)(h)
@@ -45,7 +59,15 @@ func main() {
 
 	addr := ":" + port
 	log.Printf("integration listening on %s", addr)
-	if err := http.ListenAndServe(addr, h); err != nil {
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }

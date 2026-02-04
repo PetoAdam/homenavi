@@ -6,4 +6,4 @@ advanced:
   log_level: info
 frontend:
   enabled: false
-version: 5
+version: 4
