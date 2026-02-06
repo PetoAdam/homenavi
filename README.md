@@ -1,25 +1,38 @@
-# Homenavi
+<p align="center">
+	<img src="frontend/public/icons/icon-192x192.png" alt="Homenavi" width="72" height="72" />
+</p>
 
+<h1 align="center" style="margin-bottom: 0;">
+	<span style="font-family: 'Manrope', 'Montserrat', 'Inter', 'Segoe UI', Arial, sans-serif; letter-spacing: 0.18em; text-transform: uppercase;">Homenavi</span>
+</h1>
 
-**A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.**
+<p align="center"><strong>A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.</strong></p>
 
-[![Build Frontend Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml)
-[![Build User Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml)
-[![Build API Gateway Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml)
-[![Build Auth Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml)
-[![Build Device Hub Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml)
-[![Build Email Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml)
-[![Build Profile Picture Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml)
-[![Build Echo Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml)
-[![Build History Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml)
-[![Build Zigbee Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml)
-[![Build Thread Adapter Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml)
-[![Build Automation Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml)
-[![Build Entity Registry Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml)
-[![Build Weather Service Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml)
-[![Build Integration Proxy Docker Image](https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml/badge.svg)](https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml)
+<p align="center">
+	<a href="#quickstart">Quickstart</a> •
+	<a href="doc/architecture_diagram.md">Architecture</a> •
+	<a href="https://github.com/PetoAdam/homenavi/issues">Issues</a>
+</p>
 
-Welcome to Homenavi – your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
+<p align="center">
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml"><img alt="Build Frontend Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml"><img alt="Build User Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml"><img alt="Build API Gateway Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml"><img alt="Build Auth Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml"><img alt="Build Device Hub Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml"><img alt="Build Email Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml"><img alt="Build Profile Picture Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml"><img alt="Build Echo Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml"><img alt="Build History Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml"><img alt="Build Zigbee Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml"><img alt="Build Thread Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml"><img alt="Build Automation Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml"><img alt="Build Entity Registry Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml"><img alt="Build Weather Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml"><img alt="Build Integration Proxy Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml/badge.svg" /></a>
+</p>
+
+Welcome to Homenavi — your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
 
 ---
 
@@ -112,6 +125,7 @@ Contributions and feedback on these modules are welcome!
 
 ---
 
+<a id="quickstart"></a>
 ## 4. 🐳 Quickstart
 
 ```sh
@@ -197,18 +211,34 @@ Integrations are **containers** that expose a manifest and optional UI surfaces:
 - `integration-proxy` reads `integrations/config/installed.yaml` and proxies `/integrations/<id>/...`.
 - The dashboard catalog merges integration widgets from `GET /integrations/registry.json`.
 
-Template structure (clean layout for devs):
+Template repository (source of truth):
 
-- `integrations/integration-template-repo/src/backend` → backend server code
-- `integrations/integration-template-repo/src/backend/cmd/integration` → backend entrypoint
-- `integrations/integration-template-repo/src/frontend` → tab + widget UI code
-- `integrations/integration-template-repo/web` → built assets (ui/widgets) + static assets
+- https://github.com/PetoAdam/homenavi-integration-template
 
 Current runtime model:
 
 - Integrations publish `/.well-known/homenavi-integration.json` (manifest).
 - UI surfaces are rendered in sandboxed iframes (tab + widget).
 - Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
+
+<<<<<<< HEAD
+Security note: when compose-managed installs are enabled, `integration-proxy` runs with Docker socket access and elevated privileges. Treat it as a high‑trust service and restrict access accordingly.
+
+### Integration proxy installation (recommended)
+
+Use the Admin → Integrations UI to install integrations from the marketplace and manage secrets. The proxy updates [integrations/config/installed.yaml](integrations/config/installed.yaml) automatically.
+
+If you run custom integrations manually, ensure the container is on the same Docker network and then use Admin → Integrations to add or refresh the entry.
+
+### Helm installation (coming soon)
+
+=======
+>>>>>>> c129d192394390d7e247cd1229ddb11273f71e30
+### Integration secrets (admin-managed)
+
+Integrations must declare the secrets they require in the manifest via a `secrets` array. The Admin → Integrations page uses this list to render write-only secret fields and sends values to each integration’s admin endpoint.
+
+Each integration stores secrets in its own file (default `config/integration.secrets.json` in the integration repo/container, configurable with `INTEGRATION_SECRETS_PATH`). This prevents integrations from seeing each other’s secrets.
 
 ### Integration secrets (admin-managed)
 
@@ -295,6 +325,10 @@ Issues: https://github.com/PetoAdam/homenavi/issues
 
 ## 15. License
 MIT License © 2025 Adam Peto — See [LICENSE](LICENSE).
+
+### Icon attribution
+
+Font Awesome Free icons are used in the UI. Font Awesome is licensed under CC BY 4.0: https://fontawesome.com/license/free
 
 ---
 
