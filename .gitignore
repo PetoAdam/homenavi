@@ -15,6 +15,7 @@ integrations/config/installed.yaml
 # Integration secrets (per integration)
 integrations/**/config/integration.secrets.json
 integrations/secrets/*.secrets.json
+integrations/secrets/*
 !integrations/secrets/.gitkeep
 
 # Python
