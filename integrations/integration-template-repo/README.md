@@ -12,6 +12,18 @@ It implements:
 - A manifest schema validator (`cmd/validate-manifest`)
 - A GitHub Actions “verification” workflow (tests + gosec + manifest validation + docker build)
 
+## Secrets declaration (admin-managed)
+
+Integrations should declare required secrets in the manifest so the Homenavi Admin → Integrations page can render editable fields:
+
+```json
+"secrets": ["EXAMPLE_API_KEY", "EXAMPLE_API_SECRET"]
+```
+
+Values are sent to the integration via write-only fields and can be stored locally by the integration itself.
+
+This template exposes a write-only admin endpoint at `GET/PUT /api/admin/secrets` (admin-only; values are never returned). It stores secrets in `config/integration.secrets.json` by default (configurable via `INTEGRATION_SECRETS_PATH`). For admin access, mount the Homenavi JWT public key and set `JWT_PUBLIC_KEY_PATH` in the integration container.
+
 ## Project layout (clean & minimal)
 
 ```

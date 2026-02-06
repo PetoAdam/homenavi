@@ -7,6 +7,7 @@ import DeviceDetail from './components/Devices/DeviceDetail.jsx';
 import Map from './components/Map/Map.jsx';
 import Spotify from './components/Spotify/Spotify.jsx';
 import IntegrationHost from './components/Integrations/IntegrationHost.jsx';
+import IntegrationsAdmin from './components/Admin/IntegrationsAdmin.jsx';
 import Users from './components/Users/Users.jsx';
 import Profile from './components/Profile/Profile.jsx';
 import Automation from './components/Automation/Automation.jsx';
@@ -97,12 +98,14 @@ export default function App() {
         )}
         <main
           style={{
-            marginTop: '2rem',
             padding: '2rem 0 2rem 0',
             flex: 1,
             minWidth: 0,
             position: 'relative',
             zIndex: 1,
+            height: '100vh',
+            boxSizing: 'border-box',
+            overflowY: 'auto',
             marginLeft: isPermanentSidebar ? 'calc(320px + 1.5rem)' : 0,
             transition: 'margin-left 0.3s cubic-bezier(.4,2,.6,1)',
           }}
@@ -120,6 +123,7 @@ export default function App() {
                 NOTE: /integrations/* is reserved for proxied integration content (nginx -> integration-proxy).
               */}
               <Route path="/apps/:integrationId/*" element={<IntegrationHost />} />
+              <Route path="/admin/integrations" element={<IntegrationsAdmin />} />
               <Route path="/users" element={<Users />} />
               <Route path="/automation" element={<Automation />} />
               <Route path="/automation/:workflowId" element={<Automation />} />

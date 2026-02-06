@@ -433,7 +433,7 @@ services:
       - INTEGRATIONS_SCHEMA_PATH=/config/homenavi-integration.schema.json
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
     volumes:
-      - ${INTEGRATIONS_CONFIG_FILE:-./integrations/config/installed.example.yaml}:/config/installed.yaml:ro
+      - ${INTEGRATIONS_CONFIG_FILE:-./integrations/config/installed.yaml}:/config/installed.yaml:ro
       - ./integrations/spec/homenavi-integration.schema.json:/config/homenavi-integration.schema.json:ro
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
     networks:

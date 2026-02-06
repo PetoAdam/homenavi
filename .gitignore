@@ -12,6 +12,9 @@ zigbee2mqtt-data/configuration-pi.yaml
 # Deployment-local integration installation config
 integrations/config/installed.yaml
 
+# Integration secrets (per integration)
+integrations/**/config/integration.secrets.json
+
 # Python
 __pycache__/
 **/__pycache__/

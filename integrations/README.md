@@ -60,3 +60,15 @@ Long-term, this repo’s `integrations/` folder should mainly hold:
 
 The template is here as a convenience while the workflow solidifies; it’s expected to be moved into its own standalone repo.
 
+## Secrets declaration (admin-managed)
+
+Integrations should declare required secrets in the manifest:
+
+```json
+"secrets": ["EXAMPLE_API_KEY", "EXAMPLE_API_SECRET"]
+```
+
+Admins can then manage values in the Admin → Integrations page (write-only fields), which sends values to each integration’s admin endpoint.
+
+Integrations should expose a write-only admin endpoint at `GET/PUT /api/admin/secrets` and store values in `config/integration.secrets.json` (configurable with `INTEGRATION_SECRETS_PATH`) to avoid cross-integration access.
+

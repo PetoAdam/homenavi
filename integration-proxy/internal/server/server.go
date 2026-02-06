@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,12 +12,14 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
 
+	"homenavi/integration-proxy/internal/auth"
 	"homenavi/integration-proxy/internal/config"
 	"homenavi/integration-proxy/internal/models"
 )
@@ -30,12 +33,13 @@ type Server struct {
 	mu          sync.RWMutex
 	client      *http.Client
 	validator   *jsonschema.Schema
+	pubKey      *rsa.PublicKey
 	schemaPath  string
 	configPath  string
 }
 
-func New(logger *log.Logger, validator *jsonschema.Schema, schemaPath, configPath string) *Server {
-	return &Server{
+func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey, schemaPath, configPath string) *Server {
+	s := &Server{
 		logger:      logger,
 		proxies:     make(map[string]*httputil.ReverseProxy),
 		upstreams:   make(map[string]*url.URL),
@@ -43,9 +47,11 @@ func New(logger *log.Logger, validator *jsonschema.Schema, schemaPath, configPat
 		manifestErr: make(map[string]string),
 		client:      &http.Client{Timeout: 8 * time.Second},
 		validator:   validator,
+		pubKey:      pubKey,
 		schemaPath:  schemaPath,
 		configPath:  configPath,
 	}
+	return s
 }
 
 func (s *Server) Routes() http.Handler {
@@ -55,6 +61,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/registry.json", s.handleRegistry)
 	mux.HandleFunc("/integrations/reload", s.handleReload)
 	mux.HandleFunc("/reload", s.handleReload)
+	mux.HandleFunc("/integrations/restart-all", s.handleRestartAll)
+	mux.HandleFunc("/integrations/restart/", s.handleRestartIntegration)
 	mux.HandleFunc("/integrations/", s.handleProxy)
 	mux.HandleFunc("/", s.handleProxy)
 	return mux
@@ -214,15 +222,67 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if err := s.ReloadFromConfig(); err != nil {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error(), "code": http.StatusInternalServerError})
+	if !s.requireAdmin(w, r) {
 		return
 	}
+	go func() {
+		if err := s.ReloadFromConfig(); err != nil {
+			s.logger.Printf("reload failed: %v", err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued"})
+}
+
+func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	go func() {
+		if err := s.ReloadFromConfig(); err != nil {
+			s.logger.Printf("restart-all reload failed: %v", err)
+		}
+		s.refreshAll(context.Background())
+	}()
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued"})
+}
+
+func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/integrations/restart/")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	s.mu.RLock()
+	_, ok := s.upstreams[id]
+	s.mu.RUnlock()
+	if !ok {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "unknown integration", "code": http.StatusNotFound})
+		return
+	}
+	go s.refreshManifestFromUpstream(context.Background(), id)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued"})
 }
 
 func (s *Server) refreshAll(ctx context.Context) {
@@ -246,10 +306,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.RUnlock()
 
-	// refresh manifests on-demand
-	for _, id := range ids {
-		s.refreshManifestFromUpstream(r.Context(), id)
-	}
+	// Manifest refresh happens in the background loop or via explicit reload.
 
 	reg := models.Registry{GeneratedAt: time.Now().UTC(), Integrations: make([]models.RegistryIntegration, 0)}
 	for _, id := range ids {
@@ -261,6 +318,13 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			if errMsg != "" {
 				s.logger.Printf("manifest unavailable id=%s err=%s", id, errMsg)
 			}
+			reg.Integrations = append(reg.Integrations, models.RegistryIntegration{
+				ID:            id,
+				DisplayName:   id,
+				Route:         "/apps/" + id,
+				DefaultUIPath: "/ui/",
+				Widgets:       []models.RegistryWidget{},
+			})
 			continue
 		}
 
@@ -283,9 +347,11 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		regInt := models.RegistryIntegration{
 			ID:            id,
 			DisplayName:   firstNonEmpty(strings.TrimSpace(m.UI.Sidebar.Label), strings.TrimSpace(m.Name), id),
+			Description:   strings.TrimSpace(m.Description),
 			Icon:          icon,
 			Route:         "/apps/" + id,
 			DefaultUIPath: defPath,
+			Secrets:       append([]models.SecretSpec{}, m.Secrets...),
 		}
 
 		for _, wdg := range m.Widgets {
@@ -301,7 +367,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 				ID:          wid,
 				DisplayName: firstNonEmpty(strings.TrimSpace(wdg.DisplayName), wid),
 				Description: strings.TrimSpace(wdg.Description),
-				Icon:        strings.TrimSpace(m.UI.Sidebar.Icon),
+				Icon:        icon,
 				EntryURL:    entryURL,
 				Verified:    false,
 				Source:      "integration",
@@ -310,10 +376,93 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		reg.Integrations = append(reg.Integrations, regInt)
 	}
 
+	// Optional query filtering + pagination
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	if q != "" {
+		filtered := make([]models.RegistryIntegration, 0, len(reg.Integrations))
+		for _, it := range reg.Integrations {
+			if strings.Contains(strings.ToLower(it.DisplayName), q) ||
+				strings.Contains(strings.ToLower(it.ID), q) ||
+				strings.Contains(strings.ToLower(it.Route), q) {
+				filtered = append(filtered, it)
+			}
+		}
+		reg.Integrations = filtered
+	}
+
+	page := clampInt(queryInt(r, "page", 1), 1, 1000000)
+	pageSize := clampInt(queryInt(r, "page_size", 50), 1, 200)
+	reg.Total = len(reg.Integrations)
+	reg.Page = page
+	reg.PageSize = pageSize
+	if reg.Total == 0 {
+		reg.TotalPages = 0
+	} else {
+		reg.TotalPages = (reg.Total + pageSize - 1) / pageSize
+	}
+	start := (page - 1) * pageSize
+	if start < 0 {
+		start = 0
+	}
+	end := start + pageSize
+	if start >= reg.Total {
+		reg.Integrations = []models.RegistryIntegration{}
+	} else {
+		if end > reg.Total {
+			end = reg.Total
+		}
+		reg.Integrations = reg.Integrations[start:end]
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(reg)
+}
+
+func queryInt(r *http.Request, key string, def int) int {
+	if r == nil {
+		return def
+	}
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return def
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return val
+}
+
+func clampInt(val, minVal, maxVal int) int {
+	if val < minVal {
+		return minVal
+	}
+	if val > maxVal {
+		return maxVal
+	}
+	return val
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if s.pubKey == nil {
+		return true
+	}
+	role, err := auth.RoleFromRequest(s.pubKey, r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid token", "code": http.StatusUnauthorized})
+		return false
+	}
+	if !auth.RoleAtLeast("admin", role) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "forbidden", "code": http.StatusForbidden})
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
