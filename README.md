@@ -221,7 +221,6 @@ Current runtime model:
 - UI surfaces are rendered in sandboxed iframes (tab + widget).
 - Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
 
-<<<<<<< HEAD
 Security note: when compose-managed installs are enabled, `integration-proxy` runs with Docker socket access and elevated privileges. Treat it as a high‑trust service and restrict access accordingly.
 
 ### Integration proxy installation (recommended)
@@ -232,8 +231,6 @@ If you run custom integrations manually, ensure the container is on the same Doc
 
 ### Helm installation (coming soon)
 
-=======
->>>>>>> c129d192394390d7e247cd1229ddb11273f71e30
 ### Integration secrets (admin-managed)
 
 Integrations must declare the secrets they require in the manifest via a `secrets` array. The Admin → Integrations page uses this list to render write-only secret fields and sends values to each integration’s admin endpoint.
