@@ -7,6 +7,8 @@
 # integrations:
 #   - id: hello-homenavi
 #     upstream: http://hello-homenavi:8099
+#   - id: spotify
+#     upstream: http://spotify:8099
 #
 # Note: inside Docker Compose you can omit host port mappings entirely.
 # The proxy should point at the container port (default 8099).

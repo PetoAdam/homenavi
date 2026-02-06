@@ -2,6 +2,7 @@ import React from 'react';
 import Button from '../../common/Button/Button';
 import GlassSwitch from '../../common/GlassSwitch/GlassSwitch';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import '../../common/Toolbar/Toolbar.css';
 import {
   faArrowsRotate,
   faBroom,
@@ -35,8 +36,8 @@ export default function AutomationTopbar({
   isAdmin,
 }) {
   return (
-    <div className="automation-topbar">
-      <div className="automation-topbar-left">
+    <div className="automation-topbar hn-toolbar">
+      <div className="automation-topbar-left hn-toolbar-left">
         <div className="automation-topbar-row automation-topbar-row-select">
           <div className="automation-topbar-label muted">Workflow</div>
 
@@ -96,11 +97,11 @@ export default function AutomationTopbar({
         </div>
       </div>
 
-      <div className="automation-topbar-right">
-        <div className="automation-topbar-group">
+      <div className="automation-topbar-right hn-toolbar-right">
+        <div className="automation-topbar-group hn-toolbar-group">
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="automation-topbar-iconbtn hn-toolbar-iconbtn"
             disabled={loading || devicesLoading}
             onClick={refreshAllData}
             title="Refresh workflows + devices"
@@ -111,10 +112,10 @@ export default function AutomationTopbar({
           </Button>
         </div>
 
-        <div className="automation-topbar-group">
+        <div className="automation-topbar-group hn-toolbar-group">
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="automation-topbar-iconbtn hn-toolbar-iconbtn"
             onClick={clearCanvas}
             title="Clear nodes from canvas"
             aria-label="Clear nodes from canvas"
@@ -124,10 +125,10 @@ export default function AutomationTopbar({
           </Button>
         </div>
 
-        <div className="automation-topbar-group">
+        <div className="automation-topbar-group hn-toolbar-group">
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="automation-topbar-iconbtn hn-toolbar-iconbtn"
             type="button"
             disabled={!canUndo}
             onClick={undo}
@@ -139,7 +140,7 @@ export default function AutomationTopbar({
           </Button>
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="automation-topbar-iconbtn hn-toolbar-iconbtn"
             type="button"
             disabled={!canRedo}
             onClick={redo}
@@ -151,12 +152,12 @@ export default function AutomationTopbar({
           </Button>
         </div>
 
-        <div className="automation-topbar-group">
+        <div className="automation-topbar-group hn-toolbar-group">
           {selectedWorkflow && (
             <>
               <Button
                 variant="secondary"
-                className="automation-topbar-iconbtn"
+                className="automation-topbar-iconbtn hn-toolbar-iconbtn"
                 onClick={runNow}
                 disabled={saving}
                 title="Run workflow now"
@@ -168,7 +169,7 @@ export default function AutomationTopbar({
               {isAdmin && (
                 <Button
                   variant="secondary"
-                  className="automation-topbar-iconbtn"
+                  className="automation-topbar-iconbtn hn-toolbar-iconbtn"
                   onClick={removeWorkflow}
                   title="Delete workflow"
                   aria-label="Delete workflow"

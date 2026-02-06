@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "spotify",
+  "name": "Spotify",
+  "version": "1.0.0",
+  "publisher": "Homenavi",
+  "homepage": "https://spotify.com",
+  "verified": false,
+  "secrets": [
+    { "key": "SPOTIFY_CLIENT_ID", "description": "Spotify application client id." },
+    { "key": "SPOTIFY_CLIENT_SECRET", "description": "Spotify application client secret." },
+    { "key": "SPOTIFY_REFRESH_TOKEN", "description": "OAuth refresh token with playback scopes." }
+  ],
+  "ui": {
+    "sidebar": {
+      "enabled": true,
+      "path": "/ui/",
+      "label": "Spotify",
+      "icon": "fa:spotify"
+    }
+  },
+  "widgets": [
+    {
+      "type": "integration.spotify.player",
+      "display_name": "Spotify Player",
+      "description": "Control playback, queue, and devices.",
+      "entry": { "kind": "iframe", "url": "/widgets/player/" },
+      "requested_scopes": ["integration.spotify.read", "integration.spotify.control"]
+    }
+  ]
+}

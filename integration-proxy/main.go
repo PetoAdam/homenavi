@@ -112,14 +112,15 @@ type IntegrationConfig struct {
 }
 
 type Manifest struct {
-	SchemaVersion int    `json:"schema_version"`
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Version       string `json:"version"`
-	Publisher     string `json:"publisher,omitempty"`
-	Description   string `json:"description,omitempty"`
-	Homepage      string `json:"homepage,omitempty"`
-	Verified      bool   `json:"verified"`
+	SchemaVersion int          `json:"schema_version"`
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	Version       string       `json:"version"`
+	Publisher     string       `json:"publisher,omitempty"`
+	Description   string       `json:"description,omitempty"`
+	Homepage      string       `json:"homepage,omitempty"`
+	Verified      bool         `json:"verified"`
+	Secrets       []SecretSpec `json:"secrets,omitempty"`
 
 	UI struct {
 		Sidebar struct {
@@ -153,6 +154,39 @@ type RegistryIntegration struct {
 	Route         string           `json:"route"`
 	DefaultUIPath string           `json:"default_ui_path"`
 	Widgets       []RegistryWidget `json:"widgets"`
+	Secrets       []SecretSpec     `json:"secrets,omitempty"`
+}
+
+type SecretSpec struct {
+	Key         string `json:"key"`
+	Description string `json:"description,omitempty"`
+}
+
+func (s *SecretSpec) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err == nil {
+		s.Key = strings.TrimSpace(raw)
+		return nil
+	}
+	var obj struct {
+		Key         string `json:"key"`
+		Name        string `json:"name"`
+		ID          string `json:"id"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	key := strings.TrimSpace(obj.Key)
+	if key == "" {
+		key = strings.TrimSpace(obj.Name)
+	}
+	if key == "" {
+		key = strings.TrimSpace(obj.ID)
+	}
+	s.Key = key
+	s.Description = strings.TrimSpace(obj.Description)
+	return nil
 }
 
 type RegistryWidget struct {
@@ -472,6 +506,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			Icon:          icon,
 			Route:         "/apps/" + id,
 			DefaultUIPath: defPath,
+			Secrets:       append([]SecretSpec{}, m.Secrets...),
 		}
 
 		for _, wdg := range m.Widgets {

@@ -6,6 +6,9 @@
   "publisher": "Example",
   "homepage": "https://homenavi.org",
   "verified": false,
+  "secrets": [
+    { "key": "EXAMPLE_API_KEY", "description": "API key for the integration." }
+  ],
   "ui": {
     "sidebar": {
       "enabled": true,
