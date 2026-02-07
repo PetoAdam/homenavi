@@ -25,7 +25,7 @@ func NewAdminAuthFromEnv() (*AdminAuth, error) {
 	if path == "" {
 		return &AdminAuth{enabled: false}, nil
 	}
-	keyData, err := os.ReadFile(path)
+	keyData, err := os.ReadFile(path) // #nosec G304 -- path comes from env/config
 	if err != nil {
 		return nil, err
 	}

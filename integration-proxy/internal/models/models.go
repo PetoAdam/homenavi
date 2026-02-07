@@ -99,3 +99,19 @@ type RegistryWidget struct {
 	Verified    bool   `json:"verified"`
 	Source      string `json:"source"`
 }
+
+type Marketplace struct {
+	GeneratedAt  time.Time               `json:"generated_at"`
+	Integrations []MarketplaceIntegration `json:"integrations"`
+}
+
+type MarketplaceIntegration struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Publisher   string `json:"publisher,omitempty"`
+	Homepage    string `json:"homepage,omitempty"`
+	Installed   bool   `json:"installed"`
+}

@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useMemo, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBolt, faHouse, faLightbulb, faMap, faPlug, faStar, faUsers, faMusic } from '@fortawesome/free-solid-svg-icons';
@@ -85,23 +85,40 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 	const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 	const isAdmin = user && user.role === 'admin';
 
+	const loadIntegrations = useCallback(async () => {
+		if (!isResidentOrAdmin || !accessToken) {
+			setIntegrations([]);
+			return;
+		}
+		const res = await getIntegrationRegistry();
+		if (res.success && Array.isArray(res.data?.integrations)) {
+			setIntegrations(res.data.integrations);
+		} else {
+			setIntegrations([]);
+		}
+	}, [accessToken, isResidentOrAdmin]);
+
 	useEffect(() => {
 		let alive = true;
 		if (!isResidentOrAdmin || !accessToken) {
 			setIntegrations([]);
 			return () => { alive = false; };
 		}
-		(async () => {
-			const res = await getIntegrationRegistry();
-			if (!alive) return;
-			if (res.success && Array.isArray(res.data?.integrations)) {
-				setIntegrations(res.data.integrations);
-			} else {
-				setIntegrations([]);
-			}
+		( async () => {
+			await loadIntegrations();
 		})();
 		return () => { alive = false; };
-	}, [accessToken, isResidentOrAdmin, bootstrapping]);
+	}, [accessToken, isResidentOrAdmin, bootstrapping, loadIntegrations]);
+
+	useEffect(() => {
+		const handler = () => {
+			loadIntegrations();
+		};
+		window.addEventListener('homenavi:integrations-updated', handler);
+		return () => {
+			window.removeEventListener('homenavi:integrations-updated', handler);
+		};
+	}, [loadIntegrations]);
 
 	const menuGroups = useMemo(() => {
 		const integrationItems = (integrations || []).map((i) => {

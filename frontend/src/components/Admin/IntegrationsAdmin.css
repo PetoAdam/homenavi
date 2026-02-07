@@ -317,6 +317,40 @@
   color: var(--color-secondary-light);
 }
 
+.integrations-admin-secret-error {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  background: rgba(127, 29, 29, 0.25);
+  color: rgba(254, 226, 226, 0.95);
+  font-size: 0.9rem;
+}
+
+.integrations-admin-input--error {
+  border-color: rgba(248, 113, 113, 0.7) !important;
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2);
+  animation: integrations-admin-shake 0.35s ease;
+}
+
+.integrations-admin-secret-field--error {
+  animation: integrations-admin-pulse 1.2s ease;
+}
+
+@keyframes integrations-admin-shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-3px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes integrations-admin-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.35); }
+  70% { box-shadow: 0 0 0 8px rgba(248, 113, 113, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+}
+
 .integrations-admin-modal {
   width: min(720px, 92vw);
   max-height: 90vh;
@@ -597,9 +631,163 @@
   text-align: center;
 }
 
+.integrations-admin-marketplace-list {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.integrations-admin-marketplace-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.9rem;
+  padding: 1.1rem 1.1rem 1.2rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(160deg, rgba(18, 26, 38, 0.82), rgba(12, 16, 28, 0.55));
+  box-shadow: 0 16px 40px rgba(6, 10, 18, 0.35);
+  flex: 1 1 280px;
+  min-width: 260px;
+  text-align: left;
+}
+
+.integrations-admin-marketplace-item:hover {
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow: 0 18px 45px rgba(8, 12, 22, 0.45);
+}
+
+.integrations-admin-marketplace-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  min-width: 0;
+  flex: 1;
+}
+
 .integrations-admin-marketplace-icon {
-  font-size: 1.5rem;
-  color: rgba(57, 170, 121, 0.85);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  background: rgba(57, 170, 121, 0.14);
+  color: rgba(57, 170, 121, 0.95);
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.integrations-admin-marketplace-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.integrations-admin-marketplace-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.integrations-admin-marketplace-text {
+  color: var(--color-secondary-light);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  max-width: 520px;
+}
+
+.integrations-admin-marketplace-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.integrations-admin-marketplace-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+}
+
+.integrations-admin-marketplace-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.integrations-admin-marketplace-details a {
+  color: rgba(129, 140, 248, 0.95);
+  text-decoration: none;
+}
+
+.integrations-admin-marketplace-details a:hover {
+  text-decoration: underline;
+}
+
+.integrations-admin-secret-callout {
+  margin: 0.6rem 0 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  background: rgba(79, 70, 229, 0.12);
+  color: rgba(224, 231, 255, 0.9);
+  font-size: 0.9rem;
+}
+
+.integrations-admin-install-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.integrations-admin-install-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.integrations-admin-install-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.integrations-admin-install-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(57, 170, 121, 0.9), rgba(129, 140, 248, 0.9));
+  border-radius: inherit;
+  transition: width 0.35s ease;
+}
+
+.integrations-admin-marketplace-toolbar {
+  margin: 0.75rem 0 0.25rem;
+  justify-content: flex-start;
+}
+
+.integrations-admin-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-secondary-light);
+  background: rgba(12, 18, 28, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+}
+
+.integrations-admin-filter input {
+  accent-color: rgba(57, 170, 121, 0.9);
 }
 
 .integrations-admin-marketplace-badge {
