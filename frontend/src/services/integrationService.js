@@ -24,3 +24,21 @@ export async function restartIntegration(id) {
 export async function setIntegrationSecrets(id, secrets) {
   return http.put(`/integrations/${id}/api/admin/secrets`, { secrets });
 }
+
+export async function getIntegrationMarketplace() {
+  const params = new URLSearchParams();
+  params.set('ts', String(Date.now()));
+  return http.get(`/integrations/marketplace.json?${params.toString()}`);
+}
+
+export async function installIntegration(id) {
+  return http.post('/integrations/install', { id });
+}
+
+export async function uninstallIntegration(id) {
+  return http.post('/integrations/uninstall', { id });
+}
+
+export async function getIntegrationInstallStatus(id) {
+  return http.get(`/integrations/install-status/${id}`);
+}

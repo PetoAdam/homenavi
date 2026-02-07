@@ -431,11 +431,22 @@ services:
     environment:
       - INTEGRATIONS_CONFIG_PATH=/config/installed.yaml
       - INTEGRATIONS_SCHEMA_PATH=/config/homenavi-integration.schema.json
+      - INTEGRATIONS_COMPOSE_ENABLED=true
+      - INTEGRATIONS_COMPOSE_FILE=/app/integrations/docker-compose.integrations.yml
+      - INTEGRATIONS_COMPOSE_PROJECT=homenavi
+      - INTEGRATIONS_COMPOSE_ENV_FILE=/app/.env
+      - INTEGRATIONS_ROOT=${INTEGRATIONS_ROOT:-${PWD}}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
     volumes:
-      - ${INTEGRATIONS_CONFIG_FILE:-./integrations/config/installed.yaml}:/config/installed.yaml:ro
+      - ${INTEGRATIONS_ROOT:-${PWD}}:${INTEGRATIONS_ROOT:-${PWD}}:ro
+      - ${INTEGRATIONS_ROOT:-${PWD}}/integrations/secrets:${INTEGRATIONS_ROOT:-${PWD}}/integrations/secrets:rw
+      - ${INTEGRATIONS_CONFIG_FILE:-./integrations/config/installed.yaml}:/config/installed.yaml:rw
+      - ./integrations/config/marketplace.yaml:/config/marketplace.yaml:ro
       - ./integrations/spec/homenavi-integration.schema.json:/config/homenavi-integration.schema.json:ro
+      - ./integrations/docker-compose.integrations.yml:/app/integrations/docker-compose.integrations.yml:ro
+      - ./.env:/app/.env:ro
       - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - homenavi-network
 
@@ -449,5 +460,6 @@ volumes:
 
 networks:
   homenavi-network:
+    name: homenavi-network
     driver: bridge
     

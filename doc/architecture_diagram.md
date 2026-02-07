@@ -32,9 +32,6 @@ flowchart TB
     History["History Service"]
     Automation["Automation Service"]
     ERS["Entity Registry (ERS)"]
-    Dashboard["Dashboard Service"]
-    Weather["Weather Service"]
-    Integrations["Integration Proxy"]
 
     Echo["Echo Service"]
     Email["Email Service"]
@@ -48,17 +45,10 @@ flowchart TB
     Jaeger["Jaeger"]
   end
 
-  %% Integrations plane (example)
-  subgraph IntegrationsPlane["Integrations plane"]
-    Spotify["Spotify Integration (Example)"]
-    ExternalAPI["External API (Spotify)"]
-  end
-
   %% Entry points
   Browser -->|HTTP| Nginx
   Nginx -->|"/ (SPA) static assets"| Browser
   Nginx -->|"/api/* + /ws/*"| Gateway
-  Nginx -->|"/integrations/*"| Integrations
 
   %% Gateway → services (REST)
   Gateway -->|REST| Auth
@@ -67,8 +57,8 @@ flowchart TB
   Gateway -->|REST| History
   Gateway -->|REST| Automation
   Gateway -->|"REST /api/ers/*"| ERS
-  Gateway -->|REST| Dashboard
-  Gateway -->|REST| Weather
+  Gateway -->|REST| Email
+  Gateway -->|REST| ProfilePic
 
   %% WebSockets
   Browser <-->|"WS /ws/ers"| Gateway
@@ -77,13 +67,8 @@ flowchart TB
   Browser <-->|"MQTT-over-WS /ws/hdp"| Gateway
   Gateway <-->|"MQTT-over-WS upstream"| Mosquitto
 
-  Browser <-->|"WS /ws/echo"| Gateway
+  Browser <-->|"WS demo"| Gateway
   Gateway <-->|"WS upstream"| Echo
-
-  %% Integrations
-  Dashboard -->|"registry + widgets"| Integrations
-  Integrations -->|"HTTP (invoke/health)"| Spotify
-  Spotify -->|"OAuth + Web API"| ExternalAPI
 
   %% MQTT (HDP)
   Zigbee <-->|"MQTT (HDP topics)"| Mosquitto
@@ -94,19 +79,11 @@ flowchart TB
   %% Persistence
   User -->|SQL| Postgres
   Auth -->|"SQL (tokens/users etc.)"| Postgres
-  DeviceHub -->|"SQL (devices, metadata)"| Postgres
   History -->|"SQL (state history)"| Postgres
-  Automation -->|"SQL (automation rules)"| Postgres
-  Dashboard -->|"SQL (dashboards/widgets)"| Postgres
   ERS -->|"SQL (inventory)"| Postgres
 
   Gateway -->|"rate limit/session"| Redis
   Auth -->|"lockouts/2FA state"| Redis
-
-  %% Internal service calls
-  Auth -->|"email verification/2FA"| Email
-  Automation -->|"alert notifications"| Email
-  Auth -->|"profile pictures"| ProfilePic
 
   %% Observability
   Gateway -->|metrics| Prom

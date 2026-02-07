@@ -1,0 +1,6 @@
+version: '3.8'
+
+networks:
+  homenavi-network:
+    external: true
+    name: homenavi-network

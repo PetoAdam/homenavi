@@ -6,6 +6,7 @@
   color: var(--color-white);
   padding-left: 5.0rem;
   padding-bottom: 0.5rem;
+  margin-top: 1.25rem;
   letter-spacing: -1px;
   text-shadow: 0 2px 12px var(--color-shadow-dark);
   display: flex;
@@ -23,6 +24,7 @@
   .dashboard-greeting {
     font-size: 2rem;
     min-height: 2.2rem;
+    margin-top: 1rem;
   }
   .dashboard-greeting--with-profile-btn {
     margin-right: 3.5rem; /* only avatar button on mobile */
