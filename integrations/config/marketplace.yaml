@@ -7,28 +7,7 @@ integrations:
     publisher: Homenavi
     homepage: https://developer.spotify.com
     upstream: http://spotify:8099
-    compose_yaml: |
-      version: '3.8'
-
-      services:
-        spotify:
-          image: ghcr.io/petoadam/homenavi-spotify:${HN_VERSION:-latest}
-          pull_policy: always
-          restart: unless-stopped
-          environment:
-            - PORT=8099
-            - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-            - INTEGRATION_SECRETS_PATH=/app/config/integration.secrets.json
-          volumes:
-            - ${INTEGRATIONS_ROOT}/integrations/secrets/spotify.secrets.json:/app/config/integration.secrets.json
-            - ${INTEGRATIONS_ROOT}/keys/jwt_public.pem:/app/keys/jwt_public.pem:ro
-          networks:
-            - homenavi-network
-
-      networks:
-        homenavi-network:
-          external: true
-          name: homenavi-network
+    compose_file: ./integrations/compose/spotify.yml
 
   - id: integration-template
     display_name: Integration Template
@@ -38,25 +17,4 @@ integrations:
     publisher: Homenavi
     homepage: https://github.com/PetoAdam/homenavi-integration-template
     upstream: http://integration-template:8099
-    compose_yaml: |
-      version: '3.8'
-
-      services:
-        integration-template:
-          image: ghcr.io/petoadam/homenavi-integration-template:${HN_VERSION:-latest}
-          pull_policy: always
-          restart: unless-stopped
-          environment:
-            - PORT=8099
-            - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-            - INTEGRATION_SECRETS_PATH=/app/config/integration.secrets.json
-          volumes:
-            - ${INTEGRATIONS_ROOT}/integrations/secrets/integration-template.secrets.json:/app/config/integration.secrets.json
-            - ${INTEGRATIONS_ROOT}/keys/jwt_public.pem:/app/keys/jwt_public.pem:ro
-          networks:
-            - homenavi-network
-
-      networks:
-        homenavi-network:
-          external: true
-          name: homenavi-network
+    compose_file: ./integrations/compose/integration-template.yml

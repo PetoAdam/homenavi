@@ -72,3 +72,22 @@ Admins can then manage values in the Admin → Integrations page (write-only fie
 
 Integrations should expose a write-only admin endpoint at `GET/PUT /api/admin/secrets` and store values in `config/integration.secrets.json` (configurable with `INTEGRATION_SECRETS_PATH`) to avoid cross-integration access.
 
+## Integration CI/CD (centralized)
+
+Integration repos should use the centralized actions hosted in the main Homenavi repo:
+
+- Verify: `PetoAdam/homenavi/.github/actions/integration-verify@main`
+- Release: `PetoAdam/homenavi/.github/actions/integration-release@main`
+
+This keeps the release logic and marketplace publish flow inside the main repo so third-party integrations do not run custom publish scripts.
+
+### Release inputs
+
+The release action expects:
+
+- `image_name` (e.g. `homenavi-example`)
+- `manifest_path` (default `manifest/homenavi-integration.json`)
+- `metadata_path` (default `marketplace/metadata.json`)
+
+Marketplace publish only runs when `MARKETPLACE_API_URL` and `MARKETPLACE_PUBLISH_TOKEN` are provided.
+

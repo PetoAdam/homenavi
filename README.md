@@ -221,6 +221,28 @@ Current runtime model:
 - UI surfaces are rendered in sandboxed iframes (tab + widget).
 - Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
 
+### Third-party integration development
+
+Third-party integrations should be built in their own repos using the official template:
+
+- https://github.com/PetoAdam/homenavi-integration-template
+
+Recommended workflow:
+
+1) Implement your integration and keep metadata in `marketplace/metadata.json`.
+2) Add the centralized CI actions from this repo:
+	- Verify: `PetoAdam/homenavi/.github/actions/integration-verify@main`
+	- Release: `PetoAdam/homenavi/.github/actions/integration-release@main`
+3) Tag a release (`vX.Y.Z`). The release workflow builds the image and publishes to the marketplace.
+
+Marketplace publishing uses GitHub OIDC tokens (no repo secrets). The marketplace validates:
+
+- The OIDC token is from GitHub Actions for the tagging workflow.
+- The tag matches the payload `version` and `release_tag`.
+- The repo has a successful `verify.yml` workflow run for the tagged commit.
+
+Make sure your integration repo includes a `verify.yml` workflow and grants `id-token: write` in the release workflow so the OIDC token can be requested.
+
 Security note: when compose-managed installs are enabled, `integration-proxy` runs with Docker socket access and elevated privileges. Treat it as a high‑trust service and restrict access accordingly.
 
 ### Integration proxy installation (recommended)
