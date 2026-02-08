@@ -127,34 +127,68 @@ runs:
 
         OIDC_TOKEN=$("${GITHUB_ACTION_PATH}/scripts/get-oidc-token.sh")
 
-        METADATA_JSON=$(jq -c 'if type == "string" then (fromjson? // .) else . end' "$METADATA_PATH")
-        if [[ "$(jq -r 'type' <<<"$METADATA_JSON")" != "object" ]]; then
-          echo "Marketplace metadata must be a JSON object." >&2
-          exit 1
-        fi
+        PAYLOAD=$(TAG="$TAG" \
+          RAW_BASE="$RAW_BASE" \
+          MANIFEST_URL="$RAW_BASE/$MANIFEST_PATH" \
+          METADATA_PATH="$METADATA_PATH" \
+          MANIFEST_PATH="$MANIFEST_PATH" \
+          node - <<'NODE'
+          const fs = require('fs');
 
-        echo "Marketplace metadata type (file): $(jq -r 'type' "$METADATA_PATH")"
-        echo "Marketplace metadata type (parsed): $(jq -r 'type' <<<"$METADATA_JSON")"
+          const tag = process.env.TAG || '';
+          const rawBase = process.env.RAW_BASE || '';
+          const manifestUrl = process.env.MANIFEST_URL || '';
+          const metadataPath = process.env.METADATA_PATH || '';
+          const manifestPath = process.env.MANIFEST_PATH || '';
 
-        MANIFEST_JSON=$(jq -c '.' "$MANIFEST_PATH")
+          const readJson = (path) => JSON.parse(fs.readFileSync(path, 'utf8'));
 
-        PAYLOAD=$(jq -nc \
-          --arg tag "$TAG" \
-          --arg raw_base "$RAW_BASE" \
-          --arg manifest_url "$RAW_BASE/$MANIFEST_PATH" \
-          --argjson manifest "$MANIFEST_JSON" \
-          --argjson metadata "$METADATA_JSON" \
-          '
-          ($metadata | if type == "string" then (fromjson? // error("metadata is JSON string but not parseable")) else . end)
-          | .version = $tag
-          | .release_tag = $tag
-          | .manifest_url = $manifest_url
-          | .manifest = $manifest
-          | .image = (.image + ":" + $tag)
-          | .compose_file = (if .compose_file? then (if ((.compose_file | type) == "string" and (.compose_file | startswith("http://") or .compose_file | startswith("https://"))) then .compose_file else ($raw_base + "/" + (.compose_file | tostring)) end) else .compose_file end)
-          | .assets = (.assets // {} | with_entries(.value |= if ((. | type) == "string" and (startswith("http://") or startswith("https://"))) then . else ($raw_base + "/" + (.|tostring)) end))
-          | .images = (.images // [] | map(if ((. | type) == "string" and (startswith("http://") or startswith("https://"))) then . else ($raw_base + "/" + (.|tostring)) end))
-          ')
+          let metadata = readJson(metadataPath);
+          if (typeof metadata === 'string') {
+            metadata = JSON.parse(metadata);
+          }
+
+          if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+            throw new Error('Marketplace metadata must be a JSON object.');
+          }
+
+          const manifest = readJson(manifestPath);
+
+          const normalizeUrl = (value) => {
+            if (value === null || value === undefined) {
+              return value;
+            }
+            const strValue = typeof value === 'string' ? value : String(value);
+            if (strValue.startsWith('http://') || strValue.startsWith('https://')) {
+              return strValue;
+            }
+            return `${rawBase}/${strValue}`;
+          };
+
+          metadata.version = tag;
+          metadata.release_tag = tag;
+          metadata.manifest_url = manifestUrl;
+          metadata.manifest = manifest;
+
+          if (typeof metadata.image === 'string' && metadata.image.length > 0) {
+            metadata.image = `${metadata.image}:${tag}`;
+          }
+
+          if (metadata.compose_file) {
+            metadata.compose_file = normalizeUrl(metadata.compose_file);
+          }
+
+          metadata.assets = metadata.assets || {};
+          for (const [key, value] of Object.entries(metadata.assets)) {
+            metadata.assets[key] = normalizeUrl(value);
+          }
+
+          metadata.images = Array.isArray(metadata.images) ? metadata.images : [];
+          metadata.images = metadata.images.map(normalizeUrl);
+
+          process.stdout.write(JSON.stringify(metadata));
+NODE
+        )
 
         curl -fsS \
           -X POST "$BASE_URL/api/integrations/publish-oidc" \
