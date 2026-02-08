@@ -127,6 +127,12 @@ runs:
 
         OIDC_TOKEN=$("${GITHUB_ACTION_PATH}/scripts/get-oidc-token.sh")
 
+        METADATA_JSON=$(jq -c 'if type == "string" then (fromjson? // .) else . end' "$METADATA_PATH")
+        if [[ "$(jq -r 'type' <<<"$METADATA_JSON")" != "object" ]]; then
+          echo "Marketplace metadata must be a JSON object." >&2
+          exit 1
+        fi
+
         MANIFEST_JSON=$(jq -c '.' "$MANIFEST_PATH")
 
         PAYLOAD=$(jq -c \
@@ -134,8 +140,10 @@ runs:
           --arg raw_base "$RAW_BASE" \
           --arg manifest_url "$RAW_BASE/$MANIFEST_PATH" \
           --argjson manifest "$MANIFEST_JSON" \
+          --argjson metadata "$METADATA_JSON" \
           '
-          .version = $tag
+          $metadata
+          | .version = $tag
           | .release_tag = $tag
           | .manifest_url = $manifest_url
           | .manifest = $manifest
@@ -143,7 +151,7 @@ runs:
           | .compose_file = (if .compose_file? then (if ((.compose_file | type) == "string" and (.compose_file | startswith("http://") or .compose_file | startswith("https://"))) then .compose_file else ($raw_base + "/" + (.compose_file | tostring)) end) else .compose_file end)
           | .assets = (.assets // {} | with_entries(.value |= if ((. | type) == "string" and (startswith("http://") or startswith("https://"))) then . else ($raw_base + "/" + (.|tostring)) end))
           | .images = (.images // [] | map(if ((. | type) == "string" and (startswith("http://") or startswith("https://"))) then . else ($raw_base + "/" + (.|tostring)) end))
-          ' "$METADATA_PATH")
+          ')
 
         curl -fsS \
           -X POST "$BASE_URL/api/integrations/publish-oidc" \
