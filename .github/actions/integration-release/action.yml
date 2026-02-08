@@ -133,6 +133,9 @@ runs:
           exit 1
         fi
 
+        echo "Marketplace metadata type (file): $(jq -r 'type' "$METADATA_PATH")"
+        echo "Marketplace metadata type (parsed): $(jq -r 'type' <<<"$METADATA_JSON")"
+
         MANIFEST_JSON=$(jq -c '.' "$MANIFEST_PATH")
 
         PAYLOAD=$(jq -nc \
@@ -142,7 +145,7 @@ runs:
           --argjson manifest "$MANIFEST_JSON" \
           --argjson metadata "$METADATA_JSON" \
           '
-          $metadata
+          ($metadata | if type == "string" then (fromjson? // error("metadata is JSON string but not parseable")) else . end)
           | .version = $tag
           | .release_tag = $tag
           | .manifest_url = $manifest_url
