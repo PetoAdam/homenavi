@@ -341,12 +341,9 @@ export default function AddDeviceModal({
     try {
       setPairingStartPending(true);
       setPairingError(null);
-      const configuredTimeout = pairingProfile?.default_timeout_sec
+      const timeout = pairingProfile?.default_timeout_sec
         || pairingProfile?.defaultTimeoutSec
-        || 60;
-      const timeout = selectedProtocol.trim().toLowerCase() === 'zigbee'
-        ? Math.max(180, configuredTimeout)
-        : configuredTimeout;
+        || 180;
       const payload = {
         protocol: selectedProtocol.trim().toLowerCase(),
         timeout,

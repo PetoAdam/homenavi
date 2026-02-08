@@ -116,14 +116,17 @@ export default function IntegrationHost() {
           <div style={{ opacity: 0.9 }}>{frameError}</div>
         </GlassCard>
       ) : (
-        <iframe
-          title={integration.display_name || integration.id}
-          src={iframeSrc}
-          onLoad={onFrameLoad}
-          style={{ width: '100%', height: 'calc(100vh - 220px)', minHeight: '78vh', border: '0', borderRadius: '16px', background: 'transparent' }}
+        <div className="integration-frame">
+          <iframe
+            title={integration.display_name || integration.id}
+            src={iframeSrc}
+            onLoad={onFrameLoad}
+            style={{ width: '100%', height: '100%', minHeight: 0, border: '0', borderRadius: '16px', background: 'transparent', overflow: 'auto' }}
             sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-          referrerPolicy="no-referrer"
-        />
+            referrerPolicy="no-referrer"
+            scrolling="yes"
+          />
+        </div>
       )}
     </div>
   );

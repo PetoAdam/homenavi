@@ -105,6 +105,9 @@ func parsePairingConfig(protocol string, msg map[string]any) (*PairingConfig, bo
 		if t := intish(raw["default_timeout_sec"]); t > 0 {
 			cfg.DefaultTimeoutSec = t
 		}
+		if cfg.Supported && cfg.DefaultTimeoutSec == 0 {
+			cfg.DefaultTimeoutSec = 180
+		}
 		cfg.Instructions = stringSlice(raw["instructions"])
 		cfg.CTALabel = strings.TrimSpace(asString(raw["cta_label"]))
 		cfg.Notes = strings.TrimSpace(asString(raw["notes"]))
@@ -113,7 +116,7 @@ func parsePairingConfig(protocol string, msg map[string]any) (*PairingConfig, bo
 	// Fallback: features.supports_pairing indicates adapter can accept pairing commands.
 	features, _ := msg["features"].(map[string]any)
 	if features != nil && boolish(features["supports_pairing"]) {
-		cfg := &PairingConfig{Protocol: proto, Label: strings.ToUpper(proto[:1]) + proto[1:], Supported: true, DefaultTimeoutSec: 60}
+		cfg := &PairingConfig{Protocol: proto, Label: strings.ToUpper(proto[:1]) + proto[1:], Supported: true, DefaultTimeoutSec: 180}
 		cfg.SupportsInterview = boolish(features["supports_interview"])
 		return cfg, true
 	}
@@ -340,7 +343,7 @@ func (r *adapterRegistry) pairingConfigsSnapshot() []PairingConfig {
 			// Minimal config when adapter indicates pairing support but doesn't provide UX metadata.
 			cfg.Supported = isOnline
 			if cfg.DefaultTimeoutSec == 0 {
-				cfg.DefaultTimeoutSec = 60
+				cfg.DefaultTimeoutSec = 180
 			}
 		}
 		byProto[proto] = cfg
