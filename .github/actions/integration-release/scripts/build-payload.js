@@ -24,6 +24,10 @@ const normalizeUrl = (value) => {
     return value;
   }
   const strValue = typeof value === 'string' ? value : String(value);
+  const lowerValue = strValue.toLowerCase();
+  if (lowerValue.startsWith('fa:')) {
+    return strValue;
+  }
   if (strValue.startsWith('http://') || strValue.startsWith('https://')) {
     return strValue;
   }
