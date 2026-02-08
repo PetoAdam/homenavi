@@ -151,7 +151,7 @@ runs:
           | .compose_file = (if .compose_file? then (if ((.compose_file | type) == "string" and (.compose_file | startswith("http://") or .compose_file | startswith("https://"))) then .compose_file else ($raw_base + "/" + (.compose_file | tostring)) end) else .compose_file end)
           | .assets = (.assets // {} | with_entries(.value |= if ((. | type) == "string" and (startswith("http://") or startswith("https://"))) then . else ($raw_base + "/" + (.|tostring)) end))
           | .images = (.images // [] | map(if ((. | type) == "string" and (startswith("http://") or startswith("https://"))) then . else ($raw_base + "/" + (.|tostring)) end))
-          ')
+          ' <<<"$METADATA_JSON")
 
         curl -fsS \
           -X POST "$BASE_URL/api/integrations/publish-oidc" \
