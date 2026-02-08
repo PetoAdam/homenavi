@@ -42,8 +42,14 @@ const ICONS_BY_NAME = {
 
 function getWidgetIcon(widget) {
   const byID = WIDGET_ICONS[widget?.id];
-  const key = (widget?.icon || '').toLowerCase().trim();
-  return ICONS_BY_NAME[key] || byID || faQuestionCircle;
+  const raw = (widget?.icon || '').trim();
+
+  if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) {
+    return { type: 'image', value: raw };
+  }
+
+  const key = raw.toLowerCase();
+  return { type: 'fa', value: ICONS_BY_NAME[key] || byID || faQuestionCircle };
 }
 
 export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
@@ -116,11 +122,22 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
             </div>
           )}
 
-          {filteredCatalog.map((widget) => (
-            <div key={widget.id} className="add-widget-modal__item">
-              <div className="add-widget-modal__item-icon">
-                <FontAwesomeIcon icon={getWidgetIcon(widget)} />
-              </div>
+          {filteredCatalog.map((widget) => {
+            const icon = getWidgetIcon(widget);
+            return (
+              <div key={widget.id} className="add-widget-modal__item">
+                <div className="add-widget-modal__item-icon">
+                  {icon.type === 'image' ? (
+                    <img
+                      src={icon.value}
+                      alt=""
+                      className="add-widget-modal__item-icon-img"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <FontAwesomeIcon icon={icon.value} />
+                  )}
+                </div>
               <div className="add-widget-modal__item-info">
                 <span className="add-widget-modal__item-name">
                   {widget.display_name || widget.id}
@@ -134,16 +151,17 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
                   </span>
                 )}
               </div>
-              <button
-                className="add-widget-modal__item-add"
-                onClick={() => handleAdd(widget.id)}
-                title={`Add ${widget.display_name || widget.id}`}
-              >
-                <FontAwesomeIcon icon={faPlus} />
-                <span>Add</span>
-              </button>
-            </div>
-          ))}
+                <button
+                  className="add-widget-modal__item-add"
+                  onClick={() => handleAdd(widget.id)}
+                  title={`Add ${widget.display_name || widget.id}`}
+                >
+                  <FontAwesomeIcon icon={faPlus} />
+                  <span>Add</span>
+                </button>
+              </div>
+            );
+          })}
           </div>
         </div>
       </div>

@@ -1,0 +1,154 @@
+name: Integration Release
+description: Build + publish integration images and marketplace metadata.
+
+inputs:
+  image_name:
+    description: Image name without registry/owner (e.g. homenavi-spotify).
+    required: true
+  registry:
+    description: Container registry hostname.
+    required: false
+    default: ghcr.io
+  dockerfile:
+    description: Path to Dockerfile.
+    required: false
+    default: ./Dockerfile
+  context:
+    description: Build context path.
+    required: false
+    default: .
+  platforms:
+    description: Build platforms.
+    required: false
+    default: linux/amd64,linux/arm64
+  ghcr_username:
+    description: Registry username.
+    required: true
+  ghcr_token:
+    description: Registry token.
+    required: true
+  manifest_path:
+    description: Path to homenavi integration manifest.
+    required: false
+    default: manifest/homenavi-integration.json
+  metadata_path:
+    description: Path to marketplace metadata JSON.
+    required: false
+    default: marketplace/metadata.json
+  marketplace_api_url:
+    description: Marketplace API base URL.
+    required: true
+  oidc_audience:
+    description: OIDC audience for the marketplace.
+    required: false
+    default: homenavi-marketplace
+
+runs:
+  using: composite
+  steps:
+    - name: Compute registry owner
+      id: owner
+      shell: bash
+      run: echo "owner_lower=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.22"
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Verify integration
+      uses: PetoAdam/homenavi/.github/actions/integration-verify@main
+      with:
+        manifest_path: ${{ inputs.manifest_path }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.ghcr_username }}
+        password: ${{ inputs.ghcr_token }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        push: true
+        platforms: ${{ inputs.platforms }}
+        tags: |
+          ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
+          ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:latest
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        generate_release_notes: true
+
+    - name: Publish to marketplace
+      shell: bash
+      env:
+        MARKETPLACE_API_URL: ${{ inputs.marketplace_api_url }}
+        METADATA_PATH: ${{ inputs.metadata_path }}
+        MANIFEST_PATH: ${{ inputs.manifest_path }}
+        OIDC_AUDIENCE: ${{ inputs.oidc_audience }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! -f "$METADATA_PATH" ]]; then
+          echo "Marketplace metadata file not found at $METADATA_PATH" >&2
+          exit 1
+        fi
+
+        if [[ ! -f "$MANIFEST_PATH" ]]; then
+          echo "Manifest file not found at $MANIFEST_PATH" >&2
+          exit 1
+        fi
+
+        TAG="${GITHUB_REF_NAME:-}"
+        if [[ -z "$TAG" ]]; then
+          echo "GITHUB_REF_NAME is required (run on a tag)" >&2
+          exit 1
+        fi
+
+        RAW_BASE="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TAG}"
+        BASE_URL="${MARKETPLACE_API_URL%/}"
+
+        OIDC_TOKEN=$("${GITHUB_ACTION_PATH}/scripts/get-oidc-token.sh")
+
+        MANIFEST_JSON=$(jq -c '.' "$MANIFEST_PATH")
+
+        PAYLOAD=$(jq -c \
+          --arg tag "$TAG" \
+          --arg raw_base "$RAW_BASE" \
+          --arg manifest_url "$RAW_BASE/$MANIFEST_PATH" \
+          --argjson manifest "$MANIFEST_JSON" \
+          '
+          .version = $tag
+          | .release_tag = $tag
+          | .manifest_url = $manifest_url
+          | .manifest = $manifest
+          | .image = (.image + ":" + $tag)
+          | .compose_file = (if .compose_file? then (if startswith("http://") or startswith("https://") then .compose_file else ($raw_base + "/" + .compose_file) end) else .compose_file end)
+          | .assets = (.assets // {} | with_entries(.value |= if startswith("http://") or startswith("https://") then . else ($raw_base + "/" + .) end))
+          | .images = (.images // [] | map(if startswith("http://") or startswith("https://") then . else ($raw_base + "/" + .) end))
+          ' "$METADATA_PATH")
+
+        curl -fsS \
+          -X POST "$BASE_URL/api/integrations/publish-oidc" \
+          -H "Authorization: Bearer $OIDC_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$PAYLOAD"
+
+        echo "Marketplace publish complete."

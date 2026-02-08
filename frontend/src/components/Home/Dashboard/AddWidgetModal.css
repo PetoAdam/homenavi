@@ -68,6 +68,12 @@
   flex-shrink: 0;
 }
 
+.add-widget-modal__item-icon-img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
 .add-widget-modal__item-info {
   flex: 1;
   min-width: 0;
