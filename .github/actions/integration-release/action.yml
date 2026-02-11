@@ -96,6 +96,15 @@ runs:
         tag_name: ${{ github.ref_name }}
         generate_release_notes: true
 
+    - name: Check marketplace uniqueness
+      shell: bash
+      env:
+        MARKETPLACE_API_URL: ${{ inputs.marketplace_api_url }}
+        METADATA_PATH: ${{ inputs.metadata_path }}
+      run: |
+        set -euo pipefail
+        node "${GITHUB_ACTION_PATH}/scripts/check-uniqueness.js"
+
     - name: Publish to marketplace
       shell: bash
       env:
