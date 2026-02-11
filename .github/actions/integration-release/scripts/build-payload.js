@@ -6,7 +6,7 @@ const manifestUrl = process.env.MANIFEST_URL || '';
 const metadataPath = process.env.METADATA_PATH || '';
 const manifestPath = process.env.MANIFEST_PATH || '';
 
-const readJson = (path) => JSON.parse(fs.readFileSync(path, 'utf8'));
+const readJson = (pathValue) => JSON.parse(fs.readFileSync(pathValue, 'utf8'));
 
 let metadata = readJson(metadataPath);
 if (typeof metadata === 'string') {
@@ -43,9 +43,17 @@ if (typeof metadata.image === 'string' && metadata.image.length > 0) {
   metadata.image = `${metadata.image}:${tag}`;
 }
 
-if (metadata.compose_file) {
-  metadata.compose_file = normalizeUrl(metadata.compose_file);
+if (!metadata.compose_file) {
+  throw new Error('compose_file is required in marketplace metadata.');
 }
+
+const composeValue = metadata.compose_file;
+const composeValueStr = typeof composeValue === 'string' ? composeValue : '';
+const composeName = composeValueStr.split('/').pop() || '';
+if (composeName !== 'docker-compose.integration.yml') {
+  throw new Error('compose_file must point to compose/docker-compose.integration.yml');
+}
+metadata.compose_file = normalizeUrl(composeValueStr);
 
 metadata.assets = metadata.assets || {};
 for (const [key, value] of Object.entries(metadata.assets)) {
