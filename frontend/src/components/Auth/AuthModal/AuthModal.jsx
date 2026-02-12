@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { faUserCircle, faLock } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle as faGoogleBrand } from '@fortawesome/free-brands-svg-icons';
 import { requestPasswordReset, confirmPasswordReset } from '../../../services/authService';
-import { getModalRoot } from '../../common/Modal/modalRoot';
+import ModalTabs from '../../common/ModalTabs/ModalTabs';
+import BaseModal from '../../common/BaseModal/BaseModal';
 import './AuthModal.css';
 
 export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, onSignup, onCancel, onRequestNewCode, loading = false }) {
@@ -21,22 +21,11 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const [forgotPasswordStep, setForgotPasswordStep] = useState(1); // 1: email, 2: code + password
   const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [formLoading, setFormLoading] = useState(false); // Local loading state for form submissions
-  const modalRef = useRef();
-
-  useEffect(() => {
-    if (!open) return;
-    function handle(e) {
-      if (modalRef.current && !modalRef.current.contains(e.target)) onClose();
-    }
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [open, onClose]);
-
   // Clear stale errors and transient form states whenever the modal is newly opened
   useEffect(() => {
     if (open) {
       setLoginError('');
-  setLockoutRemaining(null);
+      setLockoutRemaining(null);
       setSignupError('');
       setForgotPasswordError('');
       // Do not wipe user input blindly except after a logout scenario; if no tokens and no user keep forms clean
@@ -44,17 +33,6 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
       setLoginForm(f => ({ ...f, password: '', twofa: '' }));
       setAttemptedLogin(false);
     }
-  }, [open]);
-
-  useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [open]);
 
   const handleCancel = () => {
@@ -233,12 +211,16 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   };
 
   const modal = (
-    <div className={`auth-modal-backdrop${open ? ' open' : ''}`}>
-      <div className={`auth-modal-glass${open ? ' open' : ''}`} ref={modalRef}>
-        <div className="auth-modal-tabs">
-          <button className={tab === 'login' ? 'active' : ''} onClick={() => setTab('login')} type="button">Log In</button>
-          <button className={tab === 'signup' ? 'active' : ''} onClick={() => setTab('signup')} type="button">Sign Up</button>
-        </div>
+    <BaseModal open={open} onClose={onClose}>
+      <div>
+        <ModalTabs
+          tabs={[
+            { id: 'login', label: 'Log In' },
+            { id: 'signup', label: 'Sign Up' },
+          ]}
+          activeTab={tab}
+          onChange={setTab}
+        />
         <div className="auth-modal-content-outer">
           <div className={contentClass}>
             {/* LOGIN FORM */}
@@ -556,10 +538,9 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
           </div>
         )}
         
-        <button className="auth-modal-close" onClick={onClose} aria-label="Close">&times;</button>
       </div>
-    </div>
+    </BaseModal>
   );
 
-  return createPortal(modal, getModalRoot());
+  return modal;
 }

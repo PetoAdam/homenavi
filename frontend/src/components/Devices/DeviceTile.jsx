@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBatteryThreeQuarters,
@@ -32,7 +31,7 @@ import { normalizeColorHex } from '../../utils/colorHex';
 import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
 import { formatBinaryStateValue as formatBinaryStateValueShared } from '../../utils/stateFormat';
-import { getModalRoot } from '../common/Modal/modalRoot';
+import BaseModal from '../common/BaseModal/BaseModal';
 
 const ICON_BY_CAP = {
   temperature: faThermometerHalf,
@@ -1006,57 +1005,56 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     return `${device.description.slice(0, DESCRIPTION_LIMIT - 1)}…`;
   }, [device.description]);
 
-  const deleteModalElement = deleteModalOpen ? (
-    <div className="device-delete-modal-backdrop">
+  const deleteModal = deleteModalOpen ? (
+    <BaseModal
+      open
+      onClose={closeDeleteModal}
+      backdropClassName="device-delete-modal-backdrop"
+      dialogClassName="device-delete-modal"
+      showClose={false}
+      disableBackdropClose
+    >
       <div
-        className="device-delete-modal"
+        className="device-delete-modal-body"
         role="dialog"
         aria-modal="true"
         aria-labelledby={deleteDialogTitleId}
         aria-describedby={deleteDialogDescId}
       >
-        <div className="device-delete-modal-body">
-          <p className="device-delete-eyebrow">Device → Edit</p>
-          <h3 id={deleteDialogTitleId}>Delete {device.displayName || device.name || 'this device'}?</h3>
-          <p id={deleteDialogDescId}>
-            Removing this device clears its historical state from dashboards and automations. This action cannot be undone.
-          </p>
-          <label className="device-delete-force-toggle" htmlFor={deleteForceCheckboxId}>
-            <input
-              type="checkbox"
-              id={deleteForceCheckboxId}
-              checked={forceDelete}
-              onChange={event => setForceDelete(event.target.checked)}
-              disabled={deletePending}
-              aria-describedby={deleteForceNoteId}
-            />
-            <div>
-              <span>Force delete</span>
-              <p id={deleteForceNoteId}>
-                Force delete bypasses adapter acknowledgements and purges the record immediately. Use this when the bridge
-                or coordinator no longer recognizes the hardware or the removal queue is stuck.
-              </p>
-            </div>
-          </label>
-          {deleteError ? <div className="device-delete-error">{deleteError}</div> : null}
-          <div className="device-delete-actions">
-            <button type="button" className="device-delete-cancel" onClick={closeDeleteModal} disabled={deletePending}>
-              Cancel
-            </button>
-            <button type="button" className="device-delete-confirm" onClick={confirmDelete} disabled={deletePending}>
-              {deletePending ? 'Removing…' : forceDelete ? 'Force delete' : 'Delete'}
-            </button>
+        <p className="device-delete-eyebrow">Device → Edit</p>
+        <h3 id={deleteDialogTitleId}>Delete {device.displayName || device.name || 'this device'}?</h3>
+        <p id={deleteDialogDescId}>
+          Removing this device clears its historical state from dashboards and automations. This action cannot be undone.
+        </p>
+        <label className="device-delete-force-toggle" htmlFor={deleteForceCheckboxId}>
+          <input
+            type="checkbox"
+            id={deleteForceCheckboxId}
+            checked={forceDelete}
+            onChange={event => setForceDelete(event.target.checked)}
+            disabled={deletePending}
+            aria-describedby={deleteForceNoteId}
+          />
+          <div>
+            <span>Force delete</span>
+            <p id={deleteForceNoteId}>
+              Force delete bypasses adapter acknowledgements and purges the record immediately. Use this when the bridge
+              or coordinator no longer recognizes the hardware or the removal queue is stuck.
+            </p>
           </div>
+        </label>
+        {deleteError ? <div className="device-delete-error">{deleteError}</div> : null}
+        <div className="device-delete-actions">
+          <button type="button" className="device-delete-cancel" onClick={closeDeleteModal} disabled={deletePending}>
+            Cancel
+          </button>
+          <button type="button" className="device-delete-confirm" onClick={confirmDelete} disabled={deletePending}>
+            {deletePending ? 'Removing…' : forceDelete ? 'Force delete' : 'Delete'}
+          </button>
         </div>
       </div>
-    </div>
+    </BaseModal>
   ) : null;
-
-  const deleteModal = deleteModalElement
-    ? (typeof document !== 'undefined'
-      ? createPortal(deleteModalElement, getModalRoot())
-      : deleteModalElement)
-    : null;
 
   const isInteractiveTarget = target => {
     if (!target || typeof target.closest !== 'function') return false;

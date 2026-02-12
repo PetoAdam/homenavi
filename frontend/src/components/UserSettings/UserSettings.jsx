@@ -12,6 +12,7 @@ import {
 } from '../../services/authService';
 import './UserSettings.css';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
+import BaseModal from '../common/BaseModal/BaseModal';
 
 export default function UserSettings({ onClose }) {
   const { user, accessToken, handleLogout, refreshUser } = useAuth();
@@ -210,14 +211,18 @@ export default function UserSettings({ onClose }) {
   };
 
   return (
-    <div className="user-settings-backdrop" onClick={onClose}>
-      <div className="user-settings" onClick={e => e.stopPropagation()}>
-        <div className="user-settings-header">
-          <h2>Account Settings</h2>
-        </div>
-        
-        <div className="user-settings-content-outer">
-          <div className="user-settings-content">
+    <BaseModal
+      open
+      onClose={onClose}
+      dialogClassName="user-settings"
+      closeAriaLabel="Close account settings"
+    >
+      <div className="user-settings-header">
+        <h2>Account Settings</h2>
+      </div>
+      
+      <div className="user-settings-content-outer">
+        <div className="user-settings-content">
           {/* Profile Card */}
           <div className="user-settings-card">
             <h3>
@@ -447,12 +452,12 @@ export default function UserSettings({ onClose }) {
             </button>
           </div>
         </div>
-        </div>
-        
-        {/* Profile Picture Modal */}
-        {showProfilePictureModal && (
-          <div className="profile-picture-modal">
-            <div className="profile-picture-modal-content">
+      </div>
+      
+      {/* Profile Picture Modal */}
+      {showProfilePictureModal && (
+        <div className="profile-picture-modal">
+          <div className="profile-picture-modal-content">
               <h3>Change Profile Picture</h3>
               
               <div className="profile-picture-options">
@@ -496,12 +501,9 @@ export default function UserSettings({ onClose }) {
               >
                 Cancel
               </button>
-            </div>
           </div>
-        )}
-        
-        <button className="user-settings-close" onClick={onClose} aria-label="Close">&times;</button>
-      </div>
-    </div>
+        </div>
+      )}
+    </BaseModal>
   );
 }

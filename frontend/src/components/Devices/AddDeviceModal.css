@@ -1,7 +1,7 @@
 .add-device-modal-backdrop {
   z-index: 12000;
   padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(18, 26, 38, 0.65);
   opacity: 0;
   transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -28,9 +28,9 @@
   overflow: hidden;
   padding: 2.1rem 2.05rem 2rem;
   border-radius: 2rem;
-  background: var(--color-modal-surface);
-  border: 1.5px solid rgba(60, 70, 90, 0.45);
-  box-shadow: 0 35px 90px var(--color-shadow-modal), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: rgba(18, 26, 38, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 60px rgba(4, 10, 20, 0.45);
   backdrop-filter: blur(30px);
   position: relative;
   z-index: 12001;

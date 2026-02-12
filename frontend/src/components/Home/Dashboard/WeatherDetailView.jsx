@@ -4,7 +4,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBolt,
   faCalendarDays,
-  faChevronLeft,
   faChevronDown,
   faClock,
   faCloud,
@@ -24,6 +23,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { getWeather, reverseGeocode, searchLocations } from '../../../services/dashboardService';
 import GlassSelect from '../../common/GlassSelect/GlassSelect';
 import SearchBar from '../../common/SearchBar/SearchBar';
+import BaseModal from '../../common/BaseModal/BaseModal';
 import './WeatherDetailView.css';
 
 function getWeatherVariant(iconKey) {
@@ -319,12 +319,22 @@ export default function WeatherDetailView({
   const weekly = Array.isArray(data?.weekly) ? data.weekly : [];
 
   return (
-    <div className={[
-      'weather-detail',
-      `weather-detail--${variant}`,
-      closing ? 'weather-detail--closing' : '',
-    ].filter(Boolean).join(' ')}>
-      <div className="weather-detail__backdrop" onClick={requestClose} aria-hidden="true" />
+    <BaseModal
+      open
+      onClose={requestClose}
+      backdropClassName="weather-detail__backdrop"
+      dialogClassName={[
+        'weather-detail',
+        `weather-detail--${variant}`,
+        closing ? 'weather-detail--closing' : '',
+      ].filter(Boolean).join(' ')}
+      closeButtonClassName="auth-modal-close weather-detail__close"
+      onBackdropMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          requestClose();
+        }
+      }}
+    >
       <div
         className="weather-detail__panel"
         role="dialog"
@@ -332,14 +342,7 @@ export default function WeatherDetailView({
         tabIndex={-1}
         ref={panelRef}
       >
-        <div className="weather-detail__background" aria-hidden="true" />
-
         <div className="weather-detail__header">
-          <button type="button" className="weather-detail__back" onClick={requestClose}>
-            <FontAwesomeIcon icon={faChevronLeft} />
-            <span>Back</span>
-          </button>
-
           <div className="weather-detail__title">
             <div className="weather-detail__title-main">{displayCity}</div>
             <div className="weather-detail__title-sub">
@@ -560,6 +563,6 @@ export default function WeatherDetailView({
         </div>,
         document.body,
       ) : null}
-    </div>
+    </BaseModal>
   );
 }

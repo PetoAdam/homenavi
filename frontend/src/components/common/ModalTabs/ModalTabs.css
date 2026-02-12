@@ -1,0 +1,34 @@
+.auth-modal-tabs {
+  display: flex;
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-modal-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.13);
+  border: none;
+  color: var(--color-white);
+  font-weight: 700;
+  font-size: 1.1rem;
+  padding: 0.5em 1.5em;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  outline: none;
+}
+
+.auth-modal-tabs button.active {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.modal-tabs-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

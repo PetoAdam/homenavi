@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus,
@@ -15,7 +14,7 @@ import {
   faQuestionCircle,
 } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
-import { getModalRoot } from '../../common/Modal/modalRoot';
+import BaseModal from '../../common/BaseModal/BaseModal';
 import SearchBar from '../../common/SearchBar/SearchBar';
 import './AddWidgetModal.css';
 
@@ -42,13 +41,16 @@ const ICONS_BY_NAME = {
 
 function getWidgetIcon(widget) {
   const byID = WIDGET_ICONS[widget?.id];
-  const raw = (widget?.icon || '').trim();
+  const rawIcon = (widget?.icon || '').trim();
+  const fallbackIcon = (widget?.integration_icon || widget?.integration?.icon || widget?.source_icon || '').trim();
+  const raw = rawIcon || fallbackIcon;
 
   if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) {
     return { type: 'image', value: raw };
   }
 
-  const key = raw.toLowerCase();
+  const keyRaw = raw.startsWith('fa:') ? raw.slice(3) : raw;
+  const key = keyRaw.toLowerCase();
   return { type: 'fa', value: ICONS_BY_NAME[key] || byID || faQuestionCircle };
 }
 
@@ -67,13 +69,6 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
     });
   }, [catalog, search]);
 
-  // Close on backdrop click
-  const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
   // Handle add
   const handleAdd = (widgetType) => {
     onAdd(widgetType, {});
@@ -81,41 +76,37 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
 
   if (!open) return null;
 
-  return createPortal(
-    <div className="widget-settings__backdrop open add-widget-modal__backdrop" onClick={handleBackdropClick}>
-      <div className="widget-settings-modal add-widget-modal">
-        <button
-          type="button"
-          className="widget-settings__close"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          &times;
-        </button>
+  return (
+    <BaseModal
+      open={open}
+      onClose={onClose}
+      backdropClassName="widget-settings__backdrop add-widget-modal__backdrop"
+      dialogClassName="widget-settings-modal add-widget-modal"
+      closeAriaLabel="Close"
+    >
+      <div className="widget-settings__header">
+        <div className="widget-settings__icon">
+          <FontAwesomeIcon icon={faPlus} />
+        </div>
+        <div className="widget-settings__header-text">
+          <h2 className="widget-settings__title">Add Widget</h2>
+          <span className="widget-settings__type">Choose from the catalog</span>
+        </div>
+      </div>
 
-        <div className="widget-settings__header">
-          <div className="widget-settings__icon">
-            <FontAwesomeIcon icon={faPlus} />
-          </div>
-          <div className="widget-settings__header-text">
-            <h2 className="widget-settings__title">Add Widget</h2>
-            <span className="widget-settings__type">Choose from the catalog</span>
-          </div>
+      <div className="add-widget-modal__content">
+        <div className="add-widget-modal__search">
+          <SearchBar
+            value={search}
+            onChange={setSearch}
+            onClear={() => setSearch('')}
+            placeholder="Search widgets…"
+            autoFocus
+            ariaLabel="Search widgets"
+          />
         </div>
 
-        <div className="add-widget-modal__content">
-          <div className="add-widget-modal__search">
-            <SearchBar
-              value={search}
-              onChange={setSearch}
-              onClear={() => setSearch('')}
-              placeholder="Search widgets…"
-              autoFocus
-              ariaLabel="Search widgets"
-            />
-          </div>
-
-          <div className="add-widget-modal__list">
+        <div className="add-widget-modal__list">
           {filteredCatalog.length === 0 && (
             <div className="add-widget-modal__empty">
               {search ? 'No widgets match your search' : 'No widgets available'}
@@ -124,9 +115,10 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
 
           {filteredCatalog.map((widget) => {
             const icon = getWidgetIcon(widget);
+            const isIntegration = widget?.source === 'integration';
             return (
               <div key={widget.id} className="add-widget-modal__item">
-                <div className="add-widget-modal__item-icon">
+                <div className={`add-widget-modal__item-icon${isIntegration ? ' add-widget-modal__item-icon--integration' : ''}`}>
                   {icon.type === 'image' ? (
                     <img
                       src={icon.value}
@@ -138,19 +130,19 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
                     <FontAwesomeIcon icon={icon.value} />
                   )}
                 </div>
-              <div className="add-widget-modal__item-info">
-                <span className="add-widget-modal__item-name">
-                  {widget.display_name || widget.id}
-                </span>
-                <span className="add-widget-modal__item-desc">
-                  {widget.description || 'No description'}
-                </span>
-                {widget.verified && (
-                  <span className="add-widget-modal__verified">
-                    <FontAwesomeIcon icon={faCheck} /> Verified
+                <div className="add-widget-modal__item-info">
+                  <span className="add-widget-modal__item-name">
+                    {widget.display_name || widget.id}
                   </span>
-                )}
-              </div>
+                  <span className="add-widget-modal__item-desc">
+                    {widget.description || 'No description'}
+                  </span>
+                  {widget.verified && (
+                    <span className="add-widget-modal__verified">
+                      <FontAwesomeIcon icon={faCheck} /> Verified
+                    </span>
+                  )}
+                </div>
                 <button
                   className="add-widget-modal__item-add"
                   onClick={() => handleAdd(widget.id)}
@@ -162,10 +154,8 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
               </div>
             );
           })}
-          </div>
         </div>
       </div>
-    </div>,
-    getModalRoot()
+    </BaseModal>
   );
 }

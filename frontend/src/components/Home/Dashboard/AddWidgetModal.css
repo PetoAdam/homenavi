@@ -68,6 +68,14 @@
   flex-shrink: 0;
 }
 
+.add-widget-modal__item-icon--integration {
+  color: var(--color-primary);
+}
+
+.add-widget-modal__item-icon--integration .add-widget-modal__item-icon-img {
+  filter: brightness(0) saturate(100%) invert(54%) sepia(31%) saturate(630%) hue-rotate(101deg) brightness(96%) contrast(92%);
+}
+
 .add-widget-modal__item-icon-img {
   width: 26px;
   height: 26px;

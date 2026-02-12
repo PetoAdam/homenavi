@@ -1,0 +1,137 @@
+.integration-card {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 26, 35, 0.8);
+  box-shadow: 0 18px 42px rgba(8, 16, 26, 0.35);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.integration-card.interactive {
+  cursor: pointer;
+}
+
+.integration-card.interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(57, 170, 121, 0.35);
+  box-shadow: 0 22px 50px rgba(8, 16, 26, 0.45);
+}
+
+.integration-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 72px;
+}
+
+.integration-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.integration-card-icon {
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-white);
+  font-size: 1.4rem;
+}
+
+.integration-card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.integration-card-title {
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.integration-card-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.integration-card-sub {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.integration-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.integration-card-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.integration-card-desc {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  min-height: 48px;
+}
+
+.integration-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.integration-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.integration-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.integration-card-actions .btn.integration-card-action-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  border-radius: 999px;
+}
+
+.integration-card-actions .btn.integration-card-action-btn .btn-icon {
+  margin-right: 0.25rem;
+}
