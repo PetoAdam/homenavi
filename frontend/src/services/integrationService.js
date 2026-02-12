@@ -28,11 +28,25 @@ export async function setIntegrationSecrets(id, secrets) {
 export async function getIntegrationMarketplace() {
   const params = new URLSearchParams();
   params.set('ts', String(Date.now()));
-  return http.get(`/integrations/marketplace.json?${params.toString()}`);
+  const base = (import.meta.env?.VITE_MARKETPLACE_API_BASE || 'https://marketplace.homenavi.org').replace(/\/+$/, '');
+  return http.get(`${base}/api/integrations?${params.toString()}`);
 }
 
-export async function installIntegration(id) {
-  return http.post('/integrations/install', { id });
+export async function incrementMarketplaceDownloads(id) {
+  if (!id) return { success: false, error: 'Missing integration id' };
+  const base = (import.meta.env?.VITE_MARKETPLACE_API_BASE || 'https://marketplace.homenavi.org').replace(/\/+$/, '');
+  return http.post(`${base}/api/integrations/${encodeURIComponent(id)}/downloads`, {});
+}
+
+export async function installIntegration(id, upstream, compose) {
+  const payload = { id };
+  if (upstream) {
+    payload.upstream = upstream;
+  }
+  if (compose?.compose_file) {
+    payload.compose_file = compose.compose_file;
+  }
+  return http.post('/integrations/install', payload);
 }
 
 export async function uninstallIntegration(id) {

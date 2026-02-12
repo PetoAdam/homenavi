@@ -24,7 +24,7 @@ const ResponsiveGridLayout = WidthProvider(Responsive);
 // The 2-col cutoff is intentionally low because the Home view has extra padding,
 // and the permanent sidebar reduces the measured container width.
 //
-const BREAKPOINTS = { xl: 1800, lg: 1400, md: 1080, sm: 720, xxs: 0 };
+const BREAKPOINTS = { xl: 1500, lg: 1200, md: 1080, sm: 720, xxs: 0 };
 const COLS = { xl: 4, lg: 3, md: 3, sm: 2, xxs: 1 };
 const ROW_HEIGHT = 56; // Fixed row height for consistent snapping
 const MARGIN = [16, 16];

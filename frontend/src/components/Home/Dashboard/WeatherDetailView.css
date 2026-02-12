@@ -1,46 +1,14 @@
-.weather-detail {
-  position: fixed;
-  inset: 0;
-  z-index: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  pointer-events: none;
-}
-
-.weather-detail__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(4, 6, 8, 0.52);
-  backdrop-filter: blur(6px) saturate(115%);
-  animation: weather-detail-fade 180ms ease both;
-  pointer-events: auto;
-}
-
-.weather-detail__panel {
-  position: relative;
-  width: 100%;
-  max-width: 980px;
-  max-height: calc(100vh - 32px);
-  border-radius: 18px;
-  border: 1px solid var(--color-glass-border-xlight);
-  background: rgba(14, 18, 24, 0.34);
-  backdrop-filter: blur(18px) saturate(120%);
+.auth-modal-glass.weather-detail {
+  width: min(1240px, 96vw);
+  min-width: min(900px, 94vw);
+  max-height: 92vh;
+  padding: 1.6rem 1.8rem 1.8rem;
+  border-radius: 2rem;
   overflow: hidden;
-  animation: weather-detail-panel-in 220ms cubic-bezier(.2,.9,.2,1) both;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
-  pointer-events: auto;
-  outline: none;
+  align-items: stretch;
 }
 
-.weather-detail__background {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 1;
-  overflow: hidden;
+.auth-modal-glass.weather-detail::before {
   --weather-detail-base: rgba(28,34,44,0.68);
   background: radial-gradient(
     circle at top left,
@@ -49,9 +17,9 @@
   );
 }
 
-.weather-detail--cloud .weather-detail__background,
-.weather-detail--wind .weather-detail__background,
-.weather-detail--fog .weather-detail__background {
+.auth-modal-glass.weather-detail.weather-detail--cloud::before,
+.auth-modal-glass.weather-detail.weather-detail--wind::before,
+.auth-modal-glass.weather-detail.weather-detail--fog::before {
   background: radial-gradient(
     circle at top left,
     color-mix(in srgb, var(--color-surface-iris) 65%, transparent),
@@ -59,7 +27,7 @@
   );
 }
 
-.weather-detail--rain .weather-detail__background {
+.auth-modal-glass.weather-detail.weather-detail--rain::before {
   background: radial-gradient(
     circle at top left,
     color-mix(in srgb, var(--color-surface-iris) 75%, transparent),
@@ -67,7 +35,7 @@
   );
 }
 
-.weather-detail--storm .weather-detail__background {
+.auth-modal-glass.weather-detail.weather-detail--storm::before {
   background: radial-gradient(
     circle at top left,
     color-mix(in srgb, var(--color-danger-surface-strong) 75%, transparent),
@@ -75,7 +43,7 @@
   );
 }
 
-.weather-detail--snow .weather-detail__background {
+.auth-modal-glass.weather-detail.weather-detail--snow::before {
   background: radial-gradient(
     circle at top left,
     color-mix(in srgb, var(--color-surface-panel-soft) 75%, transparent),
@@ -83,12 +51,38 @@
   );
 }
 
-.weather-detail--sun .weather-detail__background {
+.auth-modal-glass.weather-detail.weather-detail--sun::before {
   background: radial-gradient(
     circle at top left,
     color-mix(in srgb, var(--color-weather-sun) 22%, transparent),
     var(--weather-detail-base)
   );
+}
+
+.auth-modal-close.weather-detail__close {
+  top: 24px;
+  right: 28px;
+}
+
+.weather-detail__backdrop {
+  background: rgba(4, 6, 8, 0.52);
+  backdrop-filter: blur(6px) saturate(115%);
+  animation: weather-detail-fade 180ms ease both;
+}
+
+.weather-detail__panel {
+  position: relative;
+  width: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+  overflow: hidden;
+  animation: weather-detail-panel-in 220ms cubic-bezier(.2,.9,.2,1) both;
+  box-shadow: none;
+  pointer-events: auto;
+  outline: none;
 }
 
 .weather-detail--closing .weather-detail__backdrop {
@@ -99,29 +93,6 @@
   animation: weather-detail-panel-out 180ms ease both;
 }
 
-.weather-detail__panel::before {
-  content: '';
-  position: absolute;
-  inset: -40px;
-  z-index: 1;
-  background:
-    radial-gradient(900px 460px at 20% 10%, var(--color-primary) 0%, transparent 60%),
-    radial-gradient(700px 420px at 80% 0%, var(--color-glass-border-light) 0%, transparent 55%),
-    radial-gradient(900px 520px at 40% 100%, rgba(255, 255, 255, 0.08) 0%, transparent 60%);
-  opacity: 0.12;
-  filter: blur(12px);
-  pointer-events: none;
-}
-
-/* Remove old animated background overlay layer. */
-.weather-detail__panel::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0;
-}
 
 .weather-detail__header {
   position: relative;

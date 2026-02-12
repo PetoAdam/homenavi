@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faCircleCheck } from '@fortawesome/free-solid-svg-icons';
 import { DEVICE_ICON_CHOICES } from './deviceIconChoices';
-import { getModalRoot } from '../common/Modal/modalRoot';
+import BaseModal from '../common/BaseModal/BaseModal';
 import './AddDeviceModal.css';
 
 const CAPABILITIES_EXAMPLE = '[{ "id": "state", "kind": "binary" }]';
@@ -660,18 +659,15 @@ export default function AddDeviceModal({
   }
 
   const modal = (
-    <div
-      className={`auth-modal-backdrop add-device-modal-backdrop${open ? ' open' : ''}`}
-      onMouseDown={handleBackdropMouseDown}
+    <BaseModal
+      open={open}
+      onClose={handleClose}
+      dialogClassName="add-device-modal-glass"
+      backdropClassName="add-device-modal-backdrop"
+      onBackdropMouseDown={handleBackdropMouseDown}
+      closeAriaLabel="Close add device dialog"
     >
-      <div
-        className={`auth-modal-glass add-device-modal-glass${open ? ' open' : ''}`}
-        ref={modalRef}
-      >
-        <button type="button" className="auth-modal-close" onClick={handleClose} aria-label="Close add device dialog">
-          ×
-        </button>
-        <div className="auth-modal-content add-device-shell">
+      <div className="auth-modal-content add-device-shell" ref={modalRef}>
           <div className="add-device-toolbar">
             <div className="add-device-toolbar-title">
               <div className="add-device-toolbar-heading">
@@ -929,13 +925,12 @@ export default function AddDeviceModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </BaseModal>
   );
 
   if (typeof document === 'undefined') {
     return modal;
   }
 
-  return createPortal(modal, getModalRoot());
+  return modal;
 }

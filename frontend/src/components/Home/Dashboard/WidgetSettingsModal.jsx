@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCheck,
@@ -21,7 +20,7 @@ import {
   faSearch,
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
-import { getModalRoot } from '../../common/Modal/modalRoot';
+import BaseModal from '../../common/BaseModal/BaseModal';
 import { useAuth } from '../../../context/AuthContext';
 import useDeviceHubDevices from '../../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../../hooks/useErsInventory';
@@ -202,77 +201,71 @@ export default function WidgetSettingsModal({
 
   if (!open || !widgetItem) return null;
 
-  return createPortal(
-    <div className={`widget-settings__backdrop ${open ? 'open' : ''}`} onClick={handleBackdropClick}>
-      <div className="widget-settings-modal">
-        {/* Close button - AuthModal style */}
-        <button
-          className="widget-settings__close"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          &times;
-        </button>
-
-        {/* Header */}
-        <div className="widget-settings__header">
-          <div className="widget-settings__icon">
-            <FontAwesomeIcon icon={getWidgetIcon(widgetItem.widget_type)} />
-          </div>
-          <div className="widget-settings__header-text">
-            <h2 className="widget-settings__title">Widget Settings</h2>
-            <span className="widget-settings__type">
-              {getWidgetDisplayName(widgetItem.widget_type)}
-            </span>
-          </div>
+  return (
+    <BaseModal
+      open={open}
+      onClose={onClose}
+      backdropClassName="widget-settings__backdrop"
+      dialogClassName="widget-settings-modal"
+      closeAriaLabel="Close"
+      onBackdropMouseDown={handleBackdropClick}
+    >
+      <div className="widget-settings__header">
+        <div className="widget-settings__icon">
+          <FontAwesomeIcon icon={getWidgetIcon(widgetItem.widget_type)} />
         </div>
-
-        {/* Content */}
-        <div className="widget-settings__content">
-          {/* Common: Title */}
-          <div className="widget-settings__field">
-            <label className="widget-settings__label" htmlFor="widget-title">
-              Display Title
-            </label>
-            <input
-              id="widget-title"
-              type="text"
-              className="widget-settings__input"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={getWidgetDisplayName(widgetItem.widget_type)}
-            />
-          </div>
-
-          {/* Height is managed via grid resize handles in edit mode. */}
-
-          {/* Widget-specific settings */}
-          {renderWidgetSettings()}
-        </div>
-
-        {/* Footer */}
-        <div className="widget-settings__footer">
-          <button
-            className="widget-settings__btn widget-settings__btn--remove"
-            onClick={() => {
-              onRemove(widgetItem.instance_id);
-              onClose();
-            }}
-          >
-            <FontAwesomeIcon icon={faTrashAlt} />
-            <span>Remove</span>
-          </button>
-          <button
-            className="widget-settings__btn widget-settings__btn--save"
-            onClick={handleSave}
-          >
-            <FontAwesomeIcon icon={faCheck} />
-            <span>Save</span>
-          </button>
+        <div className="widget-settings__header-text">
+          <h2 className="widget-settings__title">Widget Settings</h2>
+          <span className="widget-settings__type">
+            {getWidgetDisplayName(widgetItem.widget_type)}
+          </span>
         </div>
       </div>
-    </div>,
-    getModalRoot()
+
+      {/* Content */}
+      <div className="widget-settings__content">
+        {/* Common: Title */}
+        <div className="widget-settings__field">
+          <label className="widget-settings__label" htmlFor="widget-title">
+            Display Title
+          </label>
+          <input
+            id="widget-title"
+            type="text"
+            className="widget-settings__input"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={getWidgetDisplayName(widgetItem.widget_type)}
+          />
+        </div>
+
+        {/* Height is managed via grid resize handles in edit mode. */}
+
+        {/* Widget-specific settings */}
+        {renderWidgetSettings()}
+      </div>
+
+      {/* Footer */}
+      <div className="widget-settings__footer">
+        <button
+          className="widget-settings__btn widget-settings__btn--remove"
+          onClick={() => {
+            onRemove(widgetItem.instance_id);
+            onClose();
+          }}
+        >
+          <FontAwesomeIcon icon={faTrashAlt} />
+          <span>Remove</span>
+        </button>
+        <button
+          className="widget-settings__btn widget-settings__btn--save"
+          onClick={handleSave}
+        >
+          <FontAwesomeIcon icon={faCheck} />
+          <span>Save</span>
+        </button>
+      </div>
+    </BaseModal>
   );
 }
 

@@ -14,12 +14,15 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
+	"gopkg.in/yaml.v3"
 
 	"homenavi/integration-proxy/internal/auth"
 	"homenavi/integration-proxy/internal/config"
@@ -267,24 +270,13 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 			s.logger.Printf("restart-all reload failed: %v", err)
 		}
 		cfg, cfgErr := config.Load(s.configPath)
-		marketplace, mpErr := config.LoadMarketplace(s.marketplacePath())
-		if cfgErr == nil && mpErr == nil && s.composeEnabled() {
+		if cfgErr == nil && s.composeEnabled() {
 			for _, ic := range cfg.Integrations {
 				id := strings.TrimSpace(ic.ID)
 				if id == "" {
 					continue
 				}
-				composeFile := ""
-				for _, entry := range marketplace.Integrations {
-					if strings.TrimSpace(entry.ID) == id {
-						if filePath, err := s.resolveComposeFile(id, entry); err == nil {
-							composeFile = filePath
-						} else {
-							s.logger.Printf("restart-all resolve compose failed id=%s err=%v", id, err)
-						}
-						break
-					}
-				}
+				composeFile := s.defaultComposeFile(id)
 				if strings.TrimSpace(composeFile) == "" {
 					continue
 				}
@@ -331,18 +323,7 @@ func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request
 		s.setInstallStatus(id, "restarting", 60, "Restarting integration")
 		composeFile := ""
 		if s.composeEnabled() {
-			if marketplace, err := config.LoadMarketplace(s.marketplacePath()); err == nil {
-				for _, entry := range marketplace.Integrations {
-					if strings.TrimSpace(entry.ID) == id {
-						if filePath, err := s.resolveComposeFile(id, entry); err == nil {
-							composeFile = filePath
-						} else {
-							s.logger.Printf("restart %s resolve compose failed: %v", id, err)
-						}
-						break
-					}
-				}
-			}
+			composeFile = s.defaultComposeFile(id)
 		}
 		if strings.TrimSpace(composeFile) != "" {
 			composeFile = s.expandComposePath(composeFile)
@@ -365,42 +346,27 @@ func (s *Server) handleMarketplace(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	marketplace, err := config.LoadMarketplace(s.marketplacePath())
+	base := s.marketplaceAPIBase()
+	urlStr := base + "/api/integrations"
+	if r.URL.RawQuery != "" {
+		urlStr += "?" + r.URL.RawQuery
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, urlStr, nil)
 	if err != nil {
-		s.logger.Printf("marketplace load failed: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	installed := map[string]bool{}
-	if strings.TrimSpace(s.configPath) != "" {
-		if cfg, err := config.Load(s.configPath); err == nil {
-			for _, ic := range cfg.Integrations {
-				installed[ic.ID] = true
-			}
-		} else {
-			s.logger.Printf("marketplace installed load failed: %v", err)
-		}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		return
 	}
-	items := make([]models.MarketplaceIntegration, 0, len(marketplace.Integrations))
-	for _, entry := range marketplace.Integrations {
-		id := strings.TrimSpace(entry.ID)
-		if id == "" {
-			continue
-		}
-		items = append(items, models.MarketplaceIntegration{
-			ID:          id,
-			DisplayName: entry.DisplayName,
-			Description: entry.Description,
-			Icon:        entry.Icon,
-			Version:     entry.Version,
-			Publisher:   entry.Publisher,
-			Homepage:    entry.Homepage,
-			Installed:   installed[id],
-		})
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
 	}
-	resp := models.Marketplace{GeneratedAt: time.Now().UTC(), Integrations: items}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(resp)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
@@ -412,8 +378,9 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ID       string `json:"id"`
-		Upstream string `json:"upstream"`
+		ID          string `json:"id"`
+		Upstream    string `json:"upstream"`
+		ComposeFile string `json:"compose_file"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -450,30 +417,35 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	upstream := strings.TrimSpace(req.Upstream)
-	composeFile := ""
-	marketplace, err := config.LoadMarketplace(s.marketplacePath())
+	if upstream == "" {
+		safeID := strings.TrimSpace(id)
+		if safeID != "" && regexp.MustCompile(`^[a-z0-9._-]+$`).MatchString(safeID) {
+			upstream = fmt.Sprintf("http://%s:8099", safeID)
+		}
+	}
+	composeFile, err := s.resolveComposeFileFromPayload(id, req.ComposeFile)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to load marketplace", "code": http.StatusInternalServerError})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
 		return
 	}
-	for _, entry := range marketplace.Integrations {
-		if strings.TrimSpace(entry.ID) == id {
-			if upstream == "" {
-				upstream = strings.TrimSpace(entry.Upstream)
-			}
-			composeFile, err = s.resolveComposeFile(id, entry)
-			if err != nil {
-				w.Header().Set("Content-Type", "application/json; charset=utf-8")
-				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
-				return
-			}
-			break
-		}
+	if strings.TrimSpace(composeFile) == "" {
+		composeFile = s.defaultComposeFile(id)
 	}
 	composeFile = s.expandComposePath(composeFile)
+	if strings.TrimSpace(composeFile) != "" {
+		service, err := s.composeServiceForID(composeFile, id)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid compose file", "code": http.StatusBadRequest, "detail": err.Error()})
+			return
+		}
+		if service != "" && (upstream == "" || upstream == defaultUpstreamForID(id)) {
+			upstream = fmt.Sprintf("http://%s:8099", service)
+		}
+	}
 	if upstream == "" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
@@ -501,6 +473,10 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 	s.setInstallStatus(id, "starting", 45, "Starting integration")
 	if strings.TrimSpace(composeFile) != "" {
 		if err := s.composeInstall(r.Context(), composeFile, id); err != nil {
+			cfg.Integrations = removeIntegrationByID(cfg.Integrations, id)
+			if saveErr := config.Save(s.configPath, cfg); saveErr != nil {
+				s.logger.Printf("failed to rollback config for id=%s err=%s", id, saveErr)
+			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to start integration", "code": http.StatusInternalServerError, "detail": err.Error()})
@@ -603,21 +579,7 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration not installed", "code": http.StatusNotFound})
 		return
 	}
-	composeFile := ""
-	if marketplace, err := config.LoadMarketplace(s.marketplacePath()); err == nil {
-		for _, entry := range marketplace.Integrations {
-			if strings.TrimSpace(entry.ID) == id {
-				composeFile, err = s.resolveComposeFile(id, entry)
-				if err != nil {
-					w.Header().Set("Content-Type", "application/json; charset=utf-8")
-					w.WriteHeader(http.StatusInternalServerError)
-					_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
-					return
-				}
-				break
-			}
-		}
-	}
+	composeFile := s.defaultComposeFile(id)
 	composeFile = s.expandComposePath(composeFile)
 	cfg.Integrations = updated
 	if err := config.Save(s.configPath, cfg); err != nil {
@@ -684,12 +646,67 @@ func (s *Server) refreshAll(ctx context.Context) {
 	}
 }
 
-func (s *Server) marketplacePath() string {
-	if strings.TrimSpace(s.configPath) == "" {
+func (s *Server) marketplaceAPIBase() string {
+	base := strings.TrimSpace(os.Getenv("INTEGRATIONS_MARKETPLACE_API_BASE"))
+	if base == "" {
+		base = "https://marketplace.homenavi.org"
+	}
+	return strings.TrimRight(base, "/")
+}
+
+func (s *Server) resolveComposeFileFromPayload(id, composeFile string) (string, error) {
+	composeFile = strings.TrimSpace(composeFile)
+	if composeFile == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(composeFile, "http://") || strings.HasPrefix(composeFile, "https://") {
+		if strings.TrimSpace(s.configPath) == "" {
+			return "", fmt.Errorf("config path unavailable")
+		}
+		resp, err := s.client.Get(composeFile)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return "", fmt.Errorf("compose file fetch failed")
+		}
+		const maxComposeSize = 512 * 1024
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxComposeSize))
+		if err != nil {
+			return "", err
+		}
+		composeDir := filepath.Join(filepath.Dir(s.configPath), "compose")
+		if err := os.MkdirAll(composeDir, 0o755); err != nil {
+			return "", err
+		}
+		filePath := filepath.Join(composeDir, fmt.Sprintf("%s.yml", id))
+		if err := os.WriteFile(filePath, append(body, '\n'), 0o644); err != nil {
+			return "", err
+		}
+		return filePath, nil
+	}
+	return composeFile, nil
+}
+
+func (s *Server) defaultComposeFile(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.TrimSpace(s.configPath) == "" {
 		return ""
 	}
-	dir := path.Dir(s.configPath)
-	return path.Join(dir, "marketplace.yaml")
+	baseDir := filepath.Dir(s.configPath)
+	local := filepath.Clean(filepath.Join(baseDir, "..", "compose", fmt.Sprintf("%s.yml", id)))
+	if info, err := os.Stat(local); err == nil && !info.IsDir() {
+		return local
+	}
+	root := strings.TrimSpace(os.Getenv("INTEGRATIONS_ROOT"))
+	if root != "" {
+		rootFile := filepath.Join(root, "integrations", "compose", fmt.Sprintf("%s.yml", id))
+		if info, err := os.Stat(rootFile); err == nil && !info.IsDir() {
+			return rootFile
+		}
+	}
+	return ""
 }
 
 func (s *Server) setInstallStatus(id, stage string, progress int, message string) {
@@ -742,30 +759,6 @@ func (s *Server) composeBaseArgs(fileOverride string) ([]string, error) {
 	return args, nil
 }
 
-func (s *Server) resolveComposeFile(id string, entry config.MarketplaceIntegration) (string, error) {
-	composeFile := strings.TrimSpace(entry.ComposeFile)
-	if composeFile != "" {
-		return composeFile, nil
-	}
-	composeYAML := strings.TrimSpace(entry.ComposeYAML)
-	if composeYAML == "" {
-		return "", nil
-	}
-	if strings.TrimSpace(s.configPath) == "" {
-		return "", fmt.Errorf("config path unavailable")
-	}
-	baseDir := filepath.Dir(s.configPath)
-	composeDir := filepath.Join(baseDir, "compose")
-	if err := os.MkdirAll(composeDir, 0o755); err != nil {
-		return "", err
-	}
-	filePath := filepath.Join(composeDir, fmt.Sprintf("%s.yml", id))
-	if err := os.WriteFile(filePath, []byte(composeYAML+"\n"), 0o644); err != nil {
-		return "", err
-	}
-	return filePath, nil
-}
-
 func (s *Server) expandComposePath(pathRaw string) string {
 	pathRaw = strings.TrimSpace(pathRaw)
 	if pathRaw == "" {
@@ -780,6 +773,65 @@ func (s *Server) expandComposePath(pathRaw string) string {
 		replaced = strings.ReplaceAll(pathRaw, "$INTEGRATIONS_ROOT", root)
 	}
 	return replaced
+}
+
+type composeSpec struct {
+	Services map[string]any `yaml:"services"`
+}
+
+func (s *Server) composeServiceForID(composeFile, id string) (string, error) {
+	service := strings.TrimSpace(id)
+	if strings.TrimSpace(composeFile) == "" {
+		return service, nil
+	}
+	data, err := os.ReadFile(composeFile)
+	if err != nil {
+		return service, nil
+	}
+	var spec composeSpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		return service, nil
+	}
+	if len(spec.Services) == 0 {
+		return service, nil
+	}
+	if _, ok := spec.Services[service]; ok {
+		return service, nil
+	}
+	if len(spec.Services) == 1 {
+		for name := range spec.Services {
+			return name, nil
+		}
+	}
+	serviceNames := make([]string, 0, len(spec.Services))
+	for name := range spec.Services {
+		serviceNames = append(serviceNames, name)
+	}
+	sort.Strings(serviceNames)
+	return "", fmt.Errorf("compose file has multiple services and none match integration id %q (services: %s)", service, strings.Join(serviceNames, ", "))
+}
+
+func defaultUpstreamForID(id string) string {
+	safeID := strings.TrimSpace(id)
+	if safeID == "" || !regexp.MustCompile(`^[a-z0-9._-]+$`).MatchString(safeID) {
+		return ""
+	}
+	return fmt.Sprintf("http://%s:8099", safeID)
+}
+
+func removeIntegrationByID(items []config.IntegrationConfig, id string) []config.IntegrationConfig {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return items
+	}
+	next := make([]config.IntegrationConfig, 0, len(items))
+	for _, entry := range items {
+		if strings.TrimSpace(entry.ID) == id {
+			continue
+		}
+		next = append(next, entry)
+	}
+	return next
 }
 
 func (s *Server) runCompose(ctx context.Context, composeFile string, args ...string) error {
@@ -807,22 +859,30 @@ func (s *Server) composeInstall(ctx context.Context, composeFile, id string) err
 	if !s.composeEnabled() {
 		return nil
 	}
+	service, err := s.composeServiceForID(composeFile, id)
+	if err != nil {
+		return err
+	}
 	s.setInstallStatus(id, "pulling", 35, "Pulling container image")
-	if err := s.runCompose(ctx, composeFile, "pull", id); err != nil {
+	if err := s.runCompose(ctx, composeFile, "pull", service); err != nil {
 		return err
 	}
 	s.setInstallStatus(id, "starting", 55, "Starting container")
-	return s.runCompose(ctx, composeFile, "up", "-d", id)
+	return s.runCompose(ctx, composeFile, "up", "-d", service)
 }
 
 func (s *Server) composeUninstall(ctx context.Context, composeFile, id string) error {
 	if !s.composeEnabled() {
 		return nil
 	}
-	if err := s.runCompose(ctx, composeFile, "stop", id); err != nil {
+	service, err := s.composeServiceForID(composeFile, id)
+	if err != nil {
 		return err
 	}
-	return s.runCompose(ctx, composeFile, "rm", "-f", id)
+	if err := s.runCompose(ctx, composeFile, "stop", service); err != nil {
+		return err
+	}
+	return s.runCompose(ctx, composeFile, "rm", "-f", service)
 }
 
 func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
