@@ -20,8 +20,8 @@
 }
 
 .auth-modal-glass.add-device-modal-glass {
-  width: min(1240px, 96vw);
-  min-width: min(900px, 94vw);
+  width: min(980px, 94vw);
+  min-width: min(720px, 92vw);
   min-height: 640px;
   height: min(760px, 92vh);
   max-height: 92vh;
@@ -54,6 +54,11 @@
   min-height: 0;
   overflow-y: auto;
   padding-bottom: 1rem;
+}
+
+.auth-modal-content-outer.add-device-scroll-region {
+  justify-content: stretch;
+  align-items: stretch;
 }
 
 .add-device-shell {
@@ -150,6 +155,17 @@
 .add-device-form {
   align-items: stretch;
   gap: 1.5rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.auth-modal-form.add-device-form {
+  max-width: 100%;
+}
+
+.auth-modal-form.add-device-form > * {
+  max-width: 100%;
 }
 
 
@@ -162,10 +178,15 @@
   padding-right: 0;
 }
 
+.auth-modal-content-inner.add-device-form-shell {
+  width: 100%;
+}
+
 .add-device-body-grid {
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+  width: 100%;
 }
 
 .add-device-panel {
