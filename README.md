@@ -83,6 +83,7 @@ Current Core:
 * Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
 * User Service (Go): Profile, roles, administrative user actions.
 * Dashboard Service (Go): Stores per-user dashboards and widget configuration.
+* Marketplace API (Go, external): Integration catalog + downloads/trending stats (consumed by frontend and integration-proxy).
 * Entity Registry Service (Go): Home inventory primitives (rooms/tags/devices) and discovery surface.
 * Email Service (Go): Outbound verification & notification emails.
 * Profile Picture Service (Python): Image handling (avatars, basic processing).
@@ -105,6 +106,7 @@ Current Features (Implemented):
 * **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Thread adapter placeholder using the same HDP surfaces.
 * **ERS + Device Hub boundary:** ERS owns names/rooms/tags/map metadata; device-hub owns realtime telemetry, pairing, commands. See `doc/ers_hdp_devicehub_overview.md`.
 * **Customizable UI dashboards:** widget-based Home dashboard with Edit mode + per-user persistence via Dashboard Service. See `doc/dashboard_ui_functional_spec.md`.
+* **Integration marketplace flow:** frontend queries the Marketplace API directly for catalog + stats, posts download increments on successful installs, and integration-proxy installs using `compose_file` URLs fetched from the marketplace.
 * **Automation engine + scheduling:** rule/workflow engine with manual triggers and **cron schedule triggers**, plus run tracking and live run stream via websocket. (APIs documented in `doc/external_api_surface.md`.)
 
 ---

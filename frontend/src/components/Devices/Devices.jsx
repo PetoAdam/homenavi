@@ -821,9 +821,17 @@ export default function Devices() {
         </GlassCard>
       </section>
 
-      <button type="button" className="devices-fab" onClick={openAddModal}>
-        <span className="devices-fab-icon">+</span>
-        <span>Add device</span>
+      <button
+        type="button"
+        className="devices-fab"
+        onClick={openAddModal}
+        title="Add device"
+        aria-label="Add device"
+      >
+        <span className="devices-fab-icon">
+          <FontAwesomeIcon icon={faPlus} />
+        </span>
+        <span className="devices-fab-label">Add device</span>
       </button>
 
       <AddDeviceModal

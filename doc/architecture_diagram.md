@@ -35,6 +35,7 @@ flowchart TB
     Dashboard["Dashboard Service"]
     Weather["Weather Service"]
     Integrations["Integration Proxy"]
+    MarketplaceAPI["Marketplace API"]
 
     Echo["Echo Service"]
     Email["Email Service"]
@@ -54,11 +55,18 @@ flowchart TB
     ExternalAPI["External API (Spotify)"]
   end
 
+  %% Marketplace plane
+  subgraph MarketplacePlane["Marketplace plane"]
+    MarketplaceWeb["Marketplace Web UI"]
+  end
+
   %% Entry points
   Browser -->|HTTP| Nginx
   Nginx -->|"/ (SPA) static assets"| Browser
   Nginx -->|"/api/* + /ws/*"| Gateway
   Nginx -->|"/integrations/*"| Integrations
+  Browser -->|"HTTP /api/integrations"| MarketplaceAPI
+  MarketplaceWeb -->|"HTTP"| MarketplaceAPI
 
   %% Gateway → services (REST)
   Gateway -->|REST| Auth
@@ -83,6 +91,8 @@ flowchart TB
   %% Integrations
   Dashboard -->|"registry + widgets"| Integrations
   Integrations -->|"HTTP (invoke/health)"| Spotify
+  Integrations -->|"marketplace.json + compose_file"| MarketplaceAPI
+  Browser -->|"POST /api/integrations/{id}/downloads"| MarketplaceAPI
   Spotify -->|"OAuth + Web API"| ExternalAPI
 
   %% MQTT (HDP)
