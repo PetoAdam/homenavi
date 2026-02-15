@@ -135,3 +135,16 @@
 .integration-card-actions .btn.integration-card-action-btn .btn-icon {
   margin-right: 0.25rem;
 }
+
+@media (max-width: 720px) {
+  .integration-card-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .integration-card-actions .btn.integration-card-action-btn {
+    flex: 0 0 auto;
+  }
+}

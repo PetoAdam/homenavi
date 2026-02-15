@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { clamp } from '../../mapGeometry';
 
@@ -22,6 +22,8 @@ export default function useMapViewportHandlers({
   endInsertCornerDrag,
   handleCanvasPointerMove,
 }) {
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
   const handleWheel = useCallback((e) => {
     if (!canvasRef.current) return;
     const delta = e.deltaY;
@@ -81,6 +83,21 @@ export default function useMapViewportHandlers({
   }, [canvasRef, handleWheel]);
 
   const handlePointerDown = useCallback((e) => {
+    if (e.pointerType === 'touch') {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointersRef.current.size === 2) {
+        const points = Array.from(pointersRef.current.values());
+        const [p1, p2] = points;
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        pinchRef.current = {
+          distance: Math.hypot(dx, dy) || 1,
+          startView: { scale: view.scale, tx: view.tx, ty: view.ty },
+        };
+        panRef.current.active = false;
+        return;
+      }
+    }
     if (mode === 'draw') return;
     // allow panning in select mode
     if (e.button !== 0) return;
@@ -95,6 +112,32 @@ export default function useMapViewportHandlers({
   }, [mode, panRef, view.tx, view.ty]);
 
   const handlePointerMove = useCallback((e) => {
+    if (e.pointerType === 'touch' && pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointersRef.current.size >= 2 && pinchRef.current) {
+        if (e.cancelable) e.preventDefault();
+        const points = Array.from(pointersRef.current.values());
+        const [p1, p2] = points;
+        if (p1 && p2) {
+          const canvasEl = canvasRef.current;
+          if (!canvasEl) return;
+          const rect = canvasEl.getBoundingClientRect();
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const distance = Math.hypot(dx, dy) || 1;
+          const zoomFactor = distance / pinchRef.current.distance;
+          const nextScale = clamp((pinchRef.current.startView.scale || 1) * zoomFactor, minZoom, maxZoom);
+          const midX = (p1.x + p2.x) / 2 - rect.left;
+          const midY = (p1.y + p2.y) / 2 - rect.top;
+          const worldX = (midX - pinchRef.current.startView.tx) / (pinchRef.current.startView.scale || 1);
+          const worldY = (midY - pinchRef.current.startView.ty) / (pinchRef.current.startView.scale || 1);
+          const nextTx = midX - worldX * nextScale;
+          const nextTy = midY - worldY * nextScale;
+          setView({ scale: nextScale, tx: nextTx, ty: nextTy });
+          return;
+        }
+      }
+    }
     if (handleInsertCornerDragMove(e)) return;
     if (handleRoomVertexDragMove(e)) return;
     if (handleRoomDragMove(e)) return;
@@ -111,7 +154,11 @@ export default function useMapViewportHandlers({
     handleCanvasPointerMove(e);
   }, [handleCanvasPointerMove, handlePointerMove]);
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((e) => {
+    if (e && e.pointerType === 'touch') {
+      pointersRef.current.delete(e.pointerId);
+      if (pointersRef.current.size < 2) pinchRef.current = null;
+    }
     panRef.current.active = false;
     void endDeviceDrag();
     void endRoomDrag();

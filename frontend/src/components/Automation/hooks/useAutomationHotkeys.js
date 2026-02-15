@@ -5,6 +5,7 @@ export default function useAutomationHotkeys({
   undo,
   redo,
   deleteSelectedNode,
+  enabled = true,
 }) {
   useEffect(() => {
     const isTypingTarget = (el) => {
@@ -15,6 +16,7 @@ export default function useAutomationHotkeys({
     };
 
     const onKey = (e) => {
+      if (!enabled) return;
       if (isTypingTarget(document.activeElement)) return;
 
       const key = String(e.key || '');
@@ -40,5 +42,5 @@ export default function useAutomationHotkeys({
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedNodeId, undo, redo, deleteSelectedNode]);
+  }, [deleteSelectedNode, enabled, redo, selectedNodeId, undo]);
 }

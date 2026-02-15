@@ -51,7 +51,7 @@ export default function SearchBar({
     <div className={`hn-searchbar ${isActive ? 'hn-searchbar--active' : ''} ${className}`.trim()}>
       <FontAwesomeIcon icon={faMagnifyingGlass} className="hn-searchbar__icon" />
       <input
-        type="search"
+        type="text"
         className="hn-searchbar__input"
         placeholder={placeholder}
         value={draft}
