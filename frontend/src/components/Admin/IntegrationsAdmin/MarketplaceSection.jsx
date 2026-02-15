@@ -6,7 +6,6 @@ import {
   faCompass,
   faDownload,
   faFire,
-  faMagnifyingGlass,
   faStar,
   faStore,
   faUsers,
@@ -17,6 +16,7 @@ import Button from '../../common/Button/Button';
 import RoleSelect from '../../common/RoleSelect/RoleSelect';
 import IntegrationCard, { IntegrationCardHeader } from '../../common/IntegrationCard/IntegrationCard';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
+import SearchBar from '../../common/SearchBar/SearchBar';
 
 export default function MarketplaceSection({
   marketplaceError,
@@ -44,10 +44,10 @@ export default function MarketplaceSection({
   getMarketplaceVersion,
   formatDownloads,
 }) {
-  const sortOptions = ['Name', 'Version', 'Most downloaded', 'Trending'];
+  const sortOptions = ['Name', 'Version', 'Downloads', 'Trending'];
   const sortLabel = (() => {
     if (marketplaceSort === 'version') return 'Version';
-    if (marketplaceSort === 'downloads') return 'Most downloaded';
+    if (marketplaceSort === 'downloads') return 'Downloads';
     if (marketplaceSort === 'trending') return 'Trending';
     return 'Name';
   })();
@@ -69,21 +69,20 @@ export default function MarketplaceSection({
             onClick={() => onModeChange(item)}
           >
             <FontAwesomeIcon icon={item === 'discover' ? faCompass : item === 'trending' ? faFire : faArrowDown} />
-            <span>{item === 'downloads' ? 'Most downloaded' : (item === 'discover' ? 'Discover' : 'Trending')}</span>
+            <span>{item === 'downloads' ? 'Downloads' : (item === 'discover' ? 'Discover' : 'Trending')}</span>
           </button>
         ))}
       </div>
 
       <div className="integrations-marketplace-toolbar">
-        <div className="integrations-marketplace-search">
-          <FontAwesomeIcon icon={faMagnifyingGlass} />
-          <input
-            className="input integrations-admin-input"
-            placeholder="Search marketplace"
-            value={marketplaceQuery}
-            onChange={(e) => onQueryChange(e.target.value)}
-          />
-        </div>
+        <SearchBar
+          value={marketplaceQuery}
+          onChange={onQueryChange}
+          onClear={() => onQueryChange('')}
+          placeholder="Search marketplace"
+          ariaLabel="Search marketplace"
+          className="integrations-admin-searchbar"
+        />
         <div className="integrations-marketplace-filters">
           {["all", "featured", "verified", "community"].map((item) => (
             <button
@@ -127,7 +126,7 @@ export default function MarketplaceSection({
             onChange={(value) => {
               const nextValue = value === 'Version'
                 ? 'version'
-                : value === 'Most downloaded'
+                : value === 'Downloads'
                   ? 'downloads'
                   : value === 'Trending'
                     ? 'trending'

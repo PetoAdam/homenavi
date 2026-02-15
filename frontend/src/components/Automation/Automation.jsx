@@ -5,6 +5,8 @@ import PageHeader from '../common/PageHeader/PageHeader';
 import Snackbar from '../common/Snackbar/Snackbar';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../common/LoadingView/LoadingView';
+import GlassCard from '../common/GlassCard/GlassCard';
+import Button from '../common/Button/Button';
 import useEditorHistory from './hooks/useEditorHistory';
 import useRunStream from './hooks/useRunStream';
 import useAutomationLists from './hooks/useAutomationLists';
@@ -66,6 +68,9 @@ function Automation() {
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
   const isAdmin = user?.role === 'admin';
   const currentUserId = user?.id || user?.user_id || user?.sub || '';
+
+  const [viewMode, setViewMode] = useState(() => (workflowIdParam ? 'edit' : 'overview'));
+  const isEditMode = viewMode === 'edit';
 
   const [err, setErr] = useState('');
   const [toast, setToast] = useState('');
@@ -139,6 +144,10 @@ function Automation() {
     if (selectedId === id) return;
     setSelectedId(id);
   }, [workflowIdParam, selectedId, setSelectedId]);
+
+  useEffect(() => {
+    if (workflowIdParam) setViewMode('edit');
+  }, [workflowIdParam]);
 
   const {
     devices: realtimeDevices,
@@ -222,6 +231,9 @@ function Automation() {
     onNodePointerDown,
     beginPan,
     addNodeAtCenter,
+    onCanvasPointerDown: handleCanvasPointerDown,
+    onCanvasPointerMove: handleCanvasPointerMove,
+    onCanvasPointerUp: handleCanvasPointerUp,
   } = useAutomationCanvas({
     canvasRef,
     editor,
@@ -254,6 +266,10 @@ function Automation() {
     nodeHeaderHeight: NODE_HEADER_HEIGHT,
     setSelectedNodeId,
   });
+
+  useEffect(() => {
+    if (!isEditMode && connectMode) cancelConnect();
+  }, [cancelConnect, connectMode, isEditMode]);
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId || selectedNodeId === 'workflow') return null;
@@ -334,6 +350,7 @@ function Automation() {
     undo,
     redo,
     deleteSelectedNode,
+    enabled: isEditMode,
   });
 
 
@@ -446,12 +463,13 @@ function Automation() {
   }, [editor.nodes, canvasSize.width, canvasSize.height, viewport.scale]);
 
   const onCanvasPointerDown = (e) => {
+    handleCanvasPointerDown(e);
     const canvasEl = canvasRef.current;
     if (!canvasEl) return;
     if (e.button !== 0) return;
-    if (e.target?.closest?.('.automation-node')) return;
+    if (isEditMode && e.target?.closest?.('.automation-node')) return;
 
-    if (connectMode && connectMode.mode === 'click') {
+    if (isEditMode && connectMode && connectMode.mode === 'click') {
       cancelConnect();
       return;
     }
@@ -478,112 +496,273 @@ function Automation() {
       <PageHeader
         title="Automation"
         subtitle={`Build workflows by dragging nodes onto a canvas · ${Array.isArray(workflows) ? workflows.length : 0} workflows`}
-      />
+      >
+        <div className="automation-header-actions">
+          <Button
+            variant="secondary"
+            className={`automation-header-btn${!isEditMode ? ' active' : ''}`}
+            onClick={() => setViewMode('overview')}
+          >
+            Overview
+          </Button>
+          <Button
+            variant="secondary"
+            className={`automation-header-btn${isEditMode ? ' active' : ''}`}
+            onClick={() => setViewMode('edit')}
+          >
+            Edit
+          </Button>
+          {!isEditMode && (
+            <Button
+              variant="secondary"
+              className="automation-header-btn"
+              onClick={() => {
+                startNewWorkflow();
+                setViewMode('edit');
+              }}
+            >
+              New
+            </Button>
+          )}
+        </div>
+      </PageHeader>
 
-      <div className="automation-layout">
-        <div className="automation-editor-shell fade-in" key="automation-editor">
-          <AutomationTopbar
-            workflows={workflows}
-            selectedId={selectedId}
-            onSelectId={setSelectedId}
-            startNewWorkflow={startNewWorkflow}
-            selectedWorkflow={selectedWorkflow}
-            saving={saving}
-            lastSavedAt={lastSavedAt}
-            loading={loading}
-            devicesLoading={mergedDevicesLoading}
-            refreshAllData={refreshAllDataWithInventory}
-            clearCanvas={clearCanvas}
-            canUndo={canUndo}
-            undo={undo}
-            canRedo={canRedo}
-            redo={redo}
-            toggleEnabled={toggleEnabled}
-            runNow={runNow}
-            removeWorkflow={removeWorkflow}
-            isAdmin={isAdmin}
-          />
+      {err && <div className="alert error" role="alert">{err}</div>}
 
-          {err && <div className="alert error" role="alert">{err}</div>}
-
-          <div className="automation-editor">
-            <AutomationLeftPanel
-              paletteGroups={paletteGroups}
-              iconForNodeKind={iconForNodeKind}
-              onPaletteDragStart={onPaletteDragStart}
-              addNodeAtCenter={addNodeAtCenter}
-            />
-
-            <AutomationCanvas
-              canvasRef={canvasRef}
-              onCanvasDragOver={onCanvasDragOver}
-              onCanvasDrop={onCanvasDrop}
-              onCanvasPointerDown={onCanvasPointerDown}
-              GRID_SIZE={GRID_SIZE}
-              viewport={viewport}
-              setViewport={setViewport}
-              svgWorldSize={svgWorldSize}
-              edgesToRender={edgesToRender}
-              connectMode={connectMode}
-              connectHoverId={connectHoverId}
-              setConnectHoverId={setConnectHoverId}
-              connectModeRef={connectModeRef}
-              setConnectMode={setConnectMode}
-              cancelConnect={cancelConnect}
-              deleteEdge={deleteEdge}
-              editorNodes={editor.nodes}
-              selectedNodeId={selectedNodeId}
-              setSelectedNodeId={setSelectedNodeId}
-              NODE_WIDTH={NODE_WIDTH}
-              NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
-              isTriggerNode={isTriggerNode}
-              nodeTitle={nodeTitle}
-              nodeSubtitle={nodeSubtitle}
-              nodeBodyText={nodeBodyText}
-              iconForNodeKind={iconForNodeKind}
-              deviceNameById={deviceNameById}
-              liveRunNodeStates={liveRunNodeStates}
-              commitConnection={commitConnection}
-              startConnectFromNode={startConnectFromNode}
-              onNodePointerDown={onNodePointerDown}
-              executeFromNodeTitle={executeFromNodeTitle}
-              canExecuteFromNode={canExecuteFromNode}
+      {isEditMode ? (
+        <div className="automation-layout">
+          <div className="automation-editor-shell fade-in" key="automation-editor">
+            <AutomationTopbar
+              workflows={workflows}
+              selectedId={selectedId}
+              onSelectId={setSelectedId}
+              startNewWorkflow={startNewWorkflow}
+              selectedWorkflow={selectedWorkflow}
+              saving={saving}
+              lastSavedAt={lastSavedAt}
+              loading={loading}
+              devicesLoading={mergedDevicesLoading}
+              refreshAllData={refreshAllDataWithInventory}
+              clearCanvas={clearCanvas}
+              canUndo={canUndo}
+              undo={undo}
+              canRedo={canRedo}
+              redo={redo}
+              toggleEnabled={toggleEnabled}
               runNow={runNow}
-              canvasSize={canvasSize}
-              zoomAroundPoint={zoomAroundPoint}
-              workflowName={editor.workflowName}
-              onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+              removeWorkflow={removeWorkflow}
+              isAdmin={isAdmin}
             />
 
-            <AutomationPropertiesPanel
-              selectedNodeId={selectedNodeId}
-              selectedNode={selectedNode}
-              selectedConnections={selectedConnections}
-              isTriggerNode={isTriggerNode}
-              defaultNodeData={defaultNodeData}
-              applyEditorUpdate={applyEditorUpdate}
-              applyEditorUpdateBatched={applyEditorUpdateBatched}
-              deviceOptions={deviceOptions}
-              triggerKeyOptions={triggerKeyOptions}
-              userOptions={userOptions}
-              isAdmin={isAdmin}
-              currentUserId={currentUserId}
-              disconnectIncoming={disconnectIncoming}
-              disconnectOutgoing={disconnectOutgoing}
-              deleteSelectedNode={deleteSelectedNode}
+            <div className="automation-editor">
+              <AutomationLeftPanel
+                paletteGroups={paletteGroups}
+                iconForNodeKind={iconForNodeKind}
+                onPaletteDragStart={onPaletteDragStart}
+                addNodeAtCenter={addNodeAtCenter}
+              />
+
+              <AutomationCanvas
+                canvasRef={canvasRef}
+                onCanvasDragOver={onCanvasDragOver}
+                onCanvasDrop={onCanvasDrop}
+                onCanvasPointerDown={onCanvasPointerDown}
+                onCanvasPointerMove={handleCanvasPointerMove}
+                onCanvasPointerUp={handleCanvasPointerUp}
+                onCanvasPointerCancel={handleCanvasPointerUp}
+                GRID_SIZE={GRID_SIZE}
+                viewport={viewport}
+                setViewport={setViewport}
+                svgWorldSize={svgWorldSize}
+                edgesToRender={edgesToRender}
+                connectMode={connectMode}
+                connectHoverId={connectHoverId}
+                setConnectHoverId={setConnectHoverId}
+                connectModeRef={connectModeRef}
+                setConnectMode={setConnectMode}
+                cancelConnect={cancelConnect}
+                deleteEdge={deleteEdge}
+                editorNodes={editor.nodes}
+                selectedNodeId={selectedNodeId}
+                setSelectedNodeId={setSelectedNodeId}
+                NODE_WIDTH={NODE_WIDTH}
+                NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
+                isTriggerNode={isTriggerNode}
+                nodeTitle={nodeTitle}
+                nodeSubtitle={nodeSubtitle}
+                nodeBodyText={nodeBodyText}
+                iconForNodeKind={iconForNodeKind}
+                deviceNameById={deviceNameById}
+                liveRunNodeStates={liveRunNodeStates}
+                commitConnection={commitConnection}
+                startConnectFromNode={startConnectFromNode}
+                onNodePointerDown={onNodePointerDown}
+                executeFromNodeTitle={executeFromNodeTitle}
+                canExecuteFromNode={canExecuteFromNode}
+                runNow={runNow}
+                canvasSize={canvasSize}
+                zoomAroundPoint={zoomAroundPoint}
+                workflowName={editor.workflowName}
+                onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+              />
+
+              <AutomationPropertiesPanel
+                selectedNodeId={selectedNodeId}
+                selectedNode={selectedNode}
+                selectedConnections={selectedConnections}
+                isTriggerNode={isTriggerNode}
+                defaultNodeData={defaultNodeData}
+                applyEditorUpdate={applyEditorUpdate}
+                applyEditorUpdateBatched={applyEditorUpdateBatched}
+                deviceOptions={deviceOptions}
+                triggerKeyOptions={triggerKeyOptions}
+                userOptions={userOptions}
+                isAdmin={isAdmin}
+                currentUserId={currentUserId}
+                disconnectIncoming={disconnectIncoming}
+                disconnectOutgoing={disconnectOutgoing}
+                deleteSelectedNode={deleteSelectedNode}
+              />
+            </div>
+          </div>
+
+          <AutomationRuns
+            selectedWorkflow={selectedWorkflow}
+            runs={runs}
+            runsLoading={runsLoading}
+            runsLimit={runsLimit}
+            setRunsLimit={setRunsLimit}
+            fetchRuns={fetchRuns}
+          />
+        </div>
+      ) : (
+        <div className="automation-overview-layout">
+          <GlassCard interactive={false} className="automation-overview-list">
+            <div className="automation-overview-list-header">
+              <div>
+                <div className="automation-overview-title">Workflows</div>
+                <div className="muted">{Array.isArray(workflows) ? workflows.length : 0} total</div>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  startNewWorkflow();
+                  setViewMode('edit');
+                }}
+              >
+                New
+              </Button>
+            </div>
+
+            {Array.isArray(workflows) && workflows.length ? (
+              <div className="automation-workflow-list">
+                {workflows.map((wf) => (
+                  <button
+                    key={wf.id}
+                    type="button"
+                    className={`automation-workflow-item${selectedId === wf.id ? ' selected' : ''}`}
+                    onClick={() => setSelectedId(wf.id)}
+                  >
+                    <div className="name">{wf.name}</div>
+                    <div className="meta">
+                      <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
+                      <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="muted">No workflows yet. Create one to get started.</div>
+            )}
+          </GlassCard>
+
+          <div className="automation-overview-preview-column">
+            <GlassCard interactive={false} className="automation-overview-preview">
+              <div className="automation-overview-preview-header">
+                <div>
+                  <div className="automation-overview-title">{selectedWorkflow ? selectedWorkflow.name : 'Preview'}</div>
+                  <div className="muted">{selectedWorkflow ? (selectedWorkflow.enabled ? 'Enabled' : 'Disabled') : 'Select a workflow to preview'}</div>
+                </div>
+                <div className="automation-overview-preview-actions">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setViewMode('edit')}
+                  >
+                    Edit
+                  </Button>
+                  {selectedWorkflow && (
+                    <Button
+                      variant="secondary"
+                      onClick={runNow}
+                      disabled={saving}
+                    >
+                      Run
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="automation-overview-preview-body">
+                {selectedWorkflow ? (
+                  <AutomationCanvas
+                    canvasRef={canvasRef}
+                    onCanvasPointerDown={onCanvasPointerDown}
+                    onCanvasPointerMove={handleCanvasPointerMove}
+                    onCanvasPointerUp={handleCanvasPointerUp}
+                    onCanvasPointerCancel={handleCanvasPointerUp}
+                    GRID_SIZE={GRID_SIZE}
+                    viewport={viewport}
+                    setViewport={setViewport}
+                    svgWorldSize={svgWorldSize}
+                    edgesToRender={edgesToRender}
+                    connectMode={null}
+                    connectHoverId={null}
+                    setConnectHoverId={() => {}}
+                    connectModeRef={connectModeRef}
+                    setConnectMode={() => {}}
+                    cancelConnect={() => {}}
+                    deleteEdge={() => {}}
+                    editorNodes={editor.nodes}
+                    selectedNodeId={selectedNodeId}
+                    setSelectedNodeId={setSelectedNodeId}
+                    NODE_WIDTH={NODE_WIDTH}
+                    NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
+                    isTriggerNode={isTriggerNode}
+                    nodeTitle={nodeTitle}
+                    nodeSubtitle={nodeSubtitle}
+                    nodeBodyText={nodeBodyText}
+                    iconForNodeKind={iconForNodeKind}
+                    deviceNameById={deviceNameById}
+                    liveRunNodeStates={liveRunNodeStates}
+                    commitConnection={() => {}}
+                    startConnectFromNode={() => {}}
+                    onNodePointerDown={() => {}}
+                    executeFromNodeTitle={executeFromNodeTitle}
+                    canExecuteFromNode={canExecuteFromNode}
+                    runNow={runNow}
+                    canvasSize={canvasSize}
+                    zoomAroundPoint={zoomAroundPoint}
+                    workflowName={editor.workflowName}
+                    onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+                    readOnly
+                  />
+                ) : (
+                  <div className="automation-overview-empty muted">Pick a workflow to see its canvas preview.</div>
+                )}
+              </div>
+            </GlassCard>
+
+            <AutomationRuns
+              selectedWorkflow={selectedWorkflow}
+              runs={runs}
+              runsLoading={runsLoading}
+              runsLimit={runsLimit}
+              setRunsLimit={setRunsLimit}
+              fetchRuns={fetchRuns}
             />
           </div>
         </div>
-
-        <AutomationRuns
-          selectedWorkflow={selectedWorkflow}
-          runs={runs}
-          runsLoading={runsLoading}
-          runsLimit={runsLimit}
-          setRunsLimit={setRunsLimit}
-          fetchRuns={fetchRuns}
-        />
-      </div>
+      )}
 
       <Snackbar message={toast} onClose={() => setToast('')} />
     </div>

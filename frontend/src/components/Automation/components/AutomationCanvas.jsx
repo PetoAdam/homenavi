@@ -11,6 +11,9 @@ export default function AutomationCanvas({
   onCanvasDragOver,
   onCanvasDrop,
   onCanvasPointerDown,
+  onCanvasPointerMove,
+  onCanvasPointerUp,
+  onCanvasPointerCancel,
   GRID_SIZE,
   viewport,
   setViewport,
@@ -45,15 +48,19 @@ export default function AutomationCanvas({
   zoomAroundPoint,
   workflowName,
   onWorkflowNameChange,
+  readOnly = false,
 }) {
   return (
     <div className="automation-center">
       <div
         className="automation-canvas"
         ref={canvasRef}
-        onDragOver={onCanvasDragOver}
-        onDrop={onCanvasDrop}
+        onDragOver={readOnly ? undefined : onCanvasDragOver}
+        onDrop={readOnly ? undefined : onCanvasDrop}
         onPointerDown={onCanvasPointerDown}
+        onPointerMove={onCanvasPointerMove}
+        onPointerUp={onCanvasPointerUp}
+        onPointerCancel={onCanvasPointerCancel}
         style={{
           backgroundSize: `${GRID_SIZE * viewport.scale}px ${GRID_SIZE * viewport.scale}px`,
           backgroundPosition: `${viewport.x}px ${viewport.y}px`,
@@ -65,9 +72,13 @@ export default function AutomationCanvas({
           <input
             className="input automation-canvas-name-input"
             value={workflowName}
-            onChange={(e) => onWorkflowNameChange(e.target.value)}
+            onChange={(e) => {
+              if (readOnly) return;
+              onWorkflowNameChange(e.target.value);
+            }}
             placeholder="Untitled workflow"
             aria-label="Workflow name"
+            readOnly={readOnly}
           />
         </div>
 
@@ -155,7 +166,7 @@ export default function AutomationCanvas({
               }
             }
 
-            const connectEligible = !!connectMode && String(connectMode.fromId) !== id && !isTrigger;
+            const connectEligible = !readOnly && !!connectMode && String(connectMode.fromId) !== id && !isTrigger;
             const connectHover = !!connectHoverId && String(connectHoverId) === id;
 
             const liveState = liveRunNodeStates[id];
@@ -174,6 +185,7 @@ export default function AutomationCanvas({
                 style={{ left: node.x, top: node.y, width: NODE_WIDTH }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (readOnly) return;
                   if (connectMode && connectMode.mode === 'click') {
                     const fromId = String(connectMode.fromId || '');
                     if (fromId && fromId !== id && !isTrigger) {
@@ -185,6 +197,7 @@ export default function AutomationCanvas({
                   setSelectedNodeId(id);
                 }}
                 onPointerEnter={() => {
+                  if (readOnly) return;
                   if (!connectMode) return;
                   if (connectMode.mode !== 'click') return;
                   const fromId = String(connectMode.fromId || '');
@@ -195,6 +208,7 @@ export default function AutomationCanvas({
                   setConnectMode(next);
                 }}
                 onPointerLeave={() => {
+                  if (readOnly) return;
                   if (!connectMode) return;
                   if (connectMode.mode !== 'click') return;
                   setConnectHoverId(null);
@@ -203,7 +217,7 @@ export default function AutomationCanvas({
                   setConnectMode(next);
                 }}
               >
-                {!isTrigger && (
+                {!readOnly && !isTrigger && (
                   <button
                     type="button"
                     className="automation-node-port in"
@@ -224,16 +238,21 @@ export default function AutomationCanvas({
                     }}
                   />
                 )}
-                <button
-                  type="button"
-                  className="automation-node-port out"
-                  title="Connect"
-                  onPointerDown={(e) => startConnectFromNode(e, id)}
-                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="automation-node-port out"
+                    title="Connect"
+                    onPointerDown={(e) => startConnectFromNode(e, id)}
+                  />
+                )}
 
                 <div
                   className="automation-node-header"
-                  onPointerDown={(e) => onNodePointerDown(e, id)}
+                  onPointerDown={(e) => {
+                    if (readOnly) return;
+                    onNodePointerDown(e, id);
+                  }}
                 >
                   <div className="title">
                     {nodeIcon && (
@@ -250,9 +269,10 @@ export default function AutomationCanvas({
                         type="button"
                         className="automation-node-icon-btn"
                         title={executeFromNodeTitle}
-                        disabled={!canExecuteFromNode}
+                        disabled={!canExecuteFromNode || readOnly}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (readOnly) return;
                           runNow();
                         }}
                         onPointerDown={(e) => { e.stopPropagation(); }}
@@ -304,7 +324,7 @@ export default function AutomationCanvas({
           </div>
         </div>
 
-        {connectMode && (
+        {!readOnly && connectMode && (
           <div className="automation-connect-hint muted" onPointerDown={(e) => e.stopPropagation()}>
             {connectMode.mode === 'drag'
               ? 'Connecting: drag to a node’s left dot (Esc cancels)'

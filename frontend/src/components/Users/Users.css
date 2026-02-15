@@ -34,6 +34,11 @@
 }
 .input::placeholder { color: rgba(255,255,255,0.6); }
 
+.users-searchbar {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
 .alert.error {
   background: rgba(255, 102, 102, 0.15);
   border: 1px solid rgba(255, 102, 102, 0.3);
@@ -177,7 +182,7 @@
   }
 
   .users-toolbar { flex-wrap: wrap; justify-content: center; }
-  .users-toolbar .input { flex: 1 1 100%; min-width: 0; }
+  .users-toolbar .users-searchbar { flex: 1 1 100%; min-width: 0; }
   .users-toolbar > * { flex: 0 0 auto; }
   .users-toolbar .role-select, .users-toolbar .btn { margin-top: 0.4rem; }
   .card-body { padding: 0.5rem 0.4rem; }

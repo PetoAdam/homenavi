@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   getDropPosition,
@@ -24,6 +24,14 @@ export default function useAutomationCanvas({
 
   const [dragState, setDragState] = useState(null);
   const [panState, setPanState] = useState(null);
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
+
+  const MIN_SCALE = 0.35;
+  const MAX_SCALE = 2.5;
+
+  const clampScale = (value) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+  const readPointers = () => Array.from(pointersRef.current.values());
 
   useEffect(() => {
     const onWheelCapture = (ev) => {
@@ -47,6 +55,66 @@ export default function useAutomationCanvas({
     window.addEventListener('wheel', onWheelCapture, opts);
     return () => window.removeEventListener('wheel', onWheelCapture, opts);
   }, [canvasRef]);
+
+  const onCanvasPointerDown = (e) => {
+    if (e.pointerType !== 'touch') return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size !== 2) return;
+
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const [p1, p2] = readPointers();
+    if (!p1 || !p2) return;
+
+    const mid = {
+      x: (p1.x + p2.x) / 2 - rect.left,
+      y: (p1.y + p2.y) / 2 - rect.top,
+    };
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const distance = Math.hypot(dx, dy);
+    const startView = { x: viewport.x, y: viewport.y, scale: viewport.scale };
+    const startWorld = screenToWorld(mid, startView);
+    pinchRef.current = {
+      distance: distance || 1,
+      startView,
+      startWorld,
+    };
+  };
+
+  const onCanvasPointerMove = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointersRef.current.size < 2 || !pinchRef.current) return;
+    if (e.cancelable) e.preventDefault();
+
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const [p1, p2] = readPointers();
+    if (!p1 || !p2) return;
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const scale = clampScale(pinchRef.current.startView.scale * (distance / pinchRef.current.distance));
+    const mid = {
+      x: (p1.x + p2.x) / 2 - rect.left,
+      y: (p1.y + p2.y) / 2 - rect.top,
+    };
+    const nextX = mid.x - pinchRef.current.startWorld.x * scale;
+    const nextY = mid.y - pinchRef.current.startWorld.y * scale;
+    setViewport({ x: nextX, y: nextY, scale });
+  };
+
+  const onCanvasPointerUp = (e) => {
+    if (e.pointerType !== 'touch') return;
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+  };
 
   useEffect(() => {
     const canvasEl = canvasRef.current;
@@ -209,6 +277,7 @@ export default function useAutomationCanvas({
   };
 
   const beginPan = (e) => {
+    if (pinchRef.current || pointersRef.current.size > 1) return;
     setSelectedNodeId('workflow');
     setPanState({
       pointerStartX: e.clientX,
@@ -277,5 +346,8 @@ export default function useAutomationCanvas({
     onNodePointerDown,
     beginPan,
     addNodeAtCenter,
+    onCanvasPointerDown,
+    onCanvasPointerMove,
+    onCanvasPointerUp,
   };
 }

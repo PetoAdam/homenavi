@@ -14,6 +14,7 @@ import GlassCard from '../../common/GlassCard/GlassCard';
 import Toolbar from '../../common/Toolbar/Toolbar';
 import Button from '../../common/Button/Button';
 import RoleSelect from '../../common/RoleSelect/RoleSelect';
+import SearchBar from '../../common/SearchBar/SearchBar';
 import IntegrationCard, { IntegrationCardHeader } from '../../common/IntegrationCard/IntegrationCard';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
 import '../../common/Toolbar/Toolbar.css';
@@ -89,11 +90,13 @@ export default function InstalledIntegrationsSection({
           onSearchSubmit();
         }}
       >
-        <input
-          className="input integrations-admin-input"
-          placeholder="Search integrations"
+        <SearchBar
           value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
+          onChange={onQueryChange}
+          onClear={onSearchSubmit}
+          placeholder="Search integrations"
+          ariaLabel="Search integrations"
+          className="integrations-admin-searchbar"
         />
         <RoleSelect
           value={`${pageSize}/page`}

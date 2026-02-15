@@ -10,6 +10,7 @@ import UserAvatar from '../common/UserAvatar/UserAvatar';
 import PageHeader from '../common/PageHeader/PageHeader';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../common/LoadingView/LoadingView';
+import SearchBar from '../common/SearchBar/SearchBar';
 import './Users.css';
 
 const PageSizeOptions = [10, 20, 50, 100];
@@ -108,11 +109,13 @@ function Users() {
   <GlassCard interactive={false} className="fade-in span-all" key="users-list">
           <div className="card-body">
             <form className="users-toolbar" onSubmit={onSearch}>
-              <input
-                className="input"
-                placeholder="Search by name or email..."
+              <SearchBar
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={setQuery}
+                onClear={() => setQuery('')}
+                placeholder="Search by name or email…"
+                ariaLabel="Search users"
+                className="users-searchbar"
               />
               <RoleSelect
                 value={`${pageSize}/page`}
