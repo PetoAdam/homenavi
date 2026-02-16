@@ -125,6 +125,38 @@
 
 @media (max-width: 720px) {
   .multi-device-widget__grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .multi-device-widget__tile {
+    padding: 0.6rem 0.55rem;
+  }
+
+  .multi-device-widget__tile-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.4rem;
+  }
+
+  .multi-device-widget__tile-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 0.6rem;
+  }
+
+  .multi-device-widget__tile-name {
+    font-size: 0.82rem;
+    white-space: normal;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .multi-device-widget__tile-status {
+    font-size: 0.66rem;
   }
 }

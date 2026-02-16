@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowLeft, faPen, faPlay, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../common/PageHeader/PageHeader';
@@ -6,7 +8,9 @@ import Snackbar from '../common/Snackbar/Snackbar';
 import UnauthorizedView from '../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../common/LoadingView/LoadingView';
 import GlassCard from '../common/GlassCard/GlassCard';
+import GlassPill from '../common/GlassPill/GlassPill';
 import Button from '../common/Button/Button';
+import SearchBar from '../common/SearchBar/SearchBar';
 import useEditorHistory from './hooks/useEditorHistory';
 import useRunStream from './hooks/useRunStream';
 import useAutomationLists from './hooks/useAutomationLists';
@@ -71,6 +75,9 @@ function Automation() {
 
   const [viewMode, setViewMode] = useState(() => (workflowIdParam ? 'edit' : 'overview'));
   const isEditMode = viewMode === 'edit';
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [hasOverviewSelection, setHasOverviewSelection] = useState(false);
+  const [workflowSearch, setWorkflowSearch] = useState('');
 
   const [err, setErr] = useState('');
   const [toast, setToast] = useState('');
@@ -133,9 +140,21 @@ function Automation() {
     runsLoading,
     runsLimit,
     setRunsLimit,
+    runsHasMore,
     fetchRuns,
     refreshAllData,
   } = useAutomationLists({ accessToken, onError: setErr });
+
+  const filteredWorkflows = useMemo(() => {
+    const list = Array.isArray(workflows) ? workflows : [];
+    const query = String(workflowSearch || '').trim().toLowerCase();
+    if (!query) return list;
+    return list.filter((wf) => {
+      const name = String(wf?.name || '').toLowerCase();
+      const id = String(wf?.id || '').toLowerCase();
+      return name.includes(query) || id.includes(query);
+    });
+  }, [workflows, workflowSearch]);
 
   // Allow deep-linking to a specific workflow.
   useEffect(() => {
@@ -148,6 +167,19 @@ function Automation() {
   useEffect(() => {
     if (workflowIdParam) setViewMode('edit');
   }, [workflowIdParam]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 720px)');
+    const handleChange = () => setIsNarrow(media.matches);
+    handleChange();
+    if (media.addEventListener) {
+      media.addEventListener('change', handleChange);
+      return () => media.removeEventListener('change', handleChange);
+    }
+    media.addListener(handleChange);
+    return () => media.removeListener(handleChange);
+  }, []);
 
   const {
     devices: realtimeDevices,
@@ -478,6 +510,7 @@ function Automation() {
   };
 
   const paletteGroups = useMemo(() => groupPaletteItems(), []);
+  const showOverviewDetail = !isNarrow || hasOverviewSelection;
 
   if (!isResidentOrAdmin) {
     if (bootstrapping) {
@@ -492,39 +525,12 @@ function Automation() {
   }
 
   return (
-    <div className="automation-page">
+    <div className={`automation-page${!isEditMode && !isNarrow ? ' automation-page--overview-desktop' : ''}`}>
       <PageHeader
         title="Automation"
         subtitle={`Build workflows by dragging nodes onto a canvas · ${Array.isArray(workflows) ? workflows.length : 0} workflows`}
       >
-        <div className="automation-header-actions">
-          <Button
-            variant="secondary"
-            className={`automation-header-btn${!isEditMode ? ' active' : ''}`}
-            onClick={() => setViewMode('overview')}
-          >
-            Overview
-          </Button>
-          <Button
-            variant="secondary"
-            className={`automation-header-btn${isEditMode ? ' active' : ''}`}
-            onClick={() => setViewMode('edit')}
-          >
-            Edit
-          </Button>
-          {!isEditMode && (
-            <Button
-              variant="secondary"
-              className="automation-header-btn"
-              onClick={() => {
-                startNewWorkflow();
-                setViewMode('edit');
-              }}
-            >
-              New
-            </Button>
-          )}
-        </div>
+        <div className="automation-header-actions" />
       </PageHeader>
 
       {err && <div className="alert error" role="alert">{err}</div>}
@@ -532,6 +538,20 @@ function Automation() {
       {isEditMode ? (
         <div className="automation-layout">
           <div className="automation-editor-shell fade-in" key="automation-editor">
+            {isNarrow && (
+              <div className="automation-editor-back">
+                <GlassPill
+                  icon={faArrowLeft}
+                  text="Back"
+                  tone="default"
+                  className="page-header-back-pill"
+                  onClick={() => {
+                    setViewMode('overview');
+                    setHasOverviewSelection(Boolean(selectedWorkflow));
+                  }}
+                />
+              </div>
+            )}
             <AutomationTopbar
               workflows={workflows}
               selectedId={selectedId}
@@ -632,136 +652,236 @@ function Automation() {
             runsLoading={runsLoading}
             runsLimit={runsLimit}
             setRunsLimit={setRunsLimit}
+            runsHasMore={runsHasMore}
+            isNarrow={isNarrow}
             fetchRuns={fetchRuns}
           />
         </div>
       ) : (
-        <div className="automation-overview-layout">
-          <GlassCard interactive={false} className="automation-overview-list">
-            <div className="automation-overview-list-header">
-              <div>
-                <div className="automation-overview-title">Workflows</div>
-                <div className="muted">{Array.isArray(workflows) ? workflows.length : 0} total</div>
-              </div>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  startNewWorkflow();
-                  setViewMode('edit');
-                }}
-              >
-                New
-              </Button>
-            </div>
-
-            {Array.isArray(workflows) && workflows.length ? (
-              <div className="automation-workflow-list">
-                {workflows.map((wf) => (
-                  <button
-                    key={wf.id}
-                    type="button"
-                    className={`automation-workflow-item${selectedId === wf.id ? ' selected' : ''}`}
-                    onClick={() => setSelectedId(wf.id)}
-                  >
-                    <div className="name">{wf.name}</div>
-                    <div className="meta">
-                      <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
-                      <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="muted">No workflows yet. Create one to get started.</div>
-            )}
-          </GlassCard>
-
-          <div className="automation-overview-preview-column">
-            <GlassCard interactive={false} className="automation-overview-preview">
-              <div className="automation-overview-preview-header">
-                <div>
-                  <div className="automation-overview-title">{selectedWorkflow ? selectedWorkflow.name : 'Preview'}</div>
-                  <div className="muted">{selectedWorkflow ? (selectedWorkflow.enabled ? 'Enabled' : 'Disabled') : 'Select a workflow to preview'}</div>
+        <div className={`automation-overview-layout${showOverviewDetail ? '' : ' automation-overview-layout--list-only'}`}>
+          {(!isNarrow || !hasOverviewSelection) && (
+            <div className="automation-overview-list-column">
+              <GlassCard interactive={false} className="automation-overview-list">
+              <div className="automation-overview-list-header">
+                <div className="automation-overview-list-meta">
+                  <div className="automation-overview-title">Workflows</div>
+                  <div className="automation-overview-count-pill">
+                    {workflowSearch.trim()
+                      ? `${filteredWorkflows.length} of ${Array.isArray(workflows) ? workflows.length : 0}`
+                      : `${Array.isArray(workflows) ? workflows.length : 0} total`}
+                  </div>
                 </div>
-                <div className="automation-overview-preview-actions">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setViewMode('edit')}
-                  >
-                    Edit
-                  </Button>
-                  {selectedWorkflow && (
-                    <Button
-                      variant="secondary"
-                      onClick={runNow}
-                      disabled={saving}
+                <SearchBar
+                  value={workflowSearch}
+                  onChange={setWorkflowSearch}
+                  onClear={() => setWorkflowSearch('')}
+                  placeholder="Search workflows…"
+                  ariaLabel="Search workflows"
+                  className="automation-overview-search"
+                />
+              </div>
+
+              {Array.isArray(filteredWorkflows) && filteredWorkflows.length ? (
+                <div className="automation-workflow-list">
+                  {filteredWorkflows.map((wf) => (
+                    <button
+                      key={wf.id}
+                      type="button"
+                      className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
+                      onClick={() => {
+                        setSelectedId(wf.id);
+                        setViewMode('overview');
+                        setHasOverviewSelection(true);
+                      }}
                     >
-                      Run
+                      <div className="name">{wf.name}</div>
+                      <div className="meta">
+                        <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
+                        <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="automation-workflow-item automation-workflow-item--add"
+                    onClick={() => {
+                      startNewWorkflow();
+                      setViewMode('edit');
+                    }}
+                  >
+                    <span className="automation-workflow-add-icon">
+                      <FontAwesomeIcon icon={faPlus} />
+                    </span>
+                    <span className="automation-workflow-add-title">Add new workflow</span>
+                    <span className="automation-workflow-add-subtitle">Create and start editing</span>
+                    <span className="automation-workflow-add-cta">Open editor</span>
+                  </button>
+              </div>
+              ) : (
+                <div className="automation-workflow-list">
+                  <div className="muted">
+                    {workflowSearch.trim()
+                      ? 'No workflows match your search.'
+                      : 'No workflows yet. Create one to get started.'}
+                  </div>
+                  <button
+                    type="button"
+                    className="automation-workflow-item automation-workflow-item--add"
+                    onClick={() => {
+                      startNewWorkflow();
+                      setViewMode('edit');
+                    }}
+                  >
+                    <span className="automation-workflow-add-icon">
+                      <FontAwesomeIcon icon={faPlus} />
+                    </span>
+                    <span className="automation-workflow-add-title">Add new workflow</span>
+                    <span className="automation-workflow-add-subtitle">Create and start editing</span>
+                    <span className="automation-workflow-add-cta">Open editor</span>
+                  </button>
+                </div>
+              )}
+              </GlassCard>
+            </div>
+          )}
+
+          {showOverviewDetail && (
+            <div className="automation-overview-preview-column">
+              {isNarrow && (
+                <div className="automation-overview-back">
+                  <GlassPill
+                    icon={faArrowLeft}
+                    text="Back"
+                    tone="default"
+                    className="page-header-back-pill"
+                    onClick={() => setHasOverviewSelection(false)}
+                  />
+                </div>
+              )}
+              <GlassCard interactive={false} className="automation-overview-preview">
+                <div className="automation-overview-preview-header">
+                  <div className="automation-overview-preview-meta">
+                    <div className="automation-overview-preview-title">{selectedWorkflow ? selectedWorkflow.name : 'Preview'}</div>
+                    <div className="automation-overview-preview-status-row">
+                      {selectedWorkflow ? (
+                        <span className={`automation-overview-status-pill ${selectedWorkflow.enabled ? 'is-enabled' : 'is-disabled'}`}>
+                          {selectedWorkflow.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      ) : (
+                        <span className="muted">Select a workflow to preview</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="automation-overview-preview-actions">
+                    <Button
+                      onClick={() => setViewMode('edit')}
+                      className="automation-overview-edit"
+                    >
+                      <span className="btn-icon"><FontAwesomeIcon icon={faPen} /></span>
+                      <span className="btn-label">Edit</span>
                     </Button>
+                    {selectedWorkflow && (
+                      <Button
+                        variant="secondary"
+                        onClick={runNow}
+                        disabled={saving}
+                      >
+                        <span className="btn-icon"><FontAwesomeIcon icon={faPlay} /></span>
+                        <span className="btn-label">Run</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="automation-overview-preview-body">
+                  {selectedWorkflow ? (
+                    <>
+                      <AutomationCanvas
+                        canvasRef={canvasRef}
+                        onCanvasPointerDown={onCanvasPointerDown}
+                        onCanvasPointerMove={handleCanvasPointerMove}
+                        onCanvasPointerUp={handleCanvasPointerUp}
+                        onCanvasPointerCancel={handleCanvasPointerUp}
+                        GRID_SIZE={GRID_SIZE}
+                        viewport={viewport}
+                        setViewport={setViewport}
+                        svgWorldSize={svgWorldSize}
+                        edgesToRender={edgesToRender}
+                        connectMode={null}
+                        connectHoverId={null}
+                        setConnectHoverId={() => {}}
+                        connectModeRef={connectModeRef}
+                        setConnectMode={() => {}}
+                        cancelConnect={() => {}}
+                        deleteEdge={() => {}}
+                        editorNodes={editor.nodes}
+                        selectedNodeId={selectedNodeId}
+                        setSelectedNodeId={setSelectedNodeId}
+                        NODE_WIDTH={NODE_WIDTH}
+                        NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
+                        isTriggerNode={isTriggerNode}
+                        nodeTitle={nodeTitle}
+                        nodeSubtitle={nodeSubtitle}
+                        nodeBodyText={nodeBodyText}
+                        iconForNodeKind={iconForNodeKind}
+                        deviceNameById={deviceNameById}
+                        liveRunNodeStates={liveRunNodeStates}
+                        commitConnection={() => {}}
+                        startConnectFromNode={() => {}}
+                        onNodePointerDown={() => {}}
+                        executeFromNodeTitle={executeFromNodeTitle}
+                        canExecuteFromNode={canExecuteFromNode}
+                        runNow={runNow}
+                        canvasSize={canvasSize}
+                        zoomAroundPoint={zoomAroundPoint}
+                        workflowName={editor.workflowName}
+                        onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+                        readOnly
+                      />
+                      {!isNarrow && (
+                        <div className="automation-overview-next-section" aria-hidden="true">
+                          <span className="automation-overview-next-title">Recent runs</span>
+                          <span className="automation-overview-next-hint">Scroll down ↓</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="automation-overview-empty muted">Pick a workflow to see its canvas preview.</div>
                   )}
                 </div>
-              </div>
+              </GlassCard>
 
-              <div className="automation-overview-preview-body">
-                {selectedWorkflow ? (
-                  <AutomationCanvas
-                    canvasRef={canvasRef}
-                    onCanvasPointerDown={onCanvasPointerDown}
-                    onCanvasPointerMove={handleCanvasPointerMove}
-                    onCanvasPointerUp={handleCanvasPointerUp}
-                    onCanvasPointerCancel={handleCanvasPointerUp}
-                    GRID_SIZE={GRID_SIZE}
-                    viewport={viewport}
-                    setViewport={setViewport}
-                    svgWorldSize={svgWorldSize}
-                    edgesToRender={edgesToRender}
-                    connectMode={null}
-                    connectHoverId={null}
-                    setConnectHoverId={() => {}}
-                    connectModeRef={connectModeRef}
-                    setConnectMode={() => {}}
-                    cancelConnect={() => {}}
-                    deleteEdge={() => {}}
-                    editorNodes={editor.nodes}
-                    selectedNodeId={selectedNodeId}
-                    setSelectedNodeId={setSelectedNodeId}
-                    NODE_WIDTH={NODE_WIDTH}
-                    NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
-                    isTriggerNode={isTriggerNode}
-                    nodeTitle={nodeTitle}
-                    nodeSubtitle={nodeSubtitle}
-                    nodeBodyText={nodeBodyText}
-                    iconForNodeKind={iconForNodeKind}
-                    deviceNameById={deviceNameById}
-                    liveRunNodeStates={liveRunNodeStates}
-                    commitConnection={() => {}}
-                    startConnectFromNode={() => {}}
-                    onNodePointerDown={() => {}}
-                    executeFromNodeTitle={executeFromNodeTitle}
-                    canExecuteFromNode={canExecuteFromNode}
-                    runNow={runNow}
-                    canvasSize={canvasSize}
-                    zoomAroundPoint={zoomAroundPoint}
-                    workflowName={editor.workflowName}
-                    onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
-                    readOnly
-                  />
-                ) : (
-                  <div className="automation-overview-empty muted">Pick a workflow to see its canvas preview.</div>
-                )}
-              </div>
-            </GlassCard>
-
-            <AutomationRuns
-              selectedWorkflow={selectedWorkflow}
-              runs={runs}
-              runsLoading={runsLoading}
-              runsLimit={runsLimit}
-              setRunsLimit={setRunsLimit}
-              fetchRuns={fetchRuns}
-            />
-          </div>
+              <AutomationRuns
+                selectedWorkflow={selectedWorkflow}
+                runs={runs}
+                runsLoading={runsLoading}
+                runsLimit={runsLimit}
+                setRunsLimit={setRunsLimit}
+                runsHasMore={runsHasMore}
+                isNarrow={isNarrow}
+                fetchRuns={fetchRuns}
+              />
+            </div>
+          )}
         </div>
+      )}
+
+      {!isEditMode && (
+        <button
+          type="button"
+          className="devices-fab"
+          onClick={() => {
+            startNewWorkflow();
+            setViewMode('edit');
+          }}
+          aria-label="Add workflow"
+          title="Add workflow"
+        >
+          <span className="devices-fab-icon">
+            <FontAwesomeIcon icon={faPlus} />
+          </span>
+          <span className="devices-fab-label">Add workflow</span>
+        </button>
       )}
 
       <Snackbar message={toast} onClose={() => setToast('')} />
