@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./integration-proxy/go.mod
           cache-dependency-path: ./integration-proxy/go.sum
 
+      - name: Run static analysis
+        working-directory: ./integration-proxy
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./integration-proxy
         run: go test ./...

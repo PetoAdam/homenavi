@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./weather-service/go.mod
           cache-dependency-path: ./weather-service/go.sum
 
+      - name: Run static analysis
+        working-directory: ./weather-service
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./weather-service
         run: go test ./...

@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./automation-service/go.mod
           cache-dependency-path: ./automation-service/go.sum
 
+      - name: Run static analysis
+        working-directory: ./automation-service
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./automation-service
         run: go test ./...
