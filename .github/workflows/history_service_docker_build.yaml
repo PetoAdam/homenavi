@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./history-service/go.mod
           cache-dependency-path: ./history-service/go.sum
 
+      - name: Run static analysis
+        working-directory: ./history-service
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./history-service
         run: go test ./...

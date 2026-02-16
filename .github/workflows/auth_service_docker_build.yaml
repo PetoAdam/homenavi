@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./auth-service/go.mod
           cache-dependency-path: ./auth-service/go.sum
 
+      - name: Run static analysis
+        working-directory: ./auth-service
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./auth-service
         run: go test ./...

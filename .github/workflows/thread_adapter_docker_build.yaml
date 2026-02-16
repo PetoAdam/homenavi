@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./thread-adapter/go.mod
           cache-dependency-path: ./thread-adapter/go.sum
 
+      - name: Run static analysis
+        working-directory: ./thread-adapter
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./thread-adapter
         run: go test ./...

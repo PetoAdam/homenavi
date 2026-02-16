@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./zigbee-adapter/go.mod
           cache-dependency-path: ./zigbee-adapter/go.sum
 
+      - name: Run static analysis
+        working-directory: ./zigbee-adapter
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./zigbee-adapter
         run: go test ./...

@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./device-hub/go.mod
           cache-dependency-path: ./device-hub/go.sum
 
+      - name: Run static analysis
+        working-directory: ./device-hub
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./device-hub
         run: go test ./...

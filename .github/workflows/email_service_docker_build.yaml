@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./email-service/go.mod
           cache-dependency-path: ./email-service/go.sum
 
+      - name: Run static analysis
+        working-directory: ./email-service
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./email-service
         run: go test ./...

@@ -20,6 +20,10 @@ jobs:
           go-version-file: ./api-gateway/go.mod
           cache-dependency-path: ./api-gateway/go.sum
 
+      - name: Run static analysis
+        working-directory: ./api-gateway
+        run: go vet ./...
+
       - name: Run unit tests
         working-directory: ./api-gateway
         run: go test ./...
