@@ -76,6 +76,8 @@ function SliderControl({ input, value, pending, onChange, onCommit }) {
   const min = typeof range?.min === 'number' ? range.min : 0;
   const max = typeof range?.max === 'number' ? range.max : 255;
   const step = typeof range?.step === 'number' ? range.step : 1;
+  const safeValue = typeof value === 'number' ? value : min;
+  const fillPercent = min === max ? 0 : Math.max(0, Math.min(100, ((safeValue - min) / (max - min)) * 100));
 
   return (
     <div className="dcr-control dcr-control-wide" data-key={key}>
@@ -90,7 +92,7 @@ function SliderControl({ input, value, pending, onChange, onCommit }) {
           min={min}
           max={max}
           step={step}
-          value={value ?? min}
+          value={safeValue}
           disabled={pending}
           onChange={e => onChange(Number(e.target.value))}
           onMouseUp={e => onCommit(Number(e.target.value))}
@@ -98,6 +100,7 @@ function SliderControl({ input, value, pending, onChange, onCommit }) {
           onKeyUp={e => { if (e.key === 'Enter') onCommit(Number(e.target.value)); }}
           onBlur={e => onCommit(Number(e.target.value))}
           className="dcr-control-range"
+          style={{ '--dcr-fill': `${fillPercent}%` }}
         />
         <div className="dcr-control-slider-scale">
           <span>{min}</span>

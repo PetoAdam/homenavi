@@ -7,6 +7,7 @@ import {
   faMap,
   faLightbulb,
   faBolt,
+  faLayerGroup,
   faChartLine,
   faQuestionCircle,
   faXmark,
@@ -37,6 +38,7 @@ const WIDGET_ICONS = {
   'homenavi.device': faLightbulb,
   'homenavi.device.graph': faChartLine,
   'homenavi.automation.manual_trigger': faBolt,
+  'homenavi.device.multi': faLayerGroup,
 };
 
 const WIDGET_NAMES = {
@@ -45,6 +47,7 @@ const WIDGET_NAMES = {
   'homenavi.device': 'Device',
   'homenavi.device.graph': 'Device Graph',
   'homenavi.automation.manual_trigger': 'Automation',
+  'homenavi.device.multi': 'Quick Controls',
 };
 
 function getWidgetIcon(widgetType) {
@@ -110,6 +113,8 @@ export default function WidgetSettingsModal({
         if (metric) return `Graph: ${metric}`;
         return '';
       }
+      case 'homenavi.device.multi':
+        return 'Quick Controls';
       case 'homenavi.automation.manual_trigger':
         // Will be set when workflow is selected
         return '';
@@ -179,6 +184,16 @@ export default function WidgetSettingsModal({
       case 'homenavi.device.graph':
         return (
           <DeviceGraphSettings
+            settings={settings}
+            updateSetting={updateSetting}
+            ersDevices={ersDevices}
+            ersLoading={ersLoading}
+            realtimeDevices={realtimeDevices}
+          />
+        );
+      case 'homenavi.device.multi':
+        return (
+          <MultiDeviceSettings
             settings={settings}
             updateSetting={updateSetting}
             ersDevices={ersDevices}
@@ -810,6 +825,68 @@ function DeviceSettings({ settings, updateSetting, ersDevices, ersLoading, realt
           </div>
         </>
       )}
+    </>
+  );
+}
+
+function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersLoading, realtimeDevices }) {
+  const selectedIds = Array.isArray(settings.device_ids) ? settings.device_ids : [];
+
+  const mergedDevices = useMemo(() => {
+    const list = [...(Array.isArray(ersDevices) ? ersDevices : []), ...(Array.isArray(realtimeDevices) ? realtimeDevices : [])];
+    const map = new Map();
+    list.forEach((device) => {
+      const id = device?.id || device?.ersId || device?.hdpId;
+      if (!id || map.has(id)) return;
+      map.set(id, device);
+    });
+    return Array.from(map.values()).filter((device) => {
+      const inputs = Array.isArray(device?.inputs) ? device.inputs : [];
+      if (inputs.some((inp) => (inp?.type || '').toLowerCase() === 'toggle')) return Boolean(device?.id);
+      const state = device?.state || {};
+      return Boolean(device?.id) && ['on', 'state', 'power'].some((key) => key in state);
+    });
+  }, [ersDevices, realtimeDevices]);
+
+  const toggleDevice = (id) => {
+    const next = selectedIds.includes(id)
+      ? selectedIds.filter((item) => item !== id)
+      : [...selectedIds, id];
+    updateSetting('device_ids', next);
+  };
+
+  return (
+    <>
+      <div className="widget-settings__field">
+        <label className="widget-settings__label">Devices</label>
+        {ersLoading ? (
+          <div className="widget-settings__loading">
+            <FontAwesomeIcon icon={faSpinner} spin />
+            <span>Loading devices…</span>
+          </div>
+        ) : (
+          <div className="widget-settings__checkboxes">
+            {mergedDevices.map((device) => {
+              const id = device.id || device.ersId || device.hdpId;
+              if (!id) return null;
+              const label = device.displayName || device.name || device.hdpId || device.ersId || device.id;
+              return (
+                <label key={id} className="widget-settings__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(id)}
+                    onChange={() => toggleDevice(id)}
+                  />
+                  <span>{label}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div className="widget-settings__hint">
+          Select devices with on/off controls. Read-only devices are hidden.
+        </div>
+      </div>
     </>
   );
 }

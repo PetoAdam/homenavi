@@ -76,7 +76,10 @@ export default function useDashboard({ enabled, accessToken }) {
 
       if (catRes.success) {
         const base = Array.isArray(catRes.data) ? catRes.data : [];
-        setCatalog(base);
+        const local = listLocalWidgetCatalog();
+        const knownIds = new Set(base.map((item) => item?.id).filter(Boolean));
+        const merged = [...base, ...local.filter((item) => item?.id && !knownIds.has(item.id))];
+        setCatalog(merged);
       } else {
         // Temporary fallback until backend catalog is always available.
         setCatalog(listLocalWidgetCatalog());
