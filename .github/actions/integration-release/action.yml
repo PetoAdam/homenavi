@@ -61,10 +61,28 @@ runs:
       with:
         node-version: "20"
 
-    - name: Verify integration
+    - name: Central verify gate
       uses: PetoAdam/homenavi/.github/actions/integration-verify@main
       with:
         manifest_path: ${{ inputs.manifest_path }}
+
+    - name: Central go vet
+      shell: bash
+      run: go vet ./...
+
+    - name: Central gosec
+      uses: securego/gosec@v2.22.0
+      with:
+        args: ./...
+
+    - name: Check marketplace uniqueness
+      shell: bash
+      env:
+        MARKETPLACE_API_URL: ${{ inputs.marketplace_api_url }}
+        METADATA_PATH: ${{ inputs.metadata_path }}
+      run: |
+        set -euo pipefail
+        node "${GITHUB_ACTION_PATH}/scripts/check-uniqueness.js"
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -80,30 +98,44 @@ runs:
         password: ${{ inputs.ghcr_token }}
 
     - name: Build and push
+      id: build_push
       uses: docker/build-push-action@v5
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.dockerfile }}
         push: true
         platforms: ${{ inputs.platforms }}
+        provenance: true
+        sbom: true
         tags: |
           ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
           ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:latest
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
+    - name: Scan image with Trivy
+      uses: aquasecurity/trivy-action@0.28.0
       with:
-        tag_name: ${{ github.ref_name }}
-        generate_release_notes: true
+        image-ref: ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
+        format: table
+        exit-code: '1'
+        ignore-unfixed: true
+        vuln-type: 'os,library'
+        severity: 'CRITICAL,HIGH'
 
-    - name: Check marketplace uniqueness
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@v3.8.1
+
+    - name: Sign image digest (keyless)
       shell: bash
       env:
-        MARKETPLACE_API_URL: ${{ inputs.marketplace_api_url }}
-        METADATA_PATH: ${{ inputs.metadata_path }}
+        IMAGE_REF: ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}
+        IMAGE_DIGEST: ${{ steps.build_push.outputs.digest }}
       run: |
         set -euo pipefail
-        node "${GITHUB_ACTION_PATH}/scripts/check-uniqueness.js"
+        if [[ -z "${IMAGE_DIGEST:-}" ]]; then
+          echo "Missing image digest from build step" >&2
+          exit 1
+        fi
+        cosign sign --yes "${IMAGE_REF}@${IMAGE_DIGEST}"
 
     - name: Publish to marketplace
       shell: bash
@@ -151,3 +183,4 @@ runs:
           -d "$PAYLOAD"
 
         echo "Marketplace publish complete."
+
