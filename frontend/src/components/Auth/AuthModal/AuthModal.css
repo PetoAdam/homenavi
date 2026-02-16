@@ -44,16 +44,14 @@
     margin: 0 5vw;
     padding: 1.2rem 0 1.2rem 0;
   }
-  /* keep forms side by side and only show one at a time */
-  .auth-modal-content-inner {
-    flex-direction: row !important;
-    width: 200%;
-    transform: none;
-  }
   .auth-modal-form {
-    max-width: 100%;
-    min-width: 100%;
-    padding: 0 0.7rem;
+    max-width: 320px;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .auth-modal-form > * {
+    max-width: 320px;
   }
 }
 .auth-modal-glass.open {
@@ -136,18 +134,13 @@
 
 @media (max-width: 700px) {
   .auth-modal-form {
-    max-width: 100%;
+    max-width: 320px;
     min-width: 0;
     padding: 0;
   }
 
   .auth-modal-form > * {
-    max-width: 100%;
-  }
-  .auth-modal-content-inner {
-    flex-direction: row !important;
-    width: 200%;
-    transform: none;
+    max-width: 320px;
   }
 }
 
@@ -304,6 +297,7 @@
   display: flex;
   justify-content: center;
   align-items: stretch;
+  overflow-x: hidden;
 }
 
 .auth-modal-glass {
@@ -388,7 +382,30 @@
 
 @media (max-width: 700px) {
   .auth-modal-content-outer {
-    padding: 0 1rem;
+    padding: 0;
+  }
+
+  .auth-modal-content-inner {
+    width: 200%;
+  }
+
+  .auth-modal-content-inner.login .auth-modal-form,
+  .auth-modal-content-inner.signup .auth-modal-form {
+    width: 100%;
+    max-width: 320px;
+    min-width: 100%;
+    margin: 0 auto;
+  }
+
+  .auth-modal-content-inner.login .auth-modal-form > *,
+  .auth-modal-content-inner.signup .auth-modal-form > * {
+    max-width: 320px;
+  }
+
+  .auth-modal-content-inner.login .auth-modal-form:nth-child(2),
+  .auth-modal-content-inner.signup .auth-modal-form:nth-child(1) {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .auth-modal-forgot-content {

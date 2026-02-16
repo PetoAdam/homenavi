@@ -28,8 +28,13 @@ export default function AutomationRuns({
   runsLoading,
   runsLimit,
   setRunsLimit,
+  runsHasMore,
+  isNarrow,
   fetchRuns,
 }) {
+  const hasErrorColumn = Array.isArray(runs) && runs.some((run) => String(run?.error || '').trim().length > 0);
+  const columnCount = hasErrorColumn ? 5 : 4;
+
   return (
     <GlassCard interactive={false} className="fade-in" key="automation-runs">
       <div className="card-body">
@@ -63,49 +68,53 @@ export default function AutomationRuns({
                     <th style={{ width: 240 }}>Finished</th>
                     <th style={{ width: 110 }}>Duration</th>
                     <th style={{ width: 120 }}>Status</th>
-                    <th>Error</th>
+                    {hasErrorColumn && <th>Error</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {!runsLoading && runs.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="muted">No runs yet.</td>
+                      <td colSpan={columnCount} className="muted">No runs yet.</td>
                     </tr>
                   )}
                   {runs.map((run) => (
                     <tr key={run.id}>
-                      <td className="muted">
+                      <td className="muted automation-runs-cell-started" data-label="Started">
                         <div>{run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
-                        {run.id ? <div className="automation-runs-runid">{String(run.id).slice(0, 8)}</div> : null}
+                        {!isNarrow && run.id ? <div className="automation-runs-runid">{String(run.id).slice(0, 8)}</div> : null}
                       </td>
-                      <td className="muted">{run.finished_at ? new Date(run.finished_at).toLocaleString() : '—'}</td>
-                      <td className="muted">{durationText(run)}</td>
-                      <td>
+                      <td className="muted automation-runs-cell-finished" data-label="Finished">{run.finished_at ? new Date(run.finished_at).toLocaleString() : '—'}</td>
+                      <td className="muted automation-runs-cell-duration" data-label="Duration">{durationText(run)}</td>
+                      <td className="automation-runs-cell-status" data-label="Status">
                         <span className={`badge ${run.status === 'success' ? 'success' : (run.status === 'failed' ? 'error' : 'muted')}`}>{run.status}</span>
                       </td>
-                      <td className="muted">{run.error || ''}</td>
+                      {hasErrorColumn && (
+                        <td className="muted automation-runs-cell-error" data-label="Error">{run.error || '—'}</td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="automation-runs-footer">
-              <button
-                type="button"
-                className="link-btn automation-runs-view-more"
-                disabled={runsLoading}
-                onClick={() => {
-                  setRunsLimit((n) => {
-                    const next = Math.min(200, Number(n || 0) + 5);
-                    fetchRuns(selectedWorkflow.id, next);
-                    return next;
-                  });
-                }}
-              >
-                View more
-              </button>
-            </div>
+            {runsHasMore && (
+              <div className="automation-runs-footer">
+                <button
+                  type="button"
+                  className="link-btn automation-runs-view-more"
+                  disabled={runsLoading}
+                  onClick={() => {
+                    setRunsLimit((n) => {
+                      const next = Math.min(200, Number(n || 0) + 5);
+                      fetchRuns(selectedWorkflow.id, next);
+                      return next;
+                    });
+                  }}
+                >
+                  View more
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

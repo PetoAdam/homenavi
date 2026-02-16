@@ -16,6 +16,7 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsLimit, setRunsLimit] = useState(5);
+  const [runsHasMore, setRunsHasMore] = useState(false);
 
   const fetchWorkflows = async () => {
     if (!accessToken) return;
@@ -71,15 +72,20 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
 
   const fetchRuns = async (workflowId, runLimit = runsLimit) => {
     if (!accessToken || !workflowId) return [];
+    const safeLimit = Math.max(1, Number(runLimit) || 5);
     setRunsLoading(true);
-    const res = await listRuns(workflowId, accessToken, runLimit);
+    const res = await listRuns(workflowId, accessToken, safeLimit + 1);
     setRunsLoading(false);
     if (res.success) {
-      const next = res.data?.runs || [];
+      const fetched = Array.isArray(res.data?.runs) ? res.data.runs : [];
+      const hasMore = fetched.length > safeLimit;
+      const next = hasMore ? fetched.slice(0, safeLimit) : fetched;
       setRuns(next);
+      setRunsHasMore(hasMore);
       return next;
     }
     setRuns([]);
+    setRunsHasMore(false);
     return [];
   };
 
@@ -92,6 +98,7 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     if (!selectedId) {
       setRuns([]);
       setRunsLimit(5);
+      setRunsHasMore(false);
       return;
     }
     setRunsLimit(5);
@@ -114,6 +121,7 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     runsLoading,
     runsLimit,
     setRunsLimit,
+    runsHasMore,
     fetchRuns,
 
     refreshAllData,

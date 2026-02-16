@@ -3,7 +3,9 @@ import Button from '../../common/Button/Button';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlay,
-  faUpRightAndDownLeftFromCenter,
+  faCrosshairs,
+  faMagnifyingGlassMinus,
+  faMagnifyingGlassPlus,
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function AutomationCanvas({
@@ -68,19 +70,21 @@ export default function AutomationCanvas({
         role="application"
         aria-label="Workflow canvas"
       >
-        <div className="automation-canvas-name" onPointerDown={(e) => e.stopPropagation()}>
-          <input
-            className="input automation-canvas-name-input"
-            value={workflowName}
-            onChange={(e) => {
-              if (readOnly) return;
-              onWorkflowNameChange(e.target.value);
-            }}
-            placeholder="Untitled workflow"
-            aria-label="Workflow name"
-            readOnly={readOnly}
-          />
-        </div>
+        {!readOnly && (
+          <div className="automation-canvas-name" onPointerDown={(e) => e.stopPropagation()}>
+            <input
+              className="input automation-canvas-name-input"
+              value={workflowName}
+              onChange={(e) => {
+                if (readOnly) return;
+                onWorkflowNameChange(e.target.value);
+              }}
+              placeholder="Untitled workflow"
+              aria-label="Workflow name"
+              readOnly={readOnly}
+            />
+          </div>
+        )}
 
         <div
           className="automation-canvas-layer"
@@ -288,7 +292,7 @@ export default function AutomationCanvas({
           })}
         </div>
 
-        <div className="automation-canvas-controls" onPointerDown={(e) => e.stopPropagation()}>
+        <div className={`automation-canvas-controls ${readOnly ? 'read-only' : 'editable'}`} onPointerDown={(e) => e.stopPropagation()}>
           <div className="actions compact">
             <Button
               variant="secondary"
@@ -298,8 +302,9 @@ export default function AutomationCanvas({
                 setViewport(prev => zoomAroundPoint(prev, pt, prev.scale * 1.12));
               }}
               title="Zoom in"
+              aria-label="Zoom in"
             >
-              Zoom +
+              <span className="btn-icon"><FontAwesomeIcon icon={faMagnifyingGlassPlus} /></span>
             </Button>
             <Button
               variant="secondary"
@@ -309,17 +314,18 @@ export default function AutomationCanvas({
                 setViewport(prev => zoomAroundPoint(prev, pt, prev.scale / 1.12));
               }}
               title="Zoom out"
+              aria-label="Zoom out"
             >
-              Zoom -
+              <span className="btn-icon"><FontAwesomeIcon icon={faMagnifyingGlassMinus} /></span>
             </Button>
             <Button
               variant="secondary"
               type="button"
               onClick={() => setViewport({ x: 24, y: 24, scale: 1 })}
               title="Reset canvas view"
+              aria-label="Reset canvas view"
             >
-              <span className="btn-icon"><FontAwesomeIcon icon={faUpRightAndDownLeftFromCenter} /></span>
-              View
+              <span className="btn-icon"><FontAwesomeIcon icon={faCrosshairs} /></span>
             </Button>
           </div>
         </div>
