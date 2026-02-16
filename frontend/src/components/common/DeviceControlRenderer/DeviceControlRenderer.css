@@ -155,7 +155,13 @@
   width: 100%;
   height: 8px;
   border-radius: 4px;
-  background: var(--color-glass-bg-light);
+  background: linear-gradient(
+    to right,
+    var(--color-primary) 0%,
+    var(--color-primary) var(--dcr-fill, 0%),
+    var(--color-glass-bg-light) var(--dcr-fill, 0%),
+    var(--color-glass-bg-light) 100%
+  );
   outline: none;
   cursor: pointer;
 }

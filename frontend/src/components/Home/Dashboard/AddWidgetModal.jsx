@@ -7,6 +7,7 @@ import {
   faLightbulb,
   faChartLine,
   faBolt,
+  faLayerGroup,
   faPlug,
   faStar,
   faMusic,
@@ -25,6 +26,7 @@ const WIDGET_ICONS = {
   'homenavi.device': faLightbulb,
   'homenavi.device.graph': faChartLine,
   'homenavi.automation.manual_trigger': faBolt,
+  'homenavi.device.multi': faLayerGroup,
 };
 
 const ICONS_BY_NAME = {
@@ -33,6 +35,7 @@ const ICONS_BY_NAME = {
   lightbulb: faLightbulb,
   chart: faChartLine,
   bolt: faBolt,
+  layers: faLayerGroup,
   plug: faPlug,
   sparkles: faStar,
   music: faMusic,
@@ -59,15 +62,29 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
 
   // Filter catalog by search
   const filteredCatalog = useMemo(() => {
-    if (!search.trim()) return catalog || [];
+    const list = catalog || [];
+    if (!search.trim()) return list;
 
     const q = search.toLowerCase().trim();
-    return (catalog || []).filter((widget) => {
+    return list.filter((widget) => {
       const name = (widget.display_name || widget.id || '').toLowerCase();
       const desc = (widget.description || '').toLowerCase();
       return name.includes(q) || desc.includes(q);
     });
   }, [catalog, search]);
+
+  const sortedCatalog = useMemo(() => {
+    const list = filteredCatalog || [];
+    const indexById = new Map(list.map((widget, index) => [widget?.id, index]));
+    const isCore = (widget) => widget?.source === 'first_party'
+      || (widget?.id || '').startsWith('homenavi.');
+    return [...list].sort((a, b) => {
+      const aCore = isCore(a);
+      const bCore = isCore(b);
+      if (aCore !== bCore) return aCore ? -1 : 1;
+      return (indexById.get(a?.id) ?? 0) - (indexById.get(b?.id) ?? 0);
+    });
+  }, [filteredCatalog]);
 
   // Handle add
   const handleAdd = (widgetType) => {
@@ -107,13 +124,13 @@ export default function AddWidgetModal({ open, onClose, catalog, onAdd }) {
         </div>
 
         <div className="add-widget-modal__list">
-          {filteredCatalog.length === 0 && (
+          {sortedCatalog.length === 0 && (
             <div className="add-widget-modal__empty">
               {search ? 'No widgets match your search' : 'No widgets available'}
             </div>
           )}
 
-          {filteredCatalog.map((widget) => {
+          {sortedCatalog.map((widget) => {
             const icon = getWidgetIcon(widget);
             const isIntegration = widget?.source === 'integration';
             return (

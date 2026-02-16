@@ -3,6 +3,7 @@ import DeviceWidget from './widgets/DeviceWidget';
 import DeviceGraphWidget from './widgets/DeviceGraphWidget';
 import MapWidget from './widgets/MapWidget';
 import AutomationWidget from './widgets/AutomationWidget';
+import MultiDeviceWidget from './widgets/MultiDeviceWidget';
 
 export function clampWidgetHeight(h) {
   const n = Number(h);
@@ -46,6 +47,14 @@ const LOCAL_WIDGET_CATALOG = [
     verified: true,
   },
   {
+    id: 'homenavi.device.multi',
+    display_name: 'Quick Controls',
+    description: 'Toggle multiple devices from one widget.',
+    default_height: 4,
+    source: 'first_party',
+    verified: true,
+  },
+  {
     id: 'homenavi.automation.manual_trigger',
     display_name: 'Automation',
     description: 'Manually trigger an automation workflow.',
@@ -59,6 +68,7 @@ const WIDGET_RENDERERS = {
   'homenavi.weather': WeatherWidget,
   'homenavi.device': DeviceWidget,
   'homenavi.device.graph': DeviceGraphWidget,
+  'homenavi.device.multi': MultiDeviceWidget,
   'homenavi.map': MapWidget,
   'homenavi.automation.manual_trigger': AutomationWidget,
 };
