@@ -14,6 +14,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./entity-registry-service/go.mod
+          cache-dependency-path: ./entity-registry-service/go.sum
+
+      - name: Run static analysis
+        working-directory: ./entity-registry-service
+        run: go vet ./...
+
+      - name: Run unit tests
+        working-directory: ./entity-registry-service
+        run: go test ./...
+
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:

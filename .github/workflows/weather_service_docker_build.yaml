@@ -14,6 +14,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./weather-service/go.mod
+          cache-dependency-path: ./weather-service/go.sum
+
+      - name: Run static analysis
+        working-directory: ./weather-service
+        run: go vet ./...
+
+      - name: Run unit tests
+        working-directory: ./weather-service
+        run: go test ./...
+
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:

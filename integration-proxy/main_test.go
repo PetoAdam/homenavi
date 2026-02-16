@@ -11,7 +11,7 @@ import (
 )
 
 func TestRegistryEmptyIntegrationsIsArray(t *testing.T) {
-	s := server.New(log.New(io.Discard, "", 0), nil, "", "")
+	s := server.New(log.New(io.Discard, "", 0), nil, nil, "", "")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/integrations/registry.json", nil)
 
