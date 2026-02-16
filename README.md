@@ -237,6 +237,13 @@ Recommended workflow:
 	- Release: `PetoAdam/homenavi/.github/actions/integration-release@main`
 3) Tag a release (`vX.Y.Z`). The release workflow builds the image and publishes to the marketplace.
 
+Release hardening (CI):
+
+- `verify.yml` is the primary quality gate (manifest/structure checks, tests, `go vet`, `gosec`, Docker build, and Trivy scan).
+- `release.yml` runs `verify.yml` as a required stage before publishing.
+- The shared `PetoAdam/homenavi/.github/actions/integration-release@main` action also enforces a central verify gate (`integration-verify` + `go vet` + `gosec`) so release validation cannot be bypassed by repo-local workflow edits.
+- Before marketplace publish, release enforces uniqueness checks, emits SBOM + provenance, and signs image digests with keyless Cosign.
+
 Marketplace publishing uses GitHub OIDC tokens (no repo secrets). The marketplace validates:
 
 - The OIDC token is from GitHub Actions for the tagging workflow.
