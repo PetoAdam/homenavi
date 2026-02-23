@@ -11,6 +11,12 @@ const COMMAND_PREFIX = `${HDP_ROOT}device/command/`;
 const COMMAND_RESULT_PREFIX = `${HDP_ROOT}device/command_result/`;
 const REALTIME_PATH = '/ws/hdp';
 
+const CANONICAL_ZIGBEE_ID_RE = /^zigbee\/0x[0-9a-f]{16}$/i;
+
+function isCanonicalZigbeeId(hdpId) {
+  return CANONICAL_ZIGBEE_ID_RE.test(String(hdpId || '').trim());
+}
+
 const textDecoder = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
 
 function safeParseJSON(value) {
@@ -272,6 +278,7 @@ export default function useDeviceHubDevices(options = {}) {
       const entries = Array.from(devicesRef.current.entries());
       const nextDevices = [];
       entries.forEach(([id, raw]) => {
+        if (String(id || '').startsWith('zigbee/') && !isCanonicalZigbeeId(id)) return;
         if (!shouldIncludeDevice(raw)) return;
         const entry = transformEntry(id, raw);
         if (entry) {
@@ -358,6 +365,12 @@ export default function useDeviceHubDevices(options = {}) {
         const norm = normalizeDeviceId(idFromApi);
         const mapKey = norm.hdpId || idFromApi;
         if (!mapKey) return;
+
+        // Defense-in-depth: never surface non-canonical zigbee ids.
+        if (String(mapKey).startsWith('zigbee/') && !isCanonicalZigbeeId(mapKey)) {
+          return;
+        }
+
         const stateObj = ensureStateObject(item.state);
         next.set(mapKey, {
           ...item,
@@ -439,6 +452,11 @@ export default function useDeviceHubDevices(options = {}) {
       const norm = normalizeDeviceId(data.device_id || data.deviceId || topic.slice(METADATA_PREFIX.length));
       const mapKey = norm.hdpId || '';
       if (!mapKey) return;
+
+      if (String(mapKey).startsWith('zigbee/') && !isCanonicalZigbeeId(mapKey)) {
+        return;
+      }
+
       const prev = devicesRef.current.get(mapKey) || {};
       const online = typeof data.online === 'boolean' ? data.online : prev.online;
       const lastSeen = data.last_seen ?? data.lastSeen ?? prev.last_seen;
@@ -505,9 +523,22 @@ export default function useDeviceHubDevices(options = {}) {
       const norm = normalizeDeviceId(stateEnvelope.device_id || topic.slice(STATE_PREFIX.length));
       const mapKey = norm.hdpId || '';
       if (!mapKey) return;
+
+      if (String(mapKey).startsWith('zigbee/') && !isCanonicalZigbeeId(mapKey)) {
+        return;
+      }
+
       const stateObj = ensureStateObject(stateEnvelope.state || stateEnvelope.data || stateEnvelope);
       if (!Object.keys(stateObj).length) return;
       const prev = devicesRef.current.get(mapKey) || {};
+
+	  // Strict: don't create Zigbee devices from state-only messages.
+	  // Zigbee devices should always have retained metadata; if we haven't seen it,
+	  // ignore the state event (prevents protocol/id collisions from surfacing as devices).
+	  if (mapKey.startsWith('zigbee/') && !prev.__hasMetadata) {
+	    return;
+	  }
+
       const incomingTs = Number(stateEnvelope.ts || stateEnvelope.timestamp || Date.now());
       const prevTs = prev.stateUpdatedAt instanceof Date
         ? prev.stateUpdatedAt.getTime()

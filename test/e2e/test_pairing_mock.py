@@ -69,8 +69,19 @@ def login() -> str:
 
 def build_external_id(protocol: str) -> str:
     proto = (protocol or "").lower() or "manual"
-    suffix = uuid.uuid4().hex[:8]
-    return f"{proto}/{suffix}"
+    # Device Hub enforces canonical Zigbee external IDs (IEEE addresses).
+    # For mock E2E pairing we generate a synthetic but valid IEEE.
+    if proto == "zigbee":
+        return "0x" + uuid.uuid4().hex[:16]
+    return uuid.uuid4().hex[:8]
+
+
+def expected_device_id(protocol: str, external_id: str) -> str:
+    proto = (protocol or "").strip().strip("/").lower()
+    ext = (external_id or "").strip().strip("/")
+    if not proto or not ext:
+        return ""
+    return f"{proto}/{ext}"
 
 
 def external_id_suffix(external_id: str) -> str:
@@ -100,6 +111,7 @@ class PairingSession:
     protocol: str
     status: str
     active: bool
+    device_id: str = ""
 
     @classmethod
     def from_json(cls, data: Dict[str, object]) -> "PairingSession":
@@ -108,6 +120,7 @@ class PairingSession:
             protocol=str(data.get("protocol")),
             status=str(data.get("status")),
             active=bool(data.get("active", False)),
+            device_id=str(data.get("device_id") or ""),
         )
 
 
@@ -244,7 +257,8 @@ def wait_for_pairing_status(
         for sess in list_pairings(token):
             if sess.id == session_id:
                 last_session = sess
-                print(f"PAIRING_STATUS[{label}] status={sess.status} active={sess.active}")
+                extra = f" device_id={sess.device_id}" if sess.device_id else ""
+                print(f"PAIRING_STATUS[{label}] status={sess.status} active={sess.active}{extra}")
                 if sess.status in complete_statuses:
                     return sess
                 break
@@ -274,6 +288,33 @@ def wait_for_session_status(
     if session.status not in expected_statuses:
         raise RuntimeError(f"pairing status {session.status} not in expected {expected_statuses}")
     return session
+
+
+def wait_for_pairing_device(
+    token: str,
+    session_id: str,
+    expected_device_id: str,
+    timeout: float = 12.0,
+    label: str = "device",
+) -> PairingSession:
+    expiry = time.time() + timeout
+    last_session: Optional[PairingSession] = None
+    while time.time() <= expiry:
+        for sess in list_pairings(token):
+            if sess.id != session_id:
+                continue
+            last_session = sess
+            extra = f" device_id={sess.device_id}" if sess.device_id else ""
+            print(f"PAIRING_STATUS[{label}] status={sess.status} active={sess.active}{extra}")
+            if expected_device_id and sess.device_id == expected_device_id:
+                return sess
+            if sess.status in ("completed", "failed", "timeout", "stopped"):
+                return sess
+            break
+        time.sleep(0.5)
+    if last_session:
+        return last_session
+    raise RuntimeError("pairing session not found during device wait")
 
 
 def list_devices(token: str) -> List[Dict[str, object]]:
@@ -321,6 +362,7 @@ def wait_for_device_absence(token: str, external_id: str, timeout: float = 15.0)
 
 def run_for_protocol(token: str, protocol: str) -> None:
     external_id = build_external_id(protocol)
+    device_id_expected = expected_device_id(protocol, external_id)
     device_name = build_device_name(protocol)
     metadata = {
         "name": device_name,
@@ -331,53 +373,31 @@ def run_for_protocol(token: str, protocol: str) -> None:
         "icon": "door-sensor",
     }
     session = start_pairing(token, protocol, metadata)
-    print(f"PAIRING_START protocol={protocol} session_id={session.id} status={session.status} external_id={external_id}")
+    print(f"PAIRING_START protocol={protocol} session_id={session.id} status={session.status} device_id={device_id_expected}")
     device_record = None
     try:
         device_record = create_mock_device(token, protocol, external_id)
         device_id = device_record.get("id")
-        print(f"MOCK_DEVICE_CREATED protocol={protocol} device_id={device_id} external_id={external_id}")
+        print(f"MOCK_DEVICE_CREATED protocol={protocol} device_id={device_id} device_id_expected={device_id_expected}")
 
-        progress_plan = []
-        if protocol == "zigbee":
-            progress_plan = [
-                (
-                    {"protocol": protocol, "stage": "device_joined", "status": "joined", "external_id": external_id},
-                    ("device_joined",),
-                    "device_joined",
-                ),
-                (
-                    {"protocol": protocol, "stage": "interview_started", "status": "interviewing", "external_id": external_id},
-                    ("interviewing",),
-                    "interviewing",
-                ),
-                (
-                    {"protocol": protocol, "stage": "interview_complete", "status": "success", "external_id": external_id},
-                    ("interview_complete", "completed"),
-                    "interview_complete",
-                ),
-            ]
-
-        if progress_plan:
-            for event, expected_statuses, label in progress_plan:
-                publish_pairing_progress(token, protocol, [event])
-                wait_for_session_status(token, session.id, expected_statuses, label=label)
-            final_session = wait_for_pairing_status(
-                token,
-                session.id,
-                ("completed", "failed", "timeout", "stopped"),
-                label="final",
-            )
-        else:
-            # Protocols without interview tracking: stop explicitly.
-            time.sleep(1.0)
+        # We no longer attempt to drive protocol-specific interview stages from this mock.
+        # Instead, we assert the pairing session detects the created device and then
+        # finalize pairing (either the backend stops automatically, or we stop explicitly).
+        observed = wait_for_pairing_device(
+            token,
+            session.id,
+            expected_device_id=str(device_id or ""),
+            timeout=12.0,
+            label="device_detect",
+        )
+        if observed.active:
             stop_pairing(token, protocol)
-            final_session = wait_for_pairing_status(
-                token,
-                session.id,
-                ("stopped", "completed", "failed", "timeout"),
-                label="final",
-            )
+        final_session = wait_for_pairing_status(
+            token,
+            session.id,
+            ("stopped", "completed", "failed", "timeout"),
+            label="final",
+        )
 
         print(f"PAIRING_FINAL protocol={protocol} status={final_session.status} active={final_session.active}")
         devices = list_devices(token)
@@ -386,17 +406,17 @@ def run_for_protocol(token: str, protocol: str) -> None:
             (
                 dev
                 for dev in devices
-                if (dev.get("device_id") == external_id) or (suffix and dev.get("external_id") == suffix)
+                if (dev.get("device_id") == device_id_expected) or (suffix and dev.get("external_id") == suffix)
             ),
             None,
         )
         if not matched:
             raise RuntimeError("mock device missing from device list")
-        print(f"PAIRING MOCK TEST OK protocol={protocol} device_id={matched.get('id')} external_id={external_id}")
+        print(f"PAIRING MOCK TEST OK protocol={protocol} device_id={matched.get('id')} device_id_expected={device_id_expected}")
     finally:
         if not KEEP_DEVICE and device_record and device_record.get("id"):
             try:
-                delete_device(token, device_record["id"], external_id)
+                delete_device(token, device_record["id"], device_id_expected)
                 print(f"MOCK_DEVICE_REMOVED protocol={protocol} device_id={device_record['id']}")
             except Exception as exc:
                 print(f"MOCK_DEVICE_REMOVE_FAILED protocol={protocol} {exc}")

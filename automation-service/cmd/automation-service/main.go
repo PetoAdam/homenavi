@@ -62,14 +62,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	eng := engine.New(repo, mq, engine.Options{EmailServiceURL: cfg.EmailServiceURL, ERSServiceURL: cfg.ERSServiceURL})
+	eng := engine.New(repo, mq, engine.Options{EmailServiceURL: cfg.EmailServiceURL, ERSServiceURL: cfg.ERSServiceURL, IntegrationProxyURL: cfg.IntegrationProxyURL})
 	if err := eng.Start(ctx); err != nil {
 		slog.Error("engine start failed", "error", err)
 		os.Exit(1)
 	}
 	defer eng.Stop()
 
-	srv := httpapi.New(repo, eng, pub, cfg.UserServiceURL, &http.Client{Timeout: 10 * time.Second})
+	srv := httpapi.New(repo, eng, pub, cfg.UserServiceURL, cfg.IntegrationProxyURL, &http.Client{Timeout: 10 * time.Second})
 	httpSrv := &http.Server{Addr: ":" + cfg.Port, Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {

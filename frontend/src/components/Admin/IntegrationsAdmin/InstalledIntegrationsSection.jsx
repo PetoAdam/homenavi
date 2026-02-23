@@ -15,6 +15,7 @@ import Toolbar from '../../common/Toolbar/Toolbar';
 import Button from '../../common/Button/Button';
 import RoleSelect from '../../common/RoleSelect/RoleSelect';
 import SearchBar from '../../common/SearchBar/SearchBar';
+import { hasSetupUiPath } from '../../../utils/integrationSetup';
 import IntegrationCard, { IntegrationCardHeader } from '../../common/IntegrationCard/IntegrationCard';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
 import '../../common/Toolbar/Toolbar.css';
@@ -40,6 +41,8 @@ export default function InstalledIntegrationsSection({
   onUninstallIntegration,
   restarting,
   uninstalling,
+  setupCapabilities,
+  onOpenSetup,
   resolveFaIcon,
 }) {
   return (
@@ -117,6 +120,7 @@ export default function InstalledIntegrationsSection({
             const widgetsCount = integration.widgets?.length || 0;
             const secretsCount = Array.isArray(integration.secrets) ? integration.secrets.length : 0;
             const route = integration.route || `/apps/${integration.id}`;
+            const setupCapable = hasSetupUiPath(integration);
             return (
               <IntegrationCard
                 key={integration.id}
@@ -149,6 +153,16 @@ export default function InstalledIntegrationsSection({
                 )}
                 actions={(
                   <>
+                    {setupCapable ? (
+                      <Button
+                        variant="secondary"
+                        className="integration-card-action-btn"
+                        onClick={() => onOpenSetup(integration)}
+                      >
+                        <span className="btn-icon"><FontAwesomeIcon icon={faRoute} /></span>
+                        <span className="btn-label">Open setup</span>
+                      </Button>
+                    ) : null}
                     <Button
                       variant="secondary"
                       className="integration-card-action-btn"

@@ -19,6 +19,22 @@ type Manifest struct {
 	Name          string `json:"name"`
 	Version       string `json:"version"`
 
+	DeviceExtension struct {
+		Enabled             bool   `json:"enabled"`
+		ProviderID          string `json:"provider_id"`
+		Protocol            string `json:"protocol"`
+		DiscoveryMode       string `json:"discovery_mode"`
+		SupportsPairing     bool   `json:"supports_pairing"`
+		CapabilitySchemaURL string `json:"capability_schema_url"`
+	} `json:"device_extension"`
+
+	AutomationExtension struct {
+		Enabled         bool   `json:"enabled"`
+		Scope           string `json:"scope"`
+		StepsCatalogURL string `json:"steps_catalog_url"`
+		ExecuteEndpoint string `json:"execute_endpoint"`
+	} `json:"automation_extension"`
+
 	UI struct {
 		Sidebar struct {
 			Enabled bool   `json:"enabled"`
@@ -112,6 +128,80 @@ func main() {
 	idRe := regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$`)
 	if !idRe.MatchString(m.ID) {
 		fail("manifest id %q does not match required pattern", m.ID)
+	}
+
+	if m.DeviceExtension.Enabled {
+		providerID := strings.TrimSpace(m.DeviceExtension.ProviderID)
+		if providerID == "" {
+			fail("device_extension.provider_id is required when device_extension.enabled=true")
+		}
+		protocol := strings.TrimSpace(m.DeviceExtension.Protocol)
+		if protocol == "" {
+			fail("device_extension.protocol is required when device_extension.enabled=true")
+		} else if !idRe.MatchString(protocol) {
+			fail("device_extension.protocol %q does not match required pattern", protocol)
+		}
+		mode := strings.ToLower(strings.TrimSpace(m.DeviceExtension.DiscoveryMode))
+		if mode != "sync" && mode != "pairing" {
+			fail("device_extension.discovery_mode must be one of: sync,pairing")
+		}
+		capURL := strings.TrimSpace(m.DeviceExtension.CapabilitySchemaURL)
+		if capURL != "" && !strings.HasPrefix(capURL, "/") {
+			fail("device_extension.capability_schema_url must start with '/': got %q", capURL)
+		}
+	}
+
+	if m.AutomationExtension.Enabled {
+		scope := strings.ToLower(strings.TrimSpace(m.AutomationExtension.Scope))
+		if scope != "integration_only" {
+			fail("automation_extension.scope must be 'integration_only' when automation_extension.enabled=true")
+		}
+		stepsCatalogURL := strings.TrimSpace(m.AutomationExtension.StepsCatalogURL)
+		if stepsCatalogURL == "" {
+			fail("automation_extension.steps_catalog_url is required when automation_extension.enabled=true")
+		} else if !strings.HasPrefix(stepsCatalogURL, "/") {
+			fail("automation_extension.steps_catalog_url must start with '/': got %q", stepsCatalogURL)
+		}
+		executeEndpoint := strings.TrimSpace(m.AutomationExtension.ExecuteEndpoint)
+		if executeEndpoint == "" {
+			fail("automation_extension.execute_endpoint is required when automation_extension.enabled=true")
+		} else if !strings.HasPrefix(executeEndpoint, "/") {
+			fail("automation_extension.execute_endpoint must start with '/': got %q", executeEndpoint)
+		}
+
+		catalogCandidate := filepath.Join("web", strings.TrimPrefix(stepsCatalogURL, "/"))
+		catalogPath := rel(catalogCandidate)
+		if _, err := os.Stat(catalogPath); err == nil {
+			catalogBytes, readErr := os.ReadFile(catalogPath)
+			if readErr != nil {
+				fail("automation steps catalog read failed (%s): %v", catalogCandidate, readErr)
+			} else {
+				var catalog struct {
+					Actions    []map[string]any `json:"actions"`
+					Triggers   []map[string]any `json:"triggers"`
+					Conditions []map[string]any `json:"conditions"`
+				}
+				if err := json.Unmarshal(catalogBytes, &catalog); err != nil {
+					fail("automation steps catalog must be valid JSON object (%s): %v", catalogCandidate, err)
+				} else {
+					checkStepKinds := func(group string, steps []map[string]any) {
+						for idx, step := range steps {
+							rawKind, _ := step["kind"].(string)
+							kind := strings.ToLower(strings.TrimSpace(rawKind))
+							if kind == "" {
+								continue
+							}
+							if kind == "action.send_command" || kind == "trigger.device_state" {
+								fail("automation steps catalog %s[%d] uses core HDP device step kind %q; keep device automations in core nodes and use integration extension only for extra features", group, idx, kind)
+							}
+						}
+					}
+					checkStepKinds("actions", catalog.Actions)
+					checkStepKinds("triggers", catalog.Triggers)
+					checkStepKinds("conditions", catalog.Conditions)
+				}
+			}
+		}
 	}
 
 	// Compatibility rules (portable paths; no platform-specific prefixes)

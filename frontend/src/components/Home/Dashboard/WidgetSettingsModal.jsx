@@ -7,6 +7,10 @@ import {
   faMap,
   faLightbulb,
   faBolt,
+  faBatteryThreeQuarters,
+  faDoorOpen,
+  faMicrochip,
+  faPlug,
   faLayerGroup,
   faChartLine,
   faQuestionCircle,
@@ -30,6 +34,64 @@ import { searchLocations, reverseGeocode } from '../../../services/dashboardServ
 import './WidgetSettingsModal.css';
 import GlassSelect from '../../common/GlassSelect/GlassSelect';
 import { collectDeviceStateFieldKeys } from '../../../utils/deviceFields';
+import { DEVICE_ICON_MAP } from '../../Devices/deviceIconChoices';
+
+function getCapabilityKeyParts(cap) {
+  if (!cap || typeof cap !== 'object') return [];
+  return [cap.id, cap.property, cap.name]
+    .filter(part => part !== undefined && part !== null)
+    .map(part => part.toString().toLowerCase());
+}
+
+function collectCapabilities(device) {
+  const lists = [
+    Array.isArray(device?.capabilities) ? device.capabilities : [],
+    Array.isArray(device?.state?.capabilities) ? device.state.capabilities : [],
+  ];
+  const seen = new Set();
+  const result = [];
+  lists.flat().forEach((cap) => {
+    if (!cap || typeof cap !== 'object') return;
+    const keys = getCapabilityKeyParts(cap);
+    const primary = keys[0];
+    if (primary && seen.has(primary)) return;
+    if (keys.length === 0) {
+      result.push(cap);
+      return;
+    }
+    keys.forEach((key) => seen.add(key));
+    result.push(cap);
+  });
+  return result;
+}
+
+function resolveDeviceIcon(device) {
+  const capabilities = collectCapabilities(device);
+  const manualKey = typeof device?.icon === 'string' ? device.icon.toLowerCase() : '';
+  if (manualKey && manualKey !== 'auto' && DEVICE_ICON_MAP[manualKey]) {
+    return DEVICE_ICON_MAP[manualKey];
+  }
+  const keywords = [device?.type, device?.description, device?.model, device?.displayName, device?.manufacturer]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  const hasCapability = key => capabilities.some(cap => getCapabilityKeyParts(cap).includes(key));
+
+  if (hasCapability('contact') || keywords.includes('door')) return faDoorOpen;
+  if (hasCapability('brightness') || hasCapability('color') || keywords.includes('light') || keywords.includes('lamp')) {
+    return faLightbulb;
+  }
+  if (hasCapability('power') || keywords.includes('plug') || keywords.includes('socket') || keywords.includes('outlet')) {
+    return faPlug;
+  }
+  if (hasCapability('temperature') || keywords.includes('thermo') || keywords.includes('heating')) {
+    return faThermometerHalf;
+  }
+  if (hasCapability('humidity')) return faDroplet;
+  if (hasCapability('battery')) return faBatteryThreeQuarters;
+  if (hasCapability('voltage') || hasCapability('power')) return faBolt;
+  return faMicrochip;
+}
 
 // Icon mapping for widget types
 const WIDGET_ICONS = {
@@ -582,6 +644,11 @@ function DeviceSettings({ settings, updateSetting, ersDevices, ersLoading, realt
     return rtDevices.find((d) => d.id === deviceId || d.hdpId === deviceId);
   }, [deviceId, deviceOptions, realtimeDevices]);
 
+  const selectedDeviceIcon = useMemo(() => {
+    if (!selectedDevice) return faQuestionCircle;
+    return resolveDeviceIcon(selectedDevice);
+  }, [selectedDevice]);
+
   // Get available inputs from device
   const availableInputs = useMemo(() => {
     if (!selectedDevice) return [];
@@ -684,6 +751,24 @@ function DeviceSettings({ settings, updateSetting, ersDevices, ersLoading, realt
           }}
         />
       </div>
+
+      {selectedDevice ? (
+        <div className="widget-settings__field">
+          <label className="widget-settings__label">Selected device icon</label>
+          <div className="widget-settings__picker-item" aria-label="Selected device">
+            <FontAwesomeIcon
+              icon={selectedDeviceIcon}
+              className="widget-settings__picker-item-icon"
+            />
+            <span className="widget-settings__picker-item-name">
+              {selectedDevice.displayName || selectedDevice.name || selectedDevice.hdpId || selectedDevice.ersId || selectedDevice.id}
+            </span>
+          </div>
+          <div className="widget-settings__hint">
+            Matches the icon shown in Devices and the widget header.
+          </div>
+        </div>
+      ) : null}
 
       {selectedDevice && (
         <>

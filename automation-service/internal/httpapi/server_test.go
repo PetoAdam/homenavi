@@ -150,3 +150,31 @@ func TestValidateDefinition_Manual_OK(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 }
+
+func TestValidateDefinition_IntegrationAction_OK(t *testing.T) {
+	payload := map[string]any{
+		"version": "automation",
+		"nodes": []map[string]any{
+			{
+				"id":   "t1",
+				"kind": "trigger.manual",
+				"x":    0,
+				"y":    0,
+				"data": map[string]any{},
+			},
+			{
+				"id":   "a1",
+				"kind": "action.integration",
+				"x":    100,
+				"y":    0,
+				"data": map[string]any{"integration_id": "lg-thinq", "action_id": "integration.lgthinq.sync_now"},
+			},
+		},
+		"edges": []map[string]any{{"from": "t1", "to": "a1"}},
+	}
+	b, _ := json.Marshal(payload)
+	_, err := validateDefinition(b, nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}

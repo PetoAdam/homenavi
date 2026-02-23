@@ -25,11 +25,22 @@ import {
 } from '../../services/deviceHubService';
 import {
   createErsDevice as createErsDeviceApi,
+  deleteErsDevice as deleteErsDeviceApi,
   patchErsDevice as patchErsDeviceApi,
   setErsDeviceHdpBindings as setErsDeviceHdpBindingsApi,
 } from '../../services/entityRegistryService';
 import AddDeviceModal from './AddDeviceModal';
 import { loadDevicesListPrefs, normalizeDevicesListPrefs, saveDevicesListPrefs } from './devicesListPrefs';
+import { getIntegrationRegistry as getIntegrationRegistryApi } from '../../services/integrationService';
+import {
+  COMMAND_PENDING_TIMEOUT_MS,
+  baselineStateFromDevice,
+  clearPendingTimeout,
+  createCommandCorrelationId,
+  shouldClearPendingFromDevice,
+  stateVersionFromDevice,
+  withCommandCorrelation,
+} from './commandPending';
 import './Devices.css';
 
 const FALLBACK_INTEGRATIONS = [
@@ -38,6 +49,15 @@ const FALLBACK_INTEGRATIONS = [
   { protocol: 'thread', label: 'Thread', status: 'planned' },
   { protocol: 'lan', label: 'LAN Bridge', status: 'active' },
 ];
+
+function formatProtocolLabel(protocol, fallback) {
+  if (typeof fallback === 'string' && fallback.trim()) return fallback;
+  return protocol;
+}
+
+function normalizeProtocolKey(protocol) {
+  return (protocol || '').toString().trim().toLowerCase();
+}
 
 export default function Devices() {
   const navigate = useNavigate();
@@ -94,6 +114,7 @@ export default function Devices() {
   const [integrations, setIntegrations] = useState([]);
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
   const [integrationsError, setIntegrationsError] = useState(null);
+  const [protocolDisplayNames, setProtocolDisplayNames] = useState({});
   const [showAddModal, setShowAddModal] = useState(false);
   const [iconOverrides, setIconOverrides] = useState({});
   const [protocolFilter, setProtocolFilter] = useState(initialPrefs.protocolFilter);
@@ -164,19 +185,27 @@ export default function Devices() {
     if (!device?.id) return Promise.resolve();
     setCommandError(null);
 
-    const stateVersionAtSend = device?.stateUpdatedAt instanceof Date
-      ? device.stateUpdatedAt.getTime()
-      : (device?.stateUpdatedAt || 0);
+    const stateVersionAtSend = stateVersionFromDevice(device);
     const startedAt = Date.now();
 
-    const corr = (payload && payload.correlation_id)
-      || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    const enrichedPayload = payload && typeof payload === 'object'
-      ? { ...payload, correlation_id: corr }
-      : { correlation_id: corr };
+    const corr = createCommandCorrelationId(payload);
+    const enrichedPayload = withCommandCorrelation(payload, corr);
 
-    // Keep UI in "pending" until we see a matching command_result or a timeout.
-    setPendingCommands(prev => ({ ...prev, [device.id]: { corr, startedAt, stateVersion: stateVersionAtSend } }));
+    // Keep UI in "pending" until we see a matching command_result AND the state reflects
+    // what we asked for (or a timeout). This prevents cloud devices from flickering back.
+    const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
+      ? payload.state
+      : null;
+    setPendingCommands(prev => ({
+      ...prev,
+      [device.id]: {
+        corr,
+        startedAt,
+        stateVersion: stateVersionAtSend,
+        baselineState: baselineStateFromDevice(device),
+        expectedState,
+      },
+    }));
 
     return sendDeviceCommandApi(device.id, enrichedPayload, accessToken)
       .then(res => {
@@ -199,9 +228,7 @@ export default function Devices() {
           const next = { ...prev };
           const current = next[device.id];
           if (!current) return next;
-          if (current.timeoutId) {
-            clearTimeout(current.timeoutId);
-          }
+          clearPendingTimeout(current);
           next[device.id] = {
             ...current,
             timeoutId: setTimeout(() => {
@@ -210,7 +237,7 @@ export default function Devices() {
                 delete clone[device.id];
                 return clone;
               });
-            }, 3000),
+            }, COMMAND_PENDING_TIMEOUT_MS),
           };
           return next;
         });
@@ -225,26 +252,10 @@ export default function Devices() {
       const next = { ...prev };
       devices.forEach(dev => {
         const pending = next[dev.id];
-        const result = dev.lastCommandResult;
-        if (!pending || !result) return;
-        if (!pending.corr || !result.corr || pending.corr !== result.corr) return;
-
-        // Avoid clearing too early; wait for a newer state than when we sent the command
-        // so the optimistic UI does not flicker back to the previous value.
-        const stateTs = dev.stateUpdatedAt instanceof Date
-          ? dev.stateUpdatedAt.getTime()
-          : (dev.stateUpdatedAt || 0);
-        const baselineTs = pending.stateVersion || 0;
-        const resultTs = Number(result.ts || 0);
-        const hasStateAdvanced = stateTs && stateTs > baselineTs;
-        const stateCoversResult = stateTs && resultTs && stateTs >= resultTs;
-
-        const shouldClear = !result.success || hasStateAdvanced || stateCoversResult;
+        const shouldClear = shouldClearPendingFromDevice(pending, dev);
         if (!shouldClear) return;
 
-        if (pending.timeoutId) {
-          clearTimeout(pending.timeoutId);
-        }
+        clearPendingTimeout(pending);
         delete next[dev.id];
         changed = true;
       });
@@ -336,7 +347,17 @@ export default function Devices() {
     // Always delete via HDP so the owning adapter can perform protocol-specific removal.
     const hdpRes = await deleteDeviceApi(device.id, accessToken, options);
     if (!hdpRes.success) {
-      throw new Error(hdpRes.error || 'Unable to delete device');
+      const isNotFound = hdpRes.status === 404;
+      const ersId = typeof device?.ersId === 'string' ? device.ersId.trim() : '';
+      if (!isNotFound || !ersId) {
+        throw new Error(hdpRes.error || 'Unable to delete device');
+      }
+      const ersRes = await deleteErsDeviceApi(ersId, accessToken);
+      if (!ersRes.success) {
+        throw new Error(ersRes.error || hdpRes.error || 'Unable to delete device');
+      }
+      refreshErs?.();
+      return ersRes.data;
     }
 
     // ERS is auto-managed from HDP device_removed events.
@@ -415,6 +436,46 @@ export default function Devices() {
     }
   }, [isResidentOrAdmin, loadIntegrations]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!isResidentOrAdmin) return undefined;
+
+    (async () => {
+      try {
+        const res = await getIntegrationRegistryApi({ page: 1, pageSize: 250 });
+        if (!res.success) {
+          return;
+        }
+        const next = {};
+        const list = Array.isArray(res.data?.integrations) ? res.data.integrations : [];
+        list.forEach(intg => {
+          const protocol = normalizeProtocolKey(intg?.device_extension?.protocol);
+          const name = typeof intg?.display_name === 'string' ? intg.display_name.trim() : '';
+          if (protocol && name) {
+            next[protocol] = name;
+          }
+        });
+        if (!cancelled) {
+          setProtocolDisplayNames(next);
+        }
+      } catch {
+        // ignore (fallback to adapter labels)
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isResidentOrAdmin]);
+
+  const resolveProtocolLabel = useCallback((protocol, fallback) => {
+    const key = normalizeProtocolKey(protocol);
+    if (key && protocolDisplayNames?.[key]) {
+      return protocolDisplayNames[key];
+    }
+    return formatProtocolLabel(protocol, fallback);
+  }, [protocolDisplayNames]);
+
   const devicesWithOverrides = useMemo(() => {
     if (!devices.length) return devices;
     return devices.map(device => {
@@ -469,7 +530,7 @@ export default function Devices() {
       const key = item.protocol.toLowerCase();
       map.set(key, {
         key,
-        label: item.label || item.protocol,
+        label: resolveProtocolLabel(key, item.label || item.protocol),
         status: item.status || 'unknown',
         count: protocolCounts[key] || 0,
       });
@@ -486,13 +547,13 @@ export default function Devices() {
       }
       map.set(raw, {
         key: raw,
-        label: device.protocol || raw.toUpperCase(),
+        label: resolveProtocolLabel(raw, device.protocol || raw.toUpperCase()),
         status: 'detected',
         count: protocolCounts[raw] || 0,
       });
     });
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [devicesWithOverrides, integrationDisplay, protocolCounts]);
+  }, [devicesWithOverrides, integrationDisplay, protocolCounts, resolveProtocolLabel]);
 
   const filterOptions = useMemo(() => {
     const base = {
@@ -771,6 +832,7 @@ export default function Devices() {
                     <DeviceTile
                       key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
                       device={device}
+                      protocolLabel={resolveProtocolLabel(device.protocol, device.protocol)}
                       pending={Boolean(device.id && pendingCommands[device.id])}
                       onCommand={handleCommand}
                       onRename={handleRename}
@@ -790,6 +852,7 @@ export default function Devices() {
             <DeviceTile
               key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
               device={device}
+              protocolLabel={resolveProtocolLabel(device.protocol, device.protocol)}
               pending={Boolean(device.id && pendingCommands[device.id])}
               onCommand={handleCommand}
               onRename={handleRename}

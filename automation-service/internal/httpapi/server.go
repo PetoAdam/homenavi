@@ -28,16 +28,37 @@ type Server struct {
 	engine *engine.Engine
 	pubKey *rsa.PublicKey
 
-	httpClient     *http.Client
-	userServiceURL string
+	httpClient          *http.Client
+	userServiceURL      string
+	integrationProxyURL string
 }
 
-func New(repo *store.Repo, eng *engine.Engine, pubKey *rsa.PublicKey, userServiceURL string, httpClient *http.Client) *Server {
+func New(repo *store.Repo, eng *engine.Engine, pubKey *rsa.PublicKey, userServiceURL string, integrationProxyURL string, httpClient *http.Client) *Server {
 	hc := httpClient
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Server{repo: repo, engine: eng, pubKey: pubKey, httpClient: hc, userServiceURL: strings.TrimRight(strings.TrimSpace(userServiceURL), "/")}
+	return &Server{
+		repo:                repo,
+		engine:              eng,
+		pubKey:              pubKey,
+		httpClient:          hc,
+		userServiceURL:      strings.TrimRight(strings.TrimSpace(userServiceURL), "/"),
+		integrationProxyURL: strings.TrimRight(strings.TrimSpace(integrationProxyURL), "/"),
+	}
+}
+
+type integrationStepRecord struct {
+	IntegrationID string         `json:"integration_id"`
+	Scope         string         `json:"scope"`
+	Step          map[string]any `json:"step"`
+}
+
+type integrationStepsCatalog struct {
+	GeneratedAt string                  `json:"generated_at"`
+	Actions     []integrationStepRecord `json:"actions"`
+	Triggers    []integrationStepRecord `json:"triggers"`
+	Conditions  []integrationStepRecord `json:"conditions"`
 }
 
 type userServiceUser struct {
@@ -267,6 +288,7 @@ func (s *Server) Handler() http.Handler {
 		r.Use(middleware.RoleAtLeastMiddleware("resident"))
 
 		r.Get("/nodes", s.handleNodes)
+		r.Get("/integration-steps", s.handleIntegrationSteps)
 
 		r.Get("/workflows", s.handleListWorkflows)
 		r.Post("/workflows", s.handleCreateWorkflow)
@@ -284,6 +306,66 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	return r
+}
+
+func (s *Server) handleIntegrationSteps(w http.ResponseWriter, r *http.Request) {
+	if s.integrationProxyURL == "" {
+		writeError(w, http.StatusInternalServerError, "integration proxy url not configured")
+		return
+	}
+
+	url := s.integrationProxyURL + "/integrations/automation-steps.json"
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build integration steps request")
+		return
+	}
+
+	token := getAuthToken(r)
+	if strings.TrimSpace(token) != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to fetch integration steps")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = "integration steps upstream error"
+		}
+		writeError(w, http.StatusBadGateway, msg)
+		return
+	}
+
+	var payload integrationStepsCatalog
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadGateway, "invalid integration steps response")
+		return
+	}
+
+	filterScope := func(items []integrationStepRecord) []integrationStepRecord {
+		out := make([]integrationStepRecord, 0, len(items))
+		for _, item := range items {
+			if strings.ToLower(strings.TrimSpace(item.Scope)) != "integration_only" {
+				continue
+			}
+			out = append(out, item)
+		}
+		return out
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"generated_at": payload.GeneratedAt,
+		"actions":      filterScope(payload.Actions),
+		"triggers":     filterScope(payload.Triggers),
+		"conditions":   filterScope(payload.Conditions),
+	})
 }
 
 func (s *Server) handleRunEventsWS(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +466,12 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			{"name": "user_ids", "type": "json", "required": true, "help": "Array of user IDs."},
 			{"name": "subject", "type": "string", "required": true},
 			{"name": "message", "type": "string", "required": true},
+		}},
+		{"kind": "action.integration", "label": "Integration action", "fields": []map[string]any{
+			{"name": "integration_id", "type": "string", "required": true, "help": "Integration ID from integration-proxy registry."},
+			{"name": "action_id", "type": "string", "required": true, "help": "Action kind from integration automation catalog."},
+			{"name": "input", "type": "json", "required": false, "help": "Action input payload."},
+			{"name": "timeout_sec", "type": "int", "required": false, "default": 15},
 		}},
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": catalog, "version": "automation"})

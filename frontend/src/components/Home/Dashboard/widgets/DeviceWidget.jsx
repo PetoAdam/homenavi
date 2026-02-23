@@ -27,6 +27,7 @@ import DeviceControlList from '../../../common/DeviceControlRenderer/DeviceContr
 import DeviceMetricsRenderer from '../../../common/DeviceMetricsRenderer/DeviceMetricsRenderer';
 import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
 import { normalizeColorHex } from '../../../../utils/colorHex';
+import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
 import './DeviceWidget.css';
 
 // ────────────────────────────────────────────────────────────────────
@@ -41,6 +42,10 @@ function getCapabilityKeyParts(cap) {
 }
 
 function resolveDeviceIcon(device, capabilities = []) {
+  const manualKey = typeof device?.icon === 'string' ? device.icon.toLowerCase() : '';
+  if (manualKey && manualKey !== 'auto' && DEVICE_ICON_MAP[manualKey]) {
+    return DEVICE_ICON_MAP[manualKey];
+  }
   const keywords = [device?.type, device?.description, device?.model, device?.displayName, device?.manufacturer]
     .filter(Boolean)
     .join(' ')

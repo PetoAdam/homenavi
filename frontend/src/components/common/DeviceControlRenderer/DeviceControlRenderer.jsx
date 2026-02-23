@@ -12,6 +12,7 @@ import {
   faTicket,
 } from '@fortawesome/free-solid-svg-icons';
 import GlassSwitch from '../GlassSwitch/GlassSwitch';
+import GlassSelect from '../GlassSelect/GlassSelect';
 import ColorPickerControl from '../ColorPickerControl/ColorPickerControl';
 import { resolveInputLabel, sanitizeInputKey, toControlBoolean } from './deviceControlUtils';
 import './DeviceControlRenderer.css';
@@ -116,24 +117,88 @@ function SelectControl({ input, value, pending, onChange }) {
   const icon = ICON_BY_INPUT_TYPE.select;
   const label = resolveInputLabel(input);
 
+  const selectOptions = useMemo(() => {
+    const raw = Array.isArray(input?.options) ? input.options : [];
+    return raw
+      .map((option) => {
+        const rawValue = option?.value;
+        const stringValue = rawValue === undefined || rawValue === null ? '' : String(rawValue);
+        if (!stringValue) return null;
+        return {
+          value: stringValue,
+          label: option?.label ? String(option.label) : stringValue,
+        };
+      })
+      .filter(Boolean);
+  }, [input?.options]);
+
+  const selectedValue = value === undefined || value === null || value === ''
+    ? (selectOptions[0]?.value || '')
+    : String(value);
+
   return (
     <div className="dcr-control" data-key={key}>
       <div className="dcr-control-label">
         <FontAwesomeIcon icon={icon} />
         <span>{label}</span>
       </div>
-      <select
+      <GlassSelect
         className="dcr-control-select"
-        value={value ?? (input.options?.[0]?.value || '')}
+        value={selectedValue}
         disabled={pending}
-        onChange={e => onChange(e.target.value)}
-      >
-        {(input.options || []).map(option => (
-          <option key={option.value} value={option.value}>
-            {option.label || option.value}
-          </option>
-        ))}
-      </select>
+        options={selectOptions}
+        placeholder="Select…"
+        ariaLabel={label}
+        onChange={(next) => onChange(next)}
+      />
+    </div>
+  );
+}
+
+function isOnOffSelectInput(input) {
+  const options = Array.isArray(input?.options) ? input.options : [];
+  let hasOn = false;
+  let hasOff = false;
+  options.forEach((opt) => {
+    const v = String(opt?.value ?? '').trim().toLowerCase();
+    if (v === 'on') hasOn = true;
+    if (v === 'off') hasOff = true;
+  });
+  return hasOn && hasOff;
+}
+
+function getOnOffValues(input) {
+  const options = Array.isArray(input?.options) ? input.options : [];
+  let onValue = 'on';
+  let offValue = 'off';
+  options.forEach((opt) => {
+    const raw = opt?.value;
+    const normalized = String(raw ?? '').trim().toLowerCase();
+    if (normalized === 'on') onValue = raw;
+    if (normalized === 'off') offValue = raw;
+  });
+  return { onValue, offValue };
+}
+
+function OnOffSelectControl({ input, value, pending, onChange }) {
+  const key = sanitizeInputKey(input);
+  const icon = ICON_BY_INPUT_TYPE.toggle;
+  const label = resolveInputLabel(input);
+  const { onValue, offValue } = useMemo(() => getOnOffValues(input), [input]);
+  const checked = toControlBoolean(value);
+
+  return (
+    <div className="dcr-control" data-key={key}>
+      <div className="dcr-control-label">
+        <FontAwesomeIcon icon={icon} />
+        <span>{label}</span>
+        <span className="dcr-control-value">{checked ? 'On' : 'Off'}</span>
+      </div>
+      <GlassSwitch
+        checked={checked}
+        disabled={pending}
+        onChange={(next) => onChange(next ? onValue : offValue)}
+      />
     </div>
   );
 }
@@ -238,6 +303,19 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
       />
     );
   case 'select':
+    if (isOnOffSelectInput(input)) {
+      return (
+        <OnOffSelectControl
+          input={input}
+          value={value}
+          pending={pending}
+          onChange={(next) => {
+            onChange(next);
+            onCommit(next);
+          }}
+        />
+      );
+    }
     return (
       <SelectControl
         input={input}

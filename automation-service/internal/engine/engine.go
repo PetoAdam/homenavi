@@ -25,9 +25,10 @@ type Engine struct {
 	mq     *mqtt.Client
 	events *RunEventHub
 
-	httpClient      *http.Client
-	emailServiceURL string
-	ersServiceURL   string
+	httpClient          *http.Client
+	emailServiceURL     string
+	ersServiceURL       string
+	integrationProxyURL string
 
 	selMu         sync.Mutex
 	selectorTTL   time.Duration
@@ -51,9 +52,10 @@ type cachedSelector struct {
 }
 
 type Options struct {
-	HTTPClient      *http.Client
-	EmailServiceURL string
-	ERSServiceURL   string
+	HTTPClient          *http.Client
+	EmailServiceURL     string
+	ERSServiceURL       string
+	IntegrationProxyURL string
 }
 
 func New(repo *store.Repo, mq *mqtt.Client, opts Options) *Engine {
@@ -63,21 +65,22 @@ func New(repo *store.Repo, mq *mqtt.Client, opts Options) *Engine {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
 	return &Engine{
-		repo:            repo,
-		mq:              mq,
-		events:          NewRunEventHub(),
-		httpClient:      hc,
-		emailServiceURL: strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
-		ersServiceURL:   strings.TrimRight(strings.TrimSpace(opts.ERSServiceURL), "/"),
-		workflows:       map[uuid.UUID]store.Workflow{},
-		defs:            map[uuid.UUID]Definition{},
-		lastFiredAt:     map[string]time.Time{},
-		cron:            c,
-		cronEntries:     map[string]cron.EntryID{},
-		cronSpecs:       map[string]string{},
-		selectorTTL:     15 * time.Second,
-		selectorCache:   map[string]cachedSelector{},
-		reloadEvery:     10 * time.Second,
+		repo:                repo,
+		mq:                  mq,
+		events:              NewRunEventHub(),
+		httpClient:          hc,
+		emailServiceURL:     strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
+		ersServiceURL:       strings.TrimRight(strings.TrimSpace(opts.ERSServiceURL), "/"),
+		integrationProxyURL: strings.TrimRight(strings.TrimSpace(opts.IntegrationProxyURL), "/"),
+		workflows:           map[uuid.UUID]store.Workflow{},
+		defs:                map[uuid.UUID]Definition{},
+		lastFiredAt:         map[string]time.Time{},
+		cron:                c,
+		cronEntries:         map[string]cron.EntryID{},
+		cronSpecs:           map[string]string{},
+		selectorTTL:         15 * time.Second,
+		selectorCache:       map[string]cachedSelector{},
+		reloadEvery:         10 * time.Second,
 	}
 }
 
@@ -732,6 +735,25 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 				finish("failed", err.Error())
 				return err
 			}
+			finish("success", "")
+			for _, next := range outgoing[n.ID] {
+				if err := exec(next); err != nil {
+					return err
+				}
+			}
+			return nil
+		case "action.integration":
+			var a ActionIntegration
+			if err := json.Unmarshal(n.Data, &a); err != nil {
+				finish("failed", "invalid node data")
+				return errors.New("invalid node data")
+			}
+			result, err := e.executeIntegrationAction(ctx, runID, n.ID, a)
+			if err != nil {
+				finish("failed", err.Error())
+				return err
+			}
+			_ = result
 			finish("success", "")
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {

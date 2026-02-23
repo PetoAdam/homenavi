@@ -32,6 +32,8 @@ export default function InstalledIntegrationModal({
   onSaveSecrets,
   saving,
   onSetupLater,
+  setupCapable,
+  onOpenSetup,
   resolveFaIcon,
 }) {
   if (!integration) return null;
@@ -148,6 +150,14 @@ export default function InstalledIntegrationModal({
               <div className="integrations-admin-modal-section">
                 <div className="integrations-admin-card-title">Manage</div>
                 <div className="integrations-admin-item-actions">
+                  {setupCapable ? (
+                    <Button
+                      variant="secondary"
+                      onClick={onOpenSetup}
+                    >
+                      Open setup
+                    </Button>
+                  ) : null}
                   <Button
                     variant="secondary"
                     onClick={() => onRestartIntegration(integration.id)}
@@ -170,6 +180,14 @@ export default function InstalledIntegrationModal({
               <div className="integrations-admin-modal-section">
                 <div className="integrations-admin-card-title">Manage</div>
                 <div className="integrations-admin-item-actions integrations-admin-secret-actions">
+                  {setupCapable ? (
+                    <Button
+                      variant="secondary"
+                      onClick={onOpenSetup}
+                    >
+                      Open setup
+                    </Button>
+                  ) : null}
                   <Button
                     variant="secondary"
                     onClick={() => onRestartIntegration(integration.id)}

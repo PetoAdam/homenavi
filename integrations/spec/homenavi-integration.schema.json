@@ -46,6 +46,16 @@
             "label": { "type": "string" },
             "icon": { "type": "string" }
           }
+        },
+        "setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "path": { "type": "string", "pattern": "^/" },
+            "label": { "type": "string" },
+            "icon": { "type": "string" }
+          }
         }
       }
     },
@@ -59,6 +69,8 @@
           "type": { "type": "string", "minLength": 1, "maxLength": 128 },
           "display_name": { "type": "string", "minLength": 1, "maxLength": 128 },
           "description": { "type": "string", "maxLength": 512 },
+          "icon": { "type": "string", "maxLength": 256 },
+          "default_size_hint": { "type": "string", "enum": ["sm", "md", "lg"] },
           "entry": {
             "type": "object",
             "additionalProperties": false,
@@ -83,6 +95,31 @@
         "actions": { "type": "array" },
         "triggers": { "type": "array" },
         "conditions": { "type": "array" }
+      }
+    },
+    "device_extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "provider_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "protocol": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$"
+        },
+        "discovery_mode": { "type": "string", "enum": ["sync", "pairing"] },
+        "supports_pairing": { "type": "boolean" },
+        "capability_schema_url": { "type": "string", "pattern": "^/" }
+      }
+    },
+    "automation_extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "scope": { "type": "string", "enum": ["integration_only"] },
+        "steps_catalog_url": { "type": "string", "pattern": "^/" },
+        "execute_endpoint": { "type": "string", "pattern": "^/" }
       }
     },
     "config_schema": { "type": "object" }

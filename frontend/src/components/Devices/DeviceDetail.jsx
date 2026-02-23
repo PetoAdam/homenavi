@@ -16,6 +16,14 @@ import { deleteDevice, sendDeviceCommand, setDeviceIcon } from '../../services/d
 import { createErsTag, deleteErsTag, patchErsDevice, setErsDeviceTags } from '../../services/entityRegistryService';
 import { listStatePoints } from '../../services/historyService';
 import HistoryChart from '../History/HistoryChart';
+import {
+  COMMAND_PENDING_TIMEOUT_MS,
+  clearPendingTimeout,
+  createCommandCorrelationId,
+  shouldClearPendingFromDevice,
+  stateVersionFromDevice,
+  withCommandCorrelation,
+} from './commandPending';
 import './DeviceDetail.css';
 
 function toRFC3339(value) {
@@ -333,7 +341,7 @@ export default function DeviceDetail() {
   const loading = Boolean(realtimeLoading || ersLoading);
   const error = realtimeError || ersError || '';
 
-  const [pendingCommand, setPendingCommand] = useState(false);
+  const [pendingCommand, setPendingCommand] = useState(null);
 
   const [ersMetaSaving, setErsMetaSaving] = useState(false);
   const [ersMetaError, setErsMetaError] = useState('');
@@ -390,6 +398,16 @@ export default function DeviceDetail() {
   }, [ersDevice?.ersId]);
 
   useEffect(() => {
+    setPendingCommand(prev => {
+      if (!prev) return prev;
+      if (prev.timeoutId) {
+        clearTimeout(prev.timeoutId);
+      }
+      return null;
+    });
+  }, [deviceId]);
+
+  useEffect(() => {
     setFavoriteFields(readFavoriteFieldsFromErsMeta(ersDevice));
   }, [ersDevice]);
 
@@ -435,15 +453,52 @@ export default function DeviceDetail() {
     if (!accessToken) {
       throw new Error('Authentication required');
     }
-    setPendingCommand(true);
+
+    const stateVersionAtSend = stateVersionFromDevice(dev);
+
+    const corr = createCommandCorrelationId(payload);
+    const enrichedPayload = withCommandCorrelation(payload, corr);
+
+    setPendingCommand(prev => {
+      clearPendingTimeout(prev);
+      return { corr, stateVersion: stateVersionAtSend, deviceId: dev.id };
+    });
+
     try {
-      const res = await sendDeviceCommand(dev.id, payload, accessToken);
+      const res = await sendDeviceCommand(dev.id, enrichedPayload, accessToken);
       if (!res.success) throw new Error(res.error || 'Unable to send command');
       return res.data;
+    } catch (err) {
+      throw err;
     } finally {
-      setPendingCommand(false);
+      setPendingCommand(prev => {
+        if (!prev || prev.corr !== corr) return prev;
+        clearPendingTimeout(prev);
+        return {
+          ...prev,
+          timeoutId: setTimeout(() => {
+            setPendingCommand(latePrev => {
+              if (!latePrev || latePrev.corr !== corr) return latePrev;
+              return null;
+            });
+          }, COMMAND_PENDING_TIMEOUT_MS),
+        };
+      });
     }
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!pendingCommand || !resolvedDevice) return;
+
+    const shouldClear = shouldClearPendingFromDevice(pendingCommand, resolvedDevice);
+    if (!shouldClear) return;
+
+    setPendingCommand(prev => {
+      if (!prev || prev.corr !== pendingCommand.corr) return prev;
+      clearPendingTimeout(prev);
+      return null;
+    });
+  }, [resolvedDevice, pendingCommand]);
 
   const handleRename = useCallback(async (dev, name) => {
     const ersId = dev?.ersId || ersDevice?.ersId;
@@ -865,7 +920,7 @@ export default function DeviceDetail() {
           {resolvedDevice ? (
             <DeviceTile
               device={resolvedDevice}
-              pending={pendingCommand}
+              pending={Boolean(pendingCommand)}
               onCommand={handleCommand}
               onRename={handleRename}
               onUpdateIcon={handleUpdateIcon}
