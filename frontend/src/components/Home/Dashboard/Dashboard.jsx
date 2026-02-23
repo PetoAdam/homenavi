@@ -300,7 +300,8 @@ export default function Dashboard() {
           const widgetType = widgetTypeByInstanceId.get(item.i);
           const defaultH = getWidgetDefaultHeight(widgetType, catalog);
 
-          if (widgetType === 'homenavi.map' || widgetType === 'homenavi.device') {
+          const isIntegrationWidget = typeof widgetType === 'string' && widgetType.includes('.integration.');
+          if (widgetType === 'homenavi.map' || widgetType === 'homenavi.device' || isIntegrationWidget) {
             // Auto-height only while the widget is still at its default height.
             // If the user resizes vertically, raw changes and we preserve it.
             const desired = desiredRowsByInstanceId[item.i];

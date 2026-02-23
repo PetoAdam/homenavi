@@ -48,7 +48,7 @@ export default function MapEditorPanel({
 }) {
   return (
     <div
-      className="automation-canvas-name map-panel"
+      className="hn-canvas-overlay-panel map-panel"
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -69,7 +69,7 @@ export default function MapEditorPanel({
                 <div className="map-room-row">
                   <input
                     type="text"
-                    className="input automation-canvas-name-input map-room-input"
+                    className="input hn-canvas-overlay-input map-input map-room-input"
                     value={roomNameEdit}
                     onChange={(e) => setRoomNameEdit(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
@@ -133,7 +133,7 @@ export default function MapEditorPanel({
               <>
                 <input
                   type="text"
-                  className="input automation-canvas-name-input"
+                  className="input hn-canvas-overlay-input map-input"
                   value={String(draft.name || '')}
                   onChange={(e) => setDraft(prev => (prev ? { ...prev, name: e.target.value } : prev))}
                   placeholder="New room name"
@@ -148,11 +148,11 @@ export default function MapEditorPanel({
 
           <div className="map-panel-section">
             <div className="muted" style={{ fontWeight: 700 }}>Snapping</div>
-            <div className="automation-chip-row" style={{ gap: 8 }}>
+            <div className="map-chip-row" style={{ gap: 8 }}>
               <HoverDescription title="Vertices" description="Snap to existing corners.">
                 <button
                   type="button"
-                  className={`automation-chip automation-chip-btn${snapSettings.vertex ? ' active' : ''}`}
+                  className={`map-chip map-chip-btn${snapSettings.vertex ? ' active' : ''}`}
                   onClick={() => setSnapSettings(prev => ({ ...prev, vertex: !prev.vertex }))}
                 >
                   <span className="map-snap-chip">
@@ -165,7 +165,7 @@ export default function MapEditorPanel({
               <HoverDescription title="Edges" description="Snap to existing walls.">
                 <button
                   type="button"
-                  className={`automation-chip automation-chip-btn${snapSettings.edge ? ' active' : ''}`}
+                  className={`map-chip map-chip-btn${snapSettings.edge ? ' active' : ''}`}
                   onClick={() => setSnapSettings(prev => ({ ...prev, edge: !prev.edge }))}
                 >
                   <span className="map-snap-chip">
@@ -178,7 +178,7 @@ export default function MapEditorPanel({
               <HoverDescription title="Align" description="Align to nearby corners on X/Y. Helps keep walls parallel.">
                 <button
                   type="button"
-                  className={`automation-chip automation-chip-btn${snapSettings.align ? ' active' : ''}`}
+                  className={`map-chip map-chip-btn${snapSettings.align ? ' active' : ''}`}
                   onClick={() => setSnapSettings(prev => ({ ...prev, align: !prev.align }))}
                 >
                   <span className="map-snap-chip">
@@ -191,7 +191,7 @@ export default function MapEditorPanel({
               <HoverDescription title="Ortho" description="Snap to near-horizontal/vertical walls (~5°).">
                 <button
                   type="button"
-                  className={`automation-chip automation-chip-btn${snapSettings.ortho ? ' active' : ''}`}
+                  className={`map-chip map-chip-btn${snapSettings.ortho ? ' active' : ''}`}
                   onClick={() => setSnapSettings(prev => ({ ...prev, ortho: !prev.ortho }))}
                 >
                   <span className="map-snap-chip">
@@ -204,7 +204,7 @@ export default function MapEditorPanel({
               <HoverDescription title="Grid" description="Snap to grid intersections. Useful for consistent spacing.">
                 <button
                   type="button"
-                  className={`automation-chip automation-chip-btn${snapSettings.grid ? ' active' : ''}`}
+                  className={`map-chip map-chip-btn${snapSettings.grid ? ' active' : ''}`}
                   onClick={() => setSnapSettings(prev => ({ ...prev, grid: !prev.grid }))}
                 >
                   <span className="map-snap-chip">
@@ -222,7 +222,7 @@ export default function MapEditorPanel({
               <div className="map-wall-row">
                 <input
                   type="number"
-                  className="input automation-canvas-name-input"
+                  className="input hn-canvas-overlay-input map-input"
                   value={Number.isFinite(activeWallDisplay.value) ? String(Math.round(activeWallDisplay.value * 100) / 100) : ''}
                   onChange={(e) => {
                     const val = normalizeNumber(e.target.value);
@@ -246,7 +246,7 @@ export default function MapEditorPanel({
           ) : null}
 
           {selectedDeviceId ? (
-            <div className="automation-connect-hint" style={{ position: 'relative', left: 0, bottom: 0, marginTop: 6 }}>
+            <div className="hn-canvas-hint map-connect-hint" style={{ position: 'relative', left: 0, bottom: 0, marginTop: 6 }}>
               Tap a room to place the selected device.
             </div>
           ) : null}

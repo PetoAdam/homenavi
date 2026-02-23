@@ -7,6 +7,7 @@ import {
   faMagnifyingGlassMinus,
   faMagnifyingGlassPlus,
 } from '@fortawesome/free-solid-svg-icons';
+import '../../common/CanvasPrimitives/CanvasPrimitives.css';
 
 export default function AutomationCanvas({
   canvasRef,
@@ -50,12 +51,147 @@ export default function AutomationCanvas({
   zoomAroundPoint,
   workflowName,
   onWorkflowNameChange,
+  autoFitKey,
+  autoFitDataReady = true,
+  onAutoFitComplete,
+  renderDelayMs = 100,
   readOnly = false,
 }) {
+  const lastAutoFitKeyRef = React.useRef('');
+  const onAutoFitCompleteRef = React.useRef(onAutoFitComplete);
+
+  React.useEffect(() => {
+    onAutoFitCompleteRef.current = onAutoFitComplete;
+  }, [onAutoFitComplete]);
+
+  const fitWorkflowToView = React.useCallback(() => {
+    const canvasEl = canvasRef?.current;
+    const canvasRect = canvasEl?.getBoundingClientRect?.();
+    const width = Math.max(1, Number(canvasRect?.width) || Number(canvasSize?.width) || 0);
+    const height = Math.max(1, Number(canvasRect?.height) || Number(canvasSize?.height) || 0);
+    const nodes = Array.isArray(editorNodes) ? editorNodes : [];
+    const edges = Array.isArray(edgesToRender) ? edgesToRender : [];
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    if (canvasEl) {
+      const domNodes = canvasEl.querySelectorAll('.automation-node');
+      domNodes.forEach((nodeEl) => {
+        const x = Number(nodeEl?.offsetLeft);
+        const y = Number(nodeEl?.offsetTop);
+        const w = Number(nodeEl?.offsetWidth);
+        const h = Number(nodeEl?.offsetHeight);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
+      });
+    }
+
+    nodes.forEach((node) => {
+      const x = Number(node?.x);
+      const y = Number(node?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + NODE_WIDTH);
+      maxY = Math.max(maxY, y + NODE_HEADER_HEIGHT + 78);
+    });
+
+    edges.forEach((edge) => {
+      const points = [
+        [Number(edge?.x1), Number(edge?.y1)],
+        [Number(edge?.c1x), Number(edge?.y1)],
+        [Number(edge?.c2x), Number(edge?.y2)],
+        [Number(edge?.x2), Number(edge?.y2)],
+      ];
+      points.forEach(([x, y]) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      });
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      setViewport({ x: 24, y: 24, scale: 1 });
+      return true;
+    }
+
+    const pad = 64;
+    const boundsW = Math.max(1, (maxX - minX) + pad * 2);
+    const boundsH = Math.max(1, (maxY - minY) + pad * 2);
+    const fitScaleX = Math.max(0.1, width / boundsW);
+    const fitScaleY = Math.max(0.1, height / boundsH);
+    const scale = Math.max(0.35, Math.min(2.5, Math.min(fitScaleX, fitScaleY)));
+
+    const worldCenterX = (minX + maxX) / 2;
+    const worldCenterY = (minY + maxY) / 2;
+    setViewport({
+      x: (width / 2) - worldCenterX * scale,
+      y: (height / 2) - worldCenterY * scale,
+      scale,
+    });
+    return true;
+  }, [canvasRef, canvasSize, editorNodes, edgesToRender, NODE_HEADER_HEIGHT, NODE_WIDTH, setViewport]);
+
+  React.useEffect(() => {
+    const key = String(autoFitKey || '').trim();
+    if (!key) return;
+    if (!autoFitDataReady) return;
+    if (lastAutoFitKeyRef.current === key) {
+      if (typeof onAutoFitCompleteRef.current === 'function') {
+        const doneTimer = window.setTimeout(() => {
+          const cb = onAutoFitCompleteRef.current;
+          if (typeof cb === 'function') cb(key);
+        }, Math.max(0, Number(renderDelayMs) || 0));
+        return () => window.clearTimeout(doneTimer);
+      }
+      return;
+    }
+
+    let raf1 = 0;
+    let raf2 = 0;
+    let timeout = 0;
+
+    const tryFit = () => {
+      const ok = fitWorkflowToView();
+      if (!ok) return false;
+      lastAutoFitKeyRef.current = key;
+      if (typeof onAutoFitCompleteRef.current === 'function') {
+        timeout = window.setTimeout(() => {
+          const cb = onAutoFitCompleteRef.current;
+          if (typeof cb === 'function') cb(key);
+        }, Math.max(0, Number(renderDelayMs) || 0));
+      }
+      return true;
+    };
+
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (tryFit()) return;
+        timeout = window.setTimeout(() => {
+          tryFit();
+        }, 100);
+      });
+    });
+
+    return () => {
+      if (timeout) window.clearTimeout(timeout);
+      if (raf1) window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+    };
+  }, [autoFitDataReady, autoFitKey, fitWorkflowToView, renderDelayMs]);
+
   return (
-    <div className="automation-center">
+    <div className="hn-canvas-center automation-center">
       <div
-        className="automation-canvas"
+        className="hn-canvas-surface automation-canvas"
         ref={canvasRef}
         onDragOver={readOnly ? undefined : onCanvasDragOver}
         onDrop={readOnly ? undefined : onCanvasDrop}
@@ -71,9 +207,9 @@ export default function AutomationCanvas({
         aria-label="Workflow canvas"
       >
         {!readOnly && (
-          <div className="automation-canvas-name" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="hn-canvas-overlay-panel automation-canvas-name" onPointerDown={(e) => e.stopPropagation()}>
             <input
-              className="input automation-canvas-name-input"
+              className="input hn-canvas-overlay-input automation-canvas-name-input"
               value={workflowName}
               onChange={(e) => {
                 if (readOnly) return;
@@ -87,7 +223,7 @@ export default function AutomationCanvas({
         )}
 
         <div
-          className="automation-canvas-layer"
+          className="hn-canvas-layer automation-canvas-layer"
           style={{
             transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
             transformOrigin: '0 0',
@@ -137,7 +273,7 @@ export default function AutomationCanvas({
           </svg>
 
           {(!Array.isArray(editorNodes) || editorNodes.length === 0) && (
-            <div className="automation-canvas-empty muted">
+            <div className="hn-canvas-empty automation-canvas-empty muted">
               Drag nodes from the palette to the canvas.
             </div>
           )}
@@ -292,11 +428,13 @@ export default function AutomationCanvas({
           })}
         </div>
 
-        <div className={`automation-canvas-controls ${readOnly ? 'read-only' : 'editable'}`} onPointerDown={(e) => e.stopPropagation()}>
-          <div className="actions compact">
+        <div className={`hn-canvas-overlay-controls automation-canvas-controls ${readOnly ? 'read-only' : 'editable'}`} onPointerDown={(e) => e.stopPropagation()}>
+          <div className="automation-control-groups" role="toolbar" aria-label="Automation canvas controls">
+            <div className="automation-control-group">
             <Button
               variant="secondary"
               type="button"
+              className="automation-control-btn"
               onClick={() => {
                 const pt = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
                 setViewport(prev => zoomAroundPoint(prev, pt, prev.scale * 1.12));
@@ -309,6 +447,17 @@ export default function AutomationCanvas({
             <Button
               variant="secondary"
               type="button"
+              className="automation-control-btn"
+              onClick={fitWorkflowToView}
+              title="Fit and center workflow"
+              aria-label="Fit and center workflow"
+            >
+              <span className="btn-icon"><FontAwesomeIcon icon={faCrosshairs} /></span>
+            </Button>
+            <Button
+              variant="secondary"
+              type="button"
+              className="automation-control-btn"
               onClick={() => {
                 const pt = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
                 setViewport(prev => zoomAroundPoint(prev, pt, prev.scale / 1.12));
@@ -318,20 +467,12 @@ export default function AutomationCanvas({
             >
               <span className="btn-icon"><FontAwesomeIcon icon={faMagnifyingGlassMinus} /></span>
             </Button>
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setViewport({ x: 24, y: 24, scale: 1 })}
-              title="Reset canvas view"
-              aria-label="Reset canvas view"
-            >
-              <span className="btn-icon"><FontAwesomeIcon icon={faCrosshairs} /></span>
-            </Button>
+            </div>
           </div>
         </div>
 
         {!readOnly && connectMode && (
-          <div className="automation-connect-hint muted" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="hn-canvas-hint automation-connect-hint muted" onPointerDown={(e) => e.stopPropagation()}>
             {connectMode.mode === 'drag'
               ? 'Connecting: drag to a node’s left dot (Esc cancels)'
               : 'Connecting: tap a node to connect (tap empty canvas cancels)'}

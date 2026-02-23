@@ -149,6 +149,7 @@ export default function useMapController() {
   const suppressRoomClickRef = useRef(false);
   const dragInsertCornerRef = useRef(null); // { roomId, segIndex, moved }
   const [insertCornerPreview, setInsertCornerPreview] = useState(null); // { roomId, segIndex, point }
+  const [labelScale, setLabelScale] = useState(1);
 
   useEffect(() => {
     if (!expandedDeviceKey) {
@@ -162,6 +163,7 @@ export default function useMapController() {
   const viewRef = useRef({ scale: 1, tx: 0, ty: 0 });
   const panRef = useRef({ active: false, startX: 0, startY: 0, startTx: 0, startTy: 0, moved: false });
   const didAutoCenterRef = useRef(false);
+  const [isMapPrepared, setIsMapPrepared] = useState(false);
 
   useEffect(() => {
     viewRef.current = view;
@@ -223,6 +225,40 @@ export default function useMapController() {
   }, [activeRoomId, mode, rooms]);
 
   const snapWorld = useMemo(() => (SNAP_DISTANCE_PX / (view.scale || 1)), [view.scale]);
+
+  const mapBounds = useMemo(
+    () => computeWorldBoundsFromLayout(rooms, layout.devicePlacements),
+    [layout.devicePlacements, rooms],
+  );
+
+  const mapRenderKey = useMemo(() => {
+    const placements = layout?.devicePlacements && typeof layout.devicePlacements === 'object'
+      ? Object.keys(layout.devicePlacements).length
+      : 0;
+    return `${editEnabled ? 'edit' : 'view'}:${rooms.length}:${placements}`;
+  }, [editEnabled, layout?.devicePlacements, rooms.length]);
+
+  const roomLabelFontPx = useMemo(() => {
+    const width = mapBounds ? Math.max(1, mapBounds.maxX - mapBounds.minX) : 240;
+    const height = mapBounds ? Math.max(1, mapBounds.maxY - mapBounds.minY) : 160;
+    const span = Math.max(width, height);
+    const base = clamp(span / 95, 10, 22);
+    return clamp(base * labelScale, 9, 34);
+  }, [labelScale, mapBounds]);
+
+  const deviceLabelFontPx = useMemo(() => clamp(roomLabelFontPx * 0.84, 8, 26), [roomLabelFontPx]);
+
+  const increaseLabelScale = useCallback(() => {
+    setLabelScale((prev) => clamp(prev + 0.1, 0.65, 2));
+  }, []);
+
+  const decreaseLabelScale = useCallback(() => {
+    setLabelScale((prev) => clamp(prev - 0.1, 0.65, 2));
+  }, []);
+
+  const resetLabelScale = useCallback(() => {
+    setLabelScale(1);
+  }, []);
 
   const svgPointFromEvent = useCallback((evt) => {
     const svg = svgRef.current;
@@ -645,11 +681,48 @@ export default function useMapController() {
   }, [fitViewToContent]);
 
   useEffect(() => {
-    if (didAutoCenterRef.current) return;
-    if (!rooms.length) return;
-    const ok = fitViewToContent();
-    if (ok) didAutoCenterRef.current = true;
-  }, [fitViewToContent, rooms.length]);
+    didAutoCenterRef.current = false;
+    setIsMapPrepared(false);
+  }, [mapRenderKey]);
+
+  useEffect(() => {
+    if (bootstrapping || ersLoading) return;
+    if (isMapPrepared) return;
+
+    let raf1 = 0;
+    let raf2 = 0;
+    let retry = 0;
+    let reveal = 0;
+
+    const finishReveal = () => {
+      reveal = window.setTimeout(() => setIsMapPrepared(true), 100);
+    };
+
+    const tryFit = () => {
+      const ok = fitViewToContent();
+      if (ok) didAutoCenterRef.current = true;
+      finishReveal();
+    };
+
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        const ok = fitViewToContent();
+        if (ok) {
+          didAutoCenterRef.current = true;
+          finishReveal();
+          return;
+        }
+        retry = window.setTimeout(tryFit, 100);
+      });
+    });
+
+    return () => {
+      if (raf1) window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+      if (retry) window.clearTimeout(retry);
+      if (reveal) window.clearTimeout(reveal);
+    };
+  }, [bootstrapping, ersLoading, fitViewToContent, isMapPrepared]);
 
   const setWallLength = useCallback((roomId, wallIndex, length) => {
     applyEditorUpdate(prev => ({
@@ -860,9 +933,17 @@ export default function useMapController() {
     }
   }, [accessToken, setLayout]);
 
-  const closestSegmentHit = useCallback((p) => {
+  const closestSegmentHit = useCallback((p, preferredRoomId = '') => {
     let best = null; // { roomId, segIndex, point, d }
-    rooms.forEach(r => {
+
+    const roomList = (() => {
+      const preferred = safeString(preferredRoomId);
+      if (!preferred) return rooms;
+      const hit = rooms.find(r => safeString(r?.id) === preferred);
+      return hit ? [hit] : rooms;
+    })();
+
+    roomList.forEach(r => {
       const pts = Array.isArray(r.points) ? r.points : [];
       if (pts.length < 2) return;
       for (let i = 0; i < pts.length; i += 1) {
@@ -1158,13 +1239,14 @@ export default function useMapController() {
 
     if (mode !== 'draw') {
       // If clicking near an existing wall, insert a corner.
-      const hit = closestSegmentHit(p);
+      const roomUnderPointer = roomAtPoint(p);
+      const preferredRoomId = safeString(roomUnderPointer?.id || activeRoomId);
+      const hit = closestSegmentHit(p, preferredRoomId);
       if (hit) {
         insertCornerOnRoom(hit.roomId, hit.segIndex, hit.point);
         return;
       }
-      const r = roomAtPoint(p);
-      setActiveRoomId(r?.id || '');
+      setActiveRoomId(roomUnderPointer?.id || '');
       setActiveWallIndex(null);
       setActiveVertexIndex(null);
       return;
@@ -1201,7 +1283,7 @@ export default function useMapController() {
       setActiveWallIndex(pts.length - 2);
       return prev;
     });
-  }, [assignDeviceToRoomAt, closestSegmentHit, draft?.points, editEnabled, insertCornerOnRoom, mode, roomAtPoint, selectedDeviceId, snapForDraw, snapPoint, snapSettings.edge, snapSettings.vertex, snapWorld, svgPointFromEvent]);
+  }, [activeRoomId, assignDeviceToRoomAt, closestSegmentHit, draft?.points, editEnabled, insertCornerOnRoom, mode, roomAtPoint, selectedDeviceId, snapForDraw, snapPoint, snapSettings.edge, snapSettings.vertex, snapWorld, svgPointFromEvent]);
 
   useEffect(() => {
     if (mode !== 'draw') setSnapGuide(null);
@@ -1364,6 +1446,10 @@ export default function useMapController() {
         })
         .filter(x => x && x.text);
 
+      const labelFontSize = Math.max(8, Number(deviceLabelFontPx) || 11);
+      const valueFontSize = Math.max(8, labelFontSize * 0.94);
+      const rowStep = Math.max(13, valueFontSize * 1.18);
+
       return (
         <g
           key={`dev-${devKey}`}
@@ -1383,15 +1469,15 @@ export default function useMapController() {
           title={editEnabled ? 'Drag to reposition, click for details' : 'Click for details'}
         >
           <circle cx={x} cy={y} r={5} className="map-device" />
-          <text x={x + 8} y={y + 4} className="map-label">{label}</text>
+          <text x={x + 8} y={y + 4} className="map-label" style={{ fontSize: `${labelFontSize}px` }}>{label}</text>
           {favoriteLines.length ? (
             <>
               {favoriteLines.map((line, idx) => {
                 const path = line.icon ? getFaSvgPath(line.icon) : null;
                 const iconX = x + 8;
-                const iconY = y + 8 + (idx * 14);
+                const iconY = y + 8 + (idx * rowStep);
                 const textX = x + 8 + 16;
-                const textY = y + 18 + (idx * 14);
+                const textY = y + 18 + (idx * rowStep);
                 return (
                   <Fragment key={`${devKey}-fav-${line.key}-${idx}`}>
                     {path ? (
@@ -1399,7 +1485,7 @@ export default function useMapController() {
                         <path className="map-fav-icon" d={path.path} />
                       </g>
                     ) : null}
-                    <text x={textX} y={textY} className="map-label">{line.text}</text>
+                    <text x={textX} y={textY} className="map-label" style={{ fontSize: `${valueFontSize}px` }}>{line.text}</text>
                   </Fragment>
                 );
               })}
@@ -1408,12 +1494,13 @@ export default function useMapController() {
         </g>
       );
     })
-  ), [beginDeviceDrag, deviceByKey, devicesForPalette, editEnabled, layout.devicePlacements]);
+  ), [beginDeviceDrag, deviceByKey, deviceLabelFontPx, devicesForPalette, editEnabled, layout.devicePlacements]);
 
   return {
     // auth/permissions
     isResidentOrAdmin,
     bootstrapping,
+    isMapPrepared,
 
     // data
     ersError,
@@ -1515,6 +1602,11 @@ export default function useMapController() {
     beginInsertCornerDrag,
     onRoomClick: handleRoomClick,
     renderPlacedDevices,
+    roomLabelFontPx,
+    deviceLabelFontPx,
+    increaseLabelScale,
+    decreaseLabelScale,
+    resetLabelScale,
 
     // constants
     gridSize: GRID_SIZE,

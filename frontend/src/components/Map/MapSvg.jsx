@@ -1,5 +1,22 @@
 import React from 'react';
 
+function computeRoomCenter(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  points.forEach((p) => {
+    const x = Number(p?.x);
+    const y = Number(p?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    sumX += x;
+    sumY += y;
+    count += 1;
+  });
+  if (count === 0) return null;
+  return { x: sumX / count, y: sumY / count };
+}
+
 export default function MapSvg({
   svgRef,
   view,
@@ -17,10 +34,11 @@ export default function MapSvg({
   beginRoomVertexDrag,
   beginInsertCornerDrag,
   activeVertexIndex,
+  roomLabelFontPx,
   renderPlacedDevices,
 }) {
   return (
-    <div className="automation-canvas-layer">
+    <div className="hn-canvas-layer map-canvas-layer">
       <svg
         ref={svgRef}
         className="map-svg"
@@ -45,6 +63,13 @@ export default function MapSvg({
               .map-room-insert-preview { fill: var(--color-primary); opacity: 0.9; pointer-events: none; }
               .map-device { fill: rgba(255,255,255,0.75); }
               .map-label { fill: rgba(255,255,255,0.75); font-size: 12px; }
+              .map-room-label {
+                fill: rgba(255,255,255,0.42);
+                font-size: 12px;
+                font-family: var(--font-family-primary, inherit);
+                letter-spacing: 0.16em;
+                font-weight: 700;
+              }
               .map-fav-icon { fill: rgba(255,255,255,0.75); }
               .map-guide { stroke: var(--color-glass-border-light); stroke-width: 1.5; stroke-dasharray: 6 6; opacity: 0.85; pointer-events: none; }
               .map-guide-point { fill: var(--color-primary); opacity: 0.85; pointer-events: none; }
@@ -71,8 +96,7 @@ export default function MapSvg({
                   beginRoomDrag(e, r.id);
                 }}
                 onClick={(e) => {
-                  e.stopPropagation();
-                  onRoomClick(r.id);
+                  onRoomClick(r.id, e);
                 }}
               />
 
@@ -112,11 +136,34 @@ export default function MapSvg({
                 </g>
               ) : null}
 
-              {Array.isArray(r.points) && r.points[0] ? (
-                <text x={r.points[0].x + 8} y={r.points[0].y - 8} className="map-label">
-                  {r.name}
-                </text>
-              ) : null}
+              {(() => {
+                const center = computeRoomCenter(r.points);
+                if (!center) return null;
+                const text = String(r.name || '').trim();
+                if (!text) return null;
+                const labelText = text.toUpperCase();
+                const base = Number(roomLabelFontPx) || 12;
+                const fontPx = Math.max(14, Math.min(42, Math.round(base * 1.55)));
+                return (
+                  <g transform={`translate(${center.x} ${center.y})`}>
+                    <text
+                      x={0}
+                      y={fontPx * 0.34}
+                      className="map-room-label"
+                      textAnchor="middle"
+                      style={{
+                        fontSize: `${fontPx}px`,
+                        fill: 'rgba(255,255,255,0.42)',
+                        letterSpacing: `${Math.max(1.8, fontPx * 0.12)}px`,
+                        filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.18))',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      {labelText}
+                    </text>
+                  </g>
+                );
+              })()}
             </g>
           ))}
 

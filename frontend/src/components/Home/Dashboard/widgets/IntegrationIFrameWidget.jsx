@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import WidgetShell from '../../../common/WidgetShell/WidgetShell';
 
 export default function IntegrationIFrameWidget({
@@ -11,6 +11,9 @@ export default function IntegrationIFrameWidget({
   onRemove,
 }) {
   const [frameError, setFrameError] = useState('');
+  const frameRef = useRef(null);
+  const iframeObserverRef = useRef(null);
+  const iframeWindowResizeHandlerRef = useRef(null);
 
   const src = useMemo(() => {
     const u = meta?.entry_url || meta?.entry?.url;
@@ -33,9 +36,66 @@ export default function IntegrationIFrameWidget({
       } else {
         setFrameError('');
       }
+
+      if (!instanceId) return;
+
+      const emitDesiredHeight = () => {
+        const iframe = frameRef.current;
+        const innerDoc = iframe?.contentDocument;
+        if (!innerDoc) return;
+        const body = innerDoc.body;
+        const root = innerDoc.documentElement;
+        if (!body || !root) return;
+
+        const contentHeight = Math.max(
+          body.scrollHeight || 0,
+          body.offsetHeight || 0,
+          root.scrollHeight || 0,
+          root.offsetHeight || 0,
+        );
+        if (!Number.isFinite(contentHeight) || contentHeight <= 0) return;
+
+        const padded = Math.max(220, Math.ceil(contentHeight + 8));
+        window.dispatchEvent(new CustomEvent('homenavi:widgetDesiredHeight', {
+          detail: { instanceId, heightPx: padded },
+        }));
+      };
+
+      emitDesiredHeight();
+
+      if (iframeObserverRef.current) {
+        iframeObserverRef.current.disconnect();
+        iframeObserverRef.current = null;
+      }
+      if (iframeWindowResizeHandlerRef.current) {
+        window.removeEventListener('resize', iframeWindowResizeHandlerRef.current);
+        iframeWindowResizeHandlerRef.current = null;
+      }
+
+      if (window.ResizeObserver) {
+        iframeObserverRef.current = new ResizeObserver(() => emitDesiredHeight());
+        iframeObserverRef.current.observe(doc.documentElement);
+        if (doc.body) iframeObserverRef.current.observe(doc.body);
+      }
+
+      iframeWindowResizeHandlerRef.current = () => emitDesiredHeight();
+      window.addEventListener('resize', iframeWindowResizeHandlerRef.current);
     } catch {
       // ignore cross-origin/sandbox access issues
     }
+  }, [instanceId]);
+
+  useEffect(() => {
+    return () => {
+      if (iframeObserverRef.current) {
+        iframeObserverRef.current.disconnect();
+        iframeObserverRef.current = null;
+      }
+      if (iframeWindowResizeHandlerRef.current) {
+        window.removeEventListener('resize', iframeWindowResizeHandlerRef.current);
+        iframeWindowResizeHandlerRef.current = null;
+      }
+    };
   }, []);
 
   return (
@@ -60,6 +120,7 @@ export default function IntegrationIFrameWidget({
         </div>
       ) : (
         <iframe
+          ref={frameRef}
           title={meta?.display_name || widgetType}
           src={src}
           onLoad={onFrameLoad}

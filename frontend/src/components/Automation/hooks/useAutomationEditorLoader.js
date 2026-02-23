@@ -10,6 +10,7 @@ export default function useAutomationEditorLoader({
   resetHistory,
   setLastSavedSnapshot,
   editorSnapshotForSave,
+  onLoadedWorkflowId,
 }) {
   const loadedWorkflowIdRef = useRef(null);
 
@@ -22,6 +23,7 @@ export default function useAutomationEditorLoader({
       setSelectedNodeId('workflow');
       setLastSavedSnapshot('');
       resetHistory();
+      if (typeof onLoadedWorkflowId === 'function') onLoadedWorkflowId(null);
       return;
     }
 
@@ -35,6 +37,7 @@ export default function useAutomationEditorLoader({
     setEditor(parsed);
     setSelectedNodeId('workflow');
     resetHistory();
+    if (typeof onLoadedWorkflowId === 'function') onLoadedWorkflowId(selectedId);
     try {
       setLastSavedSnapshot(editorSnapshotForSave(parsed));
     } catch {
@@ -50,5 +53,6 @@ export default function useAutomationEditorLoader({
     resetHistory,
     setLastSavedSnapshot,
     editorSnapshotForSave,
+    onLoadedWorkflowId,
   ]);
 }

@@ -387,7 +387,7 @@ export default function DeviceWidget({
 
   const { devices: realtimeDevices, loading: hdpLoading } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
-    metadataMode: 'ws',
+    metadataMode: 'rest',
   });
 
   const { devices: ersDevices, loading: ersLoading } = useErsInventory({

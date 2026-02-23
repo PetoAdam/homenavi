@@ -1,0 +1,81 @@
+.hn-canvas-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  padding: 0;
+  margin: 0;
+}
+
+.hn-canvas-center {
+  min-height: 420px;
+}
+
+.hn-canvas-surface {
+  position: relative;
+  min-height: 420px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 10%, var(--color-glass-border-xlight));
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+
+.hn-canvas-overlay-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 12;
+  width: min(280px, calc(100% - 24px));
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-glass-border-xlight));
+  background: color-mix(in srgb, var(--color-surface-panel-soft) 86%, transparent);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hn-canvas-overlay-input {
+  border-color: color-mix(in srgb, var(--color-primary) 18%, var(--color-glass-border-xlight));
+  padding: 8px 10px;
+  font-size: 0.95rem;
+}
+
+.hn-canvas-overlay-controls {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 10;
+}
+
+.hn-canvas-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.hn-canvas-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.hn-canvas-hint {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 10;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  display: inline-flex;
+  align-items: center;
+}

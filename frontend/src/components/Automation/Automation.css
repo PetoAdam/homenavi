@@ -62,6 +62,21 @@
   margin: 0;
 }
 
+.automation-stage-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.automation-stage-content-hidden {
+  visibility: hidden;
+}
+
+.automation-stage-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+}
+
 .automation-header-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1127,6 +1142,37 @@
 .automation-canvas-controls .actions.compact {
   gap: 6px;
 }
+.automation-control-groups {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 10%, var(--color-glass-border-xlight));
+  background: color-mix(in srgb, var(--color-surface-panel-soft) 82%, transparent);
+  overflow: hidden;
+}
+.automation-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+}
+.automation-control-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.automation-control-btn .btn-icon {
+  margin-right: 0;
+  width: auto;
+}
+.automation-control-btn .btn-label {
+  display: none;
+}
 
 .automation-canvas-controls .btn {
   width: 36px;
@@ -1137,6 +1183,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+@media (max-width: 720px) {
+  .automation-control-groups {
+    width: min(100%, 164px);
+  }
+
+  .automation-control-group {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 .automation-canvas-controls .btn .btn-icon {

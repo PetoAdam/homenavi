@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faPen, faPlay, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { useParams } from 'react-router-dom';
@@ -78,6 +78,7 @@ function Automation() {
   const [isNarrow, setIsNarrow] = useState(false);
   const [hasOverviewSelection, setHasOverviewSelection] = useState(false);
   const [workflowSearch, setWorkflowSearch] = useState('');
+  const [loadedWorkflowId, setLoadedWorkflowId] = useState(null);
 
   const [err, setErr] = useState('');
   const [toast, setToast] = useState('');
@@ -375,6 +376,7 @@ function Automation() {
     resetHistory,
     setLastSavedSnapshot,
     editorSnapshotForSave,
+    onLoadedWorkflowId: setLoadedWorkflowId,
   });
 
   useAutomationHotkeys({
@@ -511,6 +513,51 @@ function Automation() {
 
   const paletteGroups = useMemo(() => groupPaletteItems(), []);
   const showOverviewDetail = !isNarrow || hasOverviewSelection;
+  const isSelectionSettled = useMemo(() => {
+    if (!selectedId) return loadedWorkflowId === null;
+    return String(loadedWorkflowId || '') === String(selectedId);
+  }, [loadedWorkflowId, selectedId]);
+
+  const loadedKey = useMemo(() => String(selectedId || 'new'), [selectedId]);
+  const editAutoFitKey = useMemo(() => `edit:${loadedKey}`, [loadedKey]);
+  const previewAutoFitKey = useMemo(() => `preview:${loadedKey}`, [loadedKey]);
+  const [editAutoFitDoneKey, setEditAutoFitDoneKey] = useState('');
+  const [previewAutoFitDoneKey, setPreviewAutoFitDoneKey] = useState('');
+
+  const automationDataReady = useMemo(() => {
+    if (bootstrapping || loading) return false;
+    if (!isSelectionSettled) return false;
+    if (!selectedId) return true;
+    return Boolean(selectedWorkflow);
+  }, [bootstrapping, isSelectionSettled, loading, selectedId, selectedWorkflow]);
+
+  const editReadyForRender = editAutoFitDoneKey === editAutoFitKey;
+  const previewReadyForRender = previewAutoFitDoneKey === previewAutoFitKey;
+
+  useEffect(() => {
+    setEditAutoFitDoneKey('');
+  }, [editAutoFitKey, isSelectionSettled]);
+
+  useEffect(() => {
+    setPreviewAutoFitDoneKey('');
+  }, [previewAutoFitKey, isSelectionSettled]);
+
+  useEffect(() => {
+    if (!automationDataReady) return;
+    if (previewReadyForRender) return;
+    const timer = window.setTimeout(() => {
+      setPreviewAutoFitDoneKey(previewAutoFitKey);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [automationDataReady, previewAutoFitKey, previewReadyForRender]);
+
+  const handleEditAutoFitComplete = useCallback((key) => {
+    setEditAutoFitDoneKey(String(key || ''));
+  }, []);
+
+  const handlePreviewAutoFitComplete = useCallback((key) => {
+    setPreviewAutoFitDoneKey(String(key || ''));
+  }, []);
 
   if (!isResidentOrAdmin) {
     if (bootstrapping) {
@@ -582,49 +629,62 @@ function Automation() {
                 addNodeAtCenter={addNodeAtCenter}
               />
 
-              <AutomationCanvas
-                canvasRef={canvasRef}
-                onCanvasDragOver={onCanvasDragOver}
-                onCanvasDrop={onCanvasDrop}
-                onCanvasPointerDown={onCanvasPointerDown}
-                onCanvasPointerMove={handleCanvasPointerMove}
-                onCanvasPointerUp={handleCanvasPointerUp}
-                onCanvasPointerCancel={handleCanvasPointerUp}
-                GRID_SIZE={GRID_SIZE}
-                viewport={viewport}
-                setViewport={setViewport}
-                svgWorldSize={svgWorldSize}
-                edgesToRender={edgesToRender}
-                connectMode={connectMode}
-                connectHoverId={connectHoverId}
-                setConnectHoverId={setConnectHoverId}
-                connectModeRef={connectModeRef}
-                setConnectMode={setConnectMode}
-                cancelConnect={cancelConnect}
-                deleteEdge={deleteEdge}
-                editorNodes={editor.nodes}
-                selectedNodeId={selectedNodeId}
-                setSelectedNodeId={setSelectedNodeId}
-                NODE_WIDTH={NODE_WIDTH}
-                NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
-                isTriggerNode={isTriggerNode}
-                nodeTitle={nodeTitle}
-                nodeSubtitle={nodeSubtitle}
-                nodeBodyText={nodeBodyText}
-                iconForNodeKind={iconForNodeKind}
-                deviceNameById={deviceNameById}
-                liveRunNodeStates={liveRunNodeStates}
-                commitConnection={commitConnection}
-                startConnectFromNode={startConnectFromNode}
-                onNodePointerDown={onNodePointerDown}
-                executeFromNodeTitle={executeFromNodeTitle}
-                canExecuteFromNode={canExecuteFromNode}
-                runNow={runNow}
-                canvasSize={canvasSize}
-                zoomAroundPoint={zoomAroundPoint}
-                workflowName={editor.workflowName}
-                onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
-              />
+              <div className="automation-stage-wrap">
+                {(!automationDataReady || !editReadyForRender) ? (
+                  <div className="automation-stage-loading">
+                    <LoadingView title="Automation editor" message="Preparing editor…" />
+                  </div>
+                ) : null}
+                <div className={`automation-stage-content${automationDataReady && editReadyForRender ? '' : ' automation-stage-content-hidden'}`}>
+                  <AutomationCanvas
+                    canvasRef={canvasRef}
+                    onCanvasDragOver={onCanvasDragOver}
+                    onCanvasDrop={onCanvasDrop}
+                    onCanvasPointerDown={onCanvasPointerDown}
+                    onCanvasPointerMove={handleCanvasPointerMove}
+                    onCanvasPointerUp={handleCanvasPointerUp}
+                    onCanvasPointerCancel={handleCanvasPointerUp}
+                    GRID_SIZE={GRID_SIZE}
+                    viewport={viewport}
+                    setViewport={setViewport}
+                    svgWorldSize={svgWorldSize}
+                    edgesToRender={edgesToRender}
+                    connectMode={connectMode}
+                    connectHoverId={connectHoverId}
+                    setConnectHoverId={setConnectHoverId}
+                    connectModeRef={connectModeRef}
+                    setConnectMode={setConnectMode}
+                    cancelConnect={cancelConnect}
+                    deleteEdge={deleteEdge}
+                    editorNodes={editor.nodes}
+                    selectedNodeId={selectedNodeId}
+                    setSelectedNodeId={setSelectedNodeId}
+                    NODE_WIDTH={NODE_WIDTH}
+                    NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
+                    isTriggerNode={isTriggerNode}
+                    nodeTitle={nodeTitle}
+                    nodeSubtitle={nodeSubtitle}
+                    nodeBodyText={nodeBodyText}
+                    iconForNodeKind={iconForNodeKind}
+                    deviceNameById={deviceNameById}
+                    liveRunNodeStates={liveRunNodeStates}
+                    commitConnection={commitConnection}
+                    startConnectFromNode={startConnectFromNode}
+                    onNodePointerDown={onNodePointerDown}
+                    executeFromNodeTitle={executeFromNodeTitle}
+                    canExecuteFromNode={canExecuteFromNode}
+                    runNow={runNow}
+                    canvasSize={canvasSize}
+                    zoomAroundPoint={zoomAroundPoint}
+                    workflowName={editor.workflowName}
+                    onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+                    autoFitKey={editAutoFitKey}
+                    autoFitDataReady={automationDataReady}
+                    onAutoFitComplete={handleEditAutoFitComplete}
+                    renderDelayMs={100}
+                  />
+                </div>
+              </div>
 
               <AutomationPropertiesPanel
                 selectedNodeId={selectedNodeId}
@@ -796,48 +856,62 @@ function Automation() {
                 <div className="automation-overview-preview-body">
                   {selectedWorkflow ? (
                     <>
-                      <AutomationCanvas
-                        canvasRef={canvasRef}
-                        onCanvasPointerDown={onCanvasPointerDown}
-                        onCanvasPointerMove={handleCanvasPointerMove}
-                        onCanvasPointerUp={handleCanvasPointerUp}
-                        onCanvasPointerCancel={handleCanvasPointerUp}
-                        GRID_SIZE={GRID_SIZE}
-                        viewport={viewport}
-                        setViewport={setViewport}
-                        svgWorldSize={svgWorldSize}
-                        edgesToRender={edgesToRender}
-                        connectMode={null}
-                        connectHoverId={null}
-                        setConnectHoverId={() => {}}
-                        connectModeRef={connectModeRef}
-                        setConnectMode={() => {}}
-                        cancelConnect={() => {}}
-                        deleteEdge={() => {}}
-                        editorNodes={editor.nodes}
-                        selectedNodeId={selectedNodeId}
-                        setSelectedNodeId={setSelectedNodeId}
-                        NODE_WIDTH={NODE_WIDTH}
-                        NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
-                        isTriggerNode={isTriggerNode}
-                        nodeTitle={nodeTitle}
-                        nodeSubtitle={nodeSubtitle}
-                        nodeBodyText={nodeBodyText}
-                        iconForNodeKind={iconForNodeKind}
-                        deviceNameById={deviceNameById}
-                        liveRunNodeStates={liveRunNodeStates}
-                        commitConnection={() => {}}
-                        startConnectFromNode={() => {}}
-                        onNodePointerDown={() => {}}
-                        executeFromNodeTitle={executeFromNodeTitle}
-                        canExecuteFromNode={canExecuteFromNode}
-                        runNow={runNow}
-                        canvasSize={canvasSize}
-                        zoomAroundPoint={zoomAroundPoint}
-                        workflowName={editor.workflowName}
-                        onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
-                        readOnly
-                      />
+                      <div className="automation-stage-wrap">
+                        {(!automationDataReady || !previewReadyForRender) ? (
+                          <div className="automation-stage-loading">
+                            <LoadingView title="Workflow preview" message="Preparing preview…" />
+                          </div>
+                        ) : null}
+
+                        <div className={`automation-stage-content${automationDataReady && previewReadyForRender ? '' : ' automation-stage-content-hidden'}`}>
+                        <AutomationCanvas
+                          canvasRef={canvasRef}
+                          onCanvasPointerDown={onCanvasPointerDown}
+                          onCanvasPointerMove={handleCanvasPointerMove}
+                          onCanvasPointerUp={handleCanvasPointerUp}
+                          onCanvasPointerCancel={handleCanvasPointerUp}
+                          GRID_SIZE={GRID_SIZE}
+                          viewport={viewport}
+                          setViewport={setViewport}
+                          svgWorldSize={svgWorldSize}
+                          edgesToRender={edgesToRender}
+                          connectMode={null}
+                          connectHoverId={null}
+                          setConnectHoverId={() => {}}
+                          connectModeRef={connectModeRef}
+                          setConnectMode={() => {}}
+                          cancelConnect={() => {}}
+                          deleteEdge={() => {}}
+                          editorNodes={editor.nodes}
+                          selectedNodeId={selectedNodeId}
+                          setSelectedNodeId={setSelectedNodeId}
+                          NODE_WIDTH={NODE_WIDTH}
+                          NODE_HEADER_HEIGHT={NODE_HEADER_HEIGHT}
+                          isTriggerNode={isTriggerNode}
+                          nodeTitle={nodeTitle}
+                          nodeSubtitle={nodeSubtitle}
+                          nodeBodyText={nodeBodyText}
+                          iconForNodeKind={iconForNodeKind}
+                          deviceNameById={deviceNameById}
+                          liveRunNodeStates={liveRunNodeStates}
+                          commitConnection={() => {}}
+                          startConnectFromNode={() => {}}
+                          onNodePointerDown={() => {}}
+                          executeFromNodeTitle={executeFromNodeTitle}
+                          canExecuteFromNode={canExecuteFromNode}
+                          runNow={runNow}
+                          canvasSize={canvasSize}
+                          zoomAroundPoint={zoomAroundPoint}
+                          workflowName={editor.workflowName}
+                          onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
+                          autoFitKey={previewAutoFitKey}
+                          autoFitDataReady={automationDataReady}
+                          onAutoFitComplete={handlePreviewAutoFitComplete}
+                          renderDelayMs={100}
+                          readOnly
+                        />
+                        </div>
+                      </div>
                       {!isNarrow && (
                         <div className="automation-overview-next-section" aria-hidden="true">
                           <span className="automation-overview-next-title">Recent runs</span>
