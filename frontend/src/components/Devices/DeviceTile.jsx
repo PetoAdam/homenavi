@@ -56,6 +56,127 @@ const DESCRIPTION_LIMIT = 140;
 const CONTROL_COLLAPSE_COUNT = 5;
 const BINARY_PILL_BLOCKLIST = new Set(['contact', 'battery_low', 'low_battery']);
 
+const FAVORITE_METRIC_KEYS = [
+  'power',
+  'state',
+  'on',
+  'run_state',
+  'remaining_min',
+  'temperature',
+  'humidity',
+  'brightness',
+  'battery',
+  'contact',
+  'linkquality',
+];
+
+function readFavoriteMetricKeysFromErsMeta(device) {
+  const meta = device?.meta && typeof device.meta === 'object' ? device.meta : null;
+  const mapMeta = meta?.map && typeof meta.map === 'object' ? meta.map : null;
+  if (!mapMeta) return [];
+
+  const rawArray = mapMeta.favorite_fields ?? mapMeta.favoriteFields ?? mapMeta.favorite_keys ?? mapMeta.favoriteKeys;
+  const rawSingle = mapMeta.favorite_field ?? mapMeta.favoriteField ?? mapMeta.favorite_key ?? mapMeta.favoriteKey;
+
+  const normalize = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+  const out = [];
+
+  if (Array.isArray(rawArray)) {
+    rawArray.forEach((v) => {
+      const s = normalize(v);
+      if (s) out.push(s);
+    });
+  }
+
+  if (out.length === 0) {
+    const s = normalize(rawSingle);
+    if (s) out.push(s);
+  }
+
+  return Array.from(new Set(out));
+}
+
+function normalizeMetricKey(value) {
+  return (value ?? '').toString().trim().toLowerCase();
+}
+
+function normalizeMetricKeyForMatch(value) {
+  // Collapse separators so ERS favorites like "run_state" match keys like "runState".
+  return normalizeMetricKey(value).replace(/[^a-z0-9]+/g, '');
+}
+
+function metricPriority(key, metric, favoriteIndexByKey = null, favoriteKeysLength = 0) {
+  const normalized = normalizeMetricKeyForMatch(key || metric?.key || '');
+  if (!normalized) return 1000;
+
+  const favoriteIdx = favoriteIndexByKey?.get(normalized);
+  if (typeof favoriteIdx === 'number') return favoriteIdx;
+
+  const baseOffset = Math.max(0, Number(favoriteKeysLength) || 0);
+  const builtInIdx = FAVORITE_METRIC_KEYS.findIndex((k) => normalizeMetricKeyForMatch(k) === normalized);
+  if (builtInIdx >= 0) return baseOffset + builtInIdx;
+
+  const label = normalizeMetricKey(metric?.label || '');
+  if (label.includes('temperature')) return baseOffset + FAVORITE_METRIC_KEYS.length + 1;
+  if (label.includes('humidity')) return baseOffset + FAVORITE_METRIC_KEYS.length + 2;
+  return 1000;
+}
+
+function sortMetrics(metrics, favoriteKeys = []) {
+  const favoriteIndexByKey = new Map();
+  (Array.isArray(favoriteKeys) ? favoriteKeys : []).forEach((key, idx) => {
+    const normalized = normalizeMetricKeyForMatch(key);
+    if (!normalized) return;
+    if (!favoriteIndexByKey.has(normalized)) {
+      favoriteIndexByKey.set(normalized, idx);
+    }
+  });
+
+  return metrics
+    .map((metric, idx) => ({
+      metric,
+      idx,
+      priority: metricPriority(metric?.key, metric, favoriteIndexByKey, favoriteKeys.length),
+    }))
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.idx - b.idx;
+    })
+    .map(item => item.metric);
+}
+
+function sortInputs(inputs, favoriteKeys = []) {
+  const favoriteIndexByKey = new Map();
+  (Array.isArray(favoriteKeys) ? favoriteKeys : []).forEach((key, idx) => {
+    const normalized = normalizeMetricKeyForMatch(key);
+    if (!normalized) return;
+    if (!favoriteIndexByKey.has(normalized)) {
+      favoriteIndexByKey.set(normalized, idx);
+    }
+  });
+
+  const list = Array.isArray(inputs) ? inputs : [];
+  return list
+    .map((input, idx) => {
+      const key = sanitizeInputKey(input);
+      const label = resolveInputLabel(input);
+      const priority = metricPriority(key, { key, label }, favoriteIndexByKey, favoriteKeys.length);
+      return { input, idx, priority };
+    })
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.idx - b.idx;
+    })
+    .map(item => item.input);
+}
+
+function formatProtocolLabel(protocolLabel, protocol) {
+  const label = typeof protocolLabel === 'string' ? protocolLabel.trim() : '';
+  if (label) return label;
+  if (!protocol) return 'Unknown';
+  return protocol.toString().toUpperCase();
+}
+
 function formatObjectValue(obj) {
   if (!obj || typeof obj !== 'object') return '—';
   if ('x' in obj && 'y' in obj) {
@@ -255,6 +376,20 @@ function buildMetrics(device, capabilities = []) {
   const numericMetrics = [];
   const state = device.state || {};
   const usedKeys = new Set();
+  const favoriteKeys = readFavoriteMetricKeysFromErsMeta(device);
+
+  const stateKeyByNormalized = (() => {
+    const map = new Map();
+    const s = state && typeof state === 'object' ? state : {};
+    Object.keys(s).forEach((key) => {
+      const norm = normalizeMetricKeyForMatch(key);
+      if (!norm) return;
+      if (!map.has(norm)) {
+        map.set(norm, key);
+      }
+    });
+    return map;
+  })();
 
   capabilities.forEach((cap, idx) => {
     if (!cap || typeof cap !== 'object') return;
@@ -338,8 +473,50 @@ function buildMetrics(device, capabilities = []) {
     usedKeys.add(metric.key);
   });
 
-  const allMetrics = [...binaryMetrics, ...numericMetrics];
-  return { allMetrics, binaryMetrics, numericMetrics };
+  // Ensure favorites from ERS meta actually render, even if no capability/fallback exists.
+  (Array.isArray(favoriteKeys) ? favoriteKeys : []).forEach((favKeyRaw) => {
+    const norm = normalizeMetricKeyForMatch(favKeyRaw);
+    if (!norm) return;
+    const actualKey = stateKeyByNormalized.get(norm);
+    if (!actualKey) return;
+    const keyLower = actualKey.toString().toLowerCase();
+    if (usedKeys.has(keyLower) || usedKeys.has(actualKey)) return;
+    const value = state[actualKey];
+    if (value === undefined || value === null) return;
+
+    const icon = ICON_BY_CAP[keyLower]
+      || (keyLower.includes('temp') ? faThermometerHalf
+        : keyLower.includes('humid') ? faDroplet
+          : (keyLower.includes('battery') ? faBatteryThreeQuarters
+            : (keyLower.includes('power') || keyLower.includes('voltage') ? faBolt : faGaugeHigh)));
+
+    if (typeof value === 'boolean') {
+      if (!BINARY_PILL_BLOCKLIST.has(keyLower)) {
+        binaryMetrics.push({
+          key: keyLower,
+          label: formatDisplayLabel(actualKey),
+          value: formatBinaryStateValue(keyLower, value),
+          rawValue: value,
+          unit: '',
+          icon,
+        });
+      }
+    } else {
+      numericMetrics.push({
+        key: keyLower,
+        label: formatDisplayLabel(actualKey),
+        value: normalizeValueLabel(value),
+        unit: '',
+        icon,
+      });
+    }
+    usedKeys.add(keyLower);
+  });
+
+  const sortedBinary = sortMetrics(binaryMetrics, favoriteKeys);
+  const sortedNumeric = sortMetrics(numericMetrics, favoriteKeys);
+  const allMetrics = sortMetrics([...binaryMetrics, ...numericMetrics], favoriteKeys);
+  return { allMetrics, binaryMetrics: sortedBinary, numericMetrics: sortedNumeric };
 }
 
 function sanitizeInputKey(input) {
@@ -555,7 +732,11 @@ function buildPayloadForInput(input, value) {
 
   switch (input.type) {
   case 'toggle':
-    state[normalizeToggleProperty(stateKeyRaw)] = toControlBoolean(value);
+    if (input?.metadata?.togglePowerString === true || propertyLower === 'power') {
+      state.power = toControlBoolean(value) ? 'on' : 'off';
+    } else {
+      state[normalizeToggleProperty(stateKeyRaw)] = toControlBoolean(value);
+    }
     break;
   case 'slider':
   case 'number': {
@@ -600,15 +781,16 @@ function formatControlValue(input, value) {
   }
 }
 
-export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, pending, onDelete, onOpen, actionLayout = 'menu' }) {
+export default function DeviceTile({ device, protocolLabel, onCommand, onRename, onUpdateIcon, pending, onDelete, onOpen, actionLayout = 'menu' }) {
   const capabilities = useMemo(
     () => collectCapabilities(device),
     [device],
   );
   const capabilityLookup = useMemo(() => buildCapabilityLookup(capabilities), [capabilities]);
+  const favoriteKeys = useMemo(() => readFavoriteMetricKeysFromErsMeta(device), [device]);
   const {
-    allMetrics,
     binaryMetrics,
+    numericMetrics,
   } = useMemo(
     () => buildMetrics(device, capabilities),
     [device, capabilities],
@@ -625,9 +807,15 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
     }
     const normalized = rawList
       .map(input => {
-        const type = (input.type || '').toLowerCase();
+        const originalType = (input.type || '').toLowerCase();
         const capabilityId = input.capability_id || input.capabilityId || input.capabilityID || '';
         const property = input.property || capabilityId || input.id || '';
+        const propertyLower = property.toString().toLowerCase();
+        const options = Array.isArray(input.options) ? input.options : [];
+        const hasOnOffOptions = options.some(opt => String(opt?.value || '').toLowerCase() === 'on')
+          && options.some(opt => String(opt?.value || '').toLowerCase() === 'off');
+        const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOnOffOptions;
+        const type = isPowerSelect ? 'toggle' : originalType;
         const id = input.id || capabilityId || property;
         const capability = resolveCapabilityForInput(capabilityLookup, input);
         const access = {
@@ -649,8 +837,11 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
           capability,
           access,
           readOnly,
-          options: Array.isArray(input.options) ? input.options : [],
-          metadata: input.metadata || {},
+          options,
+          metadata: {
+            ...(input.metadata || {}),
+            ...(isPowerSelect ? { togglePowerString: true } : {}),
+          },
           range: input.range || input.Range || null,
         };
       })
@@ -698,11 +889,11 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
   const toggleDisabled = pending;
 
   const interactiveInputs = useMemo(() => {
-    if (!showHeaderToggle || !primaryToggleInput) {
-      return normalizedInputs;
-    }
-    return normalizedInputs.filter(input => input !== primaryToggleInput);
-  }, [normalizedInputs, primaryToggleInput, showHeaderToggle]);
+    const base = (!showHeaderToggle || !primaryToggleInput)
+      ? normalizedInputs
+      : normalizedInputs.filter(input => input !== primaryToggleInput);
+    return sortInputs(base, favoriteKeys);
+  }, [normalizedInputs, primaryToggleInput, showHeaderToggle, favoriteKeys]);
 
   const [showAllControls, setShowAllControls] = useState(false);
   const hasExtraControls = interactiveInputs.length > CONTROL_COLLAPSE_COUNT;
@@ -895,10 +1086,10 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
 
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   useEffect(() => { setShowAllMetrics(false); }, [device.id]);
-  const hasExtraMetrics = allMetrics.length > 5;
+  const hasExtraMetrics = numericMetrics.length > 5;
   const visibleMetrics = useMemo(
-    () => (showAllMetrics ? allMetrics : allMetrics.slice(0, 5)),
-    [allMetrics, showAllMetrics],
+    () => (showAllMetrics ? numericMetrics : numericMetrics.slice(0, 5)),
+    [numericMetrics, showAllMetrics],
   );
 
   const activeIconKey = device?.icon && device.icon !== '' ? device.icon : 'auto';
@@ -1267,7 +1458,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
         </div>
 
         <div className="device-pill-row">
-          <GlassPill icon={faMicrochip} text={device.protocol?.toUpperCase() || 'Unknown'} />
+          <GlassPill icon={faMicrochip} text={formatProtocolLabel(protocolLabel, device.protocol)} />
           <GlassPill icon={faTicket} text={`${capabilities.length} capabilities`} />
           {device.firmware ? <GlassPill text={`FW ${device.firmware}`} tone="default" /> : null}
         </div>
@@ -1475,7 +1666,7 @@ export default function DeviceTile({ device, onCommand, onRename, onUpdateIcon, 
               className="device-metrics-toggle"
               onClick={() => setShowAllMetrics(prev => !prev)}
             >
-              {showAllMetrics ? 'Show fewer details' : `Show ${Math.max(allMetrics.length - 5, 0)} more`}
+              {showAllMetrics ? 'Show fewer details' : `Show ${Math.max(numericMetrics.length - 5, 0)} more`}
             </button>
           ) : null}
         </div>

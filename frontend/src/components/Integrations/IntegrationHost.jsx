@@ -6,16 +6,31 @@ import GlassCard from '../common/GlassCard/GlassCard';
 import { useAuth } from '../../context/AuthContext';
 import './IntegrationHost.css';
 
-function resolveIframeSrc({ integrationId, defaultUIPath, routeSubPath }) {
+function resolveIntegrationPath(integrationId, integrationPath = '/ui/') {
+  const p = (integrationPath || '/ui/').trim();
+  if (p.startsWith('/integrations/')) return p;
+  if (p.startsWith('/')) return `/integrations/${integrationId}${p}`;
+  return `/integrations/${integrationId}/${p}`;
+}
+
+function resolveIframeSrc({ integrationId, defaultUIPath, setupUIPath, routeSubPath }) {
   const sub = (routeSubPath || '').trim();
+  const setupPath = (setupUIPath || '').trim();
+
+  if (setupPath && (sub === '/setup' || sub === '/setup/')) {
+    return resolveIntegrationPath(integrationId, setupPath);
+  }
+  if (setupPath && sub.startsWith('/setup/')) {
+    const tail = sub.slice('/setup'.length);
+    const base = resolveIntegrationPath(integrationId, setupPath).replace(/\/+$/, '');
+    return `${base}${tail.startsWith('/') ? '' : '/'}${tail}`;
+  }
+
   if (sub && sub !== '/') {
     return `/integrations/${integrationId}${sub.startsWith('/') ? '' : '/'}${sub}`;
   }
 
-  const p = (defaultUIPath || '/ui/').trim();
-  if (p.startsWith('/integrations/')) return p;
-  if (p.startsWith('/')) return `/integrations/${integrationId}${p}`;
-  return `/integrations/${integrationId}/${p}`;
+  return resolveIntegrationPath(integrationId, defaultUIPath);
 }
 
 export default function IntegrationHost() {
@@ -63,9 +78,10 @@ export default function IntegrationHost() {
     return resolveIframeSrc({
       integrationId,
       defaultUIPath: integration?.default_ui_path,
+      setupUIPath: integration?.setup_ui_path,
       routeSubPath,
     });
-  }, [integrationId, integration?.default_ui_path, routeSubPath]);
+  }, [integrationId, integration?.default_ui_path, integration?.setup_ui_path, routeSubPath]);
 
   const onFrameLoad = useCallback((e) => {
     try {

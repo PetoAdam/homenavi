@@ -76,6 +76,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/registry.json", s.handleRegistry)
 	mux.HandleFunc("/integrations/marketplace.json", s.handleMarketplace)
 	mux.HandleFunc("/marketplace.json", s.handleMarketplace)
+	mux.HandleFunc("/integrations/automation-steps.json", s.handleAutomationStepsCatalog)
+	mux.HandleFunc("/automation-steps.json", s.handleAutomationStepsCatalog)
 	mux.HandleFunc("/integrations/reload", s.handleReload)
 	mux.HandleFunc("/reload", s.handleReload)
 	mux.HandleFunc("/integrations/restart-all", s.handleRestartAll)
@@ -919,6 +921,13 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		if defPath == "" {
 			defPath = "/ui/"
 		}
+		setupPath := ""
+		if m.UI.Setup.Enabled {
+			setupPath = strings.TrimSpace(m.UI.Setup.Path)
+			if setupPath == "" {
+				setupPath = "/ui/"
+			}
+		}
 
 		icon := strings.TrimSpace(m.UI.Sidebar.Icon)
 		iconLower := strings.ToLower(icon)
@@ -938,7 +947,26 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			Icon:          icon,
 			Route:         "/apps/" + id,
 			DefaultUIPath: defPath,
+			SetupUIPath:   setupPath,
 			Secrets:       append([]models.SecretSpec{}, m.Secrets...),
+		}
+
+		if m.DeviceExtension.Enabled {
+			regInt.DeviceExtension = &models.RegistryDeviceExtension{
+				ProviderID:          strings.TrimSpace(m.DeviceExtension.ProviderID),
+				Protocol:            strings.TrimSpace(m.DeviceExtension.Protocol),
+				DiscoveryMode:       strings.TrimSpace(m.DeviceExtension.DiscoveryMode),
+				SupportsPairing:     m.DeviceExtension.SupportsPairing,
+				CapabilitySchemaURL: strings.TrimSpace(m.DeviceExtension.CapabilitySchemaURL),
+			}
+		}
+
+		if m.AutomationExtension.Enabled {
+			regInt.AutomationExtension = &models.RegistryAutomationExtension{
+				Scope:           strings.TrimSpace(m.AutomationExtension.Scope),
+				StepsCatalogURL: strings.TrimSpace(m.AutomationExtension.StepsCatalogURL),
+				ExecuteEndpoint: strings.TrimSpace(m.AutomationExtension.ExecuteEndpoint),
+			}
 		}
 
 		for _, wdg := range m.Widgets {
@@ -950,11 +978,24 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(entryURL, "/") && !strings.HasPrefix(entryURL, "/integrations/") {
 				entryURL = "/integrations/" + id + entryURL
 			}
+			wdgIcon := strings.TrimSpace(wdg.Icon)
+			wdgIconLower := strings.ToLower(wdgIcon)
+			if strings.HasPrefix(wdgIconLower, "http://") || strings.HasPrefix(wdgIconLower, "https://") {
+				// Only allow bundled/same-origin icons or FA tokens; drop remote URLs.
+				wdgIcon = ""
+			}
+			if strings.HasPrefix(wdgIcon, "/") && !strings.HasPrefix(wdgIcon, "/integrations/") {
+				wdgIcon = "/integrations/" + id + wdgIcon
+			}
+			if wdgIcon == "" {
+				wdgIcon = icon
+			}
 			regInt.Widgets = append(regInt.Widgets, models.RegistryWidget{
 				ID:          wid,
 				DisplayName: firstNonEmpty(strings.TrimSpace(wdg.DisplayName), wid),
 				Description: strings.TrimSpace(wdg.Description),
-				Icon:        icon,
+				Icon:        wdgIcon,
+				DefaultSize: strings.TrimSpace(wdg.DefaultSize),
 				EntryURL:    entryURL,
 				Verified:    false,
 				Source:      "integration",
@@ -1005,6 +1046,100 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(reg)
+}
+
+type integrationSnapshot struct {
+	id       string
+	upstream *url.URL
+	manifest models.Manifest
+}
+
+func (s *Server) collectIntegrationSnapshots() []integrationSnapshot {
+	s.mu.RLock()
+	ids := make([]string, 0, len(s.manifests))
+	for id := range s.manifests {
+		ids = append(ids, id)
+	}
+	s.mu.RUnlock()
+	sort.Strings(ids)
+
+	out := make([]integrationSnapshot, 0, len(ids))
+	for _, id := range ids {
+		s.mu.RLock()
+		up := s.upstreams[id]
+		m, ok := s.manifests[id]
+		s.mu.RUnlock()
+		if !ok || up == nil {
+			continue
+		}
+		upCopy := *up
+		out = append(out, integrationSnapshot{id: id, upstream: &upCopy, manifest: m})
+	}
+	return out
+}
+
+func (s *Server) handleAutomationStepsCatalog(w http.ResponseWriter, r *http.Request) {
+	steps := models.AutomationStepsCatalog{GeneratedAt: time.Now().UTC()}
+
+	for _, it := range s.collectIntegrationSnapshots() {
+		a := it.manifest.AutomationExtension
+		if !a.Enabled {
+			continue
+		}
+		scope := strings.ToLower(strings.TrimSpace(a.Scope))
+		if scope != "integration_only" {
+			continue
+		}
+		catalogPath := strings.TrimSpace(a.StepsCatalogURL)
+		if catalogPath == "" {
+			continue
+		}
+		if !strings.HasPrefix(catalogPath, "/") {
+			catalogPath = "/" + catalogPath
+		}
+
+		catalogURL := *it.upstream
+		catalogURL.Path = path.Join(catalogURL.Path, catalogPath)
+
+		req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, catalogURL.String(), nil)
+		resp, err := s.client.Do(req)
+		if err != nil {
+			s.logger.Printf("automation steps fetch failed id=%s err=%v", it.id, err)
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			s.logger.Printf("automation steps fetch failed id=%s status=%d", it.id, resp.StatusCode)
+			_ = resp.Body.Close()
+			continue
+		}
+
+		var payload struct {
+			Actions    []map[string]any `json:"actions"`
+			Triggers   []map[string]any `json:"triggers"`
+			Conditions []map[string]any `json:"conditions"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			s.logger.Printf("automation steps parse failed id=%s err=%v", it.id, decodeErr)
+			continue
+		}
+
+		for _, action := range payload.Actions {
+			steps.Actions = append(steps.Actions, models.AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: action})
+		}
+		for _, trigger := range payload.Triggers {
+			steps.Triggers = append(steps.Triggers, models.AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: trigger})
+		}
+		for _, condition := range payload.Conditions {
+			steps.Conditions = append(steps.Conditions, models.AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: condition})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(steps)
 }
 
 func queryInt(r *http.Request, key string, def int) int {

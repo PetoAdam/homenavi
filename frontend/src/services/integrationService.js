@@ -25,6 +25,21 @@ export async function setIntegrationSecrets(id, secrets) {
   return http.put(`/integrations/${id}/api/admin/secrets`, { secrets });
 }
 
+export async function detectIntegrationSetupCapability(id) {
+  if (!id) return { success: false, capable: false, error: 'Missing integration id' };
+  const res = await http.get(`/integrations/${id}/api/admin/setup`);
+  if (res.success) {
+    return { success: true, capable: true };
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { success: true, capable: true };
+  }
+  if (res.status === 404) {
+    return { success: true, capable: false };
+  }
+  return { success: false, capable: false, error: res.error, status: res.status };
+}
+
 export async function getIntegrationMarketplace() {
   const params = new URLSearchParams();
   params.set('ts', String(Date.now()));

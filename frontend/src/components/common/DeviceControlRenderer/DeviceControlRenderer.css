@@ -203,7 +203,7 @@
    Select Control
    ───────────────────────────────────────────────────────────────────── */
 
-.dcr-control-select {
+select.dcr-control-select {
   padding: 6px 10px;
   border-radius: 6px;
   background: var(--color-glass-bg-light);
@@ -214,9 +214,16 @@
   min-width: 100px;
 }
 
-.dcr-control-select:focus {
+select.dcr-control-select:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+
+/* GlassSelect variant (used for enum/select controls in dark UI) */
+.dcr-control-select .glass-select__trigger {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
 }
 
 /* ─────────────────────────────────────────────────────────────────────

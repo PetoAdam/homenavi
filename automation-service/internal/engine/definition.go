@@ -29,6 +29,7 @@ import (
 // - trigger.device_state
 // - trigger.schedule
 // - action.send_command
+// - action.integration
 // - action.notify_email
 // - logic.if
 // - logic.sleep
@@ -89,6 +90,13 @@ type ActionSendCommand struct {
 	Args             map[string]any `json:"args,omitempty"`
 	WaitForResult    bool           `json:"wait_for_result,omitempty"`
 	ResultTimeoutSec int            `json:"result_timeout_sec,omitempty"`
+}
+
+type ActionIntegration struct {
+	IntegrationID string         `json:"integration_id"`
+	ActionID      string         `json:"action_id"`
+	Input         map[string]any `json:"input,omitempty"`
+	TimeoutSec    int            `json:"timeout_sec,omitempty"`
 }
 
 // NodeTargets defines the runtime target selection for trigger/action nodes.
@@ -305,6 +313,21 @@ func validateNode(n NodeDef) error {
 		}
 		if strings.TrimSpace(a.Message) == "" {
 			return errors.New("action.notify_email.message is required")
+		}
+		return nil
+	case "action.integration":
+		var a ActionIntegration
+		if err := json.Unmarshal(n.Data, &a); err != nil {
+			return fmt.Errorf("action.integration data must be valid json object")
+		}
+		if strings.TrimSpace(a.IntegrationID) == "" {
+			return errors.New("action.integration.integration_id is required")
+		}
+		if strings.TrimSpace(a.ActionID) == "" {
+			return errors.New("action.integration.action_id is required")
+		}
+		if a.TimeoutSec < 0 {
+			return errors.New("action.integration.timeout_sec must be >= 0")
 		}
 		return nil
 	case "logic.sleep":

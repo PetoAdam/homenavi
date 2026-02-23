@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/hdp/integrations", s.handleIntegrations)
 	mux.HandleFunc("/api/hdp/pairing-config", s.handlePairingConfig)
 	mux.HandleFunc("/api/hdp/pairings", s.handlePairings)
+	if s.repo != nil {
+		s.cleanupInvalidZigbeeDevices(context.Background())
+	}
 	if s.mqtt == nil {
 		slog.Warn("mqtt client not configured; skipping mqtt subscriptions")
 		return
@@ -391,7 +395,43 @@ func normalizeExternalID(protocol, external string) (string, error) {
 	if len(filtered) == 0 {
 		return "", fmt.Errorf("external_id suffix is required")
 	}
-	return strings.Join(filtered, "/"), nil
+	normalized := strings.Join(filtered, "/")
+	if proto == "zigbee" {
+		normalized = strings.ToLower(normalized)
+		if !zigbeeIEEEExternalIDRe.MatchString(normalized) {
+			return "", fmt.Errorf("invalid zigbee external_id: %q", normalized)
+		}
+		return normalized, nil
+	}
+	return normalized, nil
+}
+
+var zigbeeIEEEExternalIDRe = regexp.MustCompile(`^0x[0-9a-f]{16}$`)
+
+func (s *Server) cleanupInvalidZigbeeDevices(ctx context.Context) {
+	if s == nil || s.repo == nil {
+		return
+	}
+	devices, err := s.repo.List(ctx)
+	if err != nil {
+		slog.Warn("zigbee cleanup skipped; device list failed", "error", err)
+		return
+	}
+	for _, dev := range devices {
+		if normalizeProtocol(dev.Protocol) != "zigbee" {
+			continue
+		}
+		norm, err := normalizeExternalID("zigbee", dev.ExternalID)
+		if err == nil && norm != "" {
+			continue
+		}
+		// Remove invalid zigbee records so they cannot appear on startup.
+		if err := s.repo.DeleteDeviceAndState(ctx, dev.ID.String()); err != nil {
+			slog.Warn("invalid zigbee device delete failed", "device_id", dev.ID.String(), "external_id", dev.ExternalID, "error", err)
+			continue
+		}
+		slog.Warn("invalid zigbee device removed", "device_id", dev.ID.String(), "external_id", dev.ExternalID)
+	}
 }
 
 func canonicalHDPDeviceID(protocol, external string) string {

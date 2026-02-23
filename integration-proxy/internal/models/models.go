@@ -24,17 +24,44 @@ type Manifest struct {
 			Label   string `json:"label"`
 			Icon    string `json:"icon"`
 		} `json:"sidebar"`
+		Setup struct {
+			Enabled bool   `json:"enabled"`
+			Path    string `json:"path"`
+			Label   string `json:"label"`
+			Icon    string `json:"icon"`
+		} `json:"setup"`
 	} `json:"ui"`
 
 	Widgets []struct {
 		Type        string `json:"type"`
 		DisplayName string `json:"display_name"`
 		Description string `json:"description,omitempty"`
+		Icon        string `json:"icon,omitempty"`
+		DefaultSize string `json:"default_size_hint,omitempty"`
 		Entry       struct {
 			Kind string `json:"kind"`
 			URL  string `json:"url"`
 		} `json:"entry"`
 	} `json:"widgets"`
+
+	DeviceExtension     DeviceExtensionManifest     `json:"device_extension,omitempty"`
+	AutomationExtension AutomationExtensionManifest `json:"automation_extension,omitempty"`
+}
+
+type DeviceExtensionManifest struct {
+	Enabled             bool   `json:"enabled"`
+	ProviderID          string `json:"provider_id,omitempty"`
+	Protocol            string `json:"protocol,omitempty"`
+	DiscoveryMode       string `json:"discovery_mode,omitempty"`
+	SupportsPairing     bool   `json:"supports_pairing"`
+	CapabilitySchemaURL string `json:"capability_schema_url,omitempty"`
+}
+
+type AutomationExtensionManifest struct {
+	Enabled         bool   `json:"enabled"`
+	Scope           string `json:"scope,omitempty"`
+	StepsCatalogURL string `json:"steps_catalog_url,omitempty"`
+	ExecuteEndpoint string `json:"execute_endpoint,omitempty"`
 }
 
 type Registry struct {
@@ -47,14 +74,31 @@ type Registry struct {
 }
 
 type RegistryIntegration struct {
-	ID            string           `json:"id"`
-	DisplayName   string           `json:"display_name"`
-	Description   string           `json:"description,omitempty"`
-	Icon          string           `json:"icon,omitempty"`
-	Route         string           `json:"route"`
-	DefaultUIPath string           `json:"default_ui_path"`
-	Widgets       []RegistryWidget `json:"widgets"`
-	Secrets       []SecretSpec     `json:"secrets,omitempty"`
+	ID                  string                       `json:"id"`
+	DisplayName         string                       `json:"display_name"`
+	Description         string                       `json:"description,omitempty"`
+	Icon                string                       `json:"icon,omitempty"`
+	Route               string                       `json:"route"`
+	DefaultUIPath       string                       `json:"default_ui_path"`
+	SetupUIPath         string                       `json:"setup_ui_path,omitempty"`
+	Widgets             []RegistryWidget             `json:"widgets"`
+	Secrets             []SecretSpec                 `json:"secrets,omitempty"`
+	DeviceExtension     *RegistryDeviceExtension     `json:"device_extension,omitempty"`
+	AutomationExtension *RegistryAutomationExtension `json:"automation_extension,omitempty"`
+}
+
+type RegistryDeviceExtension struct {
+	ProviderID          string `json:"provider_id,omitempty"`
+	Protocol            string `json:"protocol,omitempty"`
+	DiscoveryMode       string `json:"discovery_mode,omitempty"`
+	SupportsPairing     bool   `json:"supports_pairing"`
+	CapabilitySchemaURL string `json:"capability_schema_url,omitempty"`
+}
+
+type RegistryAutomationExtension struct {
+	Scope           string `json:"scope,omitempty"`
+	StepsCatalogURL string `json:"steps_catalog_url,omitempty"`
+	ExecuteEndpoint string `json:"execute_endpoint,omitempty"`
 }
 
 type SecretSpec struct {
@@ -101,8 +145,21 @@ type RegistryWidget struct {
 }
 
 type Marketplace struct {
-	GeneratedAt  time.Time               `json:"generated_at"`
+	GeneratedAt  time.Time                `json:"generated_at"`
 	Integrations []MarketplaceIntegration `json:"integrations"`
+}
+
+type AutomationStepsCatalog struct {
+	GeneratedAt time.Time              `json:"generated_at"`
+	Actions     []AutomationStepRecord `json:"actions,omitempty"`
+	Triggers    []AutomationStepRecord `json:"triggers,omitempty"`
+	Conditions  []AutomationStepRecord `json:"conditions,omitempty"`
+}
+
+type AutomationStepRecord struct {
+	IntegrationID string         `json:"integration_id"`
+	Scope         string         `json:"scope,omitempty"`
+	Step          map[string]any `json:"step"`
 }
 
 type MarketplaceIntegration struct {

@@ -15,6 +15,7 @@ import InstalledIntegrationModal from './IntegrationsAdmin/InstalledIntegrationM
 import MarketplaceIntegrationModal from './IntegrationsAdmin/MarketplaceIntegrationModal';
 import { useAuth } from '../../context/AuthContext';
 import {
+  detectIntegrationSetupCapability,
   getIntegrationRegistry,
   getIntegrationMarketplace,
   getIntegrationInstallStatus,
@@ -26,6 +27,7 @@ import {
   setIntegrationSecrets,
   uninstallIntegration,
 } from '../../services/integrationService';
+import { hasSetupUiPath, setupRouteForIntegration } from '../../utils/integrationSetup';
 import '../Auth/AuthModal/AuthModal.css';
 import './IntegrationsAdmin.css';
 
@@ -59,6 +61,7 @@ export default function IntegrationsAdmin() {
   const [marketplaceMode, setMarketplaceMode] = useState('discover');
   const [marketplaceFilter, setMarketplaceFilter] = useState('all');
   const [marketplaceSort, setMarketplaceSort] = useState('trending');
+  const [setupCapabilities, setSetupCapabilities] = useState({});
 
   const isAdmin = user?.role === 'admin';
 
@@ -148,6 +151,33 @@ export default function IntegrationsAdmin() {
       marketplace: market,
     };
   }), [integrations, marketplaceById]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ids = (integrations || []).map((integration) => integration.id).filter(Boolean);
+    if (!ids.length) {
+      setSetupCapabilities({});
+      return () => {
+        cancelled = true;
+      };
+    }
+    (async () => {
+      const results = await Promise.all(ids.map(async (id) => {
+        const capability = await detectIntegrationSetupCapability(id);
+        if (!capability?.success) return [id, undefined];
+        return [id, Boolean(capability.capable)];
+      }));
+      if (cancelled) return;
+      const next = {};
+      results.forEach(([id, capable]) => {
+        if (typeof capable === 'boolean') next[id] = capable;
+      });
+      setSetupCapabilities(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [integrations]);
 
   const getMarketplaceName = (entry) => entry?.name || entry?.display_name || entry?.id || 'Integration';
   const getMarketplacePublisher = (entry) => entry?.publisher || 'Community';
@@ -560,6 +590,12 @@ export default function IntegrationsAdmin() {
     setInstalledModalTab('about');
   };
 
+  const handleOpenSetup = useCallback((integration) => {
+    const url = setupRouteForIntegration(integration);
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
+
   const handleMarketplaceModeChange = (item) => {
     setMarketplaceMode(item);
     if (item === 'downloads') {
@@ -600,6 +636,8 @@ export default function IntegrationsAdmin() {
       onSaveSecrets={handleSaveSecrets}
       saving={saving}
       onSetupLater={handleSetupLater}
+      setupCapable={hasSetupUiPath(selectedIntegration)}
+      onOpenSetup={() => handleOpenSetup(selectedIntegration)}
       resolveFaIcon={resolveFaIcon}
     />
   ) : null;
@@ -672,6 +710,8 @@ export default function IntegrationsAdmin() {
           onUninstallIntegration={handleUninstall}
           restarting={restarting}
           uninstalling={uninstalling}
+          setupCapabilities={setupCapabilities}
+          onOpenSetup={handleOpenSetup}
           resolveFaIcon={resolveFaIcon}
         />
       ) : (

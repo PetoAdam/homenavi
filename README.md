@@ -222,12 +222,18 @@ Current runtime model:
 - Integrations publish `/.well-known/homenavi-integration.json` (manifest).
 - UI surfaces are rendered in sandboxed iframes (tab + widget).
 - Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
+- Automation actions execute by calling the integration container directly on the internal Docker network (not via `/integrations/<id>/...`).
 
 ### Third-party integration development
 
 Third-party integrations should be built in their own repos using the official template:
 
 - https://github.com/PetoAdam/homenavi-integration-template
+
+Design references for next-gen integrations (devices + automations + UI):
+
+- `doc/integration_device_and_automation_extensions.md`
+- `doc/poc_lg_thinq_integration_v2.md`
 
 Recommended workflow:
 
