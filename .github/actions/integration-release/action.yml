@@ -70,10 +70,17 @@ runs:
       shell: bash
       run: go vet ./...
 
+    - name: Install gosec
+      shell: bash
+      run: |
+        set -euo pipefail
+        go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
+
     - name: Central gosec
-      uses: securego/gosec@v2.22.0
-      with:
-        args: ./...
+      shell: bash
+      run: |
+        set -euo pipefail
+        "$(go env GOPATH)/bin/gosec" ./...
 
     - name: Check marketplace uniqueness
       shell: bash
