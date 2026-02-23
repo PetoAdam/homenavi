@@ -160,7 +160,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 					homenavi
 				</button>
 			</div>
-			<nav className="flex-1 px-1 flex flex-col gap-2" style={{ overflowY: 'auto' }}>
+			<nav className="flex-1 px-1 flex flex-col gap-2" style={{ overflowY: 'auto', overflowX: 'hidden' }}>
 				{menuGroups.map(group => (
 					<div className="sidebar-group" key={group.header}>
 						<div className="sidebar-group-header">{group.header}</div>

@@ -122,9 +122,9 @@ export default function MapDevicePopover({
           ) : null}
 
           {expandedDevice.tags.length ? (
-            <div className="automation-chip-row map-popover-tags" aria-label="Tags">
+            <div className="map-chip-row map-popover-tags" aria-label="Tags">
               {expandedDevice.tags.map(t => (
-                <span key={t} className="automation-chip"><span className="subtle">#</span>{t}</span>
+                <span key={t} className="map-chip"><span className="subtle">#</span>{t}</span>
               ))}
             </div>
           ) : null}

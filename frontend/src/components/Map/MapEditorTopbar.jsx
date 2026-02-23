@@ -15,18 +15,18 @@ export default function MapEditorTopbar({
   done,
 }) {
   return (
-    <div className="automation-topbar" aria-label="Map editor toolbar">
-      <div className="automation-topbar-left">
-        <div className="automation-topbar-row automation-topbar-row-primary">
-          <div className="automation-topbar-label muted">Map editor</div>
+    <div className="map-topbar" aria-label="Map editor toolbar">
+      <div className="map-topbar-left">
+        <div className="map-topbar-row map-topbar-row-primary">
+          <div className="map-topbar-label muted">Map editor</div>
         </div>
       </div>
 
-      <div className="automation-topbar-right">
-        <div className="automation-topbar-group">
+      <div className="map-topbar-right">
+        <div className="map-topbar-group">
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="map-topbar-iconbtn"
             type="button"
             disabled={!canUndo}
             onClick={undo}
@@ -37,7 +37,7 @@ export default function MapEditorTopbar({
           </Button>
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="map-topbar-iconbtn"
             type="button"
             disabled={!canRedo}
             onClick={redo}
@@ -48,10 +48,10 @@ export default function MapEditorTopbar({
           </Button>
         </div>
 
-        <div className="automation-topbar-group">
+        <div className="map-topbar-group">
           <Button
             variant="secondary"
-            className="automation-topbar-iconbtn"
+            className="map-topbar-iconbtn"
             type="button"
             onClick={done}
             aria-label="Done"
