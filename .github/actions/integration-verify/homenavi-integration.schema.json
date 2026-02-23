@@ -46,6 +46,16 @@
             "label": { "type": "string" },
             "icon": { "type": "string" }
           }
+        },
+        "setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "path": { "type": "string", "pattern": "^/" },
+            "label": { "type": "string" },
+            "icon": { "type": "string" }
+          }
         }
       }
     },
@@ -59,6 +69,7 @@
           "type": { "type": "string", "minLength": 1, "maxLength": 128 },
           "display_name": { "type": "string", "minLength": 1, "maxLength": 128 },
           "description": { "type": "string", "maxLength": 512 },
+          "default_size_hint": { "type": "string", "minLength": 1, "maxLength": 32 },
           "entry": {
             "type": "object",
             "additionalProperties": false,
