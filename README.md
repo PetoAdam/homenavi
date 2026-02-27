@@ -264,13 +264,23 @@ Security note: when compose-managed installs are enabled, `integration-proxy` ru
 
 Use the Admin → Integrations UI to install integrations from the marketplace and manage secrets. The proxy updates [integrations/config/installed.yaml](integrations/config/installed.yaml) automatically.
 
+Installed integrations track their installed `version` (and `auto_update` policy) in `installed.yaml`. Homenavi compares the installed version to the marketplace version (semver) to surface **Update available** and to support **Auto-update**.
+
 If you run custom integrations manually, ensure the container is on the same Docker network and then use Admin → Integrations to add or refresh the entry.
+
+### Integration updates (admin-managed)
+
+- The Admin → Integrations UI shows installed vs latest marketplace version and provides an Update button.
+- Updates run asynchronously (queued) and the UI shows progress via the same status surface used during installs.
+- Auto-update can be enabled per integration; `integration-proxy` periodically checks the marketplace and applies updates when available.
 
 ### Helm installation (coming soon)
 
 ### Integration secrets (admin-managed)
 
-Integrations must declare the secrets they require in the manifest via a `secrets` array. The Admin → Integrations page uses this list to render write-only secret fields and sends values to each integration’s admin endpoint.
+Integrations can declare the secrets they require in the manifest via a `secrets` array. The Admin → Integrations page uses this list to render write-only secret fields and sends values to each integration’s admin endpoint.
+
+Integrations may also expose a **setup UI** flow (in addition to or instead of secrets) via `/api/admin/setup`.
 
 Each integration stores secrets in its own file (default `config/integration.secrets.json` in the integration repo/container, configurable with `INTEGRATION_SECRETS_PATH`). This prevents integrations from seeing each other’s secrets.
 
@@ -298,6 +308,11 @@ Long Term:
 ## 11. ⚙️ Configuration & Environment
 Environment variables (selected):
 * `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`
+* Integrations / marketplace:
+	* `INTEGRATIONS_MARKETPLACE_API_BASE` (defaults to `https://marketplace.homenavi.org`)
+	* `INTEGRATIONS_UPDATE_CHECK_INTERVAL` (defaults to `15m`; set `0` to disable periodic checks)
+	* `INTEGRATIONS_COMPOSE_ENABLED` (enables compose-managed install/update)
+	* `INTEGRATIONS_COMPOSE_PULL_TIMEOUT` (defaults to `2m`, used for slow pulls)
 * Database connection vars (PostgreSQL)
 * Redis host/port
 * Email provider / SMTP credentials (for Email Service)
