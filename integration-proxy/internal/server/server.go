@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
+	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
 
 	"homenavi/integration-proxy/internal/auth"
@@ -36,6 +37,8 @@ type Server struct {
 	manifests   map[string]models.Manifest
 	manifestErr map[string]string
 	installStat map[string]installStatus
+	updates     map[string]integrationUpdateStatus
+	updating    map[string]bool
 	mu          sync.RWMutex
 	client      *http.Client
 	validator   *jsonschema.Schema
@@ -52,6 +55,17 @@ type installStatus struct {
 	Updated  time.Time `json:"updated_at"`
 }
 
+type integrationUpdateStatus struct {
+	ID               string     `json:"id"`
+	InstalledVersion string     `json:"installed_version,omitempty"`
+	LatestVersion    string     `json:"latest_version,omitempty"`
+	UpdateAvailable  bool       `json:"update_available"`
+	AutoUpdate       bool       `json:"auto_update"`
+	CheckedAt        *time.Time `json:"checked_at,omitempty"`
+	Error            string     `json:"error,omitempty"`
+	InProgress       bool       `json:"in_progress"`
+}
+
 func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey, schemaPath, configPath string) *Server {
 	s := &Server{
 		logger:      logger,
@@ -60,6 +74,8 @@ func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey
 		manifests:   make(map[string]models.Manifest),
 		manifestErr: make(map[string]string),
 		installStat: make(map[string]installStatus),
+		updates:     make(map[string]integrationUpdateStatus),
+		updating:    make(map[string]bool),
 		client:      &http.Client{Timeout: 8 * time.Second},
 		validator:   validator,
 		pubKey:      pubKey,
@@ -85,6 +101,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/integrations/install", s.handleInstall)
 	mux.HandleFunc("/integrations/uninstall", s.handleUninstall)
 	mux.HandleFunc("/integrations/install-status/", s.handleInstallStatus)
+	mux.HandleFunc("/integrations/updates", s.handleUpdates)
+	mux.HandleFunc("/integrations/update", s.handleUpdateIntegration)
+	mux.HandleFunc("/integrations/update-policy", s.handleUpdatePolicy)
 	mux.HandleFunc("/integrations/", s.handleProxy)
 	mux.HandleFunc("/", s.handleProxy)
 	return mux
@@ -198,6 +217,7 @@ func (s *Server) AddIntegration(ic config.IntegrationConfig) error {
 
 	// initial manifest fetch (non-fatal)
 	_ = s.refreshManifest(context.Background(), id, u)
+	s.initUpdateState(ic)
 	return nil
 }
 
@@ -229,6 +249,8 @@ func (s *Server) ReloadFromConfig() error {
 	s.manifests = make(map[string]models.Manifest)
 	s.manifestErr = make(map[string]string)
 	s.installStat = make(map[string]installStatus)
+	s.updates = make(map[string]integrationUpdateStatus)
+	s.updating = make(map[string]bool)
 	s.mu.Unlock()
 
 	for _, ic := range cfg.Integrations {
@@ -383,6 +405,8 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		ID          string `json:"id"`
 		Upstream    string `json:"upstream"`
 		ComposeFile string `json:"compose_file"`
+		Version     string `json:"version"`
+		AutoUpdate  *bool  `json:"auto_update"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -464,7 +488,11 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.setInstallStatus(id, "writing-config", 20, "Updating installed integrations")
-	cfg.Integrations = append(cfg.Integrations, config.IntegrationConfig{ID: id, Upstream: upstream})
+	entry := config.IntegrationConfig{ID: id, Upstream: upstream, Version: strings.TrimSpace(req.Version)}
+	if req.AutoUpdate != nil {
+		entry.AutoUpdate = *req.AutoUpdate
+	}
+	cfg.Integrations = append(cfg.Integrations, entry)
 	if err := config.Save(s.configPath, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -495,6 +523,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setInstallStatus(id, "ready", 100, "Installed")
+	s.checkForUpdates(r.Context(), false)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "installed", "id": id})
 }
@@ -604,6 +633,10 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to reload", "code": http.StatusInternalServerError})
 		return
 	}
+	s.mu.Lock()
+	delete(s.updates, id)
+	delete(s.updating, id)
+	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "uninstalled", "id": id})
 }
@@ -725,6 +758,441 @@ func (s *Server) getInstallStatus(id string) (installStatus, bool) {
 	status, ok := s.installStat[id]
 	s.mu.RUnlock()
 	return status, ok
+}
+
+func (s *Server) initUpdateState(ic config.IntegrationConfig) {
+	id := strings.TrimSpace(ic.ID)
+	if id == "" {
+		return
+	}
+	installed := strings.TrimSpace(ic.Version)
+	if installed == "" {
+		s.mu.RLock()
+		if m, ok := s.manifests[id]; ok {
+			installed = strings.TrimSpace(m.Version)
+		}
+		s.mu.RUnlock()
+	}
+	s.mu.Lock()
+	state := s.updates[id]
+	state.ID = id
+	state.InstalledVersion = installed
+	state.AutoUpdate = ic.AutoUpdate
+	state.InProgress = s.updating[id]
+	s.updates[id] = state
+	s.mu.Unlock()
+}
+
+func (s *Server) copyUpdateStates() []integrationUpdateStatus {
+	s.mu.RLock()
+	ids := make([]string, 0, len(s.updates))
+	for id := range s.updates {
+		ids = append(ids, id)
+	}
+	s.mu.RUnlock()
+	sort.Strings(ids)
+	out := make([]integrationUpdateStatus, 0, len(ids))
+	for _, id := range ids {
+		s.mu.RLock()
+		state := s.updates[id]
+		s.mu.RUnlock()
+		out = append(out, state)
+	}
+	return out
+}
+
+func (s *Server) setUpdateState(id string, apply func(*integrationUpdateStatus)) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	state := s.updates[id]
+	state.ID = id
+	state.InProgress = s.updating[id]
+	apply(&state)
+	s.updates[id] = state
+	s.mu.Unlock()
+}
+
+func (s *Server) startUpdate(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	s.mu.Lock()
+	if s.updating[id] {
+		s.mu.Unlock()
+		return false
+	}
+	s.updating[id] = true
+	state := s.updates[id]
+	state.ID = id
+	state.InProgress = true
+	state.Error = ""
+	s.updates[id] = state
+	s.mu.Unlock()
+	return true
+}
+
+func (s *Server) finishUpdate(id string, errMsg string) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	delete(s.updating, id)
+	state := s.updates[id]
+	state.ID = id
+	state.InProgress = false
+	state.CheckedAt = &now
+	state.Error = strings.TrimSpace(errMsg)
+	s.updates[id] = state
+	s.mu.Unlock()
+}
+
+func (s *Server) StartUpdateLoop(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		return
+	}
+	s.checkForUpdates(ctx, true)
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.checkForUpdates(ctx, true)
+		}
+	}
+}
+
+type marketplaceIntegration struct {
+	ID          string `json:"id"`
+	Version     string `json:"version"`
+	ComposeFile string `json:"compose_file"`
+}
+
+func (s *Server) fetchMarketplaceIntegration(ctx context.Context, id string) (*marketplaceIntegration, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("missing integration id")
+	}
+	base := s.marketplaceAPIBase()
+	urlStr := fmt.Sprintf("%s/api/integrations/%s", base, url.PathEscape(id))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var item marketplaceIntegration
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&item); err != nil {
+		return nil, err
+	}
+	item.ID = id
+	return &item, nil
+}
+
+func normalizeSemver(version string) string {
+	v := strings.TrimSpace(version)
+	v = strings.TrimPrefix(v, "v")
+	if v == "" {
+		return ""
+	}
+	return "v" + v
+}
+
+func isVersionNewer(installedVersion, latestVersion string) bool {
+	installed := normalizeSemver(installedVersion)
+	latest := normalizeSemver(latestVersion)
+	if latest == "" || !semver.IsValid(latest) {
+		return false
+	}
+	if installed == "" || !semver.IsValid(installed) {
+		return true
+	}
+	return semver.Compare(latest, installed) > 0
+}
+
+func (s *Server) effectiveInstalledVersion(id string, cfgVersion string) string {
+	ver := strings.TrimSpace(cfgVersion)
+	if ver != "" {
+		return ver
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m, ok := s.manifests[id]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(m.Version)
+}
+
+func (s *Server) loadIntegrationConfig(id string) (config.Config, int, error) {
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		return config.Config{}, -1, err
+	}
+	for i, ic := range cfg.Integrations {
+		if strings.TrimSpace(ic.ID) == id {
+			return cfg, i, nil
+		}
+	}
+	return cfg, -1, fmt.Errorf("integration not installed")
+}
+
+func (s *Server) updateInstalledIntegration(ctx context.Context, id string, target *marketplaceIntegration) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("missing id")
+	}
+	if target == nil {
+		return fmt.Errorf("missing target integration")
+	}
+	if !s.startUpdate(id) {
+		return fmt.Errorf("update already in progress")
+	}
+	return s.runInstalledIntegrationUpdate(ctx, id, target)
+}
+
+func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, target *marketplaceIntegration) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("missing id")
+	}
+	if target == nil {
+		return fmt.Errorf("missing target integration")
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			s.finishUpdate(id, fmt.Sprintf("panic: %v", r))
+			panic(r)
+		}
+	}()
+
+	cfg, index, err := s.loadIntegrationConfig(id)
+	if err != nil {
+		s.finishUpdate(id, err.Error())
+		return err
+	}
+	entry := cfg.Integrations[index]
+	installedVersion := s.effectiveInstalledVersion(id, entry.Version)
+	latestVersion := strings.TrimSpace(target.Version)
+	if !isVersionNewer(installedVersion, latestVersion) {
+		s.setUpdateState(id, func(state *integrationUpdateStatus) {
+			state.InstalledVersion = installedVersion
+			state.LatestVersion = latestVersion
+			state.UpdateAvailable = false
+			state.AutoUpdate = entry.AutoUpdate
+		})
+		s.finishUpdate(id, "")
+		return nil
+	}
+
+	composeFile, err := s.resolveComposeFileFromPayload(id, target.ComposeFile)
+	if err != nil {
+		s.finishUpdate(id, err.Error())
+		return err
+	}
+	if strings.TrimSpace(composeFile) == "" {
+		composeFile = s.defaultComposeFile(id)
+	}
+	composeFile = s.expandComposePath(composeFile)
+	if strings.TrimSpace(composeFile) != "" {
+		s.setInstallStatus(id, "updating", 45, "Updating integration")
+		if err := s.composeInstall(ctx, composeFile, id); err != nil {
+			s.setInstallStatus(id, "error", 100, "Update failed")
+			s.finishUpdate(id, err.Error())
+			return err
+		}
+	}
+
+	cfg.Integrations[index].Version = latestVersion
+	if err := config.Save(s.configPath, cfg); err != nil {
+		s.finishUpdate(id, err.Error())
+		return err
+	}
+	if err := s.ReloadFromConfig(); err != nil {
+		s.finishUpdate(id, err.Error())
+		return err
+	}
+	s.refreshManifestFromUpstream(ctx, id)
+	updatedVersion := s.effectiveInstalledVersion(id, latestVersion)
+	s.setInstallStatus(id, "ready", 100, "Updated")
+	s.setUpdateState(id, func(state *integrationUpdateStatus) {
+		state.InstalledVersion = updatedVersion
+		state.LatestVersion = latestVersion
+		state.UpdateAvailable = false
+		state.AutoUpdate = cfg.Integrations[index].AutoUpdate
+		state.Error = ""
+	})
+	s.finishUpdate(id, "")
+	return nil
+}
+
+func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
+	if strings.TrimSpace(s.configPath) == "" {
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		return
+	}
+	for _, ic := range cfg.Integrations {
+		id := strings.TrimSpace(ic.ID)
+		if id == "" {
+			continue
+		}
+		installed := s.effectiveInstalledVersion(id, ic.Version)
+		marketItem, fetchErr := s.fetchMarketplaceIntegration(ctx, id)
+		now := time.Now().UTC()
+		if fetchErr != nil {
+			s.setUpdateState(id, func(state *integrationUpdateStatus) {
+				state.InstalledVersion = installed
+				state.AutoUpdate = ic.AutoUpdate
+				state.CheckedAt = &now
+				state.Error = fetchErr.Error()
+			})
+			continue
+		}
+		latest := strings.TrimSpace(marketItem.Version)
+		available := isVersionNewer(installed, latest)
+		s.setUpdateState(id, func(state *integrationUpdateStatus) {
+			state.InstalledVersion = installed
+			state.LatestVersion = latest
+			state.UpdateAvailable = available
+			state.AutoUpdate = ic.AutoUpdate
+			state.CheckedAt = &now
+			state.Error = ""
+		})
+		if autoApply && ic.AutoUpdate && available {
+			if err := s.updateInstalledIntegration(ctx, id, marketItem); err != nil {
+				s.setUpdateState(id, func(state *integrationUpdateStatus) {
+					state.Error = err.Error()
+				})
+			}
+		}
+	}
+}
+
+func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("refresh")), "true") {
+		s.checkForUpdates(r.Context(), false)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"updates": s.copyUpdateStates()})
+}
+
+func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid json", "code": http.StatusBadRequest})
+		return
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	item, err := s.fetchMarketplaceIntegration(r.Context(), id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to fetch marketplace integration", "code": http.StatusBadGateway, "detail": err.Error()})
+		return
+	}
+	if !s.startUpdate(id) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "update already in progress", "code": http.StatusConflict})
+		return
+	}
+	s.setInstallStatus(id, "queued", 10, "Queued")
+	go func() {
+		ctx := context.Background()
+		if err := s.runInstalledIntegrationUpdate(ctx, id, item); err != nil {
+			s.logger.Printf("update %s failed: %v", id, err)
+		}
+	}()
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued", "id": id})
+}
+
+func (s *Server) handleUpdatePolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		ID         string `json:"id"`
+		AutoUpdate bool   `json:"auto_update"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid json", "code": http.StatusBadRequest})
+		return
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
+		return
+	}
+	cfg, index, err := s.loadIntegrationConfig(id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration not installed", "code": http.StatusNotFound})
+		return
+	}
+	cfg.Integrations[index].AutoUpdate = req.AutoUpdate
+	if err := config.Save(s.configPath, cfg); err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to save update policy", "code": http.StatusInternalServerError, "detail": err.Error()})
+		return
+	}
+	s.setUpdateState(id, func(state *integrationUpdateStatus) {
+		state.AutoUpdate = req.AutoUpdate
+	})
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "id": id, "auto_update": req.AutoUpdate})
 }
 
 func (s *Server) composeEnabled() bool {
@@ -857,6 +1325,21 @@ func (s *Server) runCompose(ctx context.Context, composeFile string, args ...str
 	return nil
 }
 
+func (s *Server) composePullTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_PULL_TIMEOUT"))
+	if raw == "" {
+		return 2 * time.Minute
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil {
+		return 2 * time.Minute
+	}
+	if parsed <= 0 {
+		return 2 * time.Minute
+	}
+	return parsed
+}
+
 func (s *Server) composeInstall(ctx context.Context, composeFile, id string) error {
 	if !s.composeEnabled() {
 		return nil
@@ -866,7 +1349,9 @@ func (s *Server) composeInstall(ctx context.Context, composeFile, id string) err
 		return err
 	}
 	s.setInstallStatus(id, "pulling", 35, "Pulling container image")
-	if err := s.runCompose(ctx, composeFile, "pull", service); err != nil {
+	pullCtx, cancel := context.WithTimeout(ctx, s.composePullTimeout())
+	defer cancel()
+	if err := s.runCompose(pullCtx, composeFile, "pull", service); err != nil {
 		return err
 	}
 	s.setInstallStatus(id, "starting", 55, "Starting container")
@@ -894,6 +1379,20 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, id)
 	}
 	s.mu.RUnlock()
+	sort.Strings(ids)
+
+	cfgByID := map[string]config.IntegrationConfig{}
+	if strings.TrimSpace(s.configPath) != "" {
+		if cfg, err := config.Load(s.configPath); err == nil {
+			for _, ic := range cfg.Integrations {
+				trimmedID := strings.TrimSpace(ic.ID)
+				if trimmedID == "" {
+					continue
+				}
+				cfgByID[trimmedID] = ic
+			}
+		}
+	}
 
 	// Manifest refresh happens in the background loop or via explicit reload.
 
@@ -907,12 +1406,23 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			if errMsg != "" {
 				s.logger.Printf("manifest unavailable id=%s err=%s", id, errMsg)
 			}
+			entry := cfgByID[id]
+			s.mu.RLock()
+			updateState := s.updates[id]
+			s.mu.RUnlock()
 			reg.Integrations = append(reg.Integrations, models.RegistryIntegration{
-				ID:            id,
-				DisplayName:   id,
-				Route:         "/apps/" + id,
-				DefaultUIPath: "/ui/",
-				Widgets:       []models.RegistryWidget{},
+				ID:               id,
+				DisplayName:      id,
+				Route:            "/apps/" + id,
+				DefaultUIPath:    "/ui/",
+				InstalledVersion: firstNonEmpty(strings.TrimSpace(entry.Version), updateState.InstalledVersion),
+				LatestVersion:    updateState.LatestVersion,
+				UpdateAvailable:  updateState.UpdateAvailable,
+				AutoUpdate:       entry.AutoUpdate || updateState.AutoUpdate,
+				UpdateCheckedAt:  updateState.CheckedAt,
+				UpdateError:      updateState.Error,
+				UpdateInProgress: updateState.InProgress,
+				Widgets:          []models.RegistryWidget{},
 			})
 			continue
 		}
@@ -941,14 +1451,38 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		// Host route (inside the Homenavi app shell) is always /apps/<id>.
 		// Integration content is served separately under /integrations/<id>/... via the proxy.
 		regInt := models.RegistryIntegration{
-			ID:            id,
-			DisplayName:   firstNonEmpty(strings.TrimSpace(m.UI.Sidebar.Label), strings.TrimSpace(m.Name), id),
-			Description:   strings.TrimSpace(m.Description),
-			Icon:          icon,
-			Route:         "/apps/" + id,
-			DefaultUIPath: defPath,
-			SetupUIPath:   setupPath,
-			Secrets:       append([]models.SecretSpec{}, m.Secrets...),
+			ID:               id,
+			DisplayName:      firstNonEmpty(strings.TrimSpace(m.UI.Sidebar.Label), strings.TrimSpace(m.Name), id),
+			Description:      strings.TrimSpace(m.Description),
+			Icon:             icon,
+			Route:            "/apps/" + id,
+			DefaultUIPath:    defPath,
+			SetupUIPath:      setupPath,
+			InstalledVersion: strings.TrimSpace(m.Version),
+			Secrets:          append([]models.SecretSpec{}, m.Secrets...),
+		}
+
+		if entry, ok := cfgByID[id]; ok {
+			regInt.AutoUpdate = entry.AutoUpdate
+			if strings.TrimSpace(entry.Version) != "" {
+				regInt.InstalledVersion = strings.TrimSpace(entry.Version)
+			}
+		}
+		s.mu.RLock()
+		updateState, hasUpdateState := s.updates[id]
+		s.mu.RUnlock()
+		if hasUpdateState {
+			if updateState.InstalledVersion != "" {
+				regInt.InstalledVersion = updateState.InstalledVersion
+			}
+			regInt.LatestVersion = updateState.LatestVersion
+			regInt.UpdateAvailable = updateState.UpdateAvailable
+			regInt.UpdateCheckedAt = updateState.CheckedAt
+			regInt.UpdateError = updateState.Error
+			regInt.UpdateInProgress = updateState.InProgress
+			if updateState.AutoUpdate {
+				regInt.AutoUpdate = true
+			}
 		}
 
 		if m.DeviceExtension.Enabled {
@@ -1283,6 +1817,13 @@ func (s *Server) refreshManifest(ctx context.Context, id string, upstream *url.U
 	s.mu.Lock()
 	s.manifests[id] = m
 	delete(s.manifestErr, id)
+	state := s.updates[id]
+	state.ID = id
+	if strings.TrimSpace(state.InstalledVersion) == "" {
+		state.InstalledVersion = strings.TrimSpace(m.Version)
+	}
+	state.InProgress = s.updating[id]
+	s.updates[id] = state
 	s.mu.Unlock()
 	return nil
 }

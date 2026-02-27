@@ -81,6 +81,13 @@ type RegistryIntegration struct {
 	Route               string                       `json:"route"`
 	DefaultUIPath       string                       `json:"default_ui_path"`
 	SetupUIPath         string                       `json:"setup_ui_path,omitempty"`
+	InstalledVersion    string                       `json:"installed_version,omitempty"`
+	LatestVersion       string                       `json:"latest_version,omitempty"`
+	UpdateAvailable     bool                         `json:"update_available,omitempty"`
+	AutoUpdate          bool                         `json:"auto_update,omitempty"`
+	UpdateCheckedAt     *time.Time                   `json:"update_checked_at,omitempty"`
+	UpdateError         string                       `json:"update_error,omitempty"`
+	UpdateInProgress    bool                         `json:"update_in_progress,omitempty"`
 	Widgets             []RegistryWidget             `json:"widgets"`
 	Secrets             []SecretSpec                 `json:"secrets,omitempty"`
 	DeviceExtension     *RegistryDeviceExtension     `json:"device_extension,omitempty"`

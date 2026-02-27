@@ -97,37 +97,37 @@ function authHeaders(token, contentType = 'application/json') {
 }
 
 // Core request helpers returning { success, ... }
-async function get(url, { token, params, responseType } = {}) {
+async function get(url, { token, params, responseType, timeout } = {}) {
   try {
-    const resp = await instance.get(url, { params, responseType, headers: authHeaders(token) });
+    const resp = await instance.get(url, { params, responseType, timeout, headers: authHeaders(token) });
     return { success: true, data: resp.data, status: resp.status };
   } catch (err) { return normalizeError(err, 'GET failed'); }
 }
 
-async function del(url, { token, data } = {}) {
+async function del(url, { token, data, timeout } = {}) {
   try {
-    const resp = await instance.delete(url, { data, headers: authHeaders(token) });
+    const resp = await instance.delete(url, { data, timeout, headers: authHeaders(token) });
     return { success: true, data: resp.data, status: resp.status };
   } catch (err) { return normalizeError(err, 'DELETE failed'); }
 }
 
-async function post(url, data, { token, contentType = 'application/json', params } = {}) {
+async function post(url, data, { token, contentType = 'application/json', params, timeout } = {}) {
   try {
-    const resp = await instance.post(url, data, { params, headers: authHeaders(token, contentType) });
+    const resp = await instance.post(url, data, { params, timeout, headers: authHeaders(token, contentType) });
     return { success: true, data: resp.data, status: resp.status };
   } catch (err) { return normalizeError(err, 'POST failed'); }
 }
 
-async function put(url, data, { token, contentType = 'application/json', params } = {}) {
+async function put(url, data, { token, contentType = 'application/json', params, timeout } = {}) {
   try {
-    const resp = await instance.put(url, data, { params, headers: authHeaders(token, contentType) });
+    const resp = await instance.put(url, data, { params, timeout, headers: authHeaders(token, contentType) });
     return { success: true, data: resp.data, status: resp.status };
   } catch (err) { return normalizeError(err, 'PUT failed'); }
 }
 
-async function patch(url, data, { token, contentType = 'application/json' } = {}) {
+async function patch(url, data, { token, contentType = 'application/json', timeout } = {}) {
   try {
-    const resp = await instance.patch(url, data, { headers: authHeaders(token, contentType) });
+    const resp = await instance.patch(url, data, { timeout, headers: authHeaders(token, contentType) });
     return { success: true, data: resp.data, status: resp.status };
   } catch (err) { return normalizeError(err, 'PATCH failed'); }
 }

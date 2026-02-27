@@ -1171,6 +1171,73 @@
   transition: width 0.35s ease;
 }
 
+.integrations-admin-update-meta {
+  flex-wrap: wrap;
+}
+
+.integrations-admin-update-badge {
+  background: rgba(129, 140, 248, 0.2);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+}
+
+.integrations-admin-card-actions-layout {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.integrations-admin-card-actions-main,
+.integrations-admin-card-actions-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.integrations-admin-card-actions-main {
+  align-items: center;
+}
+
+.integrations-admin-card-actions-sub {
+  opacity: 0.9;
+}
+
+.integrations-admin-action-primary {
+  box-shadow: 0 6px 20px rgba(57, 170, 121, 0.25);
+}
+
+.integrations-admin-action-danger {
+  color: #fecaca !important;
+  border-color: rgba(239, 68, 68, 0.45) !important;
+}
+
+.integrations-admin-autoupdate-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.integrations-admin-autoupdate-toggle--modal {
+  margin-top: 0.7rem;
+}
+
+.integrations-admin-modal-actions-main,
+.integrations-admin-modal-actions-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.integrations-admin-modal-actions-sub {
+  margin-top: 0.65rem;
+}
+
 .integrations-admin-marketplace-toolbar {
   margin: 0.75rem 0 0.25rem;
   justify-content: flex-start;
@@ -1298,9 +1365,42 @@
   .integrations-admin-pagination {
     justify-content: center;
   }
+
+  .integrations-admin-page .integration-card-actions {
+    justify-content: flex-start;
+  }
+
+  .integrations-admin-card-actions-main,
+  .integrations-admin-card-actions-sub {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .integrations-admin-card-actions-main .btn,
+  .integrations-admin-card-actions-sub .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .integrations-admin-autoupdate-toggle {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 @media (max-width: 720px) {
+  .integrations-admin-page .integration-card-actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .integrations-admin-card-actions-main,
+  .integrations-admin-card-actions-sub {
+    grid-template-columns: 1fr;
+  }
+
   .integrations-marketplace-nav {
     flex-wrap: nowrap;
     overflow: hidden;
