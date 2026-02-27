@@ -19,12 +19,15 @@ import {
   getIntegrationRegistry,
   getIntegrationMarketplace,
   getIntegrationInstallStatus,
+  getIntegrationUpdates,
   installIntegration,
   incrementMarketplaceDownloads,
   reloadIntegrations,
   restartAllIntegrations,
   restartIntegration,
+  setIntegrationAutoUpdate,
   setIntegrationSecrets,
+  updateIntegration,
   uninstallIntegration,
 } from '../../services/integrationService';
 import { hasSetupUiPath, setupRouteForIntegration } from '../../utils/integrationSetup';
@@ -49,6 +52,7 @@ export default function IntegrationsAdmin() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceError, setMarketplaceError] = useState('');
   const [pendingSecretsId, setPendingSecretsId] = useState(null);
+  const [pendingPostInstallId, setPendingPostInstallId] = useState(null);
   const [secretValidation, setSecretValidation] = useState({});
   const [secretActionStatus, setSecretActionStatus] = useState({});
   const [selectedMarketplaceIntegration, setSelectedMarketplaceIntegration] = useState(null);
@@ -58,6 +62,7 @@ export default function IntegrationsAdmin() {
   const [marketplaceQuery, setMarketplaceQuery] = useState('');
   const [marketplaceShowInstalled, setMarketplaceShowInstalled] = useState(false);
   const [installStatus, setInstallStatus] = useState({});
+  const [updating, setUpdating] = useState({});
   const [marketplaceMode, setMarketplaceMode] = useState('discover');
   const [marketplaceFilter, setMarketplaceFilter] = useState('all');
   const [marketplaceSort, setMarketplaceSort] = useState('trending');
@@ -320,6 +325,7 @@ export default function IntegrationsAdmin() {
       return;
     }
     setError('');
+    await getIntegrationUpdates(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
     await refreshRegistryWithRetry();
     notifyIntegrationsUpdated();
@@ -354,6 +360,7 @@ export default function IntegrationsAdmin() {
       ? null
       : {
         compose_file: entryOrId?.compose_file,
+        version: entryOrId?.version,
       };
     setInstalling((prev) => ({ ...prev, [id]: true }));
     setInstallStatus((prev) => ({
@@ -387,7 +394,7 @@ export default function IntegrationsAdmin() {
     await refreshRegistryWithRetry();
     await refreshMarketplace();
     setInstalling((prev) => ({ ...prev, [id]: false }));
-    setPendingSecretsId(id);
+    setPendingPostInstallId(id);
     notifyIntegrationsUpdated();
   };
 
@@ -417,9 +424,14 @@ export default function IntegrationsAdmin() {
   };
 
   useEffect(() => {
-    const activeIds = Object.entries(installing)
-      .filter(([, active]) => active)
-      .map(([id]) => id);
+    const activeIds = Array.from(new Set([
+      ...Object.entries(installing)
+        .filter(([, active]) => active)
+        .map(([id]) => id),
+      ...Object.entries(updating)
+        .filter(([, active]) => active)
+        .map(([id]) => id),
+    ]));
     if (!activeIds.length) return undefined;
     let cancelled = false;
     const poll = async () => {
@@ -435,7 +447,7 @@ export default function IntegrationsAdmin() {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [installing]);
+  }, [installing, updating]);
 
   const openIntegrationModal = useCallback((integration, tab = 'about') => {
     const market = marketplaceById.get(integration.id);
@@ -447,17 +459,26 @@ export default function IntegrationsAdmin() {
   }, [marketplaceById]);
 
   useEffect(() => {
-    if (!pendingSecretsId || !registry) return;
-    const match = (registry.integrations || []).find((integration) => integration.id === pendingSecretsId);
+    if (!pendingPostInstallId || !registry) return;
+    const match = (registry.integrations || []).find((integration) => integration.id === pendingPostInstallId);
     if (!match) return;
     const secretsRequired = Array.isArray(match.secrets) && match.secrets.length > 0;
-    if (!secretsRequired) {
-      setPendingSecretsId(null);
+    if (secretsRequired) {
+      setActiveTab('installed');
+      setPendingSecretsId(match.id);
+      openIntegrationModal(match, 'manage');
+      setPendingPostInstallId(null);
       return;
     }
-    setActiveTab('installed');
-    openIntegrationModal(match, 'manage');
-  }, [pendingSecretsId, registry, openIntegrationModal]);
+    const setupCapable = hasSetupUiPath(match) || Boolean(setupCapabilities[match.id]);
+    if (setupCapable) {
+      const setupURL = setupRouteForIntegration(match);
+      if (setupURL) {
+        window.open(setupURL, '_blank', 'noopener,noreferrer');
+      }
+    }
+    setPendingPostInstallId(null);
+  }, [pendingPostInstallId, registry, openIntegrationModal, setupCapabilities]);
 
   const closeModal = () => {
     if (selectedIntegration?.id) {
@@ -490,6 +511,54 @@ export default function IntegrationsAdmin() {
       setError('');
     }
     setRestarting((prev) => ({ ...prev, [id]: false }));
+  };
+
+  const handleUpdateIntegration = async (id) => {
+    if (!id) return;
+    setInstallStatus((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || {}),
+        id,
+        stage: 'queued',
+        progress: prev[id]?.progress ?? 5,
+        message: prev[id]?.message || 'Queued',
+      },
+    }));
+    setUpdating((prev) => ({ ...prev, [id]: true }));
+    const res = await updateIntegration(id);
+    if (!res.success) {
+      const detail = res.data?.detail ? ` (${res.data.detail})` : '';
+      setError(`${res.error || 'Failed to update integration'}${detail}`);
+      setUpdating((prev) => ({ ...prev, [id]: false }));
+      return;
+    }
+    setError('');
+    await getIntegrationUpdates(true);
+    await refreshRegistryWithRetry();
+    setUpdating((prev) => ({ ...prev, [id]: false }));
+    notifyIntegrationsUpdated();
+  };
+
+  const handleToggleAutoUpdate = async (id, enabled) => {
+    const res = await setIntegrationAutoUpdate(id, enabled);
+    if (!res.success) {
+      const detail = res.data?.detail ? ` (${res.data.detail})` : '';
+      setError(`${res.error || 'Failed to update auto-update policy'}${detail}`);
+      return;
+    }
+    setError('');
+    setRegistry((prev) => {
+      if (!prev || !Array.isArray(prev.integrations)) return prev;
+      return {
+        ...prev,
+        integrations: prev.integrations.map((integration) => (
+          integration.id === id
+            ? { ...integration, auto_update: Boolean(enabled) }
+            : integration
+        )),
+      };
+    });
   };
 
   const handleSecretChange = (id, key, value) => {
@@ -625,8 +694,12 @@ export default function IntegrationsAdmin() {
       onClose={closeModal}
       onRestartIntegration={handleRestartIntegration}
       onUninstallIntegration={handleUninstall}
+      onUpdateIntegration={handleUpdateIntegration}
+      onToggleAutoUpdate={handleToggleAutoUpdate}
       restarting={restarting}
       uninstalling={uninstalling}
+      updating={updating}
+      installStatus={installStatus}
       normalizeSecrets={normalizeSecrets}
       pendingSecretsId={pendingSecretsId}
       secretValidation={secretValidation}
@@ -708,8 +781,12 @@ export default function IntegrationsAdmin() {
           onOpenManage={(integration) => openIntegrationModal(integration, 'manage')}
           onRestartIntegration={handleRestartIntegration}
           onUninstallIntegration={handleUninstall}
+          onUpdateIntegration={handleUpdateIntegration}
+          onToggleAutoUpdate={handleToggleAutoUpdate}
           restarting={restarting}
           uninstalling={uninstalling}
+          updating={updating}
+          installStatus={installStatus}
           setupCapabilities={setupCapabilities}
           onOpenSetup={handleOpenSetup}
           resolveFaIcon={resolveFaIcon}

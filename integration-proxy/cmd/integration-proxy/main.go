@@ -17,10 +17,11 @@ import (
 
 func main() {
 	var (
-		listenAddr = flag.String("listen", ":8099", "listen address")
-		configPath = flag.String("config", getenv("INTEGRATIONS_CONFIG_PATH", "/config/integrations.yaml"), "path to integrations yaml")
-		schemaPath = flag.String("schema", getenv("INTEGRATIONS_SCHEMA_PATH", "/config/homenavi-integration.schema.json"), "path to integration manifest jsonschema")
-		refresh    = flag.Duration("refresh", 30*time.Second, "manifest refresh interval")
+		listenAddr  = flag.String("listen", ":8099", "listen address")
+		configPath  = flag.String("config", getenv("INTEGRATIONS_CONFIG_PATH", "/config/integrations.yaml"), "path to integrations yaml")
+		schemaPath  = flag.String("schema", getenv("INTEGRATIONS_SCHEMA_PATH", "/config/homenavi-integration.schema.json"), "path to integration manifest jsonschema")
+		refresh     = flag.Duration("refresh", 30*time.Second, "manifest refresh interval")
+		updateEvery = flag.Duration("updates-refresh", getenvDuration("INTEGRATIONS_UPDATE_CHECK_INTERVAL", 15*time.Minute), "integration update check interval (0 disables)")
 	)
 	flag.Parse()
 
@@ -53,6 +54,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go s.StartRefreshLoop(ctx, *refresh)
+	go s.StartUpdateLoop(ctx, *updateEvery)
 
 	h := auth.RequireResident(pubKey)(s.Routes())
 	srv := &http.Server{Addr: *listenAddr, Handler: h}
@@ -68,4 +70,16 @@ func getenv(key, def string) string {
 		return def
 	}
 	return v
+}
+
+func getenvDuration(key string, def time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil {
+		return def
+	}
+	return parsed
 }

@@ -61,6 +61,12 @@ export async function installIntegration(id, upstream, compose) {
   if (compose?.compose_file) {
     payload.compose_file = compose.compose_file;
   }
+  if (compose?.version) {
+    payload.version = compose.version;
+  }
+  if (typeof compose?.auto_update === 'boolean') {
+    payload.auto_update = compose.auto_update;
+  }
   return http.post('/integrations/install', payload);
 }
 
@@ -70,4 +76,19 @@ export async function uninstallIntegration(id) {
 
 export async function getIntegrationInstallStatus(id) {
   return http.get(`/integrations/install-status/${id}`);
+}
+
+export async function getIntegrationUpdates(refresh = false) {
+  const params = new URLSearchParams();
+  if (refresh) params.set('refresh', 'true');
+  const query = params.toString();
+  return http.get(`/integrations/updates${query ? `?${query}` : ''}`);
+}
+
+export async function updateIntegration(id) {
+  return http.post('/integrations/update', { id }, { timeout: 180000 });
+}
+
+export async function setIntegrationAutoUpdate(id, autoUpdate) {
+  return http.post('/integrations/update-policy', { id, auto_update: Boolean(autoUpdate) });
 }

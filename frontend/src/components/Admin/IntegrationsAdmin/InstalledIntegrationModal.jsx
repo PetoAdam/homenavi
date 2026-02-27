@@ -13,6 +13,7 @@ import Button from '../../common/Button/Button';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
 import GalleryCarousel from '../../common/GalleryCarousel/GalleryCarousel';
 import BaseModal from '../../common/BaseModal/BaseModal';
+import GlassSwitch from '../../common/GlassSwitch/GlassSwitch';
 
 export default function InstalledIntegrationModal({
   integration,
@@ -21,8 +22,12 @@ export default function InstalledIntegrationModal({
   onClose,
   onRestartIntegration,
   onUninstallIntegration,
+  onUpdateIntegration,
+  onToggleAutoUpdate,
   restarting,
   uninstalling,
+  updating,
+  installStatus,
   normalizeSecrets,
   pendingSecretsId,
   secretValidation,
@@ -53,6 +58,12 @@ export default function InstalledIntegrationModal({
   const hasGallery = Array.isArray(galleryImages) && galleryImages.length > 0;
   const hasLinks = Boolean(homepage || repoUrl || manifestUrl);
   const manageTabLabel = secretsCount > 0 ? `Manage (${secretsCount})` : 'Manage';
+  const installedVersion = integration.installed_version || integration.version || 'unknown';
+  const latestVersion = integration.latest_version || integration.marketplace?.version || '';
+  const updateAvailable = Boolean(integration.update_available && latestVersion);
+  const autoUpdate = Boolean(integration.auto_update);
+  const updateBusy = Boolean(updating[integration.id] || integration.update_in_progress);
+  const status = installStatus[integration.id];
 
   return (
     <BaseModal
@@ -113,6 +124,8 @@ export default function InstalledIntegrationModal({
                   <FontAwesomeIcon icon={faCubes} /> Details
                 </div>
                 <div className="integrations-admin-marketplace-details">
+                  <div><strong>Installed:</strong> {installedVersion}</div>
+                  {latestVersion ? <div><strong>Latest:</strong> {latestVersion}</div> : null}
                   <div><strong>Listen path:</strong> {listenPath}</div>
                   <div><strong>Route:</strong> {route}</div>
                   {releaseTag ? <div><strong>Release tag:</strong> {releaseTag}</div> : null}
@@ -149,7 +162,13 @@ export default function InstalledIntegrationModal({
 
               <div className="integrations-admin-modal-section">
                 <div className="integrations-admin-card-title">Manage</div>
-                <div className="integrations-admin-item-actions">
+                <div className="integrations-admin-modal-actions-main">
+                  <Button
+                    onClick={() => onUpdateIntegration(integration.id)}
+                    disabled={!updateAvailable || updateBusy}
+                  >
+                    {updateBusy ? 'Updating…' : 'Update integration'}
+                  </Button>
                   {setupCapable ? (
                     <Button
                       variant="secondary"
@@ -165,21 +184,49 @@ export default function InstalledIntegrationModal({
                   >
                     {restarting[integration.id] ? 'Restarting…' : 'Restart integration'}
                   </Button>
+                </div>
+                <div className="integrations-admin-modal-actions-sub">
                   <Button
-                    variant="secondary"
+                    variant="ghost"
+                    className="integrations-admin-action-danger"
                     onClick={() => onUninstallIntegration(integration.id)}
                     disabled={uninstalling[integration.id]}
                   >
                     {uninstalling[integration.id] ? 'Removing…' : 'Remove'}
                   </Button>
                 </div>
+                <div className="integrations-admin-autoupdate-toggle integrations-admin-autoupdate-toggle--modal">
+                  <GlassSwitch
+                    checked={autoUpdate}
+                    disabled={updateBusy}
+                    onChange={(next) => onToggleAutoUpdate(integration.id, next)}
+                  />
+                  <span>Auto-update</span>
+                </div>
+                {updateBusy ? (
+                  <div className="integrations-admin-install-status">
+                    <div className="integrations-admin-install-meta">
+                      <span>{status?.message || 'Updating…'}</span>
+                      <span>{status?.progress ?? 0}%</span>
+                    </div>
+                    <div className="integrations-admin-install-bar">
+                      <span style={{ width: `${status?.progress ?? 10}%` }} />
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </>
           ) : (
             <>
               <div className="integrations-admin-modal-section">
                 <div className="integrations-admin-card-title">Manage</div>
-                <div className="integrations-admin-item-actions integrations-admin-secret-actions">
+                <div className="integrations-admin-modal-actions-main integrations-admin-secret-actions">
+                  <Button
+                    onClick={() => onUpdateIntegration(integration.id)}
+                    disabled={!updateAvailable || updateBusy}
+                  >
+                    {updateBusy ? 'Updating…' : 'Update integration'}
+                  </Button>
                   {setupCapable ? (
                     <Button
                       variant="secondary"
@@ -195,14 +242,36 @@ export default function InstalledIntegrationModal({
                   >
                     {restarting[integration.id] ? 'Restarting…' : 'Restart integration'}
                   </Button>
+                </div>
+                <div className="integrations-admin-modal-actions-sub">
                   <Button
-                    variant="secondary"
+                    variant="ghost"
+                    className="integrations-admin-action-danger"
                     onClick={() => onUninstallIntegration(integration.id)}
                     disabled={uninstalling[integration.id]}
                   >
                     {uninstalling[integration.id] ? 'Removing…' : 'Remove'}
                   </Button>
                 </div>
+                <div className="integrations-admin-autoupdate-toggle integrations-admin-autoupdate-toggle--modal">
+                  <GlassSwitch
+                    checked={autoUpdate}
+                    disabled={updateBusy}
+                    onChange={(next) => onToggleAutoUpdate(integration.id, next)}
+                  />
+                  <span>Auto-update</span>
+                </div>
+                {updateBusy ? (
+                  <div className="integrations-admin-install-status">
+                    <div className="integrations-admin-install-meta">
+                      <span>{status?.message || 'Updating…'}</span>
+                      <span>{status?.progress ?? 0}%</span>
+                    </div>
+                    <div className="integrations-admin-install-bar">
+                      <span style={{ width: `${status?.progress ?? 10}%` }} />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="integrations-admin-modal-section">
