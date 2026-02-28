@@ -12,10 +12,12 @@ type Config struct {
 }
 
 type IntegrationConfig struct {
-	ID         string `yaml:"id"`
-	Upstream   string `yaml:"upstream"`
-	Version    string `yaml:"version,omitempty"`
-	AutoUpdate bool   `yaml:"auto_update,omitempty"`
+	ID               string `yaml:"id"`
+	Upstream         string `yaml:"upstream"`
+	Version          string `yaml:"version,omitempty"`
+	AutoUpdate       bool   `yaml:"auto_update,omitempty"`
+	DevLatestVersion string `yaml:"dev_latest_version,omitempty"`
+	DevComposeFile   string `yaml:"dev_compose_file,omitempty"`
 }
 
 func Load(path string) (Config, error) {

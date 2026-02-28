@@ -300,15 +300,31 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 				if id == "" {
 					continue
 				}
+				s.setInstallStatus(id, "restarting", 60, "Restarting integration")
 				composeFile := s.defaultComposeFile(id)
 				if strings.TrimSpace(composeFile) == "" {
+					s.setInstallStatus(id, "restarted", 100, "Restarted")
 					continue
 				}
 				composeFile = s.expandComposePath(composeFile)
 				if err := s.runCompose(ctx, composeFile, "restart", id); err != nil {
 					s.logger.Printf("restart-all failed id=%s err=%v", id, err)
+					s.setInstallStatus(id, "error", 100, "Restart failed")
+				} else {
+					s.setInstallStatus(id, "restarted", 100, "Restarted")
 				}
 			}
+		} else if cfgErr == nil {
+			for _, ic := range cfg.Integrations {
+				id := strings.TrimSpace(ic.ID)
+				if id == "" {
+					continue
+				}
+				s.setInstallStatus(id, "restarting", 60, "Restarting integration")
+				s.setInstallStatus(id, "restarted", 100, "Restarted")
+			}
+		} else {
+			s.logger.Printf("restart-all config load failed: %v", cfgErr)
 		}
 		s.refreshAll(ctx)
 	}()
@@ -357,6 +373,8 @@ func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request
 			} else {
 				s.setInstallStatus(id, "restarted", 100, "Restarted")
 			}
+		} else {
+			s.setInstallStatus(id, "restarted", 100, "Restarted")
 		}
 		s.refreshManifestFromUpstream(ctx, id)
 	}()
@@ -421,10 +439,13 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
 		return
 	}
+	op := newIntegrationOperation(s, "install", id)
+	op.set("queued", 5, "Queued")
 	if strings.TrimSpace(s.configPath) == "" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "config path unavailable", "code": http.StatusInternalServerError})
+		op.fail(fmt.Errorf("config path unavailable"))
 		return
 	}
 	cfg, err := config.Load(s.configPath)
@@ -432,6 +453,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to load config", "code": http.StatusInternalServerError})
+		op.fail(fmt.Errorf("failed to load config: %w", err))
 		return
 	}
 	for _, ic := range cfg.Integrations {
@@ -449,23 +471,22 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 			upstream = fmt.Sprintf("http://%s:8099", safeID)
 		}
 	}
-	composeFile, err := s.resolveComposeFileFromPayload(id, req.ComposeFile)
+	op.set("preparing", 15, "Preparing installation")
+	composeFile, err := s.resolveComposeFileForOperation(id, req.ComposeFile)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
+		op.fail(fmt.Errorf("failed to prepare compose file: %w", err))
 		return
 	}
-	if strings.TrimSpace(composeFile) == "" {
-		composeFile = s.defaultComposeFile(id)
-	}
-	composeFile = s.expandComposePath(composeFile)
 	if strings.TrimSpace(composeFile) != "" {
 		service, err := s.composeServiceForID(composeFile, id)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid compose file", "code": http.StatusBadRequest, "detail": err.Error()})
+			op.fail(fmt.Errorf("invalid compose file: %w", err))
 			return
 		}
 		if service != "" && (upstream == "" || upstream == defaultUpstreamForID(id)) {
@@ -476,6 +497,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing upstream", "code": http.StatusBadRequest})
+		op.fail(fmt.Errorf("missing upstream"))
 		return
 	}
 	if strings.TrimSpace(composeFile) != "" {
@@ -483,46 +505,61 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare secrets file", "code": http.StatusInternalServerError, "detail": err.Error()})
-			s.setInstallStatus(id, "error", 100, err.Error())
+			op.fail(fmt.Errorf("failed to prepare secrets file: %w", err))
 			return
 		}
 	}
-	s.setInstallStatus(id, "writing-config", 20, "Updating installed integrations")
+	startedByCompose := false
+	op.set("starting", 45, "Starting integration")
+	if strings.TrimSpace(composeFile) != "" {
+		if err := s.composeInstall(r.Context(), composeFile, id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to start integration", "code": http.StatusInternalServerError, "detail": err.Error()})
+			op.fail(fmt.Errorf("failed to start integration: %w", err))
+			return
+		}
+		startedByCompose = true
+	}
+	op.set("writing-config", 70, "Updating installed integrations")
 	entry := config.IntegrationConfig{ID: id, Upstream: upstream, Version: strings.TrimSpace(req.Version)}
 	if req.AutoUpdate != nil {
 		entry.AutoUpdate = *req.AutoUpdate
 	}
-	cfg.Integrations = append(cfg.Integrations, entry)
-	if err := config.Save(s.configPath, cfg); err != nil {
+	nextCfg := cfg
+	nextCfg.Integrations = append(nextCfg.Integrations, entry)
+	if err := config.Save(s.configPath, nextCfg); err != nil {
+		if startedByCompose {
+			if stopErr := s.composeUninstall(r.Context(), composeFile, id); stopErr != nil {
+				s.logger.Printf("failed to rollback compose install id=%s err=%v", id, stopErr)
+			}
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to write config", "code": http.StatusInternalServerError, "detail": err.Error()})
-		s.setInstallStatus(id, "error", 100, err.Error())
+		op.fail(fmt.Errorf("failed to write config: %w", err))
 		return
 	}
-	s.setInstallStatus(id, "starting", 45, "Starting integration")
-	if strings.TrimSpace(composeFile) != "" {
-		if err := s.composeInstall(r.Context(), composeFile, id); err != nil {
-			cfg.Integrations = removeIntegrationByID(cfg.Integrations, id)
-			if saveErr := config.Save(s.configPath, cfg); saveErr != nil {
-				s.logger.Printf("failed to rollback config for id=%s err=%s", id, saveErr)
-			}
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to start integration", "code": http.StatusInternalServerError, "detail": err.Error()})
-			s.setInstallStatus(id, "error", 100, err.Error())
-			return
-		}
-	}
-	s.setInstallStatus(id, "reloading", 70, "Reloading integration proxy")
+	op.set("reloading", 85, "Reloading integration proxy")
 	if err := s.ReloadFromConfig(); err != nil {
+		if saveErr := config.Save(s.configPath, cfg); saveErr != nil {
+			s.logger.Printf("failed to rollback config after reload error id=%s err=%v", id, saveErr)
+		}
+		if startedByCompose {
+			if stopErr := s.composeUninstall(r.Context(), composeFile, id); stopErr != nil {
+				s.logger.Printf("failed to rollback compose install after reload error id=%s err=%v", id, stopErr)
+			}
+		}
+		if reloadErr := s.ReloadFromConfig(); reloadErr != nil {
+			s.logger.Printf("failed to reload proxy after rollback id=%s err=%v", id, reloadErr)
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to reload", "code": http.StatusInternalServerError})
-		s.setInstallStatus(id, "error", 100, err.Error())
+		op.fail(fmt.Errorf("failed to reload: %w", err))
 		return
 	}
-	s.setInstallStatus(id, "ready", 100, "Installed")
+	op.done("Installed")
 	s.checkForUpdates(r.Context(), false)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "installed", "id": id})
@@ -875,6 +912,33 @@ type marketplaceIntegration struct {
 	ComposeFile string `json:"compose_file"`
 }
 
+func (s *Server) targetIntegrationForUpdate(ctx context.Context, ic config.IntegrationConfig) (*marketplaceIntegration, error) {
+	id := strings.TrimSpace(ic.ID)
+	if id == "" {
+		return nil, fmt.Errorf("missing integration id")
+	}
+	marketItem, err := s.fetchMarketplaceIntegration(ctx, id)
+	devLatest := strings.TrimSpace(ic.DevLatestVersion)
+	devCompose := strings.TrimSpace(ic.DevComposeFile)
+	if err != nil {
+		if devLatest == "" {
+			return nil, err
+		}
+		marketItem = &marketplaceIntegration{ID: id}
+	}
+	if marketItem == nil {
+		marketItem = &marketplaceIntegration{ID: id}
+	}
+	marketItem.ID = id
+	if devLatest != "" {
+		marketItem.Version = devLatest
+	}
+	if devCompose != "" {
+		marketItem.ComposeFile = devCompose
+	}
+	return marketItem, nil
+}
+
 func (s *Server) fetchMarketplaceIntegration(ctx context.Context, id string) (*marketplaceIntegration, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -973,8 +1037,11 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 	if target == nil {
 		return fmt.Errorf("missing target integration")
 	}
+	op := newIntegrationOperation(s, "update", id)
+	op.set("checking", 15, "Checking update")
 	defer func() {
 		if r := recover(); r != nil {
+			op.fail(fmt.Errorf("panic: %v", r))
 			s.finishUpdate(id, fmt.Sprintf("panic: %v", r))
 			panic(r)
 		}
@@ -982,12 +1049,14 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 
 	cfg, index, err := s.loadIntegrationConfig(id)
 	if err != nil {
+		op.fail(err)
 		s.finishUpdate(id, err.Error())
 		return err
 	}
 	entry := cfg.Integrations[index]
 	installedVersion := s.effectiveInstalledVersion(id, entry.Version)
 	latestVersion := strings.TrimSpace(target.Version)
+	s.logger.Printf("integration update id=%s installed=%q latest=%q", id, installedVersion, latestVersion)
 	if !isVersionNewer(installedVersion, latestVersion) {
 		s.setUpdateState(id, func(state *integrationUpdateStatus) {
 			state.InstalledVersion = installedVersion
@@ -995,40 +1064,37 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 			state.UpdateAvailable = false
 			state.AutoUpdate = entry.AutoUpdate
 		})
+		op.done("Already up to date")
 		s.finishUpdate(id, "")
 		return nil
 	}
 
-	composeFile, err := s.resolveComposeFileFromPayload(id, target.ComposeFile)
+	op.set("preparing", 30, "Preparing update")
+	composeFile, err := s.resolveComposeFileForOperation(id, target.ComposeFile)
 	if err != nil {
+		op.fail(err)
 		s.finishUpdate(id, err.Error())
 		return err
 	}
-	if strings.TrimSpace(composeFile) == "" {
-		composeFile = s.defaultComposeFile(id)
-	}
-	composeFile = s.expandComposePath(composeFile)
 	if strings.TrimSpace(composeFile) != "" {
-		s.setInstallStatus(id, "updating", 45, "Updating integration")
+		op.set("updating", 45, "Updating integration")
 		if err := s.composeInstall(ctx, composeFile, id); err != nil {
-			s.setInstallStatus(id, "error", 100, "Update failed")
+			op.fail(fmt.Errorf("update failed: %w", err))
 			s.finishUpdate(id, err.Error())
 			return err
 		}
 	}
 
+	op.set("writing-config", 85, "Saving installed version")
 	cfg.Integrations[index].Version = latestVersion
 	if err := config.Save(s.configPath, cfg); err != nil {
-		s.finishUpdate(id, err.Error())
-		return err
-	}
-	if err := s.ReloadFromConfig(); err != nil {
+		op.fail(err)
 		s.finishUpdate(id, err.Error())
 		return err
 	}
 	s.refreshManifestFromUpstream(ctx, id)
 	updatedVersion := s.effectiveInstalledVersion(id, latestVersion)
-	s.setInstallStatus(id, "ready", 100, "Updated")
+	op.done("Updated")
 	s.setUpdateState(id, func(state *integrationUpdateStatus) {
 		state.InstalledVersion = updatedVersion
 		state.LatestVersion = latestVersion
@@ -1054,9 +1120,10 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 			continue
 		}
 		installed := s.effectiveInstalledVersion(id, ic.Version)
-		marketItem, fetchErr := s.fetchMarketplaceIntegration(ctx, id)
+		marketItem, fetchErr := s.targetIntegrationForUpdate(ctx, ic)
 		now := time.Now().UTC()
 		if fetchErr != nil {
+			s.logger.Printf("integration update-check id=%s failed err=%v", id, fetchErr)
 			s.setUpdateState(id, func(state *integrationUpdateStatus) {
 				state.InstalledVersion = installed
 				state.AutoUpdate = ic.AutoUpdate
@@ -1067,6 +1134,7 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 		}
 		latest := strings.TrimSpace(marketItem.Version)
 		available := isVersionNewer(installed, latest)
+		s.logger.Printf("integration update-check id=%s installed=%q latest=%q available=%t auto_update=%t", id, installed, latest, available, ic.AutoUpdate)
 		s.setUpdateState(id, func(state *integrationUpdateStatus) {
 			state.InstalledVersion = installed
 			state.LatestVersion = latest
@@ -1076,10 +1144,12 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 			state.Error = ""
 		})
 		if autoApply && ic.AutoUpdate && available {
+			s.logger.Printf("integration auto-update queued id=%s", id)
 			if err := s.updateInstalledIntegration(ctx, id, marketItem); err != nil {
 				s.setUpdateState(id, func(state *integrationUpdateStatus) {
 					state.Error = err.Error()
 				})
+				s.logger.Printf("integration auto-update failed id=%s err=%v", id, err)
 			}
 		}
 	}
@@ -1124,29 +1194,38 @@ func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "missing id", "code": http.StatusBadRequest})
 		return
 	}
-	item, err := s.fetchMarketplaceIntegration(r.Context(), id)
+	op := newIntegrationOperation(s, "update", id)
+	op.set("queued", 10, "Queued")
+	cfg, index, err := s.loadIntegrationConfig(id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration not installed", "code": http.StatusNotFound})
+		op.fail(err)
+		return
+	}
+	item, err := s.targetIntegrationForUpdate(r.Context(), cfg.Integrations[index])
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to fetch marketplace integration", "code": http.StatusBadGateway, "detail": err.Error()})
+		op.fail(err)
 		return
 	}
-	if !s.startUpdate(id) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "update already in progress", "code": http.StatusConflict})
-		return
-	}
-	s.setInstallStatus(id, "queued", 10, "Queued")
-	go func() {
-		ctx := context.Background()
-		if err := s.runInstalledIntegrationUpdate(ctx, id, item); err != nil {
-			s.logger.Printf("update %s failed: %v", id, err)
+	s.logger.Printf("integration update requested id=%s target_version=%q", id, strings.TrimSpace(item.Version))
+	if err := s.updateInstalledIntegration(r.Context(), id, item); err != nil {
+		statusCode := http.StatusInternalServerError
+		errMsg := strings.TrimSpace(err.Error())
+		if strings.Contains(strings.ToLower(errMsg), "already in progress") {
+			statusCode = http.StatusConflict
 		}
-	}()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to update integration", "code": statusCode, "detail": errMsg})
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]any{"status": "queued", "id": id})
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "updated", "id": id})
 }
 
 func (s *Server) handleUpdatePolicy(w http.ResponseWriter, r *http.Request) {

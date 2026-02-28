@@ -13,6 +13,12 @@ import InstalledIntegrationsSection from './IntegrationsAdmin/InstalledIntegrati
 import MarketplaceSection from './IntegrationsAdmin/MarketplaceSection';
 import InstalledIntegrationModal from './IntegrationsAdmin/InstalledIntegrationModal';
 import MarketplaceIntegrationModal from './IntegrationsAdmin/MarketplaceIntegrationModal';
+import Snackbar from '../common/Snackbar/Snackbar';
+import IntegrationIcon from '../common/IntegrationIcon/IntegrationIcon';
+import {
+  isSuccessfulOperationStatus,
+  isTerminalOperationStatus,
+} from './IntegrationsAdmin/integrationOperationStatus';
 import { useAuth } from '../../context/AuthContext';
 import {
   detectIntegrationSetupCapability,
@@ -38,6 +44,7 @@ export default function IntegrationsAdmin() {
   const { user, accessToken } = useAuth();
   const [registry, setRegistry] = useState(null);
   const [error, setError] = useState('');
+  const [toast, setToast] = useState(null);
   const [reloading, setReloading] = useState(false);
   const [secretValues, setSecretValues] = useState({});
   const [saving, setSaving] = useState({});
@@ -45,6 +52,7 @@ export default function IntegrationsAdmin() {
   const [selectedIntegration, setSelectedIntegration] = useState(null);
   const [restartingAll, setRestartingAll] = useState(false);
   const [restarting, setRestarting] = useState({});
+  const [restartAllTargets, setRestartAllTargets] = useState([]);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -157,6 +165,20 @@ export default function IntegrationsAdmin() {
     };
   }), [integrations, marketplaceById]);
 
+  const integrationMetaById = useMemo(() => {
+    const map = new Map();
+    mergedIntegrations.forEach((entry) => {
+      if (entry?.id) {
+        map.set(entry.id, entry);
+      }
+    });
+    marketplaceIntegrations.forEach((entry) => {
+      if (!entry?.id || map.has(entry.id)) return;
+      map.set(entry.id, entry);
+    });
+    return map;
+  }, [mergedIntegrations, marketplaceIntegrations]);
+
   useEffect(() => {
     let cancelled = false;
     const ids = (integrations || []).map((integration) => integration.id).filter(Boolean);
@@ -223,6 +245,27 @@ export default function IntegrationsAdmin() {
     const faKey = key.startsWith('fa:') ? key.slice('fa:'.length).trim() : key;
     return FA_ICON_MAP[faKey] || null;
   };
+
+  const buildOperationToast = useCallback((id, action) => {
+    const meta = integrationMetaById.get(id) || {};
+    const iconRaw = String(meta.icon || '').trim();
+    const name = String(meta.display_name || meta.name || id || 'Integration').trim();
+    let text = `${name} is now installed and ready to use.`;
+    if (action === 'updated') {
+      text = `${name} was updated successfully.`;
+    } else if (action === 'restarted') {
+      text = `${name} restarted successfully.`;
+    }
+    const fa = resolveFaIcon(iconRaw) || resolveFaIcon(id) || faPlug;
+    return (
+      <span className="integrations-admin-toast-content">
+        <span className="integrations-admin-toast-icon" aria-hidden="true">
+          <IntegrationIcon icon={iconRaw} faIcon={fa} fallbackIcon={faPlug} />
+        </span>
+        <span className="integrations-admin-toast-text">{text}</span>
+      </span>
+    );
+  }, [integrationMetaById, resolveFaIcon]);
 
   const totalPages = Math.max(1, Number(registry?.total_pages || 1));
   const pagedIntegrations = mergedIntegrations;
@@ -333,14 +376,51 @@ export default function IntegrationsAdmin() {
   };
 
   const handleRestartAll = async () => {
+    const ids = (registry?.integrations || []).map((integration) => integration.id).filter(Boolean);
+    if (ids.length) {
+      setRestarting((prev) => {
+        const next = { ...prev };
+        ids.forEach((id) => {
+          next[id] = true;
+        });
+        return next;
+      });
+      setInstallStatus((prev) => {
+        const next = { ...prev };
+        ids.forEach((id) => {
+          next[id] = {
+            ...(next[id] || {}),
+            id,
+            stage: 'queued',
+            progress: 10,
+            message: 'Queued for restart',
+          };
+        });
+        return next;
+      });
+      setRestartAllTargets(ids);
+    }
     setRestartingAll(true);
     const res = await restartAllIntegrations();
     if (!res.success) {
       setError(res.error || 'Failed to restart integrations');
+      if (ids.length) {
+        setRestarting((prev) => {
+          const next = { ...prev };
+          ids.forEach((id) => {
+            next[id] = false;
+          });
+          return next;
+        });
+      }
+      setRestartAllTargets([]);
+      setRestartingAll(false);
     } else {
       setError('');
+      if (!ids.length) {
+        setRestartingAll(false);
+      }
     }
-    setRestartingAll(false);
   };
 
   const resolveInstallUpstream = (entry) => {
@@ -431,6 +511,9 @@ export default function IntegrationsAdmin() {
       ...Object.entries(updating)
         .filter(([, active]) => active)
         .map(([id]) => id),
+      ...Object.entries(restarting)
+        .filter(([, active]) => active)
+        .map(([id]) => id),
     ]));
     if (!activeIds.length) return undefined;
     let cancelled = false;
@@ -438,7 +521,27 @@ export default function IntegrationsAdmin() {
       await Promise.all(activeIds.map(async (id) => {
         const res = await getIntegrationInstallStatus(id);
         if (!res.success || cancelled) return;
-        setInstallStatus((prev) => ({ ...prev, [id]: res.data }));
+        const status = res.data;
+        setInstallStatus((prev) => ({ ...prev, [id]: status }));
+        if (!isTerminalOperationStatus(status)) return;
+        if (installing[id]) {
+          setInstalling((prev) => ({ ...prev, [id]: false }));
+          if (isSuccessfulOperationStatus(status)) {
+            setToast(buildOperationToast(id, 'installed'));
+          }
+        }
+        if (updating[id]) {
+          setUpdating((prev) => ({ ...prev, [id]: false }));
+          if (isSuccessfulOperationStatus(status)) {
+            setToast(buildOperationToast(id, 'updated'));
+          }
+        }
+        if (restarting[id]) {
+          setRestarting((prev) => ({ ...prev, [id]: false }));
+          if (isSuccessfulOperationStatus(status) && !restartAllTargets.includes(id)) {
+            setToast(buildOperationToast(id, 'restarted'));
+          }
+        }
       }));
     };
     poll();
@@ -447,7 +550,16 @@ export default function IntegrationsAdmin() {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [installing, updating]);
+  }, [installing, updating, restarting, buildOperationToast, restartAllTargets]);
+
+  useEffect(() => {
+    if (!restartingAll || !restartAllTargets.length) return;
+    const hasActive = restartAllTargets.some((id) => Boolean(restarting[id]));
+    if (hasActive) return;
+    setRestartingAll(false);
+    setRestartAllTargets([]);
+    setToast('All integrations restarted successfully.');
+  }, [restartingAll, restartAllTargets, restarting]);
 
   const openIntegrationModal = useCallback((integration, tab = 'about') => {
     const market = marketplaceById.get(integration.id);
@@ -504,13 +616,23 @@ export default function IntegrationsAdmin() {
 
   const handleRestartIntegration = async (id) => {
     setRestarting((prev) => ({ ...prev, [id]: true }));
+    setInstallStatus((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || {}),
+        id,
+        stage: 'queued',
+        progress: 10,
+        message: 'Queued for restart',
+      },
+    }));
     const res = await restartIntegration(id);
     if (!res.success) {
       setError(res.error || 'Failed to restart integration');
+      setRestarting((prev) => ({ ...prev, [id]: false }));
     } else {
       setError('');
     }
-    setRestarting((prev) => ({ ...prev, [id]: false }));
   };
 
   const handleUpdateIntegration = async (id) => {
@@ -822,6 +944,7 @@ export default function IntegrationsAdmin() {
 
       {modal}
       {marketplaceModal}
+      <Snackbar message={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

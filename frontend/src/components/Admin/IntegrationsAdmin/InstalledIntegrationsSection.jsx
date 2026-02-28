@@ -131,6 +131,7 @@ export default function InstalledIntegrationsSection({
             const updateAvailable = Boolean(integration.update_available && latestVersion);
             const autoUpdate = Boolean(integration.auto_update);
             const updateBusy = Boolean(updating[integration.id] || integration.update_in_progress);
+            const restartBusy = Boolean(restarting[integration.id]);
             const status = installStatus[integration.id];
             const setupCapable = hasSetupUiPath(integration);
             return (
@@ -203,10 +204,10 @@ export default function InstalledIntegrationsSection({
                         variant="ghost"
                         className="integration-card-action-btn"
                         onClick={() => onRestartIntegration(integration.id)}
-                        disabled={restarting[integration.id]}
+                        disabled={restartBusy}
                       >
                         <span className="btn-icon"><FontAwesomeIcon icon={faArrowsRotate} /></span>
-                        <span className="btn-label">{restarting[integration.id] ? 'Restarting…' : 'Restart'}</span>
+                        <span className="btn-label">{restartBusy ? 'Restarting…' : 'Restart'}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -218,24 +219,24 @@ export default function InstalledIntegrationsSection({
                         <span className="btn-label">{uninstalling[integration.id] ? 'Removing…' : 'Remove'}</span>
                       </Button>
                     </div>
-                    <div className="integrations-admin-autoupdate-toggle" onClick={(e) => e.stopPropagation()}>
+                    <div className="integrations-admin-autoupdate-toggle integrations-admin-autoupdate-toggle--card" onClick={(e) => e.stopPropagation()}>
                       <GlassSwitch
                         checked={autoUpdate}
                         disabled={updateBusy}
                         onChange={(next) => onToggleAutoUpdate(integration.id, next)}
                       />
-                      <span>Auto-update</span>
+                      <span>Automatic updates</span>
                     </div>
                   </div>
                 )}
-                footer={updateBusy ? (
+                footer={updateBusy || restartBusy ? (
                   <div className="integrations-admin-install-status" onClick={(e) => e.stopPropagation()}>
                     <div className="integrations-admin-install-meta">
-                      <span>{status?.message || 'Updating…'}</span>
+                      <span>{status?.message || (restartBusy ? 'Restarting integration…' : 'Updating…')}</span>
                       <span>{status?.progress ?? 0}%</span>
                     </div>
                     <div className="integrations-admin-install-bar">
-                      <span style={{ width: `${status?.progress ?? 10}%` }} />
+                      <span style={{ width: `${status?.progress ?? (restartBusy ? 60 : 10)}%` }} />
                     </div>
                   </div>
                 ) : null}
