@@ -264,6 +264,12 @@ Security note: when compose-managed installs are enabled, `integration-proxy` ru
 
 Use the Admin → Integrations UI to install integrations from the marketplace and manage secrets. The proxy updates [integrations/config/installed.yaml](integrations/config/installed.yaml) automatically.
 
+Runtime policy: use one integration lifecycle runtime per environment.
+
+- Compose-based environment: manage integrations via Compose.
+- Kubernetes/Helm-based environment: manage integrations via Helm/Kubernetes artifacts.
+- Mixed runtime installs in a single environment are not supported.
+
 Installed integrations track their installed `version` (and `auto_update` policy) in `installed.yaml`. Homenavi compares the installed version to the marketplace version (semver) to surface **Update available** and to support **Auto-update**.
 
 If you run custom integrations manually, ensure the container is on the same Docker network and then use Admin → Integrations to add or refresh the entry.
@@ -275,6 +281,14 @@ If you run custom integrations manually, ensure the container is on the same Doc
 - Auto-update can be enabled per integration; `integration-proxy` periodically checks the marketplace and applies updates when available.
 
 ### Helm installation (coming soon)
+
+### GitOps note for Kubernetes (ArgoCD/Flux)
+
+For Kubernetes GitOps deployments, manage Homenavi and integrations in your GitOps repository (for example ArgoCD/Flux manifests/apps) and let reconciliation apply changes.
+
+In this mode, do not use the marketplace install/update actions in the Homenavi UI as your source of truth.
+
+This approach works when your GitOps repository includes the required integration artifacts/references and desired release configuration for each integration.
 
 ### Integration secrets (admin-managed)
 
@@ -313,6 +327,7 @@ Environment variables (selected):
 	* `INTEGRATIONS_UPDATE_CHECK_INTERVAL` (defaults to `15m`; set `0` to disable periodic checks)
 	* `INTEGRATIONS_COMPOSE_ENABLED` (enables compose-managed install/update)
 	* `INTEGRATIONS_COMPOSE_PULL_TIMEOUT` (defaults to `2m`, used for slow pulls)
+	* `INTEGRATIONS_RUNTIME_MODE` (example: `compose`, `helm`, or `gitops` depending on deployment model)
 * Database connection vars (PostgreSQL)
 * Redis host/port
 * Email provider / SMTP credentials (for Email Service)
