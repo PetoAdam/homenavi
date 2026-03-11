@@ -1,0 +1,29 @@
+name: Helm Chart Validation
+
+on:
+  pull_request:
+    paths:
+      - "helm/homenavi/**"
+      - ".github/workflows/helm_chart_validate.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "helm/homenavi/**"
+      - ".github/workflows/helm_chart_validate.yaml"
+
+jobs:
+  lint-template:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Helm lint
+        run: helm lint ./helm/homenavi
+
+      - name: Helm template
+        run: helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
