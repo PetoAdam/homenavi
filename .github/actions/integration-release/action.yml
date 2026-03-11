@@ -61,6 +61,12 @@ runs:
       with:
         node-version: "20"
 
+    - name: Install Helm
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
     - name: Central verify gate
       uses: PetoAdam/homenavi/.github/actions/integration-verify@main
       with:
@@ -103,6 +109,21 @@ runs:
         registry: ${{ inputs.registry }}
         username: ${{ inputs.ghcr_username }}
         password: ${{ inputs.ghcr_token }}
+
+    - name: Log in Helm registry
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "${{ inputs.ghcr_token }}" | helm registry login "${{ inputs.registry }}" --username "${{ inputs.ghcr_username }}" --password-stdin
+
+    - name: Install Kompose
+      shell: bash
+      run: |
+        set -euo pipefail
+        KOMPOSE_VERSION=v1.35.0
+        curl -fsSL -o /usr/local/bin/kompose "https://github.com/kubernetes/kompose/releases/download/${KOMPOSE_VERSION}/kompose-linux-amd64"
+        chmod +x /usr/local/bin/kompose
+        kompose version
 
     - name: Build and push
       id: build_push
@@ -158,9 +179,85 @@ runs:
         fi
         cosign sign --yes "${IMAGE_REF}@${IMAGE_DIGEST}"
 
+    - name: Generate and push Kubernetes generated chart
+      id: generate_k8s
+      shell: bash
+      env:
+        TAG: ${{ github.ref_name }}
+        IMAGE_NAME: ${{ inputs.image_name }}
+        IMAGE_REF: ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
+        METADATA_PATH: ${{ inputs.metadata_path }}
+        MANIFEST_PATH: ${{ inputs.manifest_path }}
+        OUTPUT_DIR: /tmp/generated-k8s-chart
+        CHART_REGISTRY: oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}
+      run: |
+        set -euo pipefail
+
+        NATIVE_HELM_CHART_REF=$(METADATA_PATH="$METADATA_PATH" node - <<'NODE'
+        const fs = require('fs');
+        const metadata = JSON.parse(fs.readFileSync(process.env.METADATA_PATH, 'utf8'));
+        const chartRef = metadata?.deployment_artifacts?.helm?.chart_ref || '';
+        process.stdout.write(String(chartRef).trim());
+        NODE
+        )
+        if [[ -n "$NATIVE_HELM_CHART_REF" ]]; then
+          echo "Native Helm chart declared ($NATIVE_HELM_CHART_REF); skipping generated Kubernetes artifact."
+          echo "chart_ref=" >> "$GITHUB_OUTPUT"
+          echo "version=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        COMPOSE_SOURCE=$(METADATA_PATH="$METADATA_PATH" node "${GITHUB_ACTION_PATH}/scripts/resolve-compose-artifact.js")
+        if [[ -z "$COMPOSE_SOURCE" ]]; then
+          echo "No compose artifact declared; skipping generated Kubernetes artifact."
+          echo "chart_ref=" >> "$GITHUB_OUTPUT"
+          echo "version=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        rm -rf "$OUTPUT_DIR"
+        mkdir -p "$OUTPUT_DIR" /tmp/generated-k8s-chart-package
+
+        if kompose convert -f "$COMPOSE_SOURCE" -c -o "$OUTPUT_DIR"; then
+          echo "Kompose chart generation succeeded."
+        else
+          echo "Kompose chart generation failed; falling back to normalized generated chart." >&2
+          rm -rf "$OUTPUT_DIR"
+          mkdir -p "$OUTPUT_DIR"
+          node "${GITHUB_ACTION_PATH}/scripts/generate-k8s-generated-chart.js"
+        fi
+
+        CHART_FILE=$(find "$OUTPUT_DIR" -name Chart.yaml -print | head -n 1)
+        if [[ -z "$CHART_FILE" ]]; then
+          echo "Expected Chart.yaml under $OUTPUT_DIR" >&2
+          exit 1
+        fi
+        CHART_DIR=$(dirname "$CHART_FILE")
+
+        CHART_VERSION="${TAG#v}"
+        helm lint "$CHART_DIR"
+        helm package "$CHART_DIR" -d /tmp/generated-k8s-chart-package
+
+        PACKAGE_FILE=$(find /tmp/generated-k8s-chart-package -maxdepth 1 -name "*.tgz" -print | head -n 1)
+        if [[ -z "$PACKAGE_FILE" ]]; then
+          echo "Generated chart package not found" >&2
+          exit 1
+        fi
+
+        GENERATED_NAME="${{ inputs.image_name }}-k8s-generated"
+        GENERATED_PACKAGE="/tmp/generated-k8s-chart-package/${GENERATED_NAME}-${CHART_VERSION}.tgz"
+        mv "$PACKAGE_FILE" "$GENERATED_PACKAGE"
+        helm push "$GENERATED_PACKAGE" "$CHART_REGISTRY"
+
+        echo "chart_ref=oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" >> "$GITHUB_OUTPUT"
+        echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+
     - name: Publish to marketplace
       shell: bash
       env:
+        K8S_GENERATED_CHART_REF: ${{ steps.generate_k8s.outputs.chart_ref }}
+        K8S_GENERATED_KIND: helm
+        K8S_GENERATED_VERSION: ${{ steps.generate_k8s.outputs.version }}
         MARKETPLACE_API_URL: ${{ inputs.marketplace_api_url }}
         METADATA_PATH: ${{ inputs.metadata_path }}
         MANIFEST_PATH: ${{ inputs.manifest_path }}

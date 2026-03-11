@@ -5,8 +5,12 @@ const rawBase = process.env.RAW_BASE || '';
 const manifestUrl = process.env.MANIFEST_URL || '';
 const metadataPath = process.env.METADATA_PATH || '';
 const manifestPath = process.env.MANIFEST_PATH || '';
+const k8sGeneratedChartRef = process.env.K8S_GENERATED_CHART_REF || '';
+const k8sGeneratedKind = process.env.K8S_GENERATED_KIND || 'helm';
+const k8sGeneratedVersion = process.env.K8S_GENERATED_VERSION || '';
 
 const readJson = (pathValue) => JSON.parse(fs.readFileSync(pathValue, 'utf8'));
+const normalizeChartVersion = (value) => String(value || '').replace(/^v(?=\d)/, '');
 
 let metadata = readJson(metadataPath);
 if (typeof metadata === 'string') {
@@ -18,6 +22,7 @@ if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
 }
 
 const manifest = readJson(manifestPath);
+const chartVersion = normalizeChartVersion(tag);
 
 const normalizeUrl = (value) => {
   if (value === null || value === undefined) {
@@ -68,15 +73,27 @@ if (metadata.deployment_artifacts.helm && typeof metadata.deployment_artifacts.h
     helm.chart_ref = helm.chart_ref;
   }
   if (!helm.version || String(helm.version).trim().length === 0) {
-    helm.version = tag;
+    helm.version = chartVersion;
   }
 }
 
 if (metadata.deployment_artifacts.k8s_generated && typeof metadata.deployment_artifacts.k8s_generated === 'object') {
   const generated = metadata.deployment_artifacts.k8s_generated;
-  if (!generated.version || String(generated.version).trim().length === 0) {
-    generated.version = tag;
+  if (typeof k8sGeneratedChartRef === 'string' && k8sGeneratedChartRef.trim().length > 0) {
+    generated.chart_ref = k8sGeneratedChartRef.trim();
+    generated.kind = (k8sGeneratedKind || 'helm').trim();
   }
+  if (!generated.version || String(generated.version).trim().length === 0) {
+    generated.version = (k8sGeneratedVersion || chartVersion).trim();
+  }
+}
+
+if ((!metadata.deployment_artifacts.k8s_generated || typeof metadata.deployment_artifacts.k8s_generated !== 'object') && k8sGeneratedChartRef.trim().length > 0) {
+  metadata.deployment_artifacts.k8s_generated = {
+    kind: (k8sGeneratedKind || 'helm').trim(),
+    chart_ref: k8sGeneratedChartRef.trim(),
+    version: (k8sGeneratedVersion || chartVersion).trim(),
+  };
 }
 
 const hasCompose = Boolean(metadata.deployment_artifacts.compose && metadata.deployment_artifacts.compose.file);
