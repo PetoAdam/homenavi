@@ -43,17 +43,48 @@ if (typeof metadata.image === 'string' && metadata.image.length > 0) {
   metadata.image = `${metadata.image}:${tag}`;
 }
 
-if (!metadata.compose_file) {
-  throw new Error('compose_file is required in marketplace metadata.');
+if (!metadata.deployment_artifacts || typeof metadata.deployment_artifacts !== 'object' || Array.isArray(metadata.deployment_artifacts)) {
+  metadata.deployment_artifacts = {};
 }
 
-const composeValue = metadata.compose_file;
-const composeValueStr = typeof composeValue === 'string' ? composeValue : '';
-const composeName = composeValueStr.split('/').pop() || '';
-if (composeName !== 'docker-compose.integration.yml') {
-  throw new Error('compose_file must point to compose/docker-compose.integration.yml');
+if (!metadata.deployment_artifacts.compose || typeof metadata.deployment_artifacts.compose !== 'object') {
+  metadata.deployment_artifacts.compose = {};
 }
-metadata.compose_file = normalizeUrl(composeValueStr);
+
+const composeSource = metadata.deployment_artifacts.compose.file || metadata.compose_file;
+if (composeSource) {
+  const composeValueStr = typeof composeSource === 'string' ? composeSource : '';
+  const composeName = composeValueStr.split('/').pop() || '';
+  if (composeName !== 'docker-compose.integration.yml') {
+    throw new Error('compose artifact must point to compose/docker-compose.integration.yml');
+  }
+  metadata.deployment_artifacts.compose.file = normalizeUrl(composeValueStr);
+  delete metadata.compose_file;
+}
+
+if (metadata.deployment_artifacts.helm && typeof metadata.deployment_artifacts.helm === 'object') {
+  const helm = metadata.deployment_artifacts.helm;
+  if (typeof helm.chart_ref === 'string' && helm.chart_ref.length > 0) {
+    helm.chart_ref = helm.chart_ref;
+  }
+  if (!helm.version || String(helm.version).trim().length === 0) {
+    helm.version = tag;
+  }
+}
+
+if (metadata.deployment_artifacts.k8s_generated && typeof metadata.deployment_artifacts.k8s_generated === 'object') {
+  const generated = metadata.deployment_artifacts.k8s_generated;
+  if (!generated.version || String(generated.version).trim().length === 0) {
+    generated.version = tag;
+  }
+}
+
+const hasCompose = Boolean(metadata.deployment_artifacts.compose && metadata.deployment_artifacts.compose.file);
+const hasHelm = Boolean(metadata.deployment_artifacts.helm && metadata.deployment_artifacts.helm.chart_ref);
+const hasGenerated = Boolean(metadata.deployment_artifacts.k8s_generated && metadata.deployment_artifacts.k8s_generated.chart_ref);
+if (!hasCompose && !hasHelm && !hasGenerated) {
+  throw new Error('deployment_artifacts must include compose.file, helm.chart_ref, or k8s_generated.chart_ref');
+}
 
 metadata.assets = metadata.assets || {};
 for (const [key, value] of Object.entries(metadata.assets)) {
