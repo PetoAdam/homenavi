@@ -249,8 +249,22 @@ runs:
         mv "$PACKAGE_FILE" "$GENERATED_PACKAGE"
         helm push "$GENERATED_PACKAGE" "$CHART_REGISTRY"
 
-        echo "chart_ref=oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" >> "$GITHUB_OUTPUT"
-        echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+        PUBLIC_PULL_DIR=/tmp/generated-k8s-chart-public-check
+        PUBLIC_HELM_CONFIG=/tmp/generated-k8s-chart-public-helm-registry.json
+        rm -rf "$PUBLIC_PULL_DIR"
+        mkdir -p "$PUBLIC_PULL_DIR"
+        printf '{}' > "$PUBLIC_HELM_CONFIG"
+
+        if HELM_REGISTRY_CONFIG="$PUBLIC_HELM_CONFIG" helm pull "oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" --version "$CHART_VERSION" -d "$PUBLIC_PULL_DIR" >/tmp/generated-k8s-chart-public-check.log 2>&1; then
+          echo "Generated chart is anonymously pullable."
+          echo "chart_ref=oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::Generated chart oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}:${CHART_VERSION} is not anonymously pullable after publish; omitting k8s_generated from marketplace payload. Make the GHCR package public in GitHub package settings and rerun if you want to publish the fallback chart ref."
+          cat /tmp/generated-k8s-chart-public-check.log >&2 || true
+          echo "chart_ref=" >> "$GITHUB_OUTPUT"
+          echo "version=" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Publish to marketplace
       shell: bash
