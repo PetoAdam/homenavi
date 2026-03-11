@@ -118,15 +118,29 @@ runs:
           ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
           ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:latest
 
+    - name: Export Docker image archive
+      shell: bash
+      env:
+        IMAGE_REF: ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
+      run: |
+        set -euo pipefail
+        docker pull "$IMAGE_REF"
+        docker save "$IMAGE_REF" -o /tmp/integration-release-image.tar
+
     - name: Scan image with Trivy
-      uses: aquasecurity/trivy-action@0.28.0
-      with:
-        image-ref: ${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${{ inputs.image_name }}:${{ github.ref_name }}
-        format: table
-        exit-code: '1'
-        ignore-unfixed: true
-        vuln-type: 'os,library'
-        severity: 'CRITICAL,HIGH'
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker run --rm \
+          -v /tmp:/tmp \
+          aquasec/trivy:0.69.3 image \
+          --input /tmp/integration-release-image.tar \
+          --format table \
+          --exit-code 1 \
+          --ignore-unfixed \
+          --pkg-types os,library \
+          --scanners vuln \
+          --severity CRITICAL,HIGH
 
     - name: Install Cosign
       uses: sigstore/cosign-installer@v3.8.1
