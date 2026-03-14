@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homenavi-integration-proxy-config
+  labels:
+    {{- include "homenavi.labels" . | nindent 4 }}
+data:
+  installed.yaml: |
+{{ .Values.integrationProxy.configYaml | indent 4 }}
+  homenavi-integration.schema.json: |
+{{ .Values.integrationProxy.schemaJson | indent 4 }}

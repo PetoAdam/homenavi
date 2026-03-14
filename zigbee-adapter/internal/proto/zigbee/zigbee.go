@@ -854,6 +854,7 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 		slog.Warn("zigbee command publish failed", "external", dev.ExternalID, "target", target, "err", err)
 		return false
 	}
+	slog.Info("zigbee command published", "external", dev.ExternalID, "target", target, "bytes", len(b))
 	return true
 }
 
@@ -1400,7 +1401,14 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m paho.Message) {
 			}
 		}
 	}
+	shouldRefresh := false
+	z.metaMu.Lock()
 	if z.refreshOnStart && discovered > 0 {
+		z.refreshOnStart = false
+		shouldRefresh = true
+	}
+	z.metaMu.Unlock()
+	if shouldRefresh {
 		go z.requestInitialStates()
 	}
 }
@@ -1713,7 +1721,18 @@ func (z *ZigbeeAdapter) requestStateSnapshotForDevice(target string, props []str
 	if len(unique) == 0 {
 		unique = []string{"state"}
 	}
+
+	allowedGetProps := make([]string, 0, len(unique))
 	for _, p := range unique {
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case "state":
+			allowedGetProps = append(allowedGetProps, "state")
+		}
+	}
+	if len(allowedGetProps) == 0 {
+		return
+	}
+	for _, p := range adapterutil.UniqueStrings(allowedGetProps) {
 		if p == "" {
 			continue
 		}

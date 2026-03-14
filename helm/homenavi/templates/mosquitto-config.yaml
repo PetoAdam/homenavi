@@ -1,0 +1,20 @@
+{{- $svc := index .Values.services "mosquitto" -}}
+{{- if and $svc.enabled $svc.config }}
+{{- $bridge := $svc.bridge -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "homenavi.fullname" . }}-mosquitto-config
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "mosquitto") | nindent 4 }}
+data:
+  mosquitto.conf: |
+{{ $svc.config | nindent 4 }}
+{{- if and $bridge $bridge.enabled }}
+{{- $bridgeCfg := trim (default "" $bridge.config) }}
+{{- if eq $bridgeCfg "" }}
+{{- fail "services.mosquitto.bridge.enabled=true requires services.mosquitto.bridge.config to be set (use --set-file services.mosquitto.bridge.config=<path>)" }}
+{{- end }}
+{{ printf "\n%s" $bridgeCfg | nindent 4 }}
+{{- end }}
+{{- end }}

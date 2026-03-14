@@ -179,6 +179,78 @@ runs:
         fi
         cosign sign --yes "${IMAGE_REF}@${IMAGE_DIGEST}"
 
+    - name: Publish native Helm chart
+      shell: bash
+      env:
+        TAG: ${{ github.ref_name }}
+        METADATA_PATH: ${{ inputs.metadata_path }}
+        CHART_REGISTRY: oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}
+      run: |
+        set -euo pipefail
+
+        NATIVE_HELM_CHART_REF=$(METADATA_PATH="$METADATA_PATH" node - <<'NODE'
+        const fs = require('fs');
+        const metadata = JSON.parse(fs.readFileSync(process.env.METADATA_PATH, 'utf8'));
+        const chartRef = metadata?.deployment_artifacts?.helm?.chart_ref || '';
+        process.stdout.write(String(chartRef).trim());
+        NODE
+        )
+        if [[ -z "$NATIVE_HELM_CHART_REF" ]]; then
+          echo "No native Helm chart declared; skipping native Helm publish."
+          exit 0
+        fi
+
+        mapfile -t CHART_FILES < <(find . \( -path './.git' -o -path './node_modules' \) -prune -o -name Chart.yaml -print)
+        if [[ ${#CHART_FILES[@]} -eq 0 ]]; then
+          echo "Native Helm chart declared ($NATIVE_HELM_CHART_REF) but no Chart.yaml was found in the repository." >&2
+          exit 1
+        fi
+        if [[ ${#CHART_FILES[@]} -gt 1 ]]; then
+          printf 'Multiple Chart.yaml files found for native Helm publish:\n' >&2
+          printf ' - %s\n' "${CHART_FILES[@]}" >&2
+          exit 1
+        fi
+
+        CHART_VERSION="${TAG#v}"
+        EXPECTED_NAME="${NATIVE_HELM_CHART_REF##*/}"
+        SOURCE_CHART_DIR=$(dirname "${CHART_FILES[0]}")
+        WORK_CHART_DIR=/tmp/native-helm-chart
+        PACKAGE_DIR=/tmp/native-helm-chart-package
+        rm -rf "$WORK_CHART_DIR" "$PACKAGE_DIR"
+        mkdir -p "$WORK_CHART_DIR" "$PACKAGE_DIR"
+        cp -R "$SOURCE_CHART_DIR"/. "$WORK_CHART_DIR"/
+
+        ACTUAL_NAME=$(awk -F': *' '$1 == "name" {gsub(/\"/, "", $2); print $2; exit}' "$WORK_CHART_DIR/Chart.yaml")
+        if [[ "$ACTUAL_NAME" != "$EXPECTED_NAME" ]]; then
+          echo "Native Helm chart name mismatch: metadata expects $EXPECTED_NAME but chart name is $ACTUAL_NAME" >&2
+          exit 1
+        fi
+
+        perl -0pi -e 's/^version:\s*.*/version: '"$CHART_VERSION"'/m; if ($_ !~ /^appVersion:/m) { $_ .= qq{appVersion: "'"$CHART_VERSION"'"\n}; } else { s/^appVersion:\s*.*/appVersion: "'"$CHART_VERSION"'"/m; }' "$WORK_CHART_DIR/Chart.yaml"
+
+        helm lint "$WORK_CHART_DIR"
+        helm package "$WORK_CHART_DIR" -d "$PACKAGE_DIR"
+
+        PACKAGE_FILE=$(find "$PACKAGE_DIR" -maxdepth 1 -name "*.tgz" -print | head -n 1)
+        if [[ -z "$PACKAGE_FILE" ]]; then
+          echo "Native Helm chart package not found" >&2
+          exit 1
+        fi
+
+        helm push "$PACKAGE_FILE" "$CHART_REGISTRY"
+
+        PUBLIC_PULL_DIR=/tmp/native-helm-chart-public-check
+        PUBLIC_HELM_CONFIG=/tmp/native-helm-chart-public-helm-registry.json
+        rm -rf "$PUBLIC_PULL_DIR"
+        mkdir -p "$PUBLIC_PULL_DIR"
+        printf '{}' > "$PUBLIC_HELM_CONFIG"
+
+        if ! HELM_REGISTRY_CONFIG="$PUBLIC_HELM_CONFIG" helm pull "$NATIVE_HELM_CHART_REF" --version "$CHART_VERSION" -d "$PUBLIC_PULL_DIR" >/tmp/native-helm-chart-public-check.log 2>&1; then
+          cat /tmp/native-helm-chart-public-check.log >&2 || true
+          echo "Native Helm chart $NATIVE_HELM_CHART_REF:$CHART_VERSION is not anonymously pullable after publish." >&2
+          exit 1
+        fi
+
     - name: Generate and push Kubernetes generated chart
       id: generate_k8s
       shell: bash
@@ -249,8 +321,22 @@ runs:
         mv "$PACKAGE_FILE" "$GENERATED_PACKAGE"
         helm push "$GENERATED_PACKAGE" "$CHART_REGISTRY"
 
-        echo "chart_ref=oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" >> "$GITHUB_OUTPUT"
-        echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+        PUBLIC_PULL_DIR=/tmp/generated-k8s-chart-public-check
+        PUBLIC_HELM_CONFIG=/tmp/generated-k8s-chart-public-helm-registry.json
+        rm -rf "$PUBLIC_PULL_DIR"
+        mkdir -p "$PUBLIC_PULL_DIR"
+        printf '{}' > "$PUBLIC_HELM_CONFIG"
+
+        if HELM_REGISTRY_CONFIG="$PUBLIC_HELM_CONFIG" helm pull "oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" --version "$CHART_VERSION" -d "$PUBLIC_PULL_DIR" >/tmp/generated-k8s-chart-public-check.log 2>&1; then
+          echo "Generated chart is anonymously pullable."
+          echo "chart_ref=oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::Generated chart oci://${{ inputs.registry }}/${{ steps.owner.outputs.owner_lower }}/${GENERATED_NAME}:${CHART_VERSION} is not anonymously pullable after publish; omitting k8s_generated from marketplace payload. Make the GHCR package public in GitHub package settings and rerun if you want to publish the fallback chart ref."
+          cat /tmp/generated-k8s-chart-public-check.log >&2 || true
+          echo "chart_ref=" >> "$GITHUB_OUTPUT"
+          echo "version=" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Publish to marketplace
       shell: bash

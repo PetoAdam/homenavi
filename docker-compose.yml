@@ -1,5 +1,18 @@
 version: '3.8'
 services:
+  jwt-bootstrap:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        apk add --no-cache bash openssl >/dev/null
+        /bin/bash /app/ensure-jwt-keys.sh --dir /keys
+    volumes:
+      - ./scripts/ensure-jwt-keys.sh:/app/ensure-jwt-keys.sh:ro
+      - ./keys:/keys
+    restart: "no"
+
   # NOTE: Only frontend, api-gateway and nginx expose host ports in this hardened config.
   # For local debugging you can temporarily uncomment the 'ports' blocks (marked DEV) below.
   # DO NOT commit uncommented internal service ports to main.
@@ -29,11 +42,16 @@ services:
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
-      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+      - ./keys:/app/keys:ro
     depends_on:
-      - auth-service
-      - user-service
-      - dashboard-service
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      dashboard-service:
+        condition: service_started
     networks:
       - homenavi-network
 
@@ -59,12 +77,18 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URL=${GOOGLE_OAUTH_REDIRECT_URL}
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     volumes:
-      - ${JWT_PRIVATE_KEY_PATH}:/app/keys/jwt_private.pem:ro
+      - ./keys:/app/keys:ro
     depends_on:
-      - user-service
-      - redis
-      - email-service
-      - profile-picture-service
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      user-service:
+        condition: service_started
+      redis:
+        condition: service_started
+      email-service:
+        condition: service_started
+      profile-picture-service:
+        condition: service_started
     networks:
       - homenavi-network
 
@@ -161,11 +185,14 @@ services:
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     depends_on:
-      - postgres
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_started
     networks:
       - homenavi-network
     volumes:
-      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+      - ./keys:/app/keys:ro
 
   dashboard-service:
     image: ghcr.io/petoadam/homenavi-dashboard-service:${HN_VERSION:-latest}
@@ -183,11 +210,14 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
     depends_on:
-      - postgres
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_started
     networks:
       - homenavi-network
     volumes:
-      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+      - ./keys:/app/keys:ro
 
   profile-picture-service:
     image: ghcr.io/petoadam/homenavi-profile-picture-service:${HN_VERSION:-latest}
@@ -273,8 +303,10 @@ services:
     build: ./device-hub
     restart: unless-stopped
     depends_on:
-      - mosquitto
-      - postgres
+      mosquitto:
+        condition: service_started
+      postgres:
+        condition: service_started
     environment:
       - DEVICE_HUB_PORT=${DEVICE_HUB_PORT}
       - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
@@ -387,8 +419,12 @@ services:
       context: ./automation-service
     restart: unless-stopped
     depends_on:
-      - mosquitto
-      - postgres
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
+      postgres:
+        condition: service_started
     environment:
       - AUTOMATION_SERVICE_PORT=${AUTOMATION_SERVICE_PORT}
       - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
@@ -404,7 +440,7 @@ services:
       - EMAIL_SERVICE_URL=http://email-service:${EMAIL_SERVICE_PORT}
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
-      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+      - ./keys:/app/keys:ro
     networks:
       - homenavi-network
 
@@ -445,8 +481,11 @@ services:
       - ./integrations/spec/homenavi-integration.schema.json:/config/homenavi-integration.schema.json:ro
       - ./integrations/docker-compose.integrations.yml:/app/integrations/docker-compose.integrations.yml:ro
       - ./.env:/app/.env:ro
-      - ${JWT_PUBLIC_KEY_PATH}:/app/keys/jwt_public.pem:ro
+      - ./keys:/app/keys:ro
       - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      jwt-bootstrap:
+        condition: service_completed_successfully
     networks:
       - homenavi-network
 
