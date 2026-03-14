@@ -114,12 +114,13 @@ func (s *Server) AddIntegration(ic config.IntegrationConfig) error {
 	if id == "" {
 		return fmt.Errorf("missing id")
 	}
-	u, err := url.Parse(strings.TrimSpace(ic.Upstream))
+	upstream := s.normalizeIntegrationUpstream(ic)
+	u, err := url.Parse(upstream)
 	if err != nil {
 		return fmt.Errorf("parse upstream: %w", err)
 	}
 	if u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("invalid upstream %q", ic.Upstream)
+		return fmt.Errorf("invalid upstream %q", upstream)
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(u)
@@ -221,6 +222,47 @@ func (s *Server) AddIntegration(ic config.IntegrationConfig) error {
 	return nil
 }
 
+func (s *Server) normalizeIntegrationUpstream(ic config.IntegrationConfig) string {
+	id := strings.TrimSpace(ic.ID)
+	upstream := strings.TrimSpace(ic.Upstream)
+	if id == "" {
+		return upstream
+	}
+	mode, err := s.runtimeMode()
+	if err != nil || mode != runtimeHelm {
+		return upstream
+	}
+	defaultByID := defaultUpstreamForID(id)
+	releaseName := firstNonEmpty(strings.TrimSpace(ic.HelmReleaseName), s.defaultHelmReleaseName(id))
+	namespace := firstNonEmpty(strings.TrimSpace(ic.HelmNamespace), s.defaultHelmNamespace())
+	if strings.TrimSpace(releaseName) == "" || strings.TrimSpace(namespace) == "" {
+		return upstream
+	}
+	chartRef := firstNonEmpty(strings.TrimSpace(ic.HelmChartRef), strings.TrimSpace(ic.DevHelmChartRef))
+	expectedUpstream := s.defaultHelmUpstream(helmDeploymentSpec{ReleaseName: releaseName, Namespace: namespace, ChartRef: chartRef})
+	legacyReleaseUpstream := fmt.Sprintf("http://%s.%s:8099", releaseName, namespace)
+	if upstream == "" || upstream == defaultByID || upstream == legacyReleaseUpstream || upstream == expectedUpstream {
+		return expectedUpstream
+	}
+	return upstream
+}
+
+func (s *Server) defaultHelmUpstream(spec helmDeploymentSpec) string {
+	releaseName := strings.TrimSpace(spec.ReleaseName)
+	if releaseName == "" {
+		return ""
+	}
+	namespace := strings.TrimSpace(spec.Namespace)
+	if namespace == "" {
+		namespace = s.defaultHelmNamespace()
+	}
+	host := helmServiceName(releaseName, spec.ChartRef)
+	if host == "" {
+		host = releaseName
+	}
+	return fmt.Sprintf("http://%s.%s:8099", host, namespace)
+}
+
 func (s *Server) StartRefreshLoop(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -288,13 +330,24 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
+	mode, modeErr := s.ensureMutableRuntime()
+	if modeErr != nil {
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(strings.ToLower(modeErr.Error()), "gitops mode") {
+			statusCode = http.StatusConflict
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "runtime unavailable", "code": statusCode, "detail": modeErr.Error()})
+		return
+	}
 	go func() {
 		ctx := context.Background()
 		if err := s.ReloadFromConfig(); err != nil {
 			s.logger.Printf("restart-all reload failed: %v", err)
 		}
 		cfg, cfgErr := config.Load(s.configPath)
-		if cfgErr == nil && s.composeEnabled() {
+		if cfgErr == nil && mode == runtimeCompose {
 			for _, ic := range cfg.Integrations {
 				id := strings.TrimSpace(ic.ID)
 				if id == "" {
@@ -309,6 +362,22 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 				composeFile = s.expandComposePath(composeFile)
 				if err := s.runCompose(ctx, composeFile, "restart", id); err != nil {
 					s.logger.Printf("restart-all failed id=%s err=%v", id, err)
+					s.setInstallStatus(id, "error", 100, "Restart failed")
+				} else {
+					s.setInstallStatus(id, "restarted", 100, "Restarted")
+				}
+			}
+		} else if cfgErr == nil && mode == runtimeHelm {
+			for _, ic := range cfg.Integrations {
+				id := strings.TrimSpace(ic.ID)
+				if id == "" {
+					continue
+				}
+				s.setInstallStatus(id, "restarting", 60, "Restarting integration")
+				releaseName := firstNonEmpty(strings.TrimSpace(ic.HelmReleaseName), s.defaultHelmReleaseName(id))
+				namespace := firstNonEmpty(strings.TrimSpace(ic.HelmNamespace), s.defaultHelmNamespace())
+				if err := s.helmRestart(ctx, releaseName, namespace); err != nil {
+					s.logger.Printf("restart-all helm failed id=%s err=%v", id, err)
 					s.setInstallStatus(id, "error", 100, "Restart failed")
 				} else {
 					s.setInstallStatus(id, "restarted", 100, "Restarted")
@@ -341,6 +410,17 @@ func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request
 	if !s.requireAdmin(w, r) {
 		return
 	}
+	mode, modeErr := s.ensureMutableRuntime()
+	if modeErr != nil {
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(strings.ToLower(modeErr.Error()), "gitops mode") {
+			statusCode = http.StatusConflict
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "runtime unavailable", "code": statusCode, "detail": modeErr.Error()})
+		return
+	}
 	id := strings.TrimPrefix(r.URL.Path, "/integrations/restart/")
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -361,17 +441,34 @@ func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request
 	go func() {
 		ctx := context.Background()
 		s.setInstallStatus(id, "restarting", 60, "Restarting integration")
-		composeFile := ""
-		if s.composeEnabled() {
-			composeFile = s.defaultComposeFile(id)
-		}
-		if strings.TrimSpace(composeFile) != "" {
-			composeFile = s.expandComposePath(composeFile)
-			if err := s.runCompose(ctx, composeFile, "restart", id); err != nil {
-				s.logger.Printf("restart %s failed: %v", id, err)
-				s.setInstallStatus(id, "error", 100, "Restart failed")
+		if mode == runtimeCompose {
+			composeFile := s.defaultComposeFile(id)
+			if strings.TrimSpace(composeFile) != "" {
+				composeFile = s.expandComposePath(composeFile)
+				if err := s.runCompose(ctx, composeFile, "restart", id); err != nil {
+					s.logger.Printf("restart %s failed: %v", id, err)
+					s.setInstallStatus(id, "error", 100, "Restart failed")
+				} else {
+					s.setInstallStatus(id, "restarted", 100, "Restarted")
+				}
 			} else {
 				s.setInstallStatus(id, "restarted", 100, "Restarted")
+			}
+		} else if mode == runtimeHelm {
+			cfgData, index, cfgErr := s.loadIntegrationConfig(id)
+			if cfgErr != nil {
+				s.logger.Printf("restart %s config load failed: %v", id, cfgErr)
+				s.setInstallStatus(id, "error", 100, "Restart failed")
+			} else {
+				ic := cfgData.Integrations[index]
+				releaseName := firstNonEmpty(strings.TrimSpace(ic.HelmReleaseName), s.defaultHelmReleaseName(id))
+				namespace := firstNonEmpty(strings.TrimSpace(ic.HelmNamespace), s.defaultHelmNamespace())
+				if err := s.helmRestart(ctx, releaseName, namespace); err != nil {
+					s.logger.Printf("restart %s failed: %v", id, err)
+					s.setInstallStatus(id, "error", 100, "Restart failed")
+				} else {
+					s.setInstallStatus(id, "restarted", 100, "Restarted")
+				}
 			}
 		} else {
 			s.setInstallStatus(id, "restarted", 100, "Restarted")
@@ -426,7 +523,9 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		Version     string `json:"version"`
 		AutoUpdate  *bool  `json:"auto_update"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid json", "code": http.StatusBadRequest})
@@ -441,6 +540,18 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	op := newIntegrationOperation(s, "install", id)
 	op.set("queued", 5, "Queued")
+	mode, modeErr := s.ensureMutableRuntime()
+	if modeErr != nil {
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(strings.ToLower(modeErr.Error()), "gitops mode") {
+			statusCode = http.StatusConflict
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "runtime unavailable", "code": statusCode, "detail": modeErr.Error()})
+		op.fail(modeErr)
+		return
+	}
 	if strings.TrimSpace(s.configPath) == "" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -466,31 +577,51 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	upstream := strings.TrimSpace(req.Upstream)
 	if upstream == "" {
-		safeID := strings.TrimSpace(id)
-		if safeID != "" && regexp.MustCompile(`^[a-z0-9._-]+$`).MatchString(safeID) {
-			upstream = fmt.Sprintf("http://%s:8099", safeID)
-		}
+		upstream = defaultUpstreamForID(id)
 	}
 	op.set("preparing", 15, "Preparing installation")
-	composeFile, err := s.resolveComposeFileForOperation(id, req.ComposeFile)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
-		op.fail(fmt.Errorf("failed to prepare compose file: %w", err))
-		return
+	composeFile := ""
+	helmSpec := helmDeploymentSpec{}
+	marketTarget, _ := s.fetchMarketplaceIntegration(r.Context(), id)
+	if mode == runtimeCompose {
+		composeInput := strings.TrimSpace(req.ComposeFile)
+		if composeInput == "" && marketTarget != nil {
+			composeInput = marketTarget.composeArtifactFile()
+		}
+		composeFile, err = s.resolveComposeFileForOperation(id, composeInput, strings.TrimSpace(marketTarget.Version))
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare compose file", "code": http.StatusInternalServerError, "detail": err.Error()})
+			op.fail(fmt.Errorf("failed to prepare compose file: %w", err))
+			return
+		}
+		if strings.TrimSpace(composeFile) != "" {
+			service, svcErr := s.composeServiceForID(composeFile, id)
+			if svcErr != nil {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid compose file", "code": http.StatusBadRequest, "detail": svcErr.Error()})
+				op.fail(fmt.Errorf("invalid compose file: %w", svcErr))
+				return
+			}
+			if service != "" && (upstream == "" || upstream == defaultUpstreamForID(id)) {
+				upstream = fmt.Sprintf("http://%s:8099", service)
+			}
+		}
 	}
-	if strings.TrimSpace(composeFile) != "" {
-		service, err := s.composeServiceForID(composeFile, id)
+	if mode == runtimeHelm {
+		entryForHelm := config.IntegrationConfig{ID: id}
+		helmSpec, err = s.helmSpecFor(id, entryForHelm, marketTarget)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid compose file", "code": http.StatusBadRequest, "detail": err.Error()})
-			op.fail(fmt.Errorf("invalid compose file: %w", err))
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to resolve helm artifact", "code": http.StatusBadRequest, "detail": err.Error()})
+			op.fail(err)
 			return
 		}
-		if service != "" && (upstream == "" || upstream == defaultUpstreamForID(id)) {
-			upstream = fmt.Sprintf("http://%s:8099", service)
+		if upstream == "" || upstream == defaultUpstreamForID(id) {
+			upstream = s.defaultHelmUpstream(helmSpec)
 		}
 	}
 	if upstream == "" {
@@ -500,7 +631,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		op.fail(fmt.Errorf("missing upstream"))
 		return
 	}
-	if strings.TrimSpace(composeFile) != "" {
+	if mode == runtimeCompose && strings.TrimSpace(composeFile) != "" {
 		if err := s.ensureSecretsFile(id); err != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -510,9 +641,12 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	startedByCompose := false
+	startedByHelm := false
 	op.set("starting", 45, "Starting integration")
-	if strings.TrimSpace(composeFile) != "" {
-		if err := s.composeInstall(r.Context(), composeFile, id); err != nil {
+	opCtx, cancelOp := context.WithTimeout(context.Background(), s.operationTimeout())
+	defer cancelOp()
+	if mode == runtimeCompose && strings.TrimSpace(composeFile) != "" {
+		if err := s.composeInstall(opCtx, composeFile, id); err != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to start integration", "code": http.StatusInternalServerError, "detail": err.Error()})
@@ -521,17 +655,46 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		}
 		startedByCompose = true
 	}
+	if mode == runtimeHelm {
+		if err := s.helmInstallOrUpgrade(opCtx, helmSpec, id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to deploy integration with helm", "code": http.StatusInternalServerError, "detail": err.Error()})
+			op.fail(fmt.Errorf("failed to deploy integration with helm: %w", err))
+			return
+		}
+		startedByHelm = true
+	}
 	op.set("writing-config", 70, "Updating installed integrations")
 	entry := config.IntegrationConfig{ID: id, Upstream: upstream, Version: strings.TrimSpace(req.Version)}
+	if entry.Version == "" && marketTarget != nil {
+		entry.Version = strings.TrimSpace(marketTarget.Version)
+	}
 	if req.AutoUpdate != nil {
 		entry.AutoUpdate = *req.AutoUpdate
+	}
+	if mode == runtimeCompose {
+		entry.ComposeFile = strings.TrimSpace(composeFile)
+	}
+	if mode == runtimeHelm {
+		entry.HelmReleaseName = helmSpec.ReleaseName
+		entry.HelmNamespace = helmSpec.Namespace
+		entry.HelmChartRef = helmSpec.ChartRef
+		entry.HelmChartVersion = helmSpec.ChartVersion
+		entry.HelmValuesFile = helmSpec.ValuesFile
+		entry.Upstream = s.defaultHelmUpstream(helmSpec)
 	}
 	nextCfg := cfg
 	nextCfg.Integrations = append(nextCfg.Integrations, entry)
 	if err := config.Save(s.configPath, nextCfg); err != nil {
 		if startedByCompose {
-			if stopErr := s.composeUninstall(r.Context(), composeFile, id); stopErr != nil {
+			if stopErr := s.composeUninstall(opCtx, composeFile, id); stopErr != nil {
 				s.logger.Printf("failed to rollback compose install id=%s err=%v", id, stopErr)
+			}
+		}
+		if startedByHelm {
+			if stopErr := s.helmUninstall(opCtx, helmSpec.ReleaseName, helmSpec.Namespace); stopErr != nil {
+				s.logger.Printf("failed to rollback helm install id=%s err=%v", id, stopErr)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -546,8 +709,13 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 			s.logger.Printf("failed to rollback config after reload error id=%s err=%v", id, saveErr)
 		}
 		if startedByCompose {
-			if stopErr := s.composeUninstall(r.Context(), composeFile, id); stopErr != nil {
+			if stopErr := s.composeUninstall(opCtx, composeFile, id); stopErr != nil {
 				s.logger.Printf("failed to rollback compose install after reload error id=%s err=%v", id, stopErr)
+			}
+		}
+		if startedByHelm {
+			if stopErr := s.helmUninstall(opCtx, helmSpec.ReleaseName, helmSpec.Namespace); stopErr != nil {
+				s.logger.Printf("failed to rollback helm install after reload error id=%s err=%v", id, stopErr)
 			}
 		}
 		if reloadErr := s.ReloadFromConfig(); reloadErr != nil {
@@ -603,6 +771,17 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
+	mode, modeErr := s.ensureMutableRuntime()
+	if modeErr != nil {
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(strings.ToLower(modeErr.Error()), "gitops mode") {
+			statusCode = http.StatusConflict
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "runtime unavailable", "code": statusCode, "detail": modeErr.Error()})
+		return
+	}
 	var req struct {
 		ID string `json:"id"`
 	}
@@ -633,10 +812,12 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated := make([]config.IntegrationConfig, 0, len(cfg.Integrations))
+	var removed config.IntegrationConfig
 	found := false
 	for _, ic := range cfg.Integrations {
 		if ic.ID == id {
 			found = true
+			removed = ic
 			continue
 		}
 		updated = append(updated, ic)
@@ -647,8 +828,12 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration not installed", "code": http.StatusNotFound})
 		return
 	}
-	composeFile := s.defaultComposeFile(id)
+	composeFile := firstNonEmpty(strings.TrimSpace(removed.ComposeFile), s.defaultComposeFile(id))
 	composeFile = s.expandComposePath(composeFile)
+	releaseName := firstNonEmpty(strings.TrimSpace(removed.HelmReleaseName), s.defaultHelmReleaseName(id))
+	namespace := firstNonEmpty(strings.TrimSpace(removed.HelmNamespace), s.defaultHelmNamespace())
+	opCtx, cancelOp := context.WithTimeout(context.Background(), s.operationTimeout())
+	defer cancelOp()
 	cfg.Integrations = updated
 	if err := config.Save(s.configPath, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -656,8 +841,16 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to write config", "code": http.StatusInternalServerError, "detail": err.Error()})
 		return
 	}
-	if strings.TrimSpace(composeFile) != "" {
-		if err := s.composeUninstall(r.Context(), composeFile, id); err != nil {
+	if mode == runtimeCompose && strings.TrimSpace(composeFile) != "" {
+		if err := s.composeUninstall(opCtx, composeFile, id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to stop integration", "code": http.StatusInternalServerError, "detail": err.Error()})
+			return
+		}
+	}
+	if mode == runtimeHelm {
+		if err := s.helmUninstall(opCtx, releaseName, namespace); err != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to stop integration", "code": http.StatusInternalServerError, "detail": err.Error()})
@@ -702,7 +895,15 @@ func (s *Server) handleInstallStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(status)
+	payload := map[string]any{
+		"management_mode": s.managementModeLabel(),
+		"id":              status.ID,
+		"stage":           status.Stage,
+		"progress":        status.Progress,
+		"message":         status.Message,
+		"updated_at":      status.Updated,
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func (s *Server) refreshAll(ctx context.Context) {
@@ -907,9 +1108,52 @@ func (s *Server) StartUpdateLoop(ctx context.Context, every time.Duration) {
 }
 
 type marketplaceIntegration struct {
-	ID          string `json:"id"`
-	Version     string `json:"version"`
-	ComposeFile string `json:"compose_file"`
+	ID                  string                     `json:"id"`
+	Version             string                     `json:"version"`
+	ComposeFile         string                     `json:"compose_file"`
+	DeploymentArtifacts marketplaceDeployArtifacts `json:"deployment_artifacts"`
+}
+
+type marketplaceDeployArtifacts struct {
+	Compose struct {
+		File string `json:"file"`
+	} `json:"compose"`
+	Helm struct {
+		ChartRef string `json:"chart_ref"`
+		Version  string `json:"version"`
+	} `json:"helm"`
+	K8sGenerated struct {
+		Kind     string `json:"kind"`
+		ChartRef string `json:"chart_ref"`
+		Version  string `json:"version"`
+	} `json:"k8s_generated"`
+}
+
+func (m marketplaceIntegration) composeArtifactFile() string {
+	if file := strings.TrimSpace(m.DeploymentArtifacts.Compose.File); file != "" {
+		return file
+	}
+	return strings.TrimSpace(m.ComposeFile)
+}
+
+func (m marketplaceIntegration) preferredHelmArtifact() (chartRef, version string) {
+	chartRef = strings.TrimSpace(m.DeploymentArtifacts.Helm.ChartRef)
+	version = strings.TrimSpace(m.DeploymentArtifacts.Helm.Version)
+	if chartRef != "" {
+		if version == "" {
+			version = strings.TrimSpace(m.Version)
+		}
+		return chartRef, version
+	}
+	chartRef = strings.TrimSpace(m.DeploymentArtifacts.K8sGenerated.ChartRef)
+	version = strings.TrimSpace(m.DeploymentArtifacts.K8sGenerated.Version)
+	if chartRef == "" {
+		return "", ""
+	}
+	if version == "" {
+		version = strings.TrimSpace(m.Version)
+	}
+	return chartRef, version
 }
 
 func (s *Server) targetIntegrationForUpdate(ctx context.Context, ic config.IntegrationConfig) (*marketplaceIntegration, error) {
@@ -920,8 +1164,10 @@ func (s *Server) targetIntegrationForUpdate(ctx context.Context, ic config.Integ
 	marketItem, err := s.fetchMarketplaceIntegration(ctx, id)
 	devLatest := strings.TrimSpace(ic.DevLatestVersion)
 	devCompose := strings.TrimSpace(ic.DevComposeFile)
+	devHelmChart := strings.TrimSpace(ic.DevHelmChartRef)
+	devHelmVersion := strings.TrimSpace(ic.DevHelmVersion)
 	if err != nil {
-		if devLatest == "" {
+		if devLatest == "" && devCompose == "" && devHelmChart == "" {
 			return nil, err
 		}
 		marketItem = &marketplaceIntegration{ID: id}
@@ -934,7 +1180,14 @@ func (s *Server) targetIntegrationForUpdate(ctx context.Context, ic config.Integ
 		marketItem.Version = devLatest
 	}
 	if devCompose != "" {
+		marketItem.DeploymentArtifacts.Compose.File = devCompose
 		marketItem.ComposeFile = devCompose
+	}
+	if devHelmChart != "" {
+		marketItem.DeploymentArtifacts.Helm.ChartRef = devHelmChart
+	}
+	if devHelmVersion != "" {
+		marketItem.DeploymentArtifacts.Helm.Version = devHelmVersion
 	}
 	return marketItem, nil
 }
@@ -1037,6 +1290,10 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 	if target == nil {
 		return fmt.Errorf("missing target integration")
 	}
+	mode, modeErr := s.ensureMutableRuntime()
+	if modeErr != nil {
+		return modeErr
+	}
 	op := newIntegrationOperation(s, "update", id)
 	op.set("checking", 15, "Checking update")
 	defer func() {
@@ -1070,19 +1327,43 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 	}
 
 	op.set("preparing", 30, "Preparing update")
-	composeFile, err := s.resolveComposeFileForOperation(id, target.ComposeFile)
-	if err != nil {
-		op.fail(err)
-		s.finishUpdate(id, err.Error())
-		return err
+	if mode == runtimeCompose {
+		composeInput := firstNonEmpty(target.composeArtifactFile(), strings.TrimSpace(entry.ComposeFile), s.defaultComposeFile(id))
+		composeFile, err := s.resolveComposeFileForOperation(id, composeInput, strings.TrimSpace(target.Version))
+		if err != nil {
+			op.fail(err)
+			s.finishUpdate(id, err.Error())
+			return err
+		}
+		if strings.TrimSpace(composeFile) != "" {
+			op.set("updating", 45, "Updating integration")
+			if err := s.composeInstall(ctx, composeFile, id); err != nil {
+				op.fail(fmt.Errorf("update failed: %w", err))
+				s.finishUpdate(id, err.Error())
+				return err
+			}
+			cfg.Integrations[index].ComposeFile = composeFile
+		}
 	}
-	if strings.TrimSpace(composeFile) != "" {
+	if mode == runtimeHelm {
+		helmSpec, specErr := s.helmSpecFor(id, entry, target)
+		if specErr != nil {
+			op.fail(specErr)
+			s.finishUpdate(id, specErr.Error())
+			return specErr
+		}
 		op.set("updating", 45, "Updating integration")
-		if err := s.composeInstall(ctx, composeFile, id); err != nil {
+		if err := s.helmInstallOrUpgrade(ctx, helmSpec, id); err != nil {
 			op.fail(fmt.Errorf("update failed: %w", err))
 			s.finishUpdate(id, err.Error())
 			return err
 		}
+		cfg.Integrations[index].HelmReleaseName = helmSpec.ReleaseName
+		cfg.Integrations[index].HelmNamespace = helmSpec.Namespace
+		cfg.Integrations[index].HelmChartRef = helmSpec.ChartRef
+		cfg.Integrations[index].HelmChartVersion = helmSpec.ChartVersion
+		cfg.Integrations[index].HelmValuesFile = helmSpec.ValuesFile
+		cfg.Integrations[index].Upstream = s.defaultHelmUpstream(helmSpec)
 	}
 
 	op.set("writing-config", 85, "Saving installed version")
@@ -1107,6 +1388,13 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 }
 
 func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
+	mode, modeErr := s.runtimeMode()
+	if modeErr != nil {
+		return
+	}
+	if mode == runtimeGitOps {
+		autoApply = false
+	}
 	if strings.TrimSpace(s.configPath) == "" {
 		return
 	}
@@ -1167,7 +1455,7 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 		s.checkForUpdates(r.Context(), false)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{"updates": s.copyUpdateStates()})
+	_ = json.NewEncoder(w).Encode(map[string]any{"management_mode": s.managementModeLabel(), "updates": s.copyUpdateStates()})
 }
 
 func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request) {
@@ -1217,6 +1505,9 @@ func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request)
 		statusCode := http.StatusInternalServerError
 		errMsg := strings.TrimSpace(err.Error())
 		if strings.Contains(strings.ToLower(errMsg), "already in progress") {
+			statusCode = http.StatusConflict
+		}
+		if strings.Contains(strings.ToLower(errMsg), "gitops mode") {
 			statusCode = http.StatusConflict
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -1415,6 +1706,24 @@ func (s *Server) composePullTimeout() time.Duration {
 	}
 	if parsed <= 0 {
 		return 2 * time.Minute
+	}
+	return parsed
+}
+
+func (s *Server) operationTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("INTEGRATIONS_OPERATION_TIMEOUT"))
+	if raw == "" {
+		return 15 * time.Minute
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil {
+		return 15 * time.Minute
+	}
+	if parsed < 30*time.Second {
+		return 30 * time.Second
+	}
+	if parsed > 2*time.Hour {
+		return 2 * time.Hour
 	}
 	return parsed
 }

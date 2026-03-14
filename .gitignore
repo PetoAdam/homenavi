@@ -5,9 +5,15 @@ nginx/certs/
 keys/
 postgres-data/
 mosquitto/config/conf.d/*
+!mosquitto/config/conf.d/.gitkeep
+!mosquitto/config/conf.d/*.example
 devices_snapshot.json
 docker-compose-pi.yml
 zigbee2mqtt-data/configuration-pi.yaml
+
+# Kubernetes local secret files
+k8s/secrets/*.env
+!k8s/secrets/*.env.example
 
 # Deployment-local integration installation config
 integrations/config/installed.yaml

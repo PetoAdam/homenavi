@@ -1,0 +1,16 @@
+{{- if and ((index .Values.services "integration-proxy").enabled) .Values.integrationProxy.rbac.createClusterAdminBinding }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "homenavi.fullname" . }}-integration-proxy-helm-admin
+  labels:
+    {{- include "homenavi.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "homenavi.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+{{- end }}

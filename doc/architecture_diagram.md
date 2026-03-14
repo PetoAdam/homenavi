@@ -179,3 +179,29 @@ Related docs:
 - [doc/ers_hdp_devicehub_overview.md](doc/ers_hdp_devicehub_overview.md)
 - [doc/hdp.md](doc/hdp.md)
 - [doc/external_api_surface.md](doc/external_api_surface.md)
+
+## Kubernetes namespace strategy (plane-aligned)
+
+Yes, plane-aligned namespaces are supported and recommended.
+
+Suggested namespace model:
+
+- `homenavi-client` → frontend/UI edge entry
+- `homenavi-core` → gateway + domain services + data stores
+- `homenavi-edge` → adapters + MQTT stack
+- `homenavi-integrations` → integration runtime workloads
+- `homenavi-marketplace` → marketplace API/web stack
+
+Practical Helm guidance:
+
+1. Prefer **one Helm release per namespace/plane**.
+2. Keep each release internally consistent (services in that release talk by short DNS names).
+3. Use fully-qualified service DNS across namespaces when crossing plane boundaries, for example:
+  - `service.namespace.svc.cluster.local`
+
+For current MVP, minimum safe split is:
+
+- `homenavi` release in namespace `homenavi`
+- `homenavi-marketplace` release in namespace `homenavi-marketplace`
+
+This is already compatible with the local Minikube runbook and can evolve into full multi-plane namespace separation incrementally.

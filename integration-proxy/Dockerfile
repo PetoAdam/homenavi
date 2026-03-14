@@ -8,7 +8,7 @@ COPY . ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/integration-proxy ./cmd/integration-proxy
 
 FROM alpine:3.20
-RUN apk add --no-cache docker-cli docker-cli-compose
+RUN apk add --no-cache docker-cli docker-cli-compose helm kubectl
 WORKDIR /app
 COPY --from=build /out/integration-proxy /app/integration-proxy
 EXPOSE 8099

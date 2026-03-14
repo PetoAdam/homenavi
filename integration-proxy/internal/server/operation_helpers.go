@@ -1,7 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -46,7 +50,7 @@ func (op integrationOperation) done(message string) {
 	op.s.logger.Printf("integration %s id=%s completed", op.kind, op.id)
 }
 
-func (s *Server) resolveComposeFileForOperation(id, requestedComposeFile string) (string, error) {
+func (s *Server) resolveComposeFileForOperation(id, requestedComposeFile, requestedVersion string) (string, error) {
 	composeFile, err := s.resolveComposeFileFromPayload(id, requestedComposeFile)
 	if err != nil {
 		return "", err
@@ -55,5 +59,37 @@ func (s *Server) resolveComposeFileForOperation(id, requestedComposeFile string)
 		composeFile = s.defaultComposeFile(id)
 	}
 	composeFile = s.expandComposePath(composeFile)
-	return composeFile, nil
+	if strings.TrimSpace(composeFile) == "" {
+		return "", nil
+	}
+	return s.materializeComposeFileForVersion(id, composeFile, requestedVersion)
+}
+
+func (s *Server) materializeComposeFileForVersion(id, composeFile, requestedVersion string) (string, error) {
+	composeFile = strings.TrimSpace(composeFile)
+	requestedVersion = strings.TrimSpace(requestedVersion)
+	if composeFile == "" || requestedVersion == "" {
+		return composeFile, nil
+	}
+	data, err := os.ReadFile(composeFile)
+	if err != nil {
+		return "", err
+	}
+	re := regexp.MustCompile(`\$\{HN_VERSION(?:(?::-|-)[^}]*)?\}`)
+	rewritten := re.ReplaceAll(data, []byte(requestedVersion))
+	if bytes.Equal(rewritten, data) {
+		return composeFile, nil
+	}
+	baseDir := filepath.Dir(composeFile)
+	if strings.TrimSpace(s.configPath) != "" {
+		baseDir = filepath.Join(filepath.Dir(s.configPath), "compose")
+	}
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return "", err
+	}
+	resolvedPath := filepath.Join(baseDir, fmt.Sprintf("%s.yml", strings.TrimSpace(id)))
+	if err := os.WriteFile(resolvedPath, append(rewritten, '\n'), 0o644); err != nil {
+		return "", err
+	}
+	return resolvedPath, nil
 }

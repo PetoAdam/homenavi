@@ -1,0 +1,159 @@
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "homenavi.componentName" (dict "root" $ "component" $name) }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" $ "component" $name) | nindent 4 }}
+spec:
+  replicas: {{ default 1 $svc.replicas }}
+  selector:
+    matchLabels:
+      {{- include "homenavi.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "homenavi.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+      {{- if or (eq $name "frontend") (eq $name "integration-proxy") (eq $name "mosquitto") (eq (include "homenavi.jwtStaticSecret" $) "true") }}
+      annotations:
+        {{- if eq $name "frontend" }}
+        checksum/frontend-nginx-config: {{ include (print $.Template.BasePath "/frontend-nginx-config.yaml") $ | sha256sum }}
+        {{- end }}
+        {{- if eq $name "integration-proxy" }}
+        checksum/integration-proxy-config: {{ include (print $.Template.BasePath "/integration-proxy-config.yaml") $ | sha256sum }}
+        {{- end }}
+        {{- if eq $name "mosquitto" }}
+        checksum/mosquitto-config: {{ include (print $.Template.BasePath "/mosquitto-config.yaml") $ | sha256sum }}
+        {{- end }}
+        {{- if eq (include "homenavi.jwtStaticSecret" $) "true" }}
+        checksum/jwt-secret: {{ include (print $.Template.BasePath "/jwt-secret.yaml") $ | sha256sum }}
+        {{- end }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "homenavi.serviceAccountName" $ }}
+      {{- with $.Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- $svcEnv := default (dict) $svc.env }}
+      {{- $serviceDependencies := default (list) $svc.dependsOn }}
+      {{- if and (eq (len $serviceDependencies) 0) (ne $name "postgres") (hasKey $svcEnv "POSTGRES_HOST") }}
+      {{- $serviceDependencies = list (dict "host" (default "postgres" (index $svcEnv "POSTGRES_HOST")) "port" (default "5432" (index $svcEnv "POSTGRES_PORT"))) }}
+      {{- end }}
+      {{- if or (eq $name "integration-proxy") (gt (len $serviceDependencies) 0) }}
+      initContainers:
+        {{- if eq $name "integration-proxy" }}
+        - name: bootstrap-integration-config
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              set -e
+              mkdir -p /var/lib/integration-proxy
+              if [ ! -f /var/lib/integration-proxy/installed.yaml ]; then
+                cp /bootstrap-config/installed.yaml /var/lib/integration-proxy/installed.yaml
+              fi
+          volumeMounts:
+            - name: integration-state
+              mountPath: /var/lib/integration-proxy
+            - name: integration-config-bootstrap
+              mountPath: /bootstrap-config
+        {{- end }}
+        {{- if gt (len $serviceDependencies) 0 }}
+        - name: wait-for-dependencies
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              set -e
+              {{- range $dep := $serviceDependencies }}
+              until nc -z {{ $dep.host | quote }} {{ printf "%v" $dep.port | quote }}; do
+                echo "waiting for {{ $dep.host }}:{{ $dep.port }}..."
+                sleep 2
+              done
+              {{- end }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "homenavi.image" (dict "root" $ "service" $svc) }}
+          imagePullPolicy: {{ default $.Values.global.imagePullPolicy $svc.image.pullPolicy }}
+          {{- if $svc.containerPort }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.containerPort }}
+              protocol: TCP
+            {{- with $svc.extraContainerPorts }}
+            {{- range . }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+              protocol: {{ default "TCP" .protocol }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- if $svc.env }}
+          env:
+            {{- range $envKey, $envVal := $svc.env }}
+            {{- $renderedVal := printf "%v" $envVal }}
+            {{- if ne $renderedVal "" }}
+            - name: {{ $envKey }}
+              value: {{ $renderedVal | quote }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- $mergedEnvFromSecrets := concat (default (list) $.Values.global.envFromSecrets) (default (list) $svc.envFromSecrets) }}
+          {{- if $mergedEnvFromSecrets }}
+          envFrom:
+            {{- range $secret := $mergedEnvFromSecrets }}
+            - secretRef:
+                name: {{ $secret }}
+            {{- end }}
+          {{- end }}
+          {{- with $svc.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $svc.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with $svc.volumes }}
+      volumes:
+        {{- range $volume := . }}
+        - name: {{ $volume.name }}
+          {{- if eq $volume.type "generatedPVC" }}
+          {{- $claim := index $.Values.persistentVolumeClaims $volume.claimKey }}
+          {{- if and $claim $claim.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "homenavi.fullname" $ }}-{{ $volume.claimKey }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+          {{- else if eq $volume.type "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ $volume.claimName }}
+          {{- else if eq $volume.type "configMap" }}
+          configMap:
+            name: {{ $volume.configMapName }}
+          {{- else if eq $volume.type "secret" }}
+          secret:
+            secretName: {{- if $volume.secretNameTemplate }} {{ include $volume.secretNameTemplate $ }}{{- else }} {{ $volume.secretName }}{{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+---
+{{- end }}
+{{- end }}

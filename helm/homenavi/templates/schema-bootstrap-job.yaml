@@ -1,0 +1,49 @@
+{{- $pg := (index .Values.services "user-service").env -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "homenavi.fullname" . }}-schema-bootstrap
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "schema-bootstrap") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "homenavi.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: schema-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: schema-bootstrap
+          image: postgres:15-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGPASSWORD
+              value: {{ default "password" (index $pg "POSTGRES_PASSWORD") | quote }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              psql \
+                -h {{ default "postgres" (index $pg "POSTGRES_HOST") | quote }} \
+                -p {{ default "5432" (index $pg "POSTGRES_PORT") | quote }} \
+                -U {{ default "user" (index $pg "POSTGRES_USER") | quote }} \
+                -d {{ default "users" (index $pg "POSTGRES_DB") | quote }} \
+                -v ON_ERROR_STOP=1 \
+                -c "CREATE TABLE IF NOT EXISTS ers_rooms (id uuid PRIMARY KEY, slug text NOT NULL UNIQUE, name text NOT NULL, sort_order integer DEFAULT 0, meta jsonb, created_at timestamptz, updated_at timestamptz);" \
+                -c "CREATE TABLE IF NOT EXISTS ers_tags (id uuid PRIMARY KEY, slug text NOT NULL UNIQUE, name text NOT NULL, created_at timestamptz, updated_at timestamptz);" \
+                -c "CREATE TABLE IF NOT EXISTS ers_devices (id uuid PRIMARY KEY, name text NOT NULL, description text, room_id uuid, meta jsonb, created_at timestamptz, updated_at timestamptz);" \
+                -c "CREATE TABLE IF NOT EXISTS ers_device_tags (device_id uuid NOT NULL, tag_id uuid NOT NULL, PRIMARY KEY (device_id, tag_id));" \
+                -c "CREATE TABLE IF NOT EXISTS ers_device_bindings (id uuid PRIMARY KEY, device_id uuid NOT NULL, kind text NOT NULL, external_id text NOT NULL, created_at timestamptz, updated_at timestamptz);" \
+                -c "CREATE INDEX IF NOT EXISTS idx_ers_device_tags_device_id ON ers_device_tags(device_id);" \
+                -c "CREATE INDEX IF NOT EXISTS idx_ers_device_tags_tag_id ON ers_device_tags(tag_id);" \
+                -c "CREATE INDEX IF NOT EXISTS idx_ers_device_bindings_device_id ON ers_device_bindings(device_id);" \
+                -c "CREATE INDEX IF NOT EXISTS idx_ers_device_bindings_kind ON ers_device_bindings(kind);" \
+                -c "CREATE INDEX IF NOT EXISTS idx_ers_device_bindings_external_id ON ers_device_bindings(external_id);" \
+                -c "CREATE UNIQUE INDEX IF NOT EXISTS idx_kind_external ON ers_device_bindings(kind, external_id);" \
+                -c "CREATE TABLE IF NOT EXISTS dashboards (id uuid PRIMARY KEY, scope varchar(16) NOT NULL, owner_user_id uuid NULL, title varchar(128) NOT NULL, layout_engine varchar(32) NOT NULL, layout_version integer NOT NULL DEFAULT 1, doc jsonb NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());" \
+                -c "CREATE INDEX IF NOT EXISTS idx_dashboards_scope ON dashboards(scope);" \
+                -c "CREATE INDEX IF NOT EXISTS idx_dashboards_owner_user_id ON dashboards(owner_user_id);"
