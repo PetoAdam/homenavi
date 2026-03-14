@@ -1,5 +1,37 @@
 import http from './httpClient';
 
+const DEFAULT_INTEGRATION_OPERATION_TIMEOUT_MS = 600000;
+
+function parsePositiveTimeoutMs(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRuntimeConfig() {
+  if (typeof window === 'undefined') return {};
+  return window.__HOMENAVI_RUNTIME_CONFIG__ || {};
+}
+
+function getIntegrationOperationTimeoutMs() {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    parsePositiveTimeoutMs(runtimeConfig.integrationOperationTimeoutMs)
+    ?? parsePositiveTimeoutMs(runtimeConfig.integrationsInstallTimeoutMs)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_INTEGRATION_OPERATION_TIMEOUT_MS)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_INTEGRATIONS_INSTALL_TIMEOUT_MS)
+    ?? DEFAULT_INTEGRATION_OPERATION_TIMEOUT_MS
+  );
+}
+
+function getMarketplaceApiBase() {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    runtimeConfig.marketplaceApiBase
+    || import.meta.env?.VITE_MARKETPLACE_API_BASE
+    || 'https://marketplace.homenavi.org'
+  ).replace(/\/+$/, '');
+}
+
 export async function getIntegrationRegistry({ q, page, pageSize } = {}) {
   const params = new URLSearchParams();
   params.set('ts', String(Date.now()));
@@ -43,13 +75,13 @@ export async function detectIntegrationSetupCapability(id) {
 export async function getIntegrationMarketplace() {
   const params = new URLSearchParams();
   params.set('ts', String(Date.now()));
-  const base = (import.meta.env?.VITE_MARKETPLACE_API_BASE || 'https://marketplace.homenavi.org').replace(/\/+$/, '');
+  const base = getMarketplaceApiBase();
   return http.get(`${base}/api/integrations?${params.toString()}`);
 }
 
 export async function incrementMarketplaceDownloads(id) {
   if (!id) return { success: false, error: 'Missing integration id' };
-  const base = (import.meta.env?.VITE_MARKETPLACE_API_BASE || 'https://marketplace.homenavi.org').replace(/\/+$/, '');
+  const base = getMarketplaceApiBase();
   return http.post(`${base}/api/integrations/${encodeURIComponent(id)}/downloads`, {});
 }
 
@@ -67,7 +99,7 @@ export async function installIntegration(id, upstream, compose) {
   if (typeof compose?.auto_update === 'boolean') {
     payload.auto_update = compose.auto_update;
   }
-  return http.post('/integrations/install', payload);
+  return http.post('/integrations/install', payload, { timeout: getIntegrationOperationTimeoutMs() });
 }
 
 export async function uninstallIntegration(id) {
@@ -86,7 +118,7 @@ export async function getIntegrationUpdates(refresh = false) {
 }
 
 export async function updateIntegration(id) {
-  return http.post('/integrations/update', { id }, { timeout: 180000 });
+  return http.post('/integrations/update', { id }, { timeout: getIntegrationOperationTimeoutMs() });
 }
 
 export async function setIntegrationAutoUpdate(id, autoUpdate) {
