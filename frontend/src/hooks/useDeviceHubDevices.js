@@ -175,6 +175,7 @@ function transformEntry(key, raw) {
   const createdAt = raw.created_at ? new Date(raw.created_at) : null;
   const updatedAt = raw.updated_at ? new Date(raw.updated_at) : null;
   const lastCommandResult = raw.__lastCommandResult || null;
+  const lastStateCorr = typeof raw.__lastStateCorr === 'string' ? raw.__lastStateCorr : '';
   const hasToggle = capabilities.some(cap => {
     const id = (cap.id || cap.property || '').toLowerCase();
     const valueType = (cap.value_type || cap.valueType || '').toLowerCase();
@@ -215,7 +216,104 @@ function transformEntry(key, raw) {
     hasToggle,
     toggleState,
     lastCommandResult,
+    lastStateCorr,
   };
+}
+
+export function mergeMetadataRecord(prev, data, mapKey, protocolHint = '') {
+  const online = typeof data?.online === 'boolean' ? data.online : prev?.online;
+  const lastSeen = data?.last_seen ?? data?.lastSeen ?? prev?.last_seen;
+  const pendingState = ensureStateObject(prev?.__pendingState);
+  const pendingStateTs = Number(prev?.__pendingStateTs || 0);
+  const pendingStateCorr = typeof prev?.__pendingStateCorr === 'string' ? prev.__pendingStateCorr : '';
+  const mergedState = Object.keys(pendingState).length > 0
+    ? pendingState
+    : ensureStateObject(prev?._last_state);
+
+  const merged = {
+    ...(prev || {}),
+    id: mapKey,
+    mapKey,
+    device_id: mapKey,
+    externalId: mapKey,
+    hdpId: mapKey,
+    protocol: data?.protocol || prev?.protocol || protocolHint || (mapKey.includes('/') ? mapKey.split('/')[0] : ''),
+    manufacturer: data?.manufacturer ?? prev?.manufacturer,
+    model: data?.model ?? prev?.model,
+    firmware: data?.firmware ?? prev?.firmware,
+    description: normalizeDescription(data?.description ?? prev?.description),
+    icon: data?.icon ?? prev?.icon,
+    capabilities: ensureArray(data?.capabilities ?? prev?.capabilities),
+    inputs: ensureArray(data?.inputs ?? prev?.inputs),
+    online: typeof online === 'boolean' ? online : Boolean(prev?.online),
+    last_seen: lastSeen,
+    _last_state: mergedState,
+    stateUpdatedAt: pendingStateTs || prev?.stateUpdatedAt || null,
+    metadataUpdatedAt: Date.now(),
+    __hasMetadata: true,
+  };
+  if (pendingStateCorr) {
+    merged.__lastStateCorr = pendingStateCorr;
+  }
+  delete merged.__pendingState;
+  delete merged.__pendingStateTs;
+  delete merged.__pendingStateCorr;
+  return merged;
+}
+
+export function mergeStateRecord(prev, mapKey, stateEnvelope) {
+  const stateObj = ensureStateObject(stateEnvelope?.state || stateEnvelope?.data || stateEnvelope);
+  if (!Object.keys(stateObj).length) return null;
+
+  const incomingCorr = typeof stateEnvelope?.corr === 'string' ? stateEnvelope.corr.trim() : '';
+  const incomingTs = Number(stateEnvelope?.ts || stateEnvelope?.timestamp || Date.now());
+  const previous = prev || {};
+
+  if (mapKey.startsWith('zigbee/') && !previous.__hasMetadata) {
+    const prevPendingTs = Number(previous.__pendingStateTs || 0);
+    if (prevPendingTs && incomingTs && incomingTs < prevPendingTs) {
+      return null;
+    }
+    return {
+      ...previous,
+      id: mapKey,
+      mapKey,
+      device_id: mapKey,
+      externalId: mapKey,
+      hdpId: mapKey,
+      __pendingState: stateObj,
+      __pendingStateTs: incomingTs || Date.now(),
+      __pendingStateCorr: incomingCorr,
+      last_seen: incomingTs || Date.now(),
+      online: true,
+    };
+  }
+
+  const prevTs = previous.stateUpdatedAt instanceof Date
+    ? previous.stateUpdatedAt.getTime()
+    : typeof previous.stateUpdatedAt === 'number'
+      ? previous.stateUpdatedAt
+      : 0;
+  if (prevTs && incomingTs && incomingTs < prevTs) {
+    return null;
+  }
+  const merged = {
+    ...previous,
+    id: mapKey,
+    mapKey,
+    device_id: mapKey,
+    externalId: mapKey,
+    hdpId: mapKey,
+    _last_state: stateObj,
+    last_seen: incomingTs || Date.now(),
+    stateUpdatedAt: incomingTs || Date.now(),
+    online: true,
+    __lastStateCorr: incomingCorr,
+  };
+  if (previous.__hasMetadata) {
+    merged.__hasMetadata = true;
+  }
+  return merged;
 }
 
 function computeStats(devices) {
@@ -458,28 +556,7 @@ export default function useDeviceHubDevices(options = {}) {
       }
 
       const prev = devicesRef.current.get(mapKey) || {};
-      const online = typeof data.online === 'boolean' ? data.online : prev.online;
-      const lastSeen = data.last_seen ?? data.lastSeen ?? prev.last_seen;
-      const merged = {
-        ...prev,
-        id: mapKey,
-        mapKey,
-        device_id: mapKey,
-        externalId: mapKey,
-        hdpId: mapKey,
-        protocol: data.protocol || prev.protocol || norm.protocol || (mapKey.includes('/') ? mapKey.split('/')[0] : ''),
-        manufacturer: data.manufacturer ?? prev.manufacturer,
-        model: data.model ?? prev.model,
-        firmware: data.firmware ?? prev.firmware,
-        description: normalizeDescription(data.description ?? prev.description),
-        icon: data.icon ?? prev.icon,
-        capabilities: ensureArray(data.capabilities ?? prev.capabilities),
-        inputs: ensureArray(data.inputs ?? prev.inputs),
-        online: typeof online === 'boolean' ? online : Boolean(prev.online),
-        last_seen: lastSeen,
-        metadataUpdatedAt: Date.now(),
-        __hasMetadata: true,
-      };
+      const merged = mergeMetadataRecord(prev, data, mapKey, norm.protocol);
       devicesRef.current.set(mapKey, merged);
       schedulePublish();
       return;
@@ -528,42 +605,9 @@ export default function useDeviceHubDevices(options = {}) {
         return;
       }
 
-      const stateObj = ensureStateObject(stateEnvelope.state || stateEnvelope.data || stateEnvelope);
-      if (!Object.keys(stateObj).length) return;
       const prev = devicesRef.current.get(mapKey) || {};
-
-	  // Strict: don't create Zigbee devices from state-only messages.
-	  // Zigbee devices should always have retained metadata; if we haven't seen it,
-	  // ignore the state event (prevents protocol/id collisions from surfacing as devices).
-	  if (mapKey.startsWith('zigbee/') && !prev.__hasMetadata) {
-	    return;
-	  }
-
-      const incomingTs = Number(stateEnvelope.ts || stateEnvelope.timestamp || Date.now());
-      const prevTs = prev.stateUpdatedAt instanceof Date
-        ? prev.stateUpdatedAt.getTime()
-        : typeof prev.stateUpdatedAt === 'number'
-          ? prev.stateUpdatedAt
-          : 0;
-      if (prevTs && incomingTs && incomingTs < prevTs) {
-        // Drop stale state to avoid UI flicker (older MQTT state overriding optimistic UI).
-        return;
-      }
-      const merged = {
-        ...prev,
-        id: mapKey,
-        mapKey,
-        device_id: mapKey,
-        externalId: mapKey,
-        hdpId: mapKey,
-        _last_state: stateObj,
-        last_seen: incomingTs || Date.now(),
-        stateUpdatedAt: incomingTs || Date.now(),
-        online: true,
-      };
-      if (prev.__hasMetadata) {
-        merged.__hasMetadata = true;
-      }
+      const merged = mergeStateRecord(prev, mapKey, stateEnvelope);
+      if (!merged) return;
       devicesRef.current.set(mapKey, merged);
       schedulePublish();
     }
@@ -613,8 +657,8 @@ export default function useDeviceHubDevices(options = {}) {
     });
 
     const unsubs = [
-      conn.subscribe(STATE_PREFIX + '#', handleRealtimeMessage),
       conn.subscribe(METADATA_PREFIX + '#', handleRealtimeMessage),
+      conn.subscribe(STATE_PREFIX + '#', handleRealtimeMessage),
       conn.subscribe(EVENT_PREFIX + '#', handleRealtimeMessage),
       conn.subscribe(PAIRING_PREFIX + '#', handleRealtimeMessage),
       conn.subscribe(COMMAND_RESULT_PREFIX + '#', handleRealtimeMessage),

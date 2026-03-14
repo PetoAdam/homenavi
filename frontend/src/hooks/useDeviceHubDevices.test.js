@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pairingConfigArrayToMap } from './useDeviceHubDevices.js';
+import { mergeMetadataRecord, mergeStateRecord, pairingConfigArrayToMap } from './useDeviceHubDevices.js';
 
 describe('pairingConfigArrayToMap', () => {
   it('returns empty object for non-array payloads', () => {
@@ -29,5 +29,47 @@ describe('pairingConfigArrayToMap', () => {
     ];
     const result = pairingConfigArrayToMap(payload);
     expect(Object.keys(result)).toEqual(['matter']);
+  });
+});
+
+describe('useDeviceHubDevices realtime merge helpers', () => {
+  it('caches zigbee state until metadata arrives, then applies it', () => {
+    const cached = mergeStateRecord({}, 'zigbee/0xa4c13867e32d96d4', {
+      device_id: 'zigbee/0xa4c13867e32d96d4',
+      ts: 100,
+      corr: 'corr-1',
+      state: { state: false, brightness: 50 },
+    });
+
+    expect(cached.__pendingState).toEqual({ state: false, brightness: 50 });
+    expect(cached._last_state).toBeUndefined();
+
+    const merged = mergeMetadataRecord(cached, {
+      device_id: 'zigbee/0xa4c13867e32d96d4',
+      protocol: 'zigbee',
+      manufacturer: 'Test',
+      capabilities: [{ id: 'state' }],
+    }, 'zigbee/0xa4c13867e32d96d4', 'zigbee');
+
+    expect(merged.__hasMetadata).toBe(true);
+    expect(merged._last_state).toEqual({ state: false, brightness: 50 });
+    expect(merged.__pendingState).toBeUndefined();
+    expect(merged.__lastStateCorr).toBe('corr-1');
+  });
+
+  it('drops stale state updates that are older than the latest applied state', () => {
+    const prev = {
+      __hasMetadata: true,
+      stateUpdatedAt: 200,
+      _last_state: { state: true },
+    };
+
+    const merged = mergeStateRecord(prev, 'zigbee/0xb4e84287377c0000', {
+      device_id: 'zigbee/0xb4e84287377c0000',
+      ts: 150,
+      state: { state: false },
+    });
+
+    expect(merged).toBeNull();
   });
 });

@@ -94,10 +94,8 @@ export function clearPendingTimeout(entry) {
 export function shouldClearPendingFromDevice(pending, device) {
   if (!pending || !device) return false;
   const result = device.lastCommandResult;
-  if (!result) return false;
-  if (!pending.corr || !result.corr || pending.corr !== result.corr) return false;
-
-  if (!result.success) return true;
+  const resultMatches = Boolean(pending.corr && result?.corr && pending.corr === result.corr);
+  if (resultMatches && !result.success) return true;
 
   const minDelaySatisfied = typeof pending.startedAt === 'number'
     ? (Date.now() - pending.startedAt) >= COMMAND_PENDING_NO_EXPECTED_MIN_DELAY_MS
@@ -105,25 +103,24 @@ export function shouldClearPendingFromDevice(pending, device) {
 
   // Prefer clearing when the device state actually reflects what we asked for.
   // This prevents "snap back" for cloud devices where a refresh can arrive with the old value.
-  if (pending.expectedState && expectedPatchSatisfied(pending.expectedState, device.state || {})) {
-    // Delay clearing slightly even when expected is satisfied, because an optimistic publish
-    // can satisfy this immediately and then a stale refresh can arrive right after.
-    return minDelaySatisfied;
-  }
-
   const stateTs = stateVersionFromDevice(device);
   const baselineTs = pending.stateVersion || 0;
-  const resultTs = Number(result.ts || 0);
+  const resultTs = Number(result?.ts || 0);
   const hasStateAdvanced = stateTs && stateTs > baselineTs;
   const stateCoversResult = stateTs && resultTs && stateTs >= resultTs;
   const noExpectedMinDelaySatisfied = minDelaySatisfied;
   const baselineState = pending.baselineState;
   const stateChanged = stateChangedFromBaseline(baselineState, device.state || {});
+  const stateCorrMatches = Boolean(pending.corr && device.lastStateCorr && pending.corr === device.lastStateCorr);
 
   // Fallback for legacy integrations/devices where we don't have an expected patch.
   // Require a minimum delay and an actual change from the baseline state to avoid
   // clearing on a refresh/realtime event that re-emits the old value.
-  return noExpectedMinDelaySatisfied && stateChanged && (hasStateAdvanced || stateCoversResult);
+  if (pending.expectedState && expectedPatchSatisfied(pending.expectedState, device.state || {})) {
+    return minDelaySatisfied && (resultMatches || stateCorrMatches || hasStateAdvanced || stateChanged);
+  }
+
+  return noExpectedMinDelaySatisfied && stateChanged && (resultMatches || stateCorrMatches || hasStateAdvanced || stateCoversResult);
 }
 
 export function baselineStateFromDevice(device) {
