@@ -1,0 +1,22 @@
+{{- range $name, $pvc := .Values.persistentVolumeClaims }}
+{{- if $pvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "homenavi.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "homenavi.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    {{- range $pvc.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ $pvc.size }}
+  {{- if $pvc.storageClassName }}
+  storageClassName: {{ $pvc.storageClassName }}
+  {{- end }}
+---
+{{- end }}
+{{- end }}

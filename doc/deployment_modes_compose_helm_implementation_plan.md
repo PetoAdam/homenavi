@@ -1,6 +1,6 @@
 # Homenavi Deployment Modes (Compose or Helm) Implementation Plan
 
-Status: Draft for implementation  
+Status: Active implementation (MVP-1 focus: Minikube Helm local)  
 Date: 2026-03-01  
 Owners: Core Platform + Integration Proxy + Marketplace
 
@@ -18,6 +18,12 @@ Neither mode is the primary installation path. Product messaging, docs, and APIs
 To make this maintainable and high quality, deployment behavior must be abstracted from HTTP handlers in `integration-proxy` into runtime adapters (`compose`, `helm`) behind a stable application service boundary.
 
 This document defines architecture, contracts, migration, rollout, and acceptance criteria.
+
+Current execution priority:
+
+1. Get the full Homenavi core running on local Minikube via Helm.
+2. Get a local Homenavi Marketplace running on the same Minikube cluster via Helm.
+3. After MVP runtime is stable, expand CI/validation/verification hardening.
 
 ---
 
@@ -49,12 +55,12 @@ This document defines architecture, contracts, migration, rollout, and acceptanc
 
 Based on current code and docs:
 
-- `integration-proxy` lifecycle operations are compose-centric (`runCompose`, `composeInstall`, `composeUninstall`).
-- Integration install/update flow currently relies on legacy Compose-oriented marketplace metadata.
-- `README.md` already indicates Helm is planned.
-- No Helm chart exists yet for the main `homenavi` deployment.
+- `integration-proxy` supports environment runtime mode (`compose|helm|gitops|auto`) with runtime-aware lifecycle handlers.
+- Marketplace and release payloads support canonical `deployment_artifacts` metadata.
+- Helm scaffold for Homenavi core exists at `helm/homenavi`.
+- A dedicated Helm chart for local `homenavi-marketplace` deployment is not in place yet.
 
-Implication: deployment execution logic and transport layer are coupled, limiting extensibility and making Kubernetes support brittle if added directly in handlers.
+Implication: the remaining MVP gap is end-to-end local Helm deployment completeness (all core services + marketplace) and runbook-driven operability on Minikube.
 
 ---
 
@@ -496,7 +502,23 @@ This keeps operational ownership aligned with ArgoCD/Flux reconciliation.
 
 ## 14) Implementation Phases and Milestones
 
-### Phase A — Foundations (1-2 sprints)
+### Phase M1 — Minikube Helm MVP (current priority)
+
+- Complete `helm/homenavi` so the full core stack runs on local Minikube.
+- Add `homenavi-marketplace` Helm chart for local Minikube deployment.
+- Publish and validate a single local runbook for:
+  - cluster bootstrap
+  - core Helm install
+  - marketplace Helm install
+  - smoke verification
+
+### Phase M2 — Post-MVP Hardening
+
+- CI checks for Helm quality and template rendering.
+- Runtime integration tests (Compose and Helm paths).
+- Validation/verification hardening and release readiness checks.
+
+### Phase A — Foundations (completed/in progress)
 
 - ADRs finalized
 - Runtime domain contracts defined
@@ -530,12 +552,23 @@ This keeps operational ownership aligned with ArgoCD/Flux reconciliation.
 
 ## 15) Definition of Done (DoD)
 
+### MVP-1 DoD (local Helm)
+
+MVP-1 is complete when:
+
+1. Homenavi core runs on local Minikube via Helm.
+2. Homenavi Marketplace runs on the same local Minikube via Helm.
+3. Basic smoke flow works locally (core reachable, marketplace API reachable, listing endpoint responds).
+4. Documentation provides a deterministic local runbook with commands and verification checks.
+
+### Full Delivery DoD
+
 Implementation is complete when:
 
 1. Homenavi can be installed and run via Compose and via Helm.
 2. `integration-proxy` lifecycle operations work for both runtimes.
 3. New metadata format with deployment artifacts is enforced end-to-end.
-4. CI validates Helm artifacts and runtime tests pass.
+4. CI validates Helm artifacts and runtime tests pass (post-MVP hardening).
 5. Docs explicitly present Compose and Helm as equal supported options.
 6. Mixed-runtime installs are rejected by policy.
 7. GitOps mode behavior is documented and test-covered.

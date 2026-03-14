@@ -7,13 +7,16 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"homenavi/integration-proxy/internal/config"
 )
 
 func TestUpdateFailureDoesNotPersistVersion(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "installed.yaml")
 	initial := config.Config{
@@ -58,7 +61,31 @@ func TestUpdateFailureDoesNotPersistVersion(t *testing.T) {
 	}
 }
 
+func TestResolveComposeFileForOperationPinsHNVersion(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "installed.yaml")
+	composeSource := filepath.Join(tmpDir, "source-compose.yml")
+	if err := os.WriteFile(composeSource, []byte("services:\n  spotify:\n    image: ghcr.io/petoadam/homenavi-spotify:${HN_VERSION:-latest}\n"), 0o644); err != nil {
+		t.Fatalf("write compose source: %v", err)
+	}
+
+	s := New(log.New(io.Discard, "", 0), nil, nil, "", cfgPath)
+	resolved, err := s.resolveComposeFileForOperation("spotify", composeSource, "v0.6.0")
+	if err != nil {
+		t.Fatalf("resolve compose file: %v", err)
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		t.Fatalf("read resolved compose file: %v", err)
+	}
+	if !strings.Contains(string(data), "ghcr.io/petoadam/homenavi-spotify:v0.6.0") {
+		t.Fatalf("expected pinned image tag in compose file, got %q", string(data))
+	}
+}
+
 func TestInstallFailureDoesNotPersistIntegration(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "installed.yaml")
 	if err := config.Save(cfgPath, config.Config{Integrations: []config.IntegrationConfig{}}); err != nil {
@@ -87,6 +114,7 @@ func TestInstallFailureDoesNotPersistIntegration(t *testing.T) {
 }
 
 func TestInstallReloadFailureRollsBackConfig(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "installed.yaml")
 	if err := config.Save(cfgPath, config.Config{Integrations: []config.IntegrationConfig{}}); err != nil {

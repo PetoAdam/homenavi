@@ -18,6 +18,15 @@ type IntegrationConfig struct {
 	AutoUpdate       bool   `yaml:"auto_update,omitempty"`
 	DevLatestVersion string `yaml:"dev_latest_version,omitempty"`
 	DevComposeFile   string `yaml:"dev_compose_file,omitempty"`
+	DevHelmChartRef  string `yaml:"dev_helm_chart_ref,omitempty"`
+	DevHelmVersion   string `yaml:"dev_helm_version,omitempty"`
+	DevHelmNamespace string `yaml:"dev_helm_namespace,omitempty"`
+	ComposeFile      string `yaml:"compose_file,omitempty"`
+	HelmReleaseName  string `yaml:"helm_release_name,omitempty"`
+	HelmNamespace    string `yaml:"helm_namespace,omitempty"`
+	HelmChartRef     string `yaml:"helm_chart_ref,omitempty"`
+	HelmChartVersion string `yaml:"helm_chart_version,omitempty"`
+	HelmValuesFile   string `yaml:"helm_values_file,omitempty"`
 }
 
 func Load(path string) (Config, error) {
