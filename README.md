@@ -277,7 +277,7 @@ Runtime policy: use one integration lifecycle runtime per environment.
 
 First-party integrations (for example Spotify and LG ThinQ) publish both `deployment_artifacts.compose` and `deployment_artifacts.helm` so install/update behavior is parity-first across Compose and Helm runtime modes.
 
-The Helm chart defaults marketplace-backed integration installs to the public Homenavi marketplace. If you want Helm installs to resolve metadata from a local marketplace deployment instead, override `INTEGRATIONS_MARKETPLACE_API_BASE` as shown in [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
+The Helm chart defaults marketplace-backed integration installs to the public Homenavi marketplace at `marketplace.homenavi.org`. End users do not need to run the marketplace in their own cluster for normal installs. If you want Helm installs to resolve metadata from a local marketplace deployment for development, override `INTEGRATIONS_MARKETPLACE_API_BASE` as shown in [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
 
 Installed integrations track their installed `version` (and `auto_update` policy) in `installed.yaml`. Homenavi compares the installed version to the marketplace version (semver) to surface **Update available** and to support **Auto-update**.
 
@@ -293,7 +293,23 @@ If you run custom integrations manually, ensure the container is on the same Doc
 
 An initial Helm chart scaffold is available at [helm/homenavi](helm/homenavi).
 
+Released Helm charts are published to GHCR as OCI artifacts. For tagged releases, install directly from:
+
+- `oci://ghcr.io/petoadam/charts/homenavi`
+
+Example:
+
+```bash
+helm install homenavi oci://ghcr.io/petoadam/charts/homenavi \
+	--version X.Y.Z \
+	-n homenavi --create-namespace
+```
+
+The release chart defaults service image tags to the chart `appVersion`, so a chart release and its container images stay aligned by default.
+
 For the current MVP goal (local Minikube Helm for core + marketplace), use the runbook at [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
+
+The local marketplace deployment in that runbook is for development and end-to-end testing only. In normal homelab installs, Homenavi uses the central marketplace service.
 
 For single-namespace MVP deployment in one step, run [scripts/deploy-minikube.sh](scripts/deploy-minikube.sh).
 

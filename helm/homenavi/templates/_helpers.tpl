@@ -51,7 +51,7 @@ app.kubernetes.io/component: {{ .component }}
 
 {{- define "homenavi.image" -}}
 {{- $repository := required "service.image.repository is required" .service.image.repository -}}
-{{- $tag := default .root.Values.global.imageTag .service.image.tag -}}
+{{- $tag := default .root.Chart.AppVersion (default .root.Values.global.imageTag .service.image.tag) -}}
 {{- printf "%s:%s" $repository $tag -}}
 {{- end -}}
 
