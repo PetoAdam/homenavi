@@ -1,0 +1,162 @@
+name: Release Helm Chart
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  CHART_NAME: homenavi
+  CHART_PATH: ./helm/homenavi
+  CHART_REGISTRY_NAMESPACE: charts
+
+jobs:
+  release-chart:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          CHART_VERSION="${TAG#v}"
+          if [[ -z "$CHART_VERSION" || "$CHART_VERSION" == "$TAG" ]]; then
+            echo "Tag must be in the form vX.Y.Z" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "chart_version=$CHART_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Compute registry owner
+        id: owner
+        shell: bash
+        run: echo "owner_lower=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Prepare release chart
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK_CHART_DIR=/tmp/homenavi-chart-release
+          PACKAGE_DIR=/tmp/homenavi-chart-package
+          rm -rf "$WORK_CHART_DIR" "$PACKAGE_DIR"
+          mkdir -p "$WORK_CHART_DIR" "$PACKAGE_DIR"
+          cp -R "${CHART_PATH}"/. "$WORK_CHART_DIR"/
+
+          sed -i -E "s/^version:.*/version: ${{ steps.meta.outputs.chart_version }}/" "$WORK_CHART_DIR/Chart.yaml"
+          if grep -q '^appVersion:' "$WORK_CHART_DIR/Chart.yaml"; then
+            sed -i -E 's/^appVersion:.*/appVersion: "${{ steps.meta.outputs.tag }}"/' "$WORK_CHART_DIR/Chart.yaml"
+          else
+            printf 'appVersion: "%s"\n' "${{ steps.meta.outputs.tag }}" >> "$WORK_CHART_DIR/Chart.yaml"
+          fi
+
+          helm lint "$WORK_CHART_DIR"
+          helm template "${CHART_NAME}" "$WORK_CHART_DIR" > /tmp/homenavi-rendered.yaml
+          helm package "$WORK_CHART_DIR" -d "$PACKAGE_DIR"
+
+          PACKAGE_FILE=$(find "$PACKAGE_DIR" -maxdepth 1 -name '*.tgz' -print | head -n 1)
+          if [[ -z "$PACKAGE_FILE" ]]; then
+            echo "Helm chart package not found" >&2
+            exit 1
+          fi
+
+          CHART_REF="oci://${REGISTRY}/${{ steps.owner.outputs.owner_lower }}/${CHART_REGISTRY_NAMESPACE}/${CHART_NAME}"
+          echo "package_file=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
+          echo "chart_ref=$CHART_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push chart to GHCR
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm push "${{ steps.prepare.outputs.package_file }}" "oci://${REGISTRY}/${{ steps.owner.outputs.owner_lower }}/${CHART_REGISTRY_NAMESPACE}"
+
+      - name: Verify anonymous pull
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_PULL_DIR=/tmp/homenavi-chart-public-check
+          PUBLIC_HELM_CONFIG=/tmp/homenavi-chart-public-helm-registry.json
+          rm -rf "$PUBLIC_PULL_DIR"
+          mkdir -p "$PUBLIC_PULL_DIR"
+          printf '{}' > "$PUBLIC_HELM_CONFIG"
+
+          if ! HELM_REGISTRY_CONFIG="$PUBLIC_HELM_CONFIG" helm pull "${{ steps.prepare.outputs.chart_ref }}" --version "${{ steps.meta.outputs.chart_version }}" -d "$PUBLIC_PULL_DIR" >/tmp/homenavi-chart-public-check.log 2>&1; then
+            cat /tmp/homenavi-chart-public-check.log >&2 || true
+            echo "Helm chart ${{ steps.prepare.outputs.chart_ref }}:${{ steps.meta.outputs.chart_version }} is not anonymously pullable after publish." >&2
+            exit 1
+          fi
+
+      - name: Attach chart info to GitHub Release
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ steps.meta.outputs.tag }}
+          CHART_VERSION: ${{ steps.meta.outputs.chart_version }}
+          CHART_REF: ${{ steps.prepare.outputs.chart_ref }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = process.env.TAG_NAME;
+            const chartVersion = process.env.CHART_VERSION;
+            const chartRef = process.env.CHART_REF;
+            const note = [
+              '## Helm chart',
+              '',
+              `- OCI reference: \`${chartRef}\``,
+              `- Version: \`${chartVersion}\``,
+              `- Install: \`helm install homenavi ${chartRef} --version ${chartVersion} -n homenavi --create-namespace\``
+            ].join('\n');
+
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`No GitHub release exists yet for ${tag}; skipping release note attachment.`);
+                return;
+              }
+              throw error;
+            }
+
+            const currentBody = release.data.body || '';
+            const marker = '## Helm chart';
+            const nextBody = currentBody.includes(marker)
+              ? currentBody.replace(new RegExp(`${marker}[\\s\\S]*$`), note)
+              : `${currentBody}${currentBody ? '\n\n' : ''}${note}`;
+
+            await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: release.data.id,
+              body: nextBody,
+            });
+
+      - name: Job summary
+        shell: bash
+        run: |
+          {
+            echo "## Helm chart published"
+            echo
+            echo "- Chart ref: ${{ steps.prepare.outputs.chart_ref }}"
+            echo "- Version: ${{ steps.meta.outputs.chart_version }}"
+          } >> "$GITHUB_STEP_SUMMARY"

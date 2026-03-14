@@ -1,6 +1,10 @@
-# Homenavi Helm Chart (Scaffold)
+# Homenavi Helm Chart
 
 This chart provides an initial Kubernetes deployment path for Homenavi core services and infrastructure dependencies.
+
+Released versions are published to GHCR as an OCI Helm chart:
+
+- `oci://ghcr.io/petoadam/charts/homenavi`
 
 ## Scope
 
@@ -21,6 +25,16 @@ Each component is controlled through `values.yaml` under `services.<name>.enable
 
 ## Install
 
+Released chart:
+
+```bash
+helm install homenavi oci://ghcr.io/petoadam/charts/homenavi \
+	--version X.Y.Z \
+	-n homenavi --create-namespace
+```
+
+Local chart checkout:
+
 ```bash
 helm upgrade --install homenavi ./helm/homenavi -n homenavi --create-namespace
 ```
@@ -38,6 +52,7 @@ helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
 - Sensitive values should be provided via `services.<name>.envFromSecrets`.
 - Persistent storage can be enabled through `persistentVolumeClaims` and referenced by service volumes.
 - `integration-proxy` defaults to `INTEGRATIONS_RUNTIME_MODE=helm` in this chart.
+- Released charts default service image tags to the chart `appVersion`, so tag-based releases stay aligned with GHCR images by default.
 
 ## Runtime secrets from env file (Kubernetes-native)
 
@@ -96,6 +111,6 @@ Important: avoid `topic zigbee2mqtt/# both 1` unless you really need full mirror
 
 ## Deployment mode
 
-This chart is maintained for the single-namespace local model (`homenavi`, plus `homenavi-marketplace` for marketplace).
+This chart is maintained for the single-namespace local model. End users install only Homenavi itself; the marketplace is a separate central service used by all Homenavi installations.
 
 Legacy multi-plane values profiles were removed.

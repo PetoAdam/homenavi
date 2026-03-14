@@ -9,7 +9,7 @@ podSecurityContext: {}
 securityContext: {}
 
 global:
-  imageTag: latest
+  imageTag: ""
   imagePullPolicy: IfNotPresent
   logLevel: info
   envFromSecrets: []
