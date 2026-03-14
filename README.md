@@ -106,7 +106,7 @@ Current Features (Implemented):
 * **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Thread adapter placeholder using the same HDP surfaces.
 * **ERS + Device Hub boundary:** ERS owns names/rooms/tags/map metadata; device-hub owns realtime telemetry, pairing, commands. See `doc/ers_hdp_devicehub_overview.md`.
 * **Customizable UI dashboards:** widget-based Home dashboard with Edit mode + per-user persistence via Dashboard Service. See `doc/dashboard_ui_functional_spec.md`.
-* **Integration marketplace flow:** frontend queries the Marketplace API directly for catalog + stats, posts download increments on successful installs, and integration-proxy installs using `compose_file` URLs fetched from the marketplace.
+* **Integration marketplace flow:** frontend queries the Marketplace API directly for catalog + stats, posts download increments on successful installs, and integration-proxy installs using runtime-resolved `deployment_artifacts` from marketplace metadata.
 * **Automation engine + scheduling:** rule/workflow engine with manual triggers and **cron schedule triggers**, plus run tracking and live run stream via websocket. (APIs documented in `doc/external_api_surface.md`.)
 
 ---
@@ -260,6 +260,11 @@ Make sure your integration repo includes a `verify.yml` workflow and grants `id-
 
 Security note: when compose-managed installs are enabled, `integration-proxy` runs with Docker socket access and elevated privileges. Treat it as a high‑trust service and restrict access accordingly.
 
+JWT bootstrap behavior:
+
+- Docker Compose runs a one-shot `jwt-bootstrap` service before JWT-consuming services start. It verifies `keys/jwt_private.pem` and `keys/jwt_public.pem`, and generates them if needed via [scripts/ensure-jwt-keys.sh](scripts/ensure-jwt-keys.sh).
+- Helm/Kubernetes can do the same in-cluster: if no JWT secret is supplied, the pre-install/pre-upgrade hook in [helm/homenavi/templates/jwt-bootstrap-job.yaml](helm/homenavi/templates/jwt-bootstrap-job.yaml) creates the secret on first install and reuses it on later upgrades.
+
 ### Integration proxy installation (recommended)
 
 Use the Admin → Integrations UI to install integrations from the marketplace and manage secrets. The proxy updates [integrations/config/installed.yaml](integrations/config/installed.yaml) automatically.
@@ -269,6 +274,10 @@ Runtime policy: use one integration lifecycle runtime per environment.
 - Compose-based environment: manage integrations via Compose.
 - Kubernetes/Helm-based environment: manage integrations via Helm/Kubernetes artifacts.
 - Mixed runtime installs in a single environment are not supported.
+
+First-party integrations (for example Spotify and LG ThinQ) publish both `deployment_artifacts.compose` and `deployment_artifacts.helm` so install/update behavior is parity-first across Compose and Helm runtime modes.
+
+The Helm chart defaults marketplace-backed integration installs to the public Homenavi marketplace. If you want Helm installs to resolve metadata from a local marketplace deployment instead, override `INTEGRATIONS_MARKETPLACE_API_BASE` as shown in [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
 
 Installed integrations track their installed `version` (and `auto_update` policy) in `installed.yaml`. Homenavi compares the installed version to the marketplace version (semver) to surface **Update available** and to support **Auto-update**.
 
@@ -280,7 +289,43 @@ If you run custom integrations manually, ensure the container is on the same Doc
 - Updates run asynchronously (queued) and the UI shows progress via the same status surface used during installs.
 - Auto-update can be enabled per integration; `integration-proxy` periodically checks the marketplace and applies updates when available.
 
-### Helm installation (coming soon)
+### Helm installation
+
+An initial Helm chart scaffold is available at [helm/homenavi](helm/homenavi).
+
+For the current MVP goal (local Minikube Helm for core + marketplace), use the runbook at [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
+
+For single-namespace MVP deployment in one step, run [scripts/deploy-minikube.sh](scripts/deploy-minikube.sh).
+
+The script supports Kubernetes-native secret ingestion from env files (for Helm deployments), and optional Mosquitto bridge enablement:
+
+```bash
+./scripts/deploy-minikube.sh --env-file /home/adam/Projects/homenavi/.env
+./scripts/deploy-minikube.sh --with-bridge --bridge-config-file /home/adam/Projects/homenavi/mosquitto/config/conf.d/bridge.conf
+./scripts/deploy-minikube.sh --start-port-forwards
+```
+
+For a safe starter template, use [k8s/secrets/homenavi.env.example](k8s/secrets/homenavi.env.example).
+
+Default port-forward targets from the deploy script are stable for easier testing:
+
+- frontend: `http://localhost:50001`
+- marketplace: `http://localhost:50010`
+
+Legacy alias [scripts/deploy-minikube-planes.sh](scripts/deploy-minikube-planes.sh) now redirects to the current single-namespace deploy script.
+
+Quick start:
+
+```bash
+helm upgrade --install homenavi ./helm/homenavi -n homenavi --create-namespace
+```
+
+Validation:
+
+```bash
+helm lint ./helm/homenavi
+helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
+```
 
 ### GitOps note for Kubernetes (ArgoCD/Flux)
 

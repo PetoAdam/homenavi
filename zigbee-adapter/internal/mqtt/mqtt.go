@@ -33,6 +33,9 @@ func New(brokerURL string) *Client {
 	}
 	opts.AddBroker(server)
 	opts.SetClientID("zigbee-adapter-" + time.Now().Format("150405.000"))
+	opts.SetAutoReconnect(true)
+	opts.SetResumeSubs(true)
+	opts.SetCleanSession(false)
 	opts.OnConnect = func(c mqtt.Client) { slog.Info("mqtt connected", "broker", brokerURL) }
 	opts.OnConnectionLost = func(c mqtt.Client, err error) { slog.Error("mqtt connection lost", "error", err) }
 	if u.User != nil {
