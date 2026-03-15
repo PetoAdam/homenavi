@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Postgres struct {
 	User     string
@@ -29,7 +32,7 @@ func Load() Config {
 		Port:                getenv("AUTOMATION_SERVICE_PORT", "8094"),
 		LogLevel:            getenv("LOG_LEVEL", "info"),
 		MQTTBrokerURL:       getenv("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
-		MQTTClientID:        getenv("AUTOMATION_SERVICE_MQTT_CLIENT_ID", "automation-service"),
+		MQTTClientID:        strings.TrimSpace(os.Getenv("AUTOMATION_SERVICE_MQTT_CLIENT_ID")),
 		JWTPublicKeyPath:    getenv("JWT_PUBLIC_KEY_PATH", ""),
 		UserServiceURL:      getenv("USER_SERVICE_URL", "http://user-service:8001"),
 		EmailServiceURL:     getenv("EMAIL_SERVICE_URL", "http://email-service:8002"),
