@@ -115,10 +115,15 @@ services:
       - name: frontend-nginx-config
         mountPath: /etc/nginx/conf.d/default.conf
         subPath: default.conf
+      - name: profile-pictures
+        mountPath: /uploads
     volumes:
       - name: frontend-nginx-config
         type: configMap
         configMapName: homenavi-frontend-nginx
+      - name: profile-pictures
+        type: generatedPVC
+        claimKey: profile-pictures
 
   api-gateway:
     enabled: true
