@@ -29,7 +29,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:           getEnv("HISTORY_SERVICE_PORT", "8093"),
 		MQTTBrokerURL:  strings.TrimSpace(os.Getenv("MQTT_BROKER_URL")),
-		MQTTClientID:   getEnv("HISTORY_SERVICE_MQTT_CLIENT_ID", "history-service"),
+		MQTTClientID:   strings.TrimSpace(os.Getenv("HISTORY_SERVICE_MQTT_CLIENT_ID")),
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		IngestRetained: parseBool(getEnv("HISTORY_INGEST_RETAINED", "false")),
 		TopicPrefix:    getEnv("HISTORY_HDP_STATE_PREFIX", "homenavi/hdp/device/state/"),

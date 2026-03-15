@@ -580,7 +580,6 @@ services:
     env:
       HISTORY_SERVICE_PORT: "8093"
       MQTT_BROKER_URL: mqtt://mosquitto:1883
-      HISTORY_SERVICE_MQTT_CLIENT_ID: history-service
       HISTORY_INGEST_RETAINED: "false"
       HISTORY_HDP_STATE_PREFIX: homenavi/hdp/device/state/
       POSTGRES_USER: user
@@ -612,7 +611,6 @@ services:
     env:
       AUTOMATION_SERVICE_PORT: "8094"
       MQTT_BROKER_URL: mqtt://mosquitto:1883
-      AUTOMATION_SERVICE_MQTT_CLIENT_ID: automation-service
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: users
