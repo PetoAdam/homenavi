@@ -587,10 +587,26 @@ export default function useDeviceHubDevices(options = {}) {
         success: typeof data.success === 'boolean' ? data.success : true,
         status: data.status || '',
         error: data.error || null,
+        origin: data.origin || '',
+        terminal: data.terminal === true,
         ts: data.ts || Date.now(),
       };
       const prev = devicesRef.current.get(mapKey) || {};
-      devicesRef.current.set(mapKey, { ...prev, id: mapKey, mapKey, device_id: mapKey, externalId: mapKey, hdpId: mapKey, __lastCommandResult: result });
+      const prevResult = prev.__lastCommandResult || null;
+      const shouldKeepPrev = prevResult
+        && prevResult.origin === 'device-hub'
+        && result.origin !== 'device-hub'
+        && prevResult.corr
+        && prevResult.corr === result.corr;
+      devicesRef.current.set(mapKey, {
+        ...prev,
+        id: mapKey,
+        mapKey,
+        device_id: mapKey,
+        externalId: mapKey,
+        hdpId: mapKey,
+        __lastCommandResult: shouldKeepPrev ? prevResult : result,
+      });
       schedulePublish();
       return;
     }

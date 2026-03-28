@@ -1,5 +1,4 @@
-export const COMMAND_PENDING_TIMEOUT_MS = 20000;
-export const COMMAND_PENDING_NO_EXPECTED_MIN_DELAY_MS = 3000;
+const TERMINAL_COMMAND_STATUSES = new Set(['applied', 'rejected', 'failed', 'timeout']);
 
 function clonePlainObject(value) {
   if (!value || typeof value !== 'object') return null;
@@ -22,46 +21,6 @@ function stateChangedFromBaseline(baselineState, currentState) {
     if (JSON.stringify(before) !== JSON.stringify(after)) return true;
   }
   return false;
-}
-
-function normalizeOnOff(value) {
-  if (typeof value === 'boolean') return value ? 'on' : 'off';
-  if (typeof value === 'number') return value !== 0 ? 'on' : 'off';
-  if (typeof value === 'string') {
-    const lowered = value.trim().toLowerCase();
-    if (['on', 'true', '1', 'yes', 'enabled'].includes(lowered)) return 'on';
-    if (['off', 'false', '0', 'no', 'disabled', 'standby'].includes(lowered)) return 'off';
-  }
-  return null;
-}
-
-function expectedPatchSatisfied(expectedState, deviceState) {
-  if (!expectedState || typeof expectedState !== 'object') return false;
-  if (!deviceState || typeof deviceState !== 'object') return false;
-
-  return Object.entries(expectedState).every(([key, want]) => {
-    if (!key) return true;
-    const got = deviceState[key];
-    if (want === undefined) return true;
-
-    if (typeof want === 'boolean') {
-      const gotOnOff = normalizeOnOff(got);
-      const wantOnOff = want ? 'on' : 'off';
-      return gotOnOff === wantOnOff;
-    }
-    if (typeof want === 'number') {
-      const gotNum = typeof got === 'number' ? got : Number(got);
-      return !Number.isNaN(gotNum) && gotNum === want;
-    }
-    if (typeof want === 'string') {
-      const wantNorm = want.trim().toLowerCase();
-      const gotNorm = typeof got === 'string'
-        ? got.trim().toLowerCase()
-        : (normalizeOnOff(got) || String(got ?? '').trim().toLowerCase());
-      return gotNorm === wantNorm;
-    }
-    return JSON.stringify(got) === JSON.stringify(want);
-  });
 }
 
 export function createCommandCorrelationId(payload) {
@@ -94,35 +53,41 @@ export function clearPendingTimeout(entry) {
 export function shouldClearPendingFromDevice(pending, device) {
   if (!pending || !device) return false;
   const result = device.lastCommandResult;
-  const resultMatches = Boolean(pending.corr && result?.corr && pending.corr === result.corr);
-  if (resultMatches && !result.success) return true;
-
-  const minDelaySatisfied = typeof pending.startedAt === 'number'
-    ? (Date.now() - pending.startedAt) >= COMMAND_PENDING_NO_EXPECTED_MIN_DELAY_MS
-    : true;
-
-  // Prefer clearing when the device state actually reflects what we asked for.
-  // This prevents "snap back" for cloud devices where a refresh can arrive with the old value.
-  const stateTs = stateVersionFromDevice(device);
-  const baselineTs = pending.stateVersion || 0;
-  const resultTs = Number(result?.ts || 0);
-  const hasStateAdvanced = stateTs && stateTs > baselineTs;
-  const stateCoversResult = stateTs && resultTs && stateTs >= resultTs;
-  const noExpectedMinDelaySatisfied = minDelaySatisfied;
-  const baselineState = pending.baselineState;
-  const stateChanged = stateChangedFromBaseline(baselineState, device.state || {});
-  const stateCorrMatches = Boolean(pending.corr && device.lastStateCorr && pending.corr === device.lastStateCorr);
-
-  // Fallback for legacy integrations/devices where we don't have an expected patch.
-  // Require a minimum delay and an actual change from the baseline state to avoid
-  // clearing on a refresh/realtime event that re-emits the old value.
-  if (pending.expectedState && expectedPatchSatisfied(pending.expectedState, device.state || {})) {
-    return minDelaySatisfied && (resultMatches || stateCorrMatches || hasStateAdvanced || stateChanged);
-  }
-
-  return noExpectedMinDelaySatisfied && stateChanged && (resultMatches || stateCorrMatches || hasStateAdvanced || stateCoversResult);
+  const resultMatches = Boolean(result?.corr && pending.corr === result.corr);
+  if (!resultMatches) return false;
+  if (result?.origin && result.origin !== 'device-hub') return false;
+  const status = String(result?.status || '').trim().toLowerCase();
+  return TERMINAL_COMMAND_STATUSES.has(status);
 }
 
 export function baselineStateFromDevice(device) {
   return clonePlainObject(device?.state || {}) || {};
+}
+
+function readPendingToggleState(state, fallback) {
+  if (state && typeof state === 'object') {
+    if ('state' in state) return Boolean(state.state);
+    if ('on' in state) return Boolean(state.on);
+    if ('power' in state) return Boolean(state.power);
+  }
+  return typeof fallback === 'boolean' ? fallback : null;
+}
+
+export function applyPendingStateToDevice(device, pending) {
+  if (!device || !pending || !pending.expectedState || typeof pending.expectedState !== 'object') {
+    return device;
+  }
+
+  const mergedState = {
+    ...(device?.state && typeof device.state === 'object' ? device.state : {}),
+    ...pending.expectedState,
+  };
+
+  return {
+    ...device,
+    state: mergedState,
+    stateHasValues: Object.keys(mergedState).length > 0,
+    toggleState: readPendingToggleState(mergedState, device?.toggleState),
+    lastStateCorr: pending.corr || device?.lastStateCorr || '',
+  };
 }

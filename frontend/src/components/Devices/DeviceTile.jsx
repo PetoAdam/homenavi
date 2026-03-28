@@ -524,6 +524,32 @@ function sanitizeInputKey(input) {
   return input.id || input.capability_id || input.capabilityId || input.property || '';
 }
 
+function buildInputIdentityKeys(input) {
+  if (!input) return [];
+  const rawValues = [
+    input.property,
+    input.capability_id,
+    input.capabilityId,
+    input.capabilityID,
+    input.id,
+  ];
+  const out = new Set();
+  rawValues.forEach(value => {
+    const normalized = (value || '').toString().trim().toLowerCase();
+    if (!normalized) return;
+    out.add(normalized);
+    const suffix = normalized.split('.').pop();
+    if (suffix) out.add(suffix);
+    if (normalized.startsWith('set_')) {
+      out.add(normalized.slice(4));
+    }
+    if (suffix && suffix.startsWith('set_')) {
+      out.add(suffix.slice(4));
+    }
+  });
+  return Array.from(out);
+}
+
 function resolveInputLabel(input) {
   if (!input) return 'Control';
   if (input.label) return input.label;
@@ -852,15 +878,19 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
         if (suppressedProperties.has(propertyKey)) return false;
         return true;
       });
-    const seenKeys = new Set(normalized.map(item => sanitizeInputKey(item).toLowerCase()));
+    const seenKeys = new Set();
+    normalized.forEach(item => {
+      buildInputIdentityKeys(item).forEach(key => seenKeys.add(key));
+    });
     const fallbackInputs = buildInputsFromCapabilities(capabilities);
     fallbackInputs.forEach(fallback => {
-      const key = sanitizeInputKey(fallback).toLowerCase();
-      if (!key || seenKeys.has(key)) return;
+      const identityKeys = buildInputIdentityKeys(fallback);
+      if (identityKeys.length === 0) return;
+      if (identityKeys.some(key => seenKeys.has(key))) return;
       if (!['toggle', 'slider', 'number', 'select', 'color'].includes(fallback.type)) return;
       const propertyKey = (fallback.property || fallback.id || '').toString().toLowerCase();
       if (suppressedProperties.has(propertyKey)) return;
-      seenKeys.add(key);
+      identityKeys.forEach(key => seenKeys.add(key));
       normalized.push({
         ...fallback,
         options: Array.isArray(fallback.options) ? fallback.options : [],
@@ -936,7 +966,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
   useEffect(() => {
     setControlValues(prev => {
       if (pending) {
-        // Keep the optimistic value while a command is in flight to avoid flicker.
+        // Keep the local pending value while a command is in flight to avoid flicker.
         return prev;
       }
       const baseline = buildInitialControlValues(device, normalizedInputs);

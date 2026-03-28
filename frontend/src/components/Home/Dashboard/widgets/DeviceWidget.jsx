@@ -26,6 +26,15 @@ import GlassSwitch from '../../../common/GlassSwitch/GlassSwitch';
 import DeviceControlList from '../../../common/DeviceControlRenderer/DeviceControlRenderer';
 import DeviceMetricsRenderer from '../../../common/DeviceMetricsRenderer/DeviceMetricsRenderer';
 import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
+import {
+  applyPendingStateToDevice,
+  baselineStateFromDevice,
+  clearPendingTimeout,
+  createCommandCorrelationId,
+  shouldClearPendingFromDevice,
+  stateVersionFromDevice,
+  withCommandCorrelation,
+} from '../../../Devices/commandPending';
 import { normalizeColorHex } from '../../../../utils/colorHex';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
 import './DeviceWidget.css';
@@ -544,30 +553,19 @@ export default function DeviceWidget({
     });
   }, [device, normalizedInputs, pendingCommands]);
 
+  const displayDevice = useMemo(() => {
+    if (!device?.id) return device;
+    return applyPendingStateToDevice(device, pendingCommands[device.id]);
+  }, [device, pendingCommands]);
+
   const toggleValue = primaryToggleKey ? toControlBoolean(controlValues[primaryToggleKey]) : null;
   const isPending = Boolean(device?.id && pendingCommands[device.id]);
 
-  // Clear pending when we observe a matching command_result and state has advanced.
   useEffect(() => {
     if (!device?.id) return;
     const pending = pendingCommands[device.id];
     if (!pending) return;
-    const result = device.lastCommandResult;
-    if (!result) return;
-
-    const resultCorr = result.corr || result.correlation_id || result.correlationId;
-    if (!pending.corr || !resultCorr || pending.corr !== resultCorr) return;
-
-    const stateTs = device.stateUpdatedAt instanceof Date
-      ? device.stateUpdatedAt.getTime()
-      : (device.stateUpdatedAt || 0);
-    const baselineTs = pending.stateVersion || 0;
-    const resultTs = Number(result.ts || 0);
-    const hasStateAdvanced = stateTs && stateTs > baselineTs;
-    const stateCoversResult = stateTs && resultTs && stateTs >= resultTs;
-
-    const shouldClear = !result.success || hasStateAdvanced || stateCoversResult;
-    if (!shouldClear) return;
+    if (!shouldClearPendingFromDevice(pending, device)) return;
 
     setPendingCommands((prev) => {
       const next = { ...prev };
@@ -589,18 +587,14 @@ export default function DeviceWidget({
     }
     setCommandError('');
 
-    const stateVersionAtSend = dev?.stateUpdatedAt instanceof Date
-      ? dev.stateUpdatedAt.getTime()
-      : (dev?.stateUpdatedAt || 0);
+    const stateVersionAtSend = stateVersionFromDevice(dev);
     const startedAt = Date.now();
 
-    const corr = (payload && payload.correlation_id)
-      || (typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    const enrichedPayload = payload && typeof payload === 'object'
-      ? { ...payload, correlation_id: corr }
-      : { correlation_id: corr };
+    const corr = createCommandCorrelationId(payload);
+    const enrichedPayload = withCommandCorrelation(payload, corr);
+    const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
+      ? payload.state
+      : null;
 
     setPendingCommands((prev) => {
       const next = { ...prev };
@@ -608,7 +602,14 @@ export default function DeviceWidget({
       if (existing?.timeoutId) {
         clearTimeout(existing.timeoutId);
       }
-      next[dev.id] = { corr, startedAt, stateVersion: stateVersionAtSend, timeoutId: null };
+      next[dev.id] = {
+        corr,
+        startedAt,
+        stateVersion: stateVersionAtSend,
+        baselineState: baselineStateFromDevice(dev),
+        expectedState,
+        timeoutId: null,
+      };
       return next;
     });
 
@@ -623,30 +624,17 @@ export default function DeviceWidget({
       .catch((err) => {
         const message = err?.message || 'Unable to send device command';
         setCommandError(message);
-        throw err;
-      })
-      .finally(() => {
-        // Leave pending entry until cleared by command_result or timeout fallback.
         setPendingCommands((prev) => {
           const next = { ...prev };
           const current = next[dev.id];
-          if (!current) return prev;
-          if (current.timeoutId) {
-            clearTimeout(current.timeoutId);
-          }
-          next[dev.id] = {
-            ...current,
-            timeoutId: setTimeout(() => {
-              setPendingCommands((latePrev) => {
-                const clone = { ...latePrev };
-                delete clone[dev.id];
-                return clone;
-              });
-            }, 5000),
-          };
+          if (!current || current.corr !== corr) return prev;
+          clearPendingTimeout(current);
+          delete next[dev.id];
           return next;
         });
-      });
+        throw err;
+      })
+      .finally(() => {});
   }, [accessToken]);
 
   const handleInputCommand = useCallback((input, value) => {
@@ -770,7 +758,7 @@ export default function DeviceWidget({
           {/* Metrics/State fields */}
           {selectedFields && selectedFields.length > 0 && (
             <DeviceMetricsRenderer
-              device={device}
+              device={displayDevice}
               selectedFields={selectedFields}
               layout={fieldsLayout}
               collapseAfter={5}
