@@ -1,40 +1,54 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldClearPendingFromDevice } from './commandPending';
+import { applyPendingStateToDevice, shouldClearPendingFromDevice } from './commandPending';
 
 describe('shouldClearPendingFromDevice', () => {
-  it('clears pending when expected state is satisfied by a matching state correlation', () => {
+  it('clears pending when the device-hub emits a matching terminal lifecycle status', () => {
     const pending = {
       corr: 'corr-123',
-      startedAt: Date.now() - 5000,
-      stateVersion: 100,
-      baselineState: { state: false },
-      expectedState: { state: true },
     };
 
     const device = {
-      lastStateCorr: 'corr-123',
-      stateUpdatedAt: 200,
-      state: { state: true },
+      lastCommandResult: {
+        corr: 'corr-123',
+        origin: 'device-hub',
+        status: 'applied',
+      },
     };
 
     expect(shouldClearPendingFromDevice(pending, device)).toBe(true);
   });
 
-  it('clears pending for changed state without command_result when state correlation matches', () => {
+  it('ignores non-hub command results even when the correlation matches', () => {
     const pending = {
       corr: 'corr-456',
-      startedAt: Date.now() - 5000,
-      stateVersion: 100,
-      baselineState: { brightness: 10 },
     };
 
     const device = {
-      lastStateCorr: 'corr-456',
-      stateUpdatedAt: 200,
-      state: { brightness: 50 },
+      lastCommandResult: {
+        corr: 'corr-456',
+        origin: 'adapter',
+        status: 'failed',
+      },
     };
 
-    expect(shouldClearPendingFromDevice(pending, device)).toBe(true);
+    expect(shouldClearPendingFromDevice(pending, device)).toBe(false);
+  });
+
+  it('applies pending expected state locally for the initiating frontend', () => {
+    const device = {
+      state: { on: false, brightness: 20 },
+      toggleState: false,
+    };
+    const pending = {
+      corr: 'corr-789',
+      expectedState: { on: true, brightness: 75 },
+    };
+
+    expect(applyPendingStateToDevice(device, pending)).toMatchObject({
+      state: { on: true, brightness: 75 },
+      toggleState: true,
+      lastStateCorr: 'corr-789',
+    });
   });
 });

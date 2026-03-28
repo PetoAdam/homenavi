@@ -33,7 +33,7 @@ import AddDeviceModal from './AddDeviceModal';
 import { loadDevicesListPrefs, normalizeDevicesListPrefs, saveDevicesListPrefs } from './devicesListPrefs';
 import { getIntegrationRegistry as getIntegrationRegistryApi } from '../../services/integrationService';
 import {
-  COMMAND_PENDING_TIMEOUT_MS,
+  applyPendingStateToDevice,
   baselineStateFromDevice,
   clearPendingTimeout,
   createCommandCorrelationId,
@@ -219,29 +219,17 @@ export default function Devices() {
         console.error('Failed to send device command', err);
         const message = err?.message || 'Unable to send device command';
         setCommandError(message);
-        throw err;
-      })
-      .finally(() => {
-        // Leave pending entry until cleared by command_result or timeout fallback.
-        // Set a short timeout so the UI doesn't get stuck if no result arrives.
         setPendingCommands(prev => {
           const next = { ...prev };
           const current = next[device.id];
-          if (!current) return next;
+          if (!current || current.corr !== corr) return prev;
           clearPendingTimeout(current);
-          next[device.id] = {
-            ...current,
-            timeoutId: setTimeout(() => {
-              setPendingCommands(latePrev => {
-                const clone = { ...latePrev };
-                delete clone[device.id];
-                return clone;
-              });
-            }, COMMAND_PENDING_TIMEOUT_MS),
-          };
+          delete next[device.id];
           return next;
         });
-      });
+        throw err;
+      })
+      .finally(() => {});
   };
 
   // Clear pending when command_result with matching corr is observed.
@@ -828,43 +816,49 @@ export default function Devices() {
                     <span className="devices-group-title">{group.title}</span>
                     <span className="devices-group-count">{groupFiltered.length}</span>
                   </div>
-                  {groupFiltered.map(device => (
-                    <DeviceTile
-                      key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
-                      device={device}
-                      protocolLabel={resolveProtocolLabel(device.protocol, device.protocol)}
-                      pending={Boolean(device.id && pendingCommands[device.id])}
-                      onCommand={handleCommand}
-                      onRename={handleRename}
-                      onUpdateIcon={handleUpdateIcon}
-                      onDelete={handleDeleteDevice}
-                      onOpen={(dev) => {
-                        const id = dev?.hdpId || dev?.id;
-                        if (!id) return;
-                        navigate(`/devices/${encodeURIComponent(id)}`);
-                      }}
-                    />
-                  ))}
+                  {groupFiltered.map(device => {
+                    const displayDevice = applyPendingStateToDevice(device, pendingCommands[device.id]);
+                    return (
+                      <DeviceTile
+                        key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
+                        device={displayDevice}
+                        protocolLabel={resolveProtocolLabel(displayDevice.protocol, displayDevice.protocol)}
+                        pending={Boolean(device.id && pendingCommands[device.id])}
+                        onCommand={handleCommand}
+                        onRename={handleRename}
+                        onUpdateIcon={handleUpdateIcon}
+                        onDelete={handleDeleteDevice}
+                        onOpen={(dev) => {
+                          const id = dev?.hdpId || dev?.id;
+                          if (!id) return;
+                          navigate(`/devices/${encodeURIComponent(id)}`);
+                        }}
+                      />
+                    );
+                  })}
                 </React.Fragment>
               );
             })
-          : flatDevices.map(device => (
-            <DeviceTile
-              key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
-              device={device}
-              protocolLabel={resolveProtocolLabel(device.protocol, device.protocol)}
-              pending={Boolean(device.id && pendingCommands[device.id])}
-              onCommand={handleCommand}
-              onRename={handleRename}
-              onUpdateIcon={handleUpdateIcon}
-              onDelete={handleDeleteDevice}
-              onOpen={(dev) => {
-                const id = dev?.hdpId || dev?.id;
-                if (!id) return;
-                navigate(`/devices/${encodeURIComponent(id)}`);
-              }}
-            />
-          ))}
+          : flatDevices.map(device => {
+            const displayDevice = applyPendingStateToDevice(device, pendingCommands[device.id]);
+            return (
+              <DeviceTile
+                key={`${device.ersId || 'ers'}-${device.id || device.key || device.externalId || device.name}`}
+                device={displayDevice}
+                protocolLabel={resolveProtocolLabel(displayDevice.protocol, displayDevice.protocol)}
+                pending={Boolean(device.id && pendingCommands[device.id])}
+                onCommand={handleCommand}
+                onRename={handleRename}
+                onUpdateIcon={handleUpdateIcon}
+                onDelete={handleDeleteDevice}
+                onOpen={(dev) => {
+                  const id = dev?.hdpId || dev?.id;
+                  if (!id) return;
+                  navigate(`/devices/${encodeURIComponent(id)}`);
+                }}
+              />
+            );
+          })}
         {!ersLoading && !realtimeLoading && filteredDevices.length === 0 && devicesWithOverrides.length > 0 ? (
           <GlassCard className="device-filter-empty-card" interactive={false}>
             <div className="devices-filter-empty-text">

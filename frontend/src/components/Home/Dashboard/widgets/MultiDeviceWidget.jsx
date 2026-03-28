@@ -17,6 +17,15 @@ import useErsInventory from '../../../../hooks/useErsInventory';
 import { sendDeviceCommand } from '../../../../services/deviceHubService';
 import WidgetShell from '../../../common/WidgetShell/WidgetShell';
 import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
+import {
+  applyPendingStateToDevice,
+  baselineStateFromDevice,
+  clearPendingTimeout,
+  createCommandCorrelationId,
+  shouldClearPendingFromDevice,
+  stateVersionFromDevice,
+  withCommandCorrelation,
+} from '../../../Devices/commandPending';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
 import './MultiDeviceWidget.css';
 
@@ -221,6 +230,25 @@ export default function MultiDeviceWidget({
       });
   }, [selectedIds, ersDevices, realtimeDevices]);
 
+  useEffect(() => {
+    if (!devices.length) return;
+    setPendingMap((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      devices.forEach((device) => {
+        const commandId = getDeviceCommandId(device);
+        if (!commandId) return;
+        const pending = next[commandId];
+        if (!pending) return;
+        if (!shouldClearPendingFromDevice(pending, device)) return;
+        clearPendingTimeout(pending);
+        delete next[commandId];
+        changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [devices]);
+
   const handleToggle = useCallback((device) => {
     const deviceId = getDeviceCommandId(device);
     if (!deviceId) return;
@@ -235,14 +263,19 @@ export default function MultiDeviceWidget({
     if (!payload) return;
 
     setCommandError('');
-    const corr = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const enrichedPayload = { ...payload, correlation_id: corr };
+    const corr = createCommandCorrelationId(payload);
+    const enrichedPayload = withCommandCorrelation(payload, corr);
 
     setPendingMap((prev) => ({
       ...prev,
-      [deviceId]: { corr, timeoutId: null },
+      [deviceId]: {
+        corr,
+        startedAt: Date.now(),
+        stateVersion: stateVersionFromDevice(device),
+        baselineState: baselineStateFromDevice(device),
+        expectedState: payload.state,
+        timeoutId: null,
+      },
     }));
 
     sendDeviceCommand(deviceId, enrichedPayload, accessToken)
@@ -251,26 +284,16 @@ export default function MultiDeviceWidget({
       })
       .catch((err) => {
         setCommandError(err?.message || 'Unable to send device command');
-      })
-      .finally(() => {
         setPendingMap((prev) => {
           const next = { ...prev };
           const current = next[deviceId];
-          if (!current) return prev;
-          if (current.timeoutId) clearTimeout(current.timeoutId);
-          next[deviceId] = {
-            ...current,
-            timeoutId: setTimeout(() => {
-              setPendingMap((latePrev) => {
-                const clone = { ...latePrev };
-                delete clone[deviceId];
-                return clone;
-              });
-            }, 4000),
-          };
+          if (!current || current.corr !== corr) return prev;
+          clearPendingTimeout(current);
+          delete next[deviceId];
           return next;
         });
-      });
+      })
+      .finally(() => {});
   }, [accessToken]);
 
   if (!selectedIds.length) {
@@ -324,11 +347,12 @@ export default function MultiDeviceWidget({
         {commandError && <div className="multi-device-widget__error">{commandError}</div>}
         <div className="multi-device-widget__grid">
           {devices.map((device) => {
-            const isOn = resolveToggleState(device);
-            const capabilities = collectCapabilities(device);
-            const icon = resolveDeviceIcon(device, capabilities);
             const commandId = getDeviceCommandId(device);
             const pending = Boolean(commandId && pendingMap[commandId]);
+            const displayDevice = applyPendingStateToDevice(device, commandId ? pendingMap[commandId] : null);
+            const isOn = resolveToggleState(displayDevice);
+            const capabilities = collectCapabilities(displayDevice);
+            const icon = resolveDeviceIcon(displayDevice, capabilities);
             const canToggle = canToggleDevice(device);
 
             if (!canToggle) return null;
@@ -347,7 +371,7 @@ export default function MultiDeviceWidget({
                   </div>
                   <div className="multi-device-widget__tile-info">
                     <div className="multi-device-widget__tile-name">
-                      {getDeviceDisplayName(device)}
+                      {getDeviceDisplayName(displayDevice)}
                     </div>
                     <div className="multi-device-widget__tile-status">
                       {isOn ? 'On' : 'Off'}

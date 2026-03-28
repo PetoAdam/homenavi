@@ -85,6 +85,10 @@ type Server struct {
 	adapters  *adapterRegistry
 	pairingMu sync.Mutex
 	pairings  map[string]*pairingSession
+	commandMu sync.Mutex
+	commandsByCorr   map[string]*pendingCommand
+	commandsByDevice map[string]*pendingCommand
+	commandTimeout   time.Duration
 }
 
 func NewServer(repo *store.Repository, mqtt mqtt.ClientAPI) *Server {
@@ -99,6 +103,9 @@ func NewServer(repo *store.Repository, mqtt mqtt.ClientAPI) *Server {
 		mqtt:     mqtt,
 		adapters: newAdapterRegistry(0),
 		pairings: make(map[string]*pairingSession),
+		commandsByCorr:   make(map[string]*pendingCommand),
+		commandsByDevice: make(map[string]*pendingCommand),
+		commandTimeout:   defaultCommandLifecycleTimeout,
 	}
 }
 
@@ -129,6 +136,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	}
 	if err := s.mqtt.Subscribe(hdpEventPrefix+"#", s.handleHDPEvent); err != nil {
 		slog.Error("hdp event subscribe failed", "error", err)
+	}
+	if err := s.mqtt.Subscribe(hdpCommandResultPrefix+"#", s.handleHDPCommandResultEvent); err != nil {
+		slog.Error("hdp command result subscribe failed", "error", err)
 	}
 	if err := s.mqtt.Subscribe(hdpPairingProgressPrefix+"#", s.handleHDPPairingProgressEvent); err != nil {
 		slog.Error("hdp pairing progress subscribe failed", "error", err)
@@ -351,6 +361,7 @@ func (s *Server) consumeState(deviceTopicID string, state map[string]any, corr s
 		}
 	}
 	slog.Info("state persisted", "device_id", deviceUUID, "external_id", externalID, "corr", corr, "ts", ts, "keys", len(state))
+	s.processCommandStateLifecycle(externalID, state, corr)
 	if !publishHDP {
 		return
 	}
@@ -911,6 +922,9 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 	if req.TransitionMs != nil {
 		statePatch["transition_ms"] = *req.TransitionMs
 	}
+	baselineState := s.loadBaselineState(r.Context(), dev.ID.String())
+	s.beginCommandLifecycle(targetExternal, corr, statePatch, baselineState)
+	s.publishCommandLifecycle(targetExternal, corr, commandStatusAccepted, "", nil)
 	hdpCommand := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command",
@@ -921,7 +935,13 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		"corr":      corr,
 	}
 	slog.Info("device command dispatch", "device_id", deviceID, "external", targetExternal, "corr", corr)
-	s.publishHDPCommand(targetExternal, hdpCommand)
+	if err := s.publishHDPCommand(targetExternal, hdpCommand); err != nil {
+		s.removePendingCommand(targetExternal, corr)
+		s.publishCommandLifecycle(targetExternal, corr, commandStatusFailed, err.Error(), nil)
+		http.Error(w, "could not dispatch command", http.StatusBadGateway)
+		return
+	}
+	s.publishCommandLifecycle(targetExternal, corr, commandStatusQueued, "", nil)
 	writeJSON(w, http.StatusAccepted, commandResponse{Status: "queued", DeviceID: targetExternal, TransitionMs: req.TransitionMs, CorrelationID: corr})
 }
 
@@ -982,7 +1002,10 @@ func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, dev
 		"state":      state,
 		"properties": props,
 	}
-	s.publishHDPCommand(hdpID, cmd)
+	if err := s.publishHDPCommand(hdpID, cmd); err != nil {
+		http.Error(w, "could not queue refresh", http.StatusBadGateway)
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": hdpID})
 }
 
@@ -1096,9 +1119,9 @@ func (s *Server) publishHDPEvent(deviceID, event string, data map[string]any) {
 	}
 }
 
-func (s *Server) publishHDPCommand(deviceID string, cmd map[string]any) {
+func (s *Server) publishHDPCommand(deviceID string, cmd map[string]any) error {
 	if strings.TrimSpace(deviceID) == "" || cmd == nil {
-		return
+		return errors.New("device_id and command are required")
 	}
 	if _, ok := cmd["device_id"]; !ok {
 		cmd["device_id"] = deviceID
@@ -1115,8 +1138,11 @@ func (s *Server) publishHDPCommand(deviceID string, cmd map[string]any) {
 	if b, err := json.Marshal(cmd); err == nil {
 		if err := s.mqtt.Publish(hdpCommandPrefix+deviceID, b); err != nil {
 			slog.Warn("hdp command publish failed", "device_id", deviceID, "error", err)
+			return err
 		}
+		return nil
 	}
+	return errors.New("failed to encode command")
 }
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, _ *http.Request) {

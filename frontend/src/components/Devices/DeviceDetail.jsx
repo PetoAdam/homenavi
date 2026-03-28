@@ -17,7 +17,8 @@ import { createErsTag, deleteErsTag, patchErsDevice, setErsDeviceTags } from '..
 import { listStatePoints } from '../../services/historyService';
 import HistoryChart from '../History/HistoryChart';
 import {
-  COMMAND_PENDING_TIMEOUT_MS,
+  applyPendingStateToDevice,
+  baselineStateFromDevice,
   clearPendingTimeout,
   createCommandCorrelationId,
   shouldClearPendingFromDevice,
@@ -342,6 +343,7 @@ export default function DeviceDetail() {
   const error = realtimeError || ersError || '';
 
   const [pendingCommand, setPendingCommand] = useState(null);
+  const displayDevice = useMemo(() => applyPendingStateToDevice(resolvedDevice, pendingCommand), [resolvedDevice, pendingCommand]);
 
   const [ersMetaSaving, setErsMetaSaving] = useState(false);
   const [ersMetaError, setErsMetaError] = useState('');
@@ -455,13 +457,24 @@ export default function DeviceDetail() {
     }
 
     const stateVersionAtSend = stateVersionFromDevice(dev);
+    const startedAt = Date.now();
 
     const corr = createCommandCorrelationId(payload);
     const enrichedPayload = withCommandCorrelation(payload, corr);
+    const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
+      ? payload.state
+      : null;
 
     setPendingCommand(prev => {
       clearPendingTimeout(prev);
-      return { corr, stateVersion: stateVersionAtSend, deviceId: dev.id };
+      return {
+        corr,
+        startedAt,
+        stateVersion: stateVersionAtSend,
+        baselineState: baselineStateFromDevice(dev),
+        expectedState,
+        deviceId: dev.id,
+      };
     });
 
     try {
@@ -469,21 +482,12 @@ export default function DeviceDetail() {
       if (!res.success) throw new Error(res.error || 'Unable to send command');
       return res.data;
     } catch (err) {
-      throw err;
-    } finally {
       setPendingCommand(prev => {
         if (!prev || prev.corr !== corr) return prev;
         clearPendingTimeout(prev);
-        return {
-          ...prev,
-          timeoutId: setTimeout(() => {
-            setPendingCommand(latePrev => {
-              if (!latePrev || latePrev.corr !== corr) return latePrev;
-              return null;
-            });
-          }, COMMAND_PENDING_TIMEOUT_MS),
-        };
+        return null;
       });
+      throw err;
     }
   }, [accessToken]);
 
@@ -919,7 +923,7 @@ export default function DeviceDetail() {
         <div className="device-detail-grid-left">
           {resolvedDevice ? (
             <DeviceTile
-              device={resolvedDevice}
+              device={displayDevice}
               pending={Boolean(pendingCommand)}
               onCommand={handleCommand}
               onRename={handleRename}

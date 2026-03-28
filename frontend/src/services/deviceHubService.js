@@ -1,6 +1,30 @@
 import http from './httpClient';
 
 const DEVICE_HUB_BASE = '/api/hdp';
+const DEFAULT_DEVICE_COMMAND_REQUEST_TIMEOUT_MS = 60000;
+
+function parsePositiveTimeoutMs(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRuntimeConfig() {
+  if (typeof window === 'undefined') return {};
+  return window.__HOMENAVI_RUNTIME_CONFIG__ || {};
+}
+
+function getDeviceCommandRequestTimeoutMs() {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    parsePositiveTimeoutMs(runtimeConfig.deviceCommandRequestTimeoutMs)
+    ?? parsePositiveTimeoutMs(runtimeConfig.deviceCommandTimeoutMs)
+    ?? parsePositiveTimeoutMs(runtimeConfig.deviceControlRequestTimeoutMs)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_DEVICE_COMMAND_REQUEST_TIMEOUT_MS)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_DEVICE_COMMAND_TIMEOUT_MS)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_DEVICE_CONTROL_REQUEST_TIMEOUT_MS)
+    ?? DEFAULT_DEVICE_COMMAND_REQUEST_TIMEOUT_MS
+  );
+}
 
 export async function updateDevice(deviceId, payload, token) {
   if (!deviceId) {
@@ -25,7 +49,10 @@ export async function sendDeviceCommand(deviceId, payload, token) {
   if (!payload || typeof payload !== 'object') {
     return { success: false, error: 'Missing command payload' };
   }
-  return await http.post(`${DEVICE_HUB_BASE}/devices/${deviceId}/commands`, payload, { token });
+  return await http.post(`${DEVICE_HUB_BASE}/devices/${deviceId}/commands`, payload, {
+    token,
+    timeout: getDeviceCommandRequestTimeoutMs(),
+  });
 }
 
 export async function refreshDevice(deviceId, options = {}, token) {

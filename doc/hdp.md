@@ -82,6 +82,7 @@ Notes:
 
 - `state` is a flat-ish JSON object of key/value pairs. The frontend extracts metrics from these keys.
 - If present, `corr` links a state update to a prior command.
+- State topics should publish confirmed device state only.
 
 ### `metadata`
 
@@ -193,14 +194,52 @@ Topic: `homenavi/hdp/device/command_result/<device_id>` (not retained)
 {
   "schema": "hdp.v1",
   "type": "command_result",
+  "origin": "device-hub",
   "device_id": "zigbee/0x0017880104abcd",
   "corr": "cmd-1734114123123-123",
   "success": true,
-  "status": "accepted",
+  "status": "queued",
+  "terminal": false,
   "error": "optional error message",
   "ts": 1734114123123
 }
 ```
+
+Notes:
+
+- Device Hub owns the normalized command lifecycle used by the core UI.
+- Adapters/integrations may emit their own `command_result` frames while work is progressing.
+- Device Hub consumes those frames, correlates them with the original command and later `state` updates, and republishes normalized lifecycle frames with `origin: "device-hub"`.
+- Core UI clients should prefer the Device Hub lifecycle frames instead of making protocol-specific decisions from raw adapter timing or transport behavior.
+
+#### Lifecycle statuses
+
+The normalized lifecycle vocabulary is:
+
+- `accepted`
+- `queued`
+- `in_progress`
+- `applied`
+- `rejected`
+- `failed`
+- `timeout`
+
+Semantics:
+
+- `accepted`: Device Hub accepted the command request and created lifecycle tracking.
+- `queued`: the command was dispatched to the owning adapter/integration.
+- `in_progress`: the adapter/integration has started execution and Device Hub is waiting for confirmation.
+- `applied`: terminal success. Device Hub observed enough evidence to mark the command complete.
+- `rejected`: terminal failure because the command was invalid or unsupported.
+- `failed`: terminal failure after acceptance due to routing/provider/runtime errors.
+- `timeout`: terminal failure because the command never reached a confirmed completion state in time.
+
+Terminal statuses are: `applied`, `rejected`, `failed`, `timeout`.
+
+Recommended producer behavior:
+
+- Adapters should use the shared lifecycle vocabulary when emitting raw `command_result` frames.
+- Adapters should avoid publishing `applied` until they truly know the operation is complete; otherwise publish `queued` or `in_progress` and let Device Hub finalize once a later confirmed state arrives.
 
 ## Pairing
 

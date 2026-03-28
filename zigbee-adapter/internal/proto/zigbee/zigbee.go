@@ -309,6 +309,7 @@ func (z *ZigbeeAdapter) publishInvalidCommandResult(deviceID, corr, status, errM
 	envelope := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command_result",
+		"origin":    "adapter",
 		"device_id": deviceID,
 		"corr":      corr,
 		"success":   false,
@@ -1091,6 +1092,7 @@ func (z *ZigbeeAdapter) publishHDPCommandResult(dev *model.Device, corr string, 
 	envelope := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command_result",
+		"origin":    "adapter",
 		"device_id": deviceID,
 		"corr":      corr,
 		"success":   success,
@@ -1207,7 +1209,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 	if dev == nil {
 		if corr != "" {
 			// Keep the topic/ID stable for callers, but do not attempt any fallback routing.
-			z.publishInvalidCommandResult("zigbee/"+external, corr, "not_found", "zigbee device not found")
+			z.publishInvalidCommandResult("zigbee/"+external, corr, "failed", "zigbee device not found")
 		}
 		slog.Warn("hdp zigbee command rejected: unknown device", "external", external, "device_id", deviceID, "command", command)
 		return
@@ -1236,7 +1238,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 			if ok {
 				z.publishHDPCommandResult(dev, corr, true, "queued", "")
 			} else {
-				z.publishHDPCommandResult(dev, corr, false, "publish_failed", "could not route/publish zigbee command")
+				z.publishHDPCommandResult(dev, corr, false, "failed", "could not route/publish zigbee command")
 			}
 		}
 	case "remove_device":
@@ -1255,7 +1257,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 		slog.Info("hdp remove device", "device_id", dev.ID.String(), "external", dev.ExternalID, "corr", corr)
 		z.removeDevice(ctx, dev, "hdp-command")
 		if corr != "" {
-			z.publishHDPCommandResult(dev, corr, true, "removed", "")
+			z.publishHDPCommandResult(dev, corr, true, "applied", "")
 		}
 	case "refresh":
 		target := external
@@ -1281,7 +1283,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 			z.requestStateSnapshotForDevice(target, props)
 		}
 		if corr != "" {
-			z.publishHDPCommandResult(dev, corr, true, "refreshing", "")
+			z.publishHDPCommandResult(dev, corr, true, "queued", "")
 		}
 	default:
 		return

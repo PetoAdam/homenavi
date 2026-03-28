@@ -193,6 +193,7 @@ func (a *Adapter) publishCommandResult(deviceID, corr string, success bool, stat
 	env := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command_result",
+		"origin":    "adapter",
 		"device_id": id,
 		"corr":      corr,
 		"success":   success,
@@ -250,8 +251,8 @@ func (a *Adapter) handleDeviceCommand(_ paho.Client, m paho.Message) {
 	if corr == "" {
 		corr = "ack-" + strings.ReplaceAll(external, "/", "-")
 	}
-	a.publishCommandResult(deviceID, corr, true, "accepted", "")
-	slog.Info("thread adapter command ack", "device_id", deviceID, "corr", corr)
+	a.publishCommandResult(deviceID, corr, false, "rejected", "thread adapter placeholder does not support device commands yet")
+	slog.Info("thread adapter command rejected", "device_id", deviceID, "corr", corr)
 }
 
 func (a *Adapter) handlePairingCommand(_ paho.Client, m paho.Message) {
