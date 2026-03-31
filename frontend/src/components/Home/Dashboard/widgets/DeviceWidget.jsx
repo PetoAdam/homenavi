@@ -319,6 +319,13 @@ function normalizeToggleProperty(property) {
   return key;
 }
 
+function hasOnOffOptions(options) {
+  const list = Array.isArray(options) ? options : [];
+  const hasOn = list.some((opt) => String(opt?.value ?? '').trim().toLowerCase() === 'on');
+  const hasOff = list.some((opt) => String(opt?.value ?? '').trim().toLowerCase() === 'off');
+  return hasOn && hasOff;
+}
+
 function buildPayloadForInput(input, value) {
   const key = sanitizeInputKey(input);
   if (!key) {
@@ -332,7 +339,11 @@ function buildPayloadForInput(input, value) {
 
   switch (input.type) {
   case 'toggle':
-    state[normalizeToggleProperty(stateKeyRaw)] = toControlBoolean(value);
+    if (input?.metadata?.togglePowerString === true || propertyLower === 'power') {
+      state.power = toControlBoolean(value) ? 'on' : 'off';
+    } else {
+      state[normalizeToggleProperty(stateKeyRaw)] = toControlBoolean(value);
+    }
     break;
   case 'slider':
   case 'number': {
@@ -443,9 +454,13 @@ export default function DeviceWidget({
     
     const normalized = rawList
       .map(input => {
-        const type = (input.type || '').toLowerCase();
+        const originalType = (input.type || '').toLowerCase();
         const capabilityId = input.capability_id || input.capabilityId || input.capabilityID || '';
         const property = input.property || capabilityId || input.id || '';
+        const propertyLower = property.toString().toLowerCase();
+        const options = Array.isArray(input.options) ? input.options : [];
+        const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOnOffOptions(options);
+        const type = isPowerSelect ? 'toggle' : originalType;
         const id = input.id || capabilityId || property;
         const capability = resolveCapabilityForInput(capabilityLookup, input);
         const access = {
@@ -467,8 +482,11 @@ export default function DeviceWidget({
           capability,
           access,
           readOnly,
-          options: Array.isArray(input.options) ? input.options : [],
-          metadata: input.metadata || {},
+          options,
+          metadata: {
+            ...(input.metadata || {}),
+            ...(isPowerSelect ? { togglePowerString: true } : {}),
+          },
           range: input.range || input.Range || null,
         };
       })

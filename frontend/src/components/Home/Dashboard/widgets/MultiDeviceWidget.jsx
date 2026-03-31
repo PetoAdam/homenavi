@@ -105,6 +105,17 @@ function normalizeToggleProperty(property) {
   return key;
 }
 
+function isOnOffSelectInput(input) {
+  const type = (input?.type || input?.kind || '').toString().toLowerCase();
+  if (type !== 'select') return false;
+  const property = (input?.property || input?.id || '').toString().toLowerCase();
+  if (property !== 'power') return false;
+  const options = Array.isArray(input?.options) ? input.options : [];
+  const hasOn = options.some((opt) => String(opt?.value ?? '').trim().toLowerCase() === 'on');
+  const hasOff = options.some((opt) => String(opt?.value ?? '').trim().toLowerCase() === 'off');
+  return hasOn && hasOff;
+}
+
 function getDeviceCommandId(device) {
   const hdpIds = Array.isArray(device?.hdpIds) ? device.hdpIds : [];
   return device?.id || device?.hdpId || hdpIds[0] || device?.device_id || device?.externalId || '';
@@ -119,7 +130,7 @@ function getToggleInput(device) {
   return inputs.find((input) => {
     const type = (input?.type || input?.kind || '').toString().toLowerCase();
     const valueType = (input?.value_type || input?.valueType || '').toString().toLowerCase();
-    return type === 'toggle' || type === 'binary' || valueType === 'boolean';
+    return type === 'toggle' || type === 'binary' || valueType === 'boolean' || isOnOffSelectInput(input);
   }) || null;
 }
 
@@ -153,6 +164,9 @@ function canToggleDevice(device) {
 function buildTogglePayload(device, value) {
   const property = getToggleProperty(device);
   if (!property) return null;
+  if (property.toLowerCase() === 'power') {
+    return { state: { power: toControlBoolean(value) ? 'on' : 'off' } };
+  }
   return { state: { [normalizeToggleProperty(property)]: toControlBoolean(value) } };
 }
 
