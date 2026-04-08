@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"auth-service/internal/models/responses"
-	"auth-service/internal/services"
-	"auth-service/pkg/errors"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
+	"github.com/PetoAdam/homenavi/auth-service/internal/services"
+	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type ProfileHandler struct {

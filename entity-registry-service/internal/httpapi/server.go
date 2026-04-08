@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"entity-registry-service/internal/realtime"
-	"entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"

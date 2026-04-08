@@ -1,11 +1,12 @@
-FROM golang:1.24-alpine AS build
+FROM golang:1.26.1-alpine3.22 AS build
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o /out/dashboard-service ./cmd/dashboard-service
+COPY shared ./shared
+COPY dashboard-service ./dashboard-service
+WORKDIR /src/dashboard-service
+RUN GOWORK=off go mod download
+RUN CGO_ENABLED=0 GOWORK=off go build -mod=mod -o /out/dashboard-service ./cmd/dashboard-service
 
-FROM alpine:3.20
+FROM alpine:3.22
 WORKDIR /app
 COPY --from=build /out/dashboard-service /app/dashboard-service
 EXPOSE 8097

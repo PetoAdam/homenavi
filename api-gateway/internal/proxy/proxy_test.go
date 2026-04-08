@@ -1,11 +1,12 @@
 package proxy
 
 import (
-	"api-gateway/internal/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/PetoAdam/homenavi/api-gateway/internal/config"
 
 	"github.com/go-chi/chi/v5"
 )

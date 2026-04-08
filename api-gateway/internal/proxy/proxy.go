@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"api-gateway/internal/config"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/PetoAdam/homenavi/api-gateway/internal/config"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"

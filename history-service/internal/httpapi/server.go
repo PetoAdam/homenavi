@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"history-service/internal/store"
+	"github.com/PetoAdam/homenavi/history-service/internal/store"
 )
 
 type Server struct {

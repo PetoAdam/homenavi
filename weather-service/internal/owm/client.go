@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"weather-service/internal/models"
+	"github.com/PetoAdam/homenavi/weather-service/internal/models"
 )
 
 type Client struct {

@@ -1,10 +1,11 @@
-module device-hub
+module github.com/PetoAdam/homenavi/device-hub
 
-go 1.24.0
+go 1.26.0
 
-toolchain go1.24.4
+toolchain go1.26.1
 
 require (
+	github.com/PetoAdam/homenavi/shared v0.0.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/google/uuid v1.6.0
@@ -49,3 +50,5 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 	gorm.io/driver/mysql v1.4.7 // indirect
 )
+
+replace github.com/PetoAdam/homenavi/shared => ../shared

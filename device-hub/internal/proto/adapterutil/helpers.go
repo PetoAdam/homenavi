@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"device-hub/internal/model"
+	"github.com/PetoAdam/homenavi/device-hub/internal/model"
 )
 
 // SanitizeString removes NUL runes so persistence layers accept the value.

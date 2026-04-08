@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"os"
 
-	"user-service/db"
-	"user-service/handlers"
-	"user-service/internal/observability"
-	appmw "user-service/middleware"
+	"github.com/PetoAdam/homenavi/shared/envx"
+	"github.com/PetoAdam/homenavi/shared/observability"
+	"github.com/PetoAdam/homenavi/user-service/db"
+	"github.com/PetoAdam/homenavi/user-service/handlers"
+	appmw "github.com/PetoAdam/homenavi/user-service/middleware"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -19,6 +20,7 @@ import (
 func main() {
 	shutdownObs, promHandler, tracer := observability.SetupObservability("user-service")
 	defer shutdownObs()
+	port := envx.String("USER_SERVICE_PORT", "8001")
 
 	db.MustInitDB()
 
@@ -48,19 +50,19 @@ func main() {
 
 	// Structured logger init (use LOG_FORMAT=json for JSON output)
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
-	if os.Getenv("LOG_FORMAT") == "json" {
+	if envx.String("LOG_FORMAT", "") == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, nil)
 	}
 	slog.SetDefault(slog.New(handler))
 
-	slog.Info("user service starting", "addr", ":8001")
-	if err := http.ListenAndServe(":8001", r); err != nil {
+	slog.Info("user service starting", "addr", ":"+port)
+	if err := http.ListenAndServe(":"+port, r); err != nil {
 		slog.Error("server stopped", "error", err)
 	}
 }
 
 func loadPublicKey() *rsa.PublicKey {
-	path := os.Getenv("JWT_PUBLIC_KEY_PATH")
+	path := envx.String("JWT_PUBLIC_KEY_PATH", "")
 	if path == "" {
 		slog.Error("JWT_PUBLIC_KEY_PATH not set for user-service")
 		os.Exit(1)

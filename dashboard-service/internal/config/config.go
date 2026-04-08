@@ -1,6 +1,6 @@
 package config
 
-import "os"
+import "github.com/PetoAdam/homenavi/shared/envx"
 
 type PostgresConfig struct {
 	User     string
@@ -18,26 +18,18 @@ type Config struct {
 	Postgres            PostgresConfig
 }
 
-func getenv(key, def string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	return v
-}
-
 func Load() Config {
 	return Config{
-		Port:                getenv("DASHBOARD_SERVICE_PORT", "8097"),
-		JWTPublicKeyPath:    getenv("JWT_PUBLIC_KEY_PATH", ""),
-		IntegrationProxyURL: getenv("INTEGRATION_PROXY_URL", ""),
+		Port:                envx.String("DASHBOARD_SERVICE_PORT", "8097"),
+		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),
+		IntegrationProxyURL: envx.String("INTEGRATION_PROXY_URL", ""),
 		Postgres: PostgresConfig{
-			User:     getenv("POSTGRES_USER", "postgres"),
-			Password: getenv("POSTGRES_PASSWORD", "postgres"),
-			DBName:   getenv("POSTGRES_DB", "homenavi"),
-			Host:     getenv("POSTGRES_HOST", "postgres"),
-			Port:     getenv("POSTGRES_PORT", "5432"),
-			SSLMode:  getenv("POSTGRES_SSLMODE", "disable"),
+			User:     envx.String("POSTGRES_USER", "postgres"),
+			Password: envx.String("POSTGRES_PASSWORD", "postgres"),
+			DBName:   envx.String("POSTGRES_DB", "homenavi"),
+			Host:     envx.String("POSTGRES_HOST", "postgres"),
+			Port:     envx.String("POSTGRES_PORT", "5432"),
+			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
 		},
 	}
 }

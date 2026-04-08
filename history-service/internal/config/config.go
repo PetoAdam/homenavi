@@ -2,8 +2,8 @@ package config
 
 import (
 	"log/slog"
-	"os"
-	"strings"
+
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Config struct {
@@ -27,38 +27,22 @@ type DBConfig struct {
 
 func Load() *Config {
 	cfg := &Config{
-		Port:           getEnv("HISTORY_SERVICE_PORT", "8093"),
-		MQTTBrokerURL:  strings.TrimSpace(os.Getenv("MQTT_BROKER_URL")),
-		MQTTClientID:   strings.TrimSpace(os.Getenv("HISTORY_SERVICE_MQTT_CLIENT_ID")),
-		LogLevel:       getEnv("LOG_LEVEL", "info"),
-		IngestRetained: parseBool(getEnv("HISTORY_INGEST_RETAINED", "false")),
-		TopicPrefix:    getEnv("HISTORY_HDP_STATE_PREFIX", "homenavi/hdp/device/state/"),
+		Port:           envx.String("HISTORY_SERVICE_PORT", "8093"),
+		MQTTBrokerURL:  envx.String("MQTT_BROKER_URL", ""),
+		MQTTClientID:   envx.String("HISTORY_SERVICE_MQTT_CLIENT_ID", ""),
+		LogLevel:       envx.String("LOG_LEVEL", "info"),
+		IngestRetained: envx.Bool("HISTORY_INGEST_RETAINED", false),
+		TopicPrefix:    envx.String("HISTORY_HDP_STATE_PREFIX", "homenavi/hdp/device/state/"),
 		Postgres: DBConfig{
-			User:     strings.TrimSpace(os.Getenv("POSTGRES_USER")),
-			Password: os.Getenv("POSTGRES_PASSWORD"),
-			DBName:   strings.TrimSpace(os.Getenv("POSTGRES_DB")),
-			Host:     strings.TrimSpace(os.Getenv("POSTGRES_HOST")),
-			Port:     strings.TrimSpace(os.Getenv("POSTGRES_PORT")),
-			SSLMode:  getEnv("POSTGRES_SSLMODE", "disable"),
+			User:     envx.String("POSTGRES_USER", ""),
+			Password: envx.String("POSTGRES_PASSWORD", ""),
+			DBName:   envx.String("POSTGRES_DB", ""),
+			Host:     envx.String("POSTGRES_HOST", ""),
+			Port:     envx.String("POSTGRES_PORT", ""),
+			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
 		},
 	}
 
 	slog.Info("history-service config loaded", "port", cfg.Port, "mqtt", cfg.MQTTBrokerURL, "topic_prefix", cfg.TopicPrefix)
 	return cfg
-}
-
-func getEnv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-func parseBool(val string) bool {
-	switch strings.ToLower(strings.TrimSpace(val)) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	default:
-		return false
-	}
 }

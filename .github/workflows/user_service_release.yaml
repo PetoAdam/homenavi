@@ -13,6 +13,6 @@ jobs:
     uses: ./.github/workflows/service_release.yml
     with:
       service: user-service
-      context: ./user-service
+      context: .
       dockerfile: ./user-service/Dockerfile
     secrets: inherit

@@ -12,8 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"automation-service/internal/mqtt"
-	"automation-service/internal/store"
+	"github.com/PetoAdam/homenavi/automation-service/internal/mqtt"
+	"github.com/PetoAdam/homenavi/automation-service/internal/store"
+	"github.com/PetoAdam/homenavi/shared/hdp"
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
@@ -107,12 +108,12 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.cron.Start()
 
 	// Subscribe to HDP state + command_result.
-	if err := e.mq.Subscribe("homenavi/hdp/device/state/#", func(m mqtt.Message) {
+	if err := e.mq.Subscribe(hdp.StatePrefix+"#", func(m mqtt.Message) {
 		e.handleState(ctx, m)
 	}); err != nil {
 		return err
 	}
-	if err := e.mq.Subscribe("homenavi/hdp/device/command_result/#", func(m mqtt.Message) {
+	if err := e.mq.Subscribe(hdp.CommandResultPrefix+"#", func(m mqtt.Message) {
 		e.handleCommandResult(ctx, m)
 	}); err != nil {
 		return err
@@ -275,7 +276,7 @@ func (e *Engine) handleState(ctx context.Context, m mqtt.Message) {
 	if err != nil {
 		return
 	}
-	if st.Schema != "hdp.v1" || st.Type != "state" {
+	if st.Schema != hdp.SchemaV1 || st.Type != "state" {
 		return
 	}
 
@@ -451,7 +452,7 @@ func (e *Engine) handleCommandResult(ctx context.Context, m mqtt.Message) {
 	if err != nil {
 		return
 	}
-	if res.Schema != "hdp.v1" || res.Type != "command_result" {
+	if res.Schema != hdp.SchemaV1 || res.Type != "command_result" {
 		return
 	}
 	corr := strings.TrimSpace(res.Corr)
@@ -698,9 +699,9 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 			baseTS := time.Now().UTC().UnixMilli()
 			for _, deviceID := range deviceIDs {
 				corr := fmt.Sprintf("auto-%s-%s-%s-%d", wfID.String(), n.ID, deviceID, baseTS)
-				cmd := HDPCommand{Schema: "hdp.v1", Type: "command", DeviceID: deviceID, Command: cmdName, Args: a.Args, Corr: corr, TS: baseTS}
+				cmd := HDPCommand{Envelope: hdp.Envelope{Schema: hdp.SchemaV1, Type: "command", DeviceID: deviceID, Corr: corr, TS: baseTS}, Command: cmdName, Args: a.Args}
 				b, _ := json.Marshal(cmd)
-				topic := "homenavi/hdp/device/command/" + deviceID
+				topic := hdp.Topic(hdp.CommandPrefix, deviceID)
 				if err := e.mq.Publish(topic, b); err != nil {
 					finish("failed", err.Error())
 					return err

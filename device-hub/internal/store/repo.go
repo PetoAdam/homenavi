@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"device-hub/internal/model"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/device-hub/internal/model"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

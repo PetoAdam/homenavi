@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,17 +9,17 @@ import (
 	"syscall"
 	"time"
 
-	"device-hub/internal/config"
-	"device-hub/internal/httpapi"
-	mqttpkg "device-hub/internal/mqtt"
-	"device-hub/internal/observability"
-	"device-hub/internal/store"
+	"github.com/PetoAdam/homenavi/device-hub/internal/config"
+	"github.com/PetoAdam/homenavi/device-hub/internal/httpapi"
+	mqttpkg "github.com/PetoAdam/homenavi/device-hub/internal/mqtt"
+	"github.com/PetoAdam/homenavi/device-hub/internal/store"
+	"github.com/PetoAdam/homenavi/shared/dbx"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
 func main() {
 	cfg := config.Load()
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		cfg.Postgres.Host, cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.DBName, cfg.Postgres.Port)
+	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{Host: cfg.Postgres.Host, User: cfg.Postgres.User, Password: cfg.Postgres.Password, DBName: cfg.Postgres.DBName, Port: cfg.Postgres.Port, SSLMode: cfg.Postgres.SSLMode})
 	repo, err := store.NewRepository(dsn)
 	if err != nil {
 		slog.Error("db init failed", "error", err)
@@ -31,7 +30,7 @@ func main() {
 	// Integrations are discovered dynamically from adapters via HDP status frames.
 	_ = cfg
 
-	shutdownObs, promHandler, tracer := observability.SetupObservability("device-hub")
+	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("device-hub")
 	defer shutdownObs()
 
 	// Only health endpoint retained for k8s / docker health checks.
@@ -39,7 +38,7 @@ func main() {
 	mux.Handle("/metrics", promHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	httpapi.NewServer(repo, mClient).Register(mux)
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: observability.WrapHandler(tracer, "device-hub", mux)}
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: sharedobs.WrapHandler(tracer, "device-hub", mux)}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)
@@ -52,6 +51,7 @@ func main() {
 	<-stop
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	mClient.Close()
 	_ = srv.Shutdown(ctx)
 	slog.Info("device-hub stopped")
 }

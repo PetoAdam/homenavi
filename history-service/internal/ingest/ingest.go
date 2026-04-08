@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"strings"
 	"time"
 
-	"history-service/internal/store"
+	"github.com/PetoAdam/homenavi/history-service/internal/store"
+	"github.com/PetoAdam/homenavi/shared/hdp"
 
 	"gorm.io/datatypes"
 )
@@ -70,15 +70,11 @@ func (i *Ingestor) HandleMessage(ctx context.Context, msg MQTTMessage, receivedA
 
 func ParseDeviceID(prefix, topic string) (string, error) {
 	if prefix == "" {
-		prefix = "homenavi/hdp/device/state/"
+		prefix = hdp.StatePrefix
 	}
-	if !strings.HasPrefix(topic, prefix) {
+	id, err := hdp.DeviceIDFromTopic(prefix, topic)
+	if errors.Is(err, hdp.ErrTopicPrefixMismatch) {
 		return "", ErrNotAStateTopic
 	}
-	id := strings.TrimPrefix(topic, prefix)
-	id = strings.Trim(id, "/")
-	if id == "" {
-		return "", errors.New("empty device id")
-	}
-	return id, nil
+	return id, err
 }

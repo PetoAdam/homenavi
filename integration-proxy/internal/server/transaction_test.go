@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 )
 
 func TestUpdateFailureDoesNotPersistVersion(t *testing.T) {

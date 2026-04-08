@@ -1,26 +1,21 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26.1-alpine3.22 AS builder
 
-WORKDIR /app
-
-# Copy go mod files
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source code
-COPY . .
-
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+WORKDIR /src
+COPY shared ./shared
+COPY email-service ./email-service
+WORKDIR /src/email-service
+RUN GOWORK=off go mod download
+RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -a -installsuffix cgo -o /out/main .
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.22
 
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
 # Copy the binary from builder
-COPY --from=builder /app/main .
+COPY --from=builder /out/main .
 
 # Expose port
 EXPOSE 8002

@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"weather-service/internal/cache"
-	"weather-service/internal/models"
-	"weather-service/internal/owm"
+	"github.com/PetoAdam/homenavi/weather-service/internal/cache"
+	"github.com/PetoAdam/homenavi/weather-service/internal/models"
+	"github.com/PetoAdam/homenavi/weather-service/internal/owm"
 
 	"github.com/go-chi/chi/v5"
 )

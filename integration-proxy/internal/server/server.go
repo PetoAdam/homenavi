@@ -25,9 +25,10 @@ import (
 	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
 
-	"homenavi/integration-proxy/internal/auth"
-	"homenavi/integration-proxy/internal/config"
-	"homenavi/integration-proxy/internal/models"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/models"
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Server struct {
@@ -639,6 +640,13 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 			op.fail(fmt.Errorf("failed to prepare secrets file: %w", err))
 			return
 		}
+		if err := s.ensureSetupFile(id); err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to prepare setup file", "code": http.StatusInternalServerError, "detail": err.Error()})
+			op.fail(fmt.Errorf("failed to prepare setup file: %w", err))
+			return
+		}
 	}
 	startedByCompose := false
 	startedByHelm := false
@@ -738,7 +746,7 @@ func (s *Server) ensureSecretsFile(id string) error {
 	if id == "" || strings.Contains(id, "/") || strings.Contains(id, "..") {
 		return fmt.Errorf("invalid integration id")
 	}
-	root := strings.TrimSpace(os.Getenv("INTEGRATIONS_ROOT"))
+	root := envx.String("INTEGRATIONS_ROOT", "")
 	if root == "" {
 		return nil
 	}
@@ -761,6 +769,36 @@ func (s *Server) ensureSecretsFile(id string) error {
 		return err
 	}
 	return os.WriteFile(secretsPath, []byte("{}\n"), 0o644)
+}
+
+func (s *Server) ensureSetupFile(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.Contains(id, "/") || strings.Contains(id, "..") {
+		return fmt.Errorf("invalid integration id")
+	}
+	root := envx.String("INTEGRATIONS_ROOT", "")
+	if root == "" {
+		return nil
+	}
+	setupDir := filepath.Join(root, "integrations", "setup")
+	if err := os.MkdirAll(setupDir, 0o755); err != nil {
+		return err
+	}
+	setupPath := filepath.Join(setupDir, fmt.Sprintf("%s.setup.json", id))
+	info, err := os.Stat(setupPath)
+	if err == nil {
+		if info.IsDir() {
+			if err := os.RemoveAll(setupPath); err != nil {
+				return err
+			}
+			return os.WriteFile(setupPath, []byte("{}\n"), 0o644)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return os.WriteFile(setupPath, []byte("{}\n"), 0o644)
 }
 
 func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
@@ -920,7 +958,7 @@ func (s *Server) refreshAll(ctx context.Context) {
 }
 
 func (s *Server) marketplaceAPIBase() string {
-	base := strings.TrimSpace(os.Getenv("INTEGRATIONS_MARKETPLACE_API_BASE"))
+	base := envx.String("INTEGRATIONS_MARKETPLACE_API_BASE", "")
 	if base == "" {
 		base = "https://marketplace.homenavi.org"
 	}
@@ -972,7 +1010,7 @@ func (s *Server) defaultComposeFile(id string) string {
 	if info, err := os.Stat(local); err == nil && !info.IsDir() {
 		return local
 	}
-	root := strings.TrimSpace(os.Getenv("INTEGRATIONS_ROOT"))
+	root := envx.String("INTEGRATIONS_ROOT", "")
 	if root != "" {
 		rootFile := filepath.Join(root, "integrations", "compose", fmt.Sprintf("%s.yml", id))
 		if info, err := os.Stat(rootFile); err == nil && !info.IsDir() {
@@ -1566,7 +1604,7 @@ func (s *Server) handleUpdatePolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) composeEnabled() bool {
-	val := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_ENABLED"))
+	val := envx.String("INTEGRATIONS_COMPOSE_ENABLED", "")
 	if val != "" {
 		val = strings.ToLower(val)
 		return val == "1" || val == "true" || val == "yes"
@@ -1580,17 +1618,17 @@ func (s *Server) composeEnabled() bool {
 func (s *Server) composeBaseArgs(fileOverride string) ([]string, error) {
 	file := strings.TrimSpace(fileOverride)
 	if file == "" {
-		file = strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_FILE"))
+		file = envx.String("INTEGRATIONS_COMPOSE_FILE", "")
 	}
 	if file == "" {
-		file = strings.TrimSpace(os.Getenv("DOCKER_COMPOSE_FILE"))
+		file = envx.String("DOCKER_COMPOSE_FILE", "")
 	}
-	project := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_PROJECT"))
+	project := envx.String("INTEGRATIONS_COMPOSE_PROJECT", "")
 	if file == "" {
 		return nil, fmt.Errorf("compose file not configured")
 	}
 	args := []string{"compose", "-f", file}
-	if envFile := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_ENV_FILE")); envFile != "" {
+	if envFile := envx.String("INTEGRATIONS_COMPOSE_ENV_FILE", ""); envFile != "" {
 		args = append(args, "--env-file", envFile)
 	}
 	if project != "" {
@@ -1604,7 +1642,7 @@ func (s *Server) expandComposePath(pathRaw string) string {
 	if pathRaw == "" {
 		return ""
 	}
-	root := strings.TrimSpace(os.Getenv("INTEGRATIONS_ROOT"))
+	root := envx.String("INTEGRATIONS_ROOT", "")
 	if root == "" {
 		return pathRaw
 	}
@@ -1682,7 +1720,7 @@ func (s *Server) runCompose(ctx context.Context, composeFile string, args ...str
 	if err != nil {
 		return err
 	}
-	bin := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_BIN"))
+	bin := envx.String("INTEGRATIONS_COMPOSE_BIN", "")
 	if bin == "" {
 		bin = "docker"
 	}
@@ -1696,7 +1734,7 @@ func (s *Server) runCompose(ctx context.Context, composeFile string, args ...str
 }
 
 func (s *Server) composePullTimeout() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("INTEGRATIONS_COMPOSE_PULL_TIMEOUT"))
+	raw := envx.String("INTEGRATIONS_COMPOSE_PULL_TIMEOUT", "")
 	if raw == "" {
 		return 2 * time.Minute
 	}
@@ -1711,7 +1749,7 @@ func (s *Server) composePullTimeout() time.Duration {
 }
 
 func (s *Server) operationTimeout() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("INTEGRATIONS_OPERATION_TIMEOUT"))
+	raw := envx.String("INTEGRATIONS_OPERATION_TIMEOUT", "")
 	if raw == "" {
 		return 15 * time.Minute
 	}

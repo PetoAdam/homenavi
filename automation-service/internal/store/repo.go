@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/dbx"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -20,10 +21,7 @@ type Repo struct {
 }
 
 func OpenPostgres(user, password, dbName, host, port, sslMode string) (*gorm.DB, error) {
-	if sslMode == "" {
-		sslMode = "disable"
-	}
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=UTC", host, user, password, dbName, port, sslMode)
+	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{User: user, Password: password, DBName: dbName, Host: host, Port: port, SSLMode: sslMode})
 	// Reduce log noise: "record not found" is expected in normal correlation flows.
 	// Keep warnings/errors, and suppress ErrRecordNotFound specifically.
 	gormLogger := logger.New(

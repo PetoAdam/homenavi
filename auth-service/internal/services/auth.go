@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
-	"auth-service/internal/config"
-	"auth-service/internal/models/entities"
-	"auth-service/pkg/errors"
+	"github.com/PetoAdam/homenavi/auth-service/internal/config"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
+	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
@@ -104,8 +104,12 @@ func (s *AuthService) IsLoginLocked(email string) (bool, int64, error) {
 	ctx := context.Background()
 	key := "login_lockout:" + email
 	ttl, err := s.redisClient.TTL(ctx, key).Result()
-	if err != nil && err != redis.Nil { return false, 0, err }
-	if ttl > 0 { return true, int64(ttl.Seconds()), nil }
+	if err != nil && err != redis.Nil {
+		return false, 0, err
+	}
+	if ttl > 0 {
+		return true, int64(ttl.Seconds()), nil
+	}
 	return false, 0, nil
 }
 
@@ -114,7 +118,9 @@ func (s *AuthService) RegisterLoginFailure(email string) (locked bool, ttlSecond
 	ctx := context.Background()
 	failKey := "login_fail:" + email
 	count, err := s.redisClient.Incr(ctx, failKey).Result()
-	if err != nil { return false, 0, err }
+	if err != nil {
+		return false, 0, err
+	}
 	// Ensure fail counter expires within lockout window length (same as lockout so it resets eventually)
 	s.redisClient.Expire(ctx, failKey, time.Duration(cfg.LoginLockoutSeconds)*time.Second)
 	if int(count) >= cfg.LoginMaxFailures {
@@ -134,8 +140,12 @@ func (s *AuthService) IsCodeLocked(userID, codeType string) (bool, int64, error)
 	ctx := context.Background()
 	key := "code_lockout:" + userID + ":" + codeType
 	ttl, err := s.redisClient.TTL(ctx, key).Result()
-	if err != nil && err != redis.Nil { return false, 0, err }
-	if ttl > 0 { return true, int64(ttl.Seconds()), nil }
+	if err != nil && err != redis.Nil {
+		return false, 0, err
+	}
+	if ttl > 0 {
+		return true, int64(ttl.Seconds()), nil
+	}
 	return false, 0, nil
 }
 
@@ -144,7 +154,9 @@ func (s *AuthService) RegisterCodeFailure(userID, codeType string) (locked bool,
 	ctx := context.Background()
 	failKey := "code_fail:" + userID + ":" + codeType
 	count, err := s.redisClient.Incr(ctx, failKey).Result()
-	if err != nil { return false, 0, err }
+	if err != nil {
+		return false, 0, err
+	}
 	s.redisClient.Expire(ctx, failKey, time.Duration(cfg.CodeLockoutSeconds)*time.Second)
 	if int(count) >= cfg.CodeMaxFailures {
 		lockKey := "code_lockout:" + userID + ":" + codeType
@@ -225,9 +237,9 @@ func (s *AuthService) GenerateOAuthState() (string, error) {
 	if _, err := rand.Read(stateBytes); err != nil {
 		return "", fmt.Errorf("failed to generate OAuth state: %v", err)
 	}
-	
+
 	state := base64.URLEncoding.EncodeToString(stateBytes)
-	
+
 	// Store the state in Redis with a short TTL for validation
 	ctx := context.Background()
 	key := "oauth_state:" + state
@@ -235,20 +247,20 @@ func (s *AuthService) GenerateOAuthState() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to store OAuth state: %v", err)
 	}
-	
+
 	return state, nil
 }
 
 func (s *AuthService) ValidateOAuthState(state string) error {
 	ctx := context.Background()
 	key := "oauth_state:" + state
-	
+
 	// Check if state exists and delete it (one-time use)
 	result := s.redisClient.GetDel(ctx, key)
 	if result.Err() != nil {
 		return errors.BadRequest("invalid or expired OAuth state")
 	}
-	
+
 	return nil
 }
 

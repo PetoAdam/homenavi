@@ -1,0 +1,21 @@
+go 1.26.0
+
+toolchain go1.26.1
+
+use (
+	./.github/actions/integration-verify
+	./api-gateway
+	./auth-service
+	./automation-service
+	./dashboard-service
+	./device-hub
+	./email-service
+	./entity-registry-service
+	./history-service
+	./integration-proxy
+	./shared
+	./thread-adapter
+	./user-service
+	./weather-service
+	./zigbee-adapter
+)

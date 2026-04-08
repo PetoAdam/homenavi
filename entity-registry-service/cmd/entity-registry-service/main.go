@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"entity-registry-service/internal/autoimport"
-	"entity-registry-service/internal/backfill"
-	"entity-registry-service/internal/config"
-	"entity-registry-service/internal/httpapi"
-	"entity-registry-service/internal/realtime"
-	"entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/autoimport"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/backfill"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/config"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/httpapi"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
 )
 
 func main() {

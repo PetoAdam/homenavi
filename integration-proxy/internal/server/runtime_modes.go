@@ -9,7 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type environmentRuntime string
@@ -21,10 +22,10 @@ const (
 )
 
 func (s *Server) runtimeMode() (environmentRuntime, error) {
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("INTEGRATIONS_RUNTIME_MODE")))
+	mode := strings.ToLower(envx.String("INTEGRATIONS_RUNTIME_MODE", ""))
 	switch mode {
 	case "", "auto":
-		if strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST")) != "" {
+		if envx.String("KUBERNETES_SERVICE_HOST", "") != "" {
 			return runtimeHelm, nil
 		}
 		if s.composeEnabled() {
@@ -62,7 +63,7 @@ func (s *Server) managementModeLabel() string {
 }
 
 func (s *Server) defaultHelmNamespace() string {
-	ns := strings.TrimSpace(os.Getenv("INTEGRATIONS_HELM_NAMESPACE"))
+	ns := envx.String("INTEGRATIONS_HELM_NAMESPACE", "")
 	if ns == "" {
 		ns = "homenavi-integrations"
 	}
@@ -70,7 +71,7 @@ func (s *Server) defaultHelmNamespace() string {
 }
 
 func (s *Server) defaultHelmReleaseName(id string) string {
-	prefix := strings.TrimSpace(os.Getenv("INTEGRATIONS_HELM_RELEASE_PREFIX"))
+	prefix := envx.String("INTEGRATIONS_HELM_RELEASE_PREFIX", "")
 	if prefix == "" {
 		prefix = "homenavi-int-"
 	}
@@ -108,7 +109,7 @@ func helmServiceName(releaseName, chartRef string) string {
 }
 
 func (s *Server) runHelm(ctx context.Context, args ...string) error {
-	bin := strings.TrimSpace(os.Getenv("INTEGRATIONS_HELM_BIN"))
+	bin := envx.String("INTEGRATIONS_HELM_BIN", "")
 	if bin == "" {
 		bin = "helm"
 	}
@@ -122,7 +123,7 @@ func (s *Server) runHelm(ctx context.Context, args ...string) error {
 }
 
 func (s *Server) runKubectl(ctx context.Context, args ...string) error {
-	bin := strings.TrimSpace(os.Getenv("INTEGRATIONS_KUBECTL_BIN"))
+	bin := envx.String("INTEGRATIONS_KUBECTL_BIN", "")
 	if bin == "" {
 		bin = "kubectl"
 	}
@@ -211,7 +212,7 @@ func (s *Server) helmCommonEnvArgs() []string {
 }
 
 func (s *Server) helmInlineJWTArgs() []string {
-	publicKeyPath := strings.TrimSpace(os.Getenv("JWT_PUBLIC_KEY_PATH"))
+	publicKeyPath := envx.String("JWT_PUBLIC_KEY_PATH", "")
 	if publicKeyPath == "" {
 		return nil
 	}
@@ -223,10 +224,10 @@ func (s *Server) helmInlineJWTArgs() []string {
 }
 
 func (s *Server) defaultHelmMQTTBrokerURL() string {
-	if value := strings.TrimSpace(os.Getenv("INTEGRATIONS_HELM_MQTT_BROKER_URL")); value != "" {
+	if value := envx.String("INTEGRATIONS_HELM_MQTT_BROKER_URL", ""); value != "" {
 		return value
 	}
-	coreNamespace := strings.TrimSpace(os.Getenv("INTEGRATIONS_HELM_CORE_NAMESPACE"))
+	coreNamespace := envx.String("INTEGRATIONS_HELM_CORE_NAMESPACE", "")
 	if coreNamespace == "" {
 		coreNamespace = "homenavi"
 	}

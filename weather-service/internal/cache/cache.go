@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"weather-service/internal/models"
+	"github.com/PetoAdam/homenavi/weather-service/internal/models"
 )
 
 type entry struct {

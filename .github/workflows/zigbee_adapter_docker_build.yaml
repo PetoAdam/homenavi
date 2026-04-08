@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./zigbee-adapter
+          context: .
           file: ./zigbee-adapter/Dockerfile
           push: false
           tags: homenavi-zigbee-adapter:latest

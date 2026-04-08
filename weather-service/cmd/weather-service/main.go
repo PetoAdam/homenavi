@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"weather-service/internal/cache"
-	"weather-service/internal/config"
-	"weather-service/internal/httpapi"
-	"weather-service/internal/owm"
+	"github.com/PetoAdam/homenavi/weather-service/internal/cache"
+	"github.com/PetoAdam/homenavi/weather-service/internal/config"
+	"github.com/PetoAdam/homenavi/weather-service/internal/httpapi"
+	"github.com/PetoAdam/homenavi/weather-service/internal/owm"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -34,14 +34,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	r.Use(cors.Handler(newCORSOptions()))
 
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -79,5 +72,16 @@ func main() {
 	if err := httpSrv.Shutdown(ctx); err != nil {
 		slog.Error("shutdown error", "error", err)
 		os.Exit(1)
+	}
+}
+
+func newCORSOptions() cors.Options {
+	return cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300,
 	}
 }

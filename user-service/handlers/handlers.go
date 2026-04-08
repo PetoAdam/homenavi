@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"user-service/db"
-	"user-service/middleware"
+	"github.com/PetoAdam/homenavi/user-service/db"
+	"github.com/PetoAdam/homenavi/user-service/middleware"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"

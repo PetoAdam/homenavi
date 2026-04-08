@@ -5,7 +5,7 @@ import (
 	"log"
 	"testing"
 
-	"homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 )
 
 func TestRuntimeModeAutoDetectHelmFromKubernetesHost(t *testing.T) {

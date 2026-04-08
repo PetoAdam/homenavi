@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
 )
 
 type hdpDeviceListItem struct {

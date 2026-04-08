@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	proxyAuth "homenavi/integration-proxy/internal/auth"
-	"homenavi/integration-proxy/internal/server"
+	proxyAuth "github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/server"
 )
 
 func TestIntegrationProxyRoutesRequireResident(t *testing.T) {

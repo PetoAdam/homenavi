@@ -1,12 +1,13 @@
-FROM golang:1.24-alpine AS builder
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN go build -o thread-adapter ./cmd/thread-adapter
+FROM golang:1.26.1-alpine3.22 AS builder
+WORKDIR /src
+COPY shared ./shared
+COPY thread-adapter ./thread-adapter
+WORKDIR /src/thread-adapter
+RUN GOWORK=off go mod download
+RUN GOWORK=off go build -o /out/thread-adapter ./cmd/thread-adapter
 
-FROM alpine:3.20
+FROM alpine:3.22
 WORKDIR /app
-COPY --from=builder /app/thread-adapter /app/thread-adapter
+COPY --from=builder /out/thread-adapter /app/thread-adapter
 EXPOSE 8092
 ENTRYPOINT ["/app/thread-adapter"]

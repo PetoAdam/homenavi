@@ -2,7 +2,8 @@ package proto
 
 import (
 	"context"
-	"device-hub/internal/model"
+
+	"github.com/PetoAdam/homenavi/device-hub/internal/model"
 )
 
 // Event represents a canonical event emitted by adapters

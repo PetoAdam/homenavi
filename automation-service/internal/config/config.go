@@ -1,8 +1,7 @@
 package config
 
 import (
-	"os"
-	"strings"
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Postgres struct {
@@ -29,29 +28,22 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Port:                getenv("AUTOMATION_SERVICE_PORT", "8094"),
-		LogLevel:            getenv("LOG_LEVEL", "info"),
-		MQTTBrokerURL:       getenv("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
-		MQTTClientID:        strings.TrimSpace(os.Getenv("AUTOMATION_SERVICE_MQTT_CLIENT_ID")),
-		JWTPublicKeyPath:    getenv("JWT_PUBLIC_KEY_PATH", ""),
-		UserServiceURL:      getenv("USER_SERVICE_URL", "http://user-service:8001"),
-		EmailServiceURL:     getenv("EMAIL_SERVICE_URL", "http://email-service:8002"),
-		ERSServiceURL:       getenv("ERS_SERVICE_URL", "http://entity-registry-service:8095"),
-		IntegrationProxyURL: getenv("INTEGRATION_PROXY_URL", "http://integration-proxy:8099"),
+		Port:                envx.String("AUTOMATION_SERVICE_PORT", "8094"),
+		LogLevel:            envx.String("LOG_LEVEL", "info"),
+		MQTTBrokerURL:       envx.String("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
+		MQTTClientID:        envx.String("AUTOMATION_SERVICE_MQTT_CLIENT_ID", ""),
+		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),
+		UserServiceURL:      envx.String("USER_SERVICE_URL", "http://user-service:8001"),
+		EmailServiceURL:     envx.String("EMAIL_SERVICE_URL", "http://email-service:8002"),
+		ERSServiceURL:       envx.String("ERS_SERVICE_URL", "http://entity-registry-service:8095"),
+		IntegrationProxyURL: envx.String("INTEGRATION_PROXY_URL", "http://integration-proxy:8099"),
 		Postgres: Postgres{
-			User:     getenv("POSTGRES_USER", ""),
-			Password: getenv("POSTGRES_PASSWORD", ""),
-			DBName:   getenv("POSTGRES_DB", ""),
-			Host:     getenv("POSTGRES_HOST", ""),
-			Port:     getenv("POSTGRES_PORT", ""),
-			SSLMode:  getenv("POSTGRES_SSLMODE", "disable"),
+			User:     envx.String("POSTGRES_USER", ""),
+			Password: envx.String("POSTGRES_PASSWORD", ""),
+			DBName:   envx.String("POSTGRES_DB", ""),
+			Host:     envx.String("POSTGRES_HOST", ""),
+			Port:     envx.String("POSTGRES_PORT", ""),
+			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
 		},
 	}
-}
-
-func getenv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

@@ -1,10 +1,11 @@
-module history-service
+module github.com/PetoAdam/homenavi/history-service
 
-go 1.24.0
+go 1.26.0
 
-toolchain go1.24.4
+toolchain go1.26.1
 
 require (
+	github.com/PetoAdam/homenavi/shared v0.0.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/google/uuid v1.6.0
 	gorm.io/datatypes v1.2.0
@@ -29,3 +30,5 @@ require (
 	golang.org/x/text v0.16.0 // indirect
 	gorm.io/driver/mysql v1.4.7 // indirect
 )
+
+replace github.com/PetoAdam/homenavi/shared => ../shared

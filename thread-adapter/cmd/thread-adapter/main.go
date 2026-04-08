@@ -9,16 +9,19 @@ import (
 	"syscall"
 	"time"
 
-	"thread-adapter/internal/config"
-	"thread-adapter/internal/mqtt"
-	"thread-adapter/internal/observability"
-	threadproto "thread-adapter/internal/proto/thread"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
+	"github.com/PetoAdam/homenavi/shared/observability"
+	"github.com/PetoAdam/homenavi/thread-adapter/internal/config"
+	threadproto "github.com/PetoAdam/homenavi/thread-adapter/internal/proto/thread"
 )
 
 func main() {
 	cfg := config.Load()
 
-	mClient := mqtt.New(cfg.MQTTBrokerURL)
+	mClient := mqttx.MustConnect(mqttx.Options{
+		BrokerURL:      cfg.MQTTBrokerURL,
+		ClientIDPrefix: "thread-adapter",
+	})
 
 	shutdownObs, promHandler, tracer := observability.SetupObservability("thread-adapter")
 	defer shutdownObs()
@@ -48,7 +51,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	adapter.Stop()
-	mClient.Disconnect()
+	mClient.Close()
 	_ = srv.Shutdown(ctx)
 	slog.Info("thread-adapter stopped")
 }

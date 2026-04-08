@@ -13,6 +13,6 @@ jobs:
     uses: ./.github/workflows/service_release.yml
     with:
       service: email-service
-      context: ./email-service
+      context: .
       dockerfile: ./email-service/Dockerfile
     secrets: inherit

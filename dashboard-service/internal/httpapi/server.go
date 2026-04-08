@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"dashboard-service/internal/middleware"
-	"dashboard-service/internal/store"
+	"github.com/PetoAdam/homenavi/dashboard-service/internal/middleware"
+	"github.com/PetoAdam/homenavi/dashboard-service/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"

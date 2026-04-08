@@ -13,6 +13,6 @@ jobs:
     uses: ./.github/workflows/service_release.yml
     with:
       service: weather-service
-      context: ./weather-service
+      context: .
       dockerfile: ./weather-service/Dockerfile
     secrets: inherit

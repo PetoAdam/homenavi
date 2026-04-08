@@ -10,16 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	"auth-service/internal/config"
-	"auth-service/internal/handlers/auth"
-	"auth-service/internal/handlers/email"
-	"auth-service/internal/handlers/oauth"
-	"auth-service/internal/handlers/password"
-	"auth-service/internal/handlers/profile"
-	"auth-service/internal/handlers/twofactor"
-	"auth-service/internal/handlers/user"
-	"auth-service/internal/observability"
-	"auth-service/internal/services"
+	"github.com/PetoAdam/homenavi/auth-service/internal/config"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/auth"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/email"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/oauth"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/password"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/profile"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/twofactor"
+	"github.com/PetoAdam/homenavi/auth-service/internal/handlers/user"
+	"github.com/PetoAdam/homenavi/auth-service/internal/services"
+	"github.com/PetoAdam/homenavi/shared/envx"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -35,12 +36,12 @@ func main() {
 
 	// Initialize structured logger
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
-	if os.Getenv("LOG_FORMAT") == "json" {
+	if envx.String("LOG_FORMAT", "") == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, nil)
 	}
 	slog.SetDefault(slog.New(handler))
 
-	shutdownObs, promHandler, tracer := observability.SetupObservability("auth-service")
+	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("auth-service")
 	defer shutdownObs()
 
 	slog.Info("auth service init", "port", cfg.Port)
@@ -79,7 +80,7 @@ func main() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
-	r.Use(observability.MetricsAndTracingMiddleware(tracer, "auth-service"))
+	r.Use(sharedobs.MetricsAndTracingMiddleware(tracer, "auth-service"))
 
 	r.Handle("/metrics", promHandler)
 

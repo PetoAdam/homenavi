@@ -13,6 +13,6 @@ jobs:
     uses: ./.github/workflows/service_release.yml
     with:
       service: automation-service
-      context: ./automation-service
+      context: .
       dockerfile: ./automation-service/Dockerfile
     secrets: inherit

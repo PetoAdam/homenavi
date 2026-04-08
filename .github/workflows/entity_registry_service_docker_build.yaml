@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./entity-registry-service
+          context: .
           file: ./entity-registry-service/Dockerfile
           push: false
           tags: homenavi-entity-registry-service:latest

@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"history-service/internal/config"
-	"history-service/internal/httpapi"
-	"history-service/internal/ingest"
-	"history-service/internal/mqtt"
-	"history-service/internal/store"
+	"github.com/PetoAdam/homenavi/history-service/internal/config"
+	"github.com/PetoAdam/homenavi/history-service/internal/httpapi"
+	"github.com/PetoAdam/homenavi/history-service/internal/ingest"
+	"github.com/PetoAdam/homenavi/history-service/internal/mqtt"
+	"github.com/PetoAdam/homenavi/history-service/internal/store"
 )
 
 func main() {

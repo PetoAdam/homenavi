@@ -1,8 +1,7 @@
 package config
 
 import (
-	"os"
-	"strings"
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Postgres struct {
@@ -22,27 +21,19 @@ type Config struct {
 	Postgres      Postgres
 }
 
-func env(key, fallback string) string {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return fallback
-	}
-	return v
-}
-
 func Load() Config {
 	return Config{
-		Port:          env("ENTITY_REGISTRY_PORT", "8095"),
-		MQTTBrokerURL: env("MQTT_BROKER_URL", "tcp://mosquitto:1883"),
-		DeviceHubURL:  env("DEVICE_HUB_URL", "http://device-hub:8090"),
-		AutoImport:    strings.TrimSpace(strings.ToLower(os.Getenv("ENTITY_REGISTRY_AUTO_IMPORT"))) != "false",
+		Port:          envx.String("ENTITY_REGISTRY_PORT", "8095"),
+		MQTTBrokerURL: envx.String("MQTT_BROKER_URL", "tcp://mosquitto:1883"),
+		DeviceHubURL:  envx.String("DEVICE_HUB_URL", "http://device-hub:8090"),
+		AutoImport:    envx.Bool("ENTITY_REGISTRY_AUTO_IMPORT", true),
 		Postgres: Postgres{
-			User:     env("POSTGRES_USER", "postgres"),
-			Password: env("POSTGRES_PASSWORD", "postgres"),
-			DBName:   env("POSTGRES_DB", "homenavi"),
-			Host:     env("POSTGRES_HOST", "postgres"),
-			Port:     env("POSTGRES_PORT", "5432"),
-			SSLMode:  env("POSTGRES_SSLMODE", "disable"),
+			User:     envx.String("POSTGRES_USER", "postgres"),
+			Password: envx.String("POSTGRES_PASSWORD", "postgres"),
+			DBName:   envx.String("POSTGRES_DB", "homenavi"),
+			Host:     envx.String("POSTGRES_HOST", "postgres"),
+			Port:     envx.String("POSTGRES_PORT", "5432"),
+			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
 		},
 	}
 }

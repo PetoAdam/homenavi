@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 	paho "github.com/eclipse/paho.mqtt.golang"
-
-	"thread-adapter/internal/mqtt"
 )
 
 // Adapter is a minimal Thread placeholder that keeps observability and health
 // endpoints alive while the protocol implementation is built.
 type Adapter struct {
-	client    *mqtt.Client
+	client    *mqttx.Client
 	enabled   bool
 	adapterID string
 	version   string
@@ -30,16 +30,16 @@ type Config struct {
 }
 
 const (
-	hdpSchema               = "hdp.v1"
-	hdpCommandPrefix        = "homenavi/hdp/device/command/"
-	hdpCommandResultPrefix  = "homenavi/hdp/device/command_result/"
-	hdpPairingCommandTopic  = "homenavi/hdp/pairing/command/thread"
-	hdpPairingProgressTopic = "homenavi/hdp/pairing/progress/thread"
-	hdpAdapterHelloTopic    = "homenavi/hdp/adapter/hello"
-	hdpAdapterStatusPrefix  = "homenavi/hdp/adapter/status/"
+	hdpSchema               = hdp.SchemaV1
+	hdpCommandPrefix        = hdp.CommandPrefix
+	hdpCommandResultPrefix  = hdp.CommandResultPrefix
+	hdpPairingCommandTopic  = hdp.PairingCommandPrefix + "thread"
+	hdpPairingProgressTopic = hdp.PairingProgressPrefix + "thread"
+	hdpAdapterHelloTopic    = hdp.AdapterHelloTopic
+	hdpAdapterStatusPrefix  = hdp.AdapterStatusPrefix
 )
 
-func New(client *mqtt.Client, cfg Config) *Adapter {
+func New(client *mqttx.Client, cfg Config) *Adapter {
 	return &Adapter{client: client, enabled: cfg.Enabled, adapterID: cfg.AdapterID, version: cfg.Version}
 }
 

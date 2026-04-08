@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"auth-service/internal/constants"
-	"auth-service/internal/models/entities"
-	"auth-service/internal/services"
+	"github.com/PetoAdam/homenavi/auth-service/internal/constants"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
+	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 )
 
 type googleAuthService interface {

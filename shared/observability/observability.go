@@ -21,17 +21,17 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
-var (
-	requestCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_requests_total",
-			Help: "Total requests by service, endpoint, method, and status.",
-		},
-		[]string{"service", "endpoint", "method", "status"},
-	)
+var requestCounter = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Total requests by service, endpoint, method, and status.",
+	},
+	[]string{"service", "endpoint", "method", "status"},
 )
 
-func init() { prometheus.MustRegister(requestCounter) }
+func init() {
+	prometheus.MustRegister(requestCounter)
+}
 
 func SetupObservability(serviceName string) (shutdown func(), promHandler http.Handler, tracer oteltrace.Tracer) {
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
@@ -90,6 +90,7 @@ func MetricsAndTracingMiddleware(tracer oteltrace.Tracer, serviceName string) fu
 				attribute.String("http.target", endpoint),
 				attribute.String("service.name", serviceName),
 			)
+			rw.Header().Set("Trace-ID", span.SpanContext().TraceID().String())
 			if rid := middleware.GetReqID(ctx); rid != "" {
 				span.SetAttributes(attribute.String("http.request_id", rid))
 			}
@@ -102,7 +103,6 @@ func MetricsAndTracingMiddleware(tracer oteltrace.Tracer, serviceName string) fu
 			status := rw.status
 			span.SetAttributes(attribute.Int("http.status_code", status))
 			requestCounter.WithLabelValues(serviceName, endpoint, method, strconv.Itoa(status)).Inc()
-			w.Header().Set("Trace-ID", span.SpanContext().TraceID().String())
 			span.End()
 		})
 	}

@@ -9,10 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"email-service/internal/config"
-	"email-service/internal/handlers"
-	"email-service/internal/observability"
-	"email-service/internal/services"
+	"github.com/PetoAdam/homenavi/email-service/internal/config"
+	"github.com/PetoAdam/homenavi/email-service/internal/handlers"
+	"github.com/PetoAdam/homenavi/email-service/internal/services"
+	"github.com/PetoAdam/homenavi/shared/envx"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -24,7 +25,7 @@ func main() {
 
 	// Initialize email service
 	emailService := services.NewEmailService(cfg)
-	shutdownObs, promHandler, tracer := observability.SetupObservability("email-service")
+	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("email-service")
 	defer shutdownObs()
 
 	// Initialize handlers
@@ -35,7 +36,7 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(observability.MetricsAndTracingMiddleware(tracer, "email-service"))
+	r.Use(sharedobs.MetricsAndTracingMiddleware(tracer, "email-service"))
 
 	r.Handle("/metrics", promHandler)
 
@@ -60,7 +61,7 @@ func main() {
 	// Graceful shutdown
 	// Initialize structured logging
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
-	if os.Getenv("LOG_FORMAT") == "json" {
+	if envx.String("LOG_FORMAT", "") == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, nil)
 	}
 	slog.SetDefault(slog.New(handler))

@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   jwt-bootstrap:
     image: alpine:3.20
@@ -30,7 +29,9 @@ services:
   api-gateway:
     image: ghcr.io/petoadam/homenavi-api-gateway:${HN_VERSION:-latest}
     pull_policy: if_not_present
-    build: ./api-gateway
+    build:
+      context: .
+      dockerfile: ./api-gateway/Dockerfile
     ports:
       - "${API_GATEWAY_HOST_PORT}:${API_GATEWAY_PORT}"
     restart: unless-stopped
@@ -58,7 +59,9 @@ services:
   auth-service:
     image: ghcr.io/petoadam/homenavi-auth-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
-    build: ./auth-service
+    build:
+      context: .
+      dockerfile: ./auth-service/Dockerfile
     restart: unless-stopped
   # DEV: expose directly (e.g. curl localhost:8000)
   # ports:
@@ -169,8 +172,9 @@ services:
   user-service:
     image: ghcr.io/petoadam/homenavi-user-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
-    build: 
-      context: ./user-service
+    build:
+      context: .
+      dockerfile: ./user-service/Dockerfile
     restart: unless-stopped
   # DEV:
   # ports:
@@ -198,7 +202,8 @@ services:
     image: ghcr.io/petoadam/homenavi-dashboard-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./dashboard-service
+      context: .
+      dockerfile: ./dashboard-service/Dockerfile
     restart: unless-stopped
     environment:
       - DASHBOARD_SERVICE_PORT=${DASHBOARD_SERVICE_PORT:-8097}
@@ -237,7 +242,9 @@ services:
   email-service:
     image: ghcr.io/petoadam/homenavi-email-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
-    build: ./email-service
+    build:
+      context: .
+      dockerfile: ./email-service/Dockerfile
     restart: unless-stopped
     environment:
       - EMAIL_SERVICE_PORT=${EMAIL_SERVICE_PORT}
@@ -283,6 +290,8 @@ services:
 
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
+    profiles:
+      - zigbee-hardware
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -300,7 +309,9 @@ services:
   device-hub:
     image: ghcr.io/petoadam/homenavi-device-hub:${HN_VERSION:-latest}
     pull_policy: if_not_present
-    build: ./device-hub
+    build:
+      context: .
+      dockerfile: ./device-hub/Dockerfile
     restart: unless-stopped
     depends_on:
       mosquitto:
@@ -325,7 +336,9 @@ services:
   entity-registry-service:
     image: ghcr.io/petoadam/homenavi-entity-registry-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
-    build: ./entity-registry-service
+    build:
+      context: .
+      dockerfile: ./entity-registry-service/Dockerfile
     restart: unless-stopped
     depends_on:
       - postgres
@@ -346,7 +359,8 @@ services:
     image: ghcr.io/petoadam/homenavi-zigbee-adapter:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./zigbee-adapter
+      context: .
+      dockerfile: ./zigbee-adapter/Dockerfile
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -373,7 +387,8 @@ services:
     image: ghcr.io/petoadam/homenavi-thread-adapter:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./thread-adapter
+      context: .
+      dockerfile: ./thread-adapter/Dockerfile
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -391,7 +406,8 @@ services:
     image: ghcr.io/petoadam/homenavi-history-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./history-service
+      context: .
+      dockerfile: ./history-service/Dockerfile
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -416,7 +432,8 @@ services:
     image: ghcr.io/petoadam/homenavi-automation-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./automation-service
+      context: .
+      dockerfile: ./automation-service/Dockerfile
     restart: unless-stopped
     depends_on:
       jwt-bootstrap:
@@ -448,7 +465,8 @@ services:
     image: ghcr.io/petoadam/homenavi-weather-service:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./weather-service
+      context: .
+      dockerfile: ./weather-service/Dockerfile
     restart: unless-stopped
     environment:
       - PORT=${WEATHER_SERVICE_PORT:-8095}
@@ -462,7 +480,8 @@ services:
     image: ghcr.io/petoadam/homenavi-integration-proxy:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
-      context: ./integration-proxy
+      context: .
+      dockerfile: ./integration-proxy/Dockerfile
     restart: unless-stopped
     environment:
       - INTEGRATIONS_CONFIG_PATH=/config/installed.yaml

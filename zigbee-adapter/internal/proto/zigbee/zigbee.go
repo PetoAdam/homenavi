@@ -5,24 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/envx"
+	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
-	"zigbee-adapter/internal/model"
-	"zigbee-adapter/internal/mqtt"
-	"zigbee-adapter/internal/proto/adapterutil"
-	"zigbee-adapter/internal/store"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/model"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/store"
 )
 
 type ZigbeeAdapter struct {
-	client    *mqtt.Client
+	client    *mqttx.Client
 	repo      *store.Repository
 	cache     *store.StateCache
 	adapterID string
@@ -56,36 +57,25 @@ type pendingZigbeeState struct {
 }
 
 const (
-	hdpSchema               = "hdp.v1"
-	hdpMetadataPrefix       = "homenavi/hdp/device/metadata/"
-	hdpStatePrefix          = "homenavi/hdp/device/state/"
-	hdpEventPrefix          = "homenavi/hdp/device/event/"
-	hdpCommandPrefix        = "homenavi/hdp/device/command/"
-	hdpCommandResultPrefix  = "homenavi/hdp/device/command_result/"
-	hdpPairingCommandTopic  = "homenavi/hdp/pairing/command/zigbee"
-	hdpPairingProgressTopic = "homenavi/hdp/pairing/progress/zigbee"
-	hdpAdapterHelloTopic    = "homenavi/hdp/adapter/hello"
-	hdpAdapterStatusPrefix  = "homenavi/hdp/adapter/status/"
+	hdpSchema               = hdp.SchemaV1
+	hdpMetadataPrefix       = hdp.MetadataPrefix
+	hdpStatePrefix          = hdp.StatePrefix
+	hdpEventPrefix          = hdp.EventPrefix
+	hdpCommandPrefix        = hdp.CommandPrefix
+	hdpCommandResultPrefix  = hdp.CommandResultPrefix
+	hdpPairingCommandTopic  = hdp.PairingCommandPrefix + "zigbee"
+	hdpPairingProgressTopic = hdp.PairingProgressPrefix + "zigbee"
+	hdpAdapterHelloTopic    = hdp.AdapterHelloTopic
+	hdpAdapterStatusPrefix  = hdp.AdapterStatusPrefix
 )
 
 var deviceStateTopic = regexp.MustCompile(`^zigbee2mqtt/([^/]+)$`)
 
 var zigbeeIEEEExternal = regexp.MustCompile(`^0x[0-9a-f]{16}$`)
 
-func New(client *mqtt.Client, repo *store.Repository, cache *store.StateCache) *ZigbeeAdapter {
-	refresh := true
-	if v := strings.ToLower(os.Getenv("ZIGBEE_ADAPTER_REFRESH_STATES")); v == "0" || v == "false" || v == "no" {
-		refresh = false
-	} else if v := strings.ToLower(os.Getenv("DEVICE_HUB_REFRESH_STATES")); v == "0" || v == "false" || v == "no" {
-		refresh = false
-	}
-	adapterID := os.Getenv("ZIGBEE_ADAPTER_ID")
-	if strings.TrimSpace(adapterID) == "" {
-		adapterID = os.Getenv("DEVICE_HUB_ZIGBEE_ADAPTER_ID")
-	}
-	if strings.TrimSpace(adapterID) == "" {
-		adapterID = "zigbee"
-	}
+func New(client *mqttx.Client, repo *store.Repository, cache *store.StateCache) *ZigbeeAdapter {
+	refresh := envx.Bool("ZIGBEE_ADAPTER_REFRESH_STATES", envx.Bool("DEVICE_HUB_REFRESH_STATES", true))
+	adapterID := envx.String("ZIGBEE_ADAPTER_ID", envx.String("DEVICE_HUB_ZIGBEE_ADAPTER_ID", "zigbee"))
 	return &ZigbeeAdapter{
 		client:         client,
 		repo:           repo,
@@ -372,7 +362,7 @@ func (z *ZigbeeAdapter) Stop() {
 	_ = z.publishStatus("offline", "shutdown")
 }
 
-func (z *ZigbeeAdapter) subscribe(topic string, handler mqtt.Handler) error {
+func (z *ZigbeeAdapter) subscribe(topic string, handler mqttx.Handler) error {
 	if err := z.client.Subscribe(topic, handler); err != nil {
 		return err
 	}
@@ -967,13 +957,7 @@ func (z *ZigbeeAdapter) publishStatus(status, reason string) error {
 }
 
 func adapterVersion() string {
-	if v := strings.TrimSpace(os.Getenv("ZIGBEE_ADAPTER_VERSION")); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(os.Getenv("DEVICE_HUB_ZIGBEE_VERSION")); v != "" {
-		return v
-	}
-	return "dev"
+	return envx.String("ZIGBEE_ADAPTER_VERSION", envx.String("DEVICE_HUB_ZIGBEE_VERSION", "dev"))
 }
 
 // setCorrelation records the latest correlation_id for a device so it can be echoed with the next state event.

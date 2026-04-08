@@ -8,18 +8,18 @@ import (
 	"sync"
 	"time"
 
-	"entity-registry-service/internal/mqtt"
-	"entity-registry-service/internal/realtime"
-	"entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/mqtt"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/shared/hdp"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
 const (
-	hdpRoot         = "homenavi/hdp/"
-	hdpMetadataPref = hdpRoot + "device/metadata/"
-	hdpStatePref    = hdpRoot + "device/state/"
-	hdpEventPref    = hdpRoot + "device/event/"
+	hdpMetadataPref = hdp.MetadataPrefix
+	hdpStatePref    = hdp.StatePrefix
+	hdpEventPref    = hdp.EventPrefix
 )
 
 type Runner struct {

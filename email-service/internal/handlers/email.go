@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"email-service/internal/services"
+	"github.com/PetoAdam/homenavi/email-service/internal/services"
 )
 
 type EmailHandler struct {

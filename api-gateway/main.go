@@ -11,16 +11,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/envx"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
-	"api-gateway/internal/config"
-	apiMiddleware "api-gateway/internal/middleware"
-	"api-gateway/internal/observability"
-	"api-gateway/internal/router"
 	"crypto/rsa"
+
+	"github.com/PetoAdam/homenavi/api-gateway/internal/config"
+	apiMiddleware "github.com/PetoAdam/homenavi/api-gateway/internal/middleware"
+	"github.com/PetoAdam/homenavi/api-gateway/internal/router"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -33,7 +35,7 @@ func main() {
 	}
 	// Initialize structured logger (JSON if LOG_FORMAT=json)
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})
-	if os.Getenv("LOG_FORMAT") == "json" {
+	if envx.String("LOG_FORMAT", "") == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{})
 	}
 	logger := slog.New(handler)
@@ -46,7 +48,7 @@ func main() {
 	}
 	slog.Info("config loaded", "listen", cfg.ListenAddr, "routes", len(cfg.Routes))
 
-	shutdown, promHandler, tracer := observability.SetupObservability()
+	shutdown, promHandler, tracer := observability.SetupObservability("api-gateway")
 	defer shutdown()
 
 	pubKey := setupJWTKey()
@@ -85,7 +87,7 @@ func main() {
 }
 
 func setupJWTKey() *rsa.PublicKey {
-	pubKeyPath := os.Getenv("JWT_PUBLIC_KEY_PATH")
+	pubKeyPath := envx.String("JWT_PUBLIC_KEY_PATH", "")
 	if pubKeyPath == "" {
 		slog.Error("JWT_PUBLIC_KEY_PATH not set")
 		os.Exit(1)
@@ -100,8 +102,8 @@ func setupJWTKey() *rsa.PublicKey {
 
 func setupRedisClient() *redis.Client {
 	client := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_ADDR"),
-		Password: os.Getenv("REDIS_PASSWORD"),
+		Addr:     envx.String("REDIS_ADDR", "redis:6379"),
+		Password: envx.String("REDIS_PASSWORD", ""),
 		DB:       0,
 	})
 	if pong, err := client.Ping(context.Background()).Result(); err != nil {
@@ -120,14 +122,14 @@ func setupWebSocketRouter(cfg *config.GatewayConfig, redisClient *redis.Client, 
 	return r
 }
 
-func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey, promHandler http.Handler, tracer interface{}) http.Handler {
+func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKey *rsa.PublicKey, promHandler http.Handler, tracer trace.Tracer) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware())
-	r.Use(observability.MetricsAndTracingMiddleware(tracer.(trace.Tracer)))
+	r.Use(observability.MetricsAndTracingMiddleware(tracer, "api-gateway"))
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			corrID := r.Header.Get("X-Correlation-ID")
@@ -167,7 +169,7 @@ func setupMainRouter(cfg *config.GatewayConfig, redisClient *redis.Client, pubKe
 // This is intentionally minimal and avoids cookie credentials.
 func corsMiddleware() func(http.Handler) http.Handler {
 	allowed := map[string]bool{}
-	raw := strings.TrimSpace(os.Getenv("CORS_ALLOW_ORIGINS"))
+	raw := strings.TrimSpace(envx.String("CORS_ALLOW_ORIGINS", ""))
 	if raw != "" {
 		for _, o := range strings.Split(raw, ",") {
 			v := strings.TrimSpace(o)

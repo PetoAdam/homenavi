@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

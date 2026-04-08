@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"auth-service/internal/config"
+	"github.com/PetoAdam/homenavi/auth-service/internal/config"
 )
 
 type EmailService struct {
