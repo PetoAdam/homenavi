@@ -5,9 +5,9 @@ import (
 	"errors"
 	"log/slog"
 
-	"device-hub/internal/model"
-	"device-hub/internal/mqtt"
-	"device-hub/internal/store"
+	"github.com/PetoAdam/homenavi/device-hub/internal/model"
+	"github.com/PetoAdam/homenavi/device-hub/internal/mqtt"
+	"github.com/PetoAdam/homenavi/device-hub/internal/store"
 )
 
 // Adapter is a placeholder for upcoming Thread support. It satisfies the

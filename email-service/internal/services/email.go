@@ -8,7 +8,7 @@ import (
 	"net/smtp"
 	"strconv"
 
-	"email-service/internal/config"
+	"github.com/PetoAdam/homenavi/email-service/internal/config"
 
 	"github.com/jordan-wright/email"
 )
@@ -36,13 +36,13 @@ func (s *EmailService) SendEmail(to, subject, templateName string, data EmailDat
 	// Load template
 	tmpl, err := s.loadTemplate(templateName)
 	if err != nil {
-		return fmt.Errorf("failed to load template: %v", err)
+		return fmt.Errorf("failed to load template: %w", err)
 	}
 
 	// Render HTML
 	var htmlBuffer bytes.Buffer
 	if err := tmpl.Execute(&htmlBuffer, data); err != nil {
-		return fmt.Errorf("failed to execute template: %v", err)
+		return fmt.Errorf("failed to execute template: %w", err)
 	}
 
 	// Create email
@@ -53,7 +53,10 @@ func (s *EmailService) SendEmail(to, subject, templateName string, data EmailDat
 	e.HTML = htmlBuffer.Bytes()
 
 	// SMTP config for Gmail (requires STARTTLS on port 587)
-	port, _ := strconv.Atoi(s.config.SMTPPort)
+	port, err := strconv.Atoi(s.config.SMTPPort)
+	if err != nil || port <= 0 {
+		return fmt.Errorf("invalid SMTP_PORT value %q", s.config.SMTPPort)
+	}
 	auth := smtp.PlainAuth("", s.config.SMTPUsername, s.config.SMTPPassword, s.config.SMTPHost)
 
 	// Send email with STARTTLS (required for Gmail)

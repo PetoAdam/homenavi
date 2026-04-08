@@ -13,6 +13,6 @@ jobs:
     uses: ./.github/workflows/service_release.yml
     with:
       service: auth-service
-      context: ./auth-service
+      context: .
       dockerfile: ./auth-service/Dockerfile
     secrets: inherit

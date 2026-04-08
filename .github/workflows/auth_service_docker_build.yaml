@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./auth-service
+          context: .
           file: ./auth-service/Dockerfile
           push: false
           tags: homenavi-auth-service:latest

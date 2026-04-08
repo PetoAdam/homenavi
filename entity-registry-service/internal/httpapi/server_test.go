@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"entity-registry-service/internal/realtime"
-	"entity-registry-service/internal/store"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"

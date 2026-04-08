@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"history-service/internal/store"
+	"github.com/PetoAdam/homenavi/history-service/internal/store"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

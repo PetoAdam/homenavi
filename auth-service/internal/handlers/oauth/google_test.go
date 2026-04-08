@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"auth-service/internal/models/entities"
-	"auth-service/internal/services"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
+	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 )
 
 type fakeGoogleAuthService struct {

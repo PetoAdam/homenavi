@@ -6,11 +6,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/PetoAdam/homenavi/shared/hdp"
 )
 
 const (
-	hdpAdapterHelloTopic   = "homenavi/hdp/adapter/hello"
-	hdpAdapterStatusPrefix = "homenavi/hdp/adapter/status/"
+	hdpAdapterHelloTopic   = hdp.AdapterHelloTopic
+	hdpAdapterStatusPrefix = hdp.AdapterStatusPrefix
 )
 
 type adapterStatus struct {

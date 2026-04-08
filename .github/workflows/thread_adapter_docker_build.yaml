@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./thread-adapter
+          context: .
           file: ./thread-adapter/Dockerfile
           push: false
           tags: homenavi-thread-adapter:latest

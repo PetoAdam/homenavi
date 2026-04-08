@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./device-hub
+          context: .
           file: ./device-hub/Dockerfile
           push: false
           tags: homenavi-device-hub:latest

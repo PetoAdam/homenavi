@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PetoAdam/homenavi/device-hub/internal/model"
+	"github.com/PetoAdam/homenavi/device-hub/internal/mqtt"
+	"github.com/PetoAdam/homenavi/device-hub/internal/store"
+	"github.com/PetoAdam/homenavi/shared/hdp"
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
-
-	"device-hub/internal/model"
-	"device-hub/internal/mqtt"
-	"device-hub/internal/store"
 )
 
 // IntegrationDescriptor surfaces adapter availability to the UI without
@@ -528,14 +528,14 @@ type deviceListItem struct {
 }
 
 const (
-	hdpSchema                = "hdp.v1"
-	hdpMetadataPrefix        = "homenavi/hdp/device/metadata/"
-	hdpStatePrefix           = "homenavi/hdp/device/state/"
-	hdpEventPrefix           = "homenavi/hdp/device/event/"
-	hdpCommandPrefix         = "homenavi/hdp/device/command/"
-	hdpCommandResultPrefix   = "homenavi/hdp/device/command_result/"
-	hdpPairingCommandPrefix  = "homenavi/hdp/pairing/command/"
-	hdpPairingProgressPrefix = "homenavi/hdp/pairing/progress/"
+	hdpSchema                = hdp.SchemaV1
+	hdpMetadataPrefix        = hdp.MetadataPrefix
+	hdpStatePrefix           = hdp.StatePrefix
+	hdpEventPrefix           = hdp.EventPrefix
+	hdpCommandPrefix         = hdp.CommandPrefix
+	hdpCommandResultPrefix   = hdp.CommandResultPrefix
+	hdpPairingCommandPrefix  = hdp.PairingCommandPrefix
+	hdpPairingProgressPrefix = hdp.PairingProgressPrefix
 )
 
 var (

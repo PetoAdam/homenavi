@@ -24,6 +24,11 @@ integrations/secrets/*.secrets.json
 integrations/secrets/*
 !integrations/secrets/.gitkeep
 
+# Integration setup files (local per installation)
+integrations/setup/*.setup.json
+integrations/setup/*
+!integrations/setup/.gitkeep
+
 # Python
 __pycache__/
 **/__pycache__/

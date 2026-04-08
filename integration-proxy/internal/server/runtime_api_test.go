@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 )
 
 func TestInstallAcceptsLegacyComposeFileField(t *testing.T) {

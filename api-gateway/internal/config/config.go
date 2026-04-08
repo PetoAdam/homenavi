@@ -2,9 +2,9 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
+	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/spf13/viper"
 )
 
@@ -72,13 +72,13 @@ func LoadConfig(configPath, routesDir string) (*GatewayConfig, error) {
 	}
 
 	// Allow env override for JWT secret and key paths
-	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
+	if envSecret := envx.String("JWT_SECRET", ""); envSecret != "" {
 		cfg.JWTSecret = envSecret
 	}
-	if envPriv := os.Getenv("JWT_PRIVATE_KEY_PATH"); envPriv != "" {
+	if envPriv := envx.String("JWT_PRIVATE_KEY_PATH", ""); envPriv != "" {
 		cfg.JWTPrivateKeyPath = envPriv
 	}
-	if envPub := os.Getenv("JWT_PUBLIC_KEY_PATH"); envPub != "" {
+	if envPub := envx.String("JWT_PUBLIC_KEY_PATH", ""); envPub != "" {
 		cfg.JWTPublicKeyPath = envPub
 	}
 

@@ -2,8 +2,8 @@ package config
 
 import (
 	"log/slog"
-	"os"
-	"strings"
+
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Config struct {
@@ -23,41 +23,27 @@ type DBConfig struct {
 	DBName   string
 	Host     string
 	Port     string
+	SSLMode  string
 }
 
 func Load() *Config {
 	cfg := &Config{
-		Port:          getEnv("DEVICE_HUB_PORT", "8090"),
-		MQTTBrokerURL: getEnv("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
-		LogLevel:      getEnv("LOG_LEVEL", "info"),
+		Port:          envx.String("DEVICE_HUB_PORT", "8090"),
+		MQTTBrokerURL: envx.String("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
+		LogLevel:      envx.String("LOG_LEVEL", "info"),
 		Postgres: DBConfig{
-			User:     getEnv("POSTGRES_USER", "postgres"),
-			Password: os.Getenv("POSTGRES_PASSWORD"),
-			DBName:   getEnv("POSTGRES_DB", "homenavi"),
-			Host:     getEnv("POSTGRES_HOST", "postgres"),
-			Port:     getEnv("POSTGRES_PORT", "5432"),
+			User:     envx.String("POSTGRES_USER", "postgres"),
+			Password: envx.String("POSTGRES_PASSWORD", ""),
+			DBName:   envx.String("POSTGRES_DB", "homenavi"),
+			Host:     envx.String("POSTGRES_HOST", "postgres"),
+			Port:     envx.String("POSTGRES_PORT", "5432"),
+			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
 		},
-		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
-		RedisPassword: os.Getenv("REDIS_PASSWORD"),
-		EnableMatter:  parseBool(getEnv("DEVICE_HUB_ENABLE_MATTER", "false")),
-		EnableThread:  parseBool(getEnv("DEVICE_HUB_ENABLE_THREAD", "false")),
+		RedisAddr:     envx.String("REDIS_ADDR", "redis:6379"),
+		RedisPassword: envx.String("REDIS_PASSWORD", ""),
+		EnableMatter:  envx.Bool("DEVICE_HUB_ENABLE_MATTER", false),
+		EnableThread:  envx.Bool("DEVICE_HUB_ENABLE_THREAD", false),
 	}
 	slog.Info("device-hub config loaded", "port", cfg.Port, "mqtt", cfg.MQTTBrokerURL)
 	return cfg
-}
-
-func getEnv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-func parseBool(val string) bool {
-	switch strings.ToLower(strings.TrimSpace(val)) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	default:
-		return false
-	}
 }

@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"dashboard-service/internal/config"
-	"dashboard-service/internal/httpapi"
-	"dashboard-service/internal/middleware"
-	"dashboard-service/internal/store"
+	"github.com/PetoAdam/homenavi/dashboard-service/internal/config"
+	"github.com/PetoAdam/homenavi/dashboard-service/internal/httpapi"
+	"github.com/PetoAdam/homenavi/dashboard-service/internal/middleware"
+	"github.com/PetoAdam/homenavi/dashboard-service/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )

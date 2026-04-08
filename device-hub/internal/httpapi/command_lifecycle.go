@@ -10,7 +10,7 @@ import (
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 
-	"device-hub/internal/mqtt"
+	"github.com/PetoAdam/homenavi/device-hub/internal/mqtt"
 )
 
 const defaultCommandLifecycleTimeout = 45 * time.Second

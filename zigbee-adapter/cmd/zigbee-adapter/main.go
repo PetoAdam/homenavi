@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,19 +9,26 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/dbx"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/redis/go-redis/v9"
 
-	"zigbee-adapter/internal/config"
-	"zigbee-adapter/internal/mqtt"
-	"zigbee-adapter/internal/observability"
-	"zigbee-adapter/internal/proto/zigbee"
-	"zigbee-adapter/internal/store"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/config"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/zigbee"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/store"
 )
 
 func main() {
 	cfg := config.Load()
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		cfg.Postgres.Host, cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.DBName, cfg.Postgres.Port)
+	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{
+		Host:     cfg.Postgres.Host,
+		User:     cfg.Postgres.User,
+		Password: cfg.Postgres.Password,
+		DBName:   cfg.Postgres.DBName,
+		Port:     cfg.Postgres.Port,
+		SSLMode:  cfg.Postgres.SSLMode,
+	})
 	repo, err := store.NewRepository(dsn)
 	if err != nil {
 		slog.Error("db init failed", "error", err)
@@ -36,7 +42,15 @@ func main() {
 	}
 	cache := store.NewStateCache(rdb)
 
-	mClient := mqtt.New(cfg.MQTTBrokerURL)
+	mClient := mqttx.MustConnect(mqttx.Options{
+		BrokerURL:             cfg.MQTTBrokerURL,
+		ClientIDPrefix:        "zigbee-adapter",
+		AutoReconnect:         true,
+		ConnectRetry:          true,
+		CleanSession:          false,
+		ResumeSubs:            true,
+		InsecureSkipVerifyTLS: true,
+	})
 
 	shutdownObs, promHandler, tracer := observability.SetupObservability("zigbee-adapter")
 	defer shutdownObs()
@@ -65,7 +79,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	zAdapter.Stop()
-	mClient.Disconnect()
+	mClient.Close()
 	_ = rdb.Close()
 	_ = srv.Shutdown(ctx)
 	slog.Info("zigbee-adapter stopped")

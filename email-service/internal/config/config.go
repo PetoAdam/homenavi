@@ -1,7 +1,7 @@
 package config
 
 import (
-	"os"
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Config struct {
@@ -16,19 +16,12 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:         getEnv("EMAIL_SERVICE_PORT", "8002"),
-		SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
-		SMTPPort:     getEnv("SMTP_PORT", "587"),
-		SMTPUsername: getEnv("SMTP_USERNAME", ""),
-		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
-		FromEmail:    getEnv("FROM_EMAIL", "noreply@homenavi.org"),
-		FromName:     getEnv("FROM_NAME", "Homenavi"),
+		Port:         envx.String("EMAIL_SERVICE_PORT", "8002"),
+		SMTPHost:     envx.String("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:     envx.String("SMTP_PORT", "587"),
+		SMTPUsername: envx.String("SMTP_USERNAME", ""),
+		SMTPPassword: envx.String("SMTP_PASSWORD", ""),
+		FromEmail:    envx.String("FROM_EMAIL", "noreply@homenavi.org"),
+		FromName:     envx.String("FROM_NAME", "Homenavi"),
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

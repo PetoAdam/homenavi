@@ -10,7 +10,7 @@ import (
 	"slices"
 	"time"
 
-	"zigbee-adapter/internal/model"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/model"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

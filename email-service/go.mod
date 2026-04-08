@@ -1,8 +1,11 @@
-module email-service
+module github.com/PetoAdam/homenavi/email-service
 
-go 1.24.0
+go 1.26.0
+
+toolchain go1.26.1
 
 require (
+	github.com/PetoAdam/homenavi/shared v0.0.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/jordan-wright/email v4.0.1-0.20210109023952-943e75fe5223+incompatible
 	github.com/prometheus/client_golang v1.22.0
@@ -29,3 +32,5 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )
+
+replace github.com/PetoAdam/homenavi/shared => ../shared

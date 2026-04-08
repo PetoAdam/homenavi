@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"auth-service/internal/constants"
-	"auth-service/internal/models/requests"
-	"auth-service/internal/models/responses"
-	"auth-service/internal/services"
-	"auth-service/pkg/errors"
+	"github.com/PetoAdam/homenavi/auth-service/internal/constants"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
+	"github.com/PetoAdam/homenavi/auth-service/internal/services"
+	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 
 	"github.com/pquerna/otp/totp"
 )

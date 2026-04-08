@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"auth-service/internal/config"
-	"auth-service/internal/models/entities"
-	"auth-service/internal/models/requests"
-	"auth-service/pkg/errors"
+	"github.com/PetoAdam/homenavi/auth-service/internal/config"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
+	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
+	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -315,17 +315,17 @@ func (s *UserService) ListUsers(values url.Values, bearer string) ([]entities.Us
 	}
 	// Response shape: { users: [], page:..., page_size:..., total:..., total_pages:..., query:... }
 	var raw struct {
-		Users []entities.User `json:"users"`
-		Page int `json:"page"`
-		PageSize int `json:"page_size"`
-		Total int64 `json:"total"`
-		TotalPages int64 `json:"total_pages"`
-		Query string `json:"query"`
+		Users      []entities.User `json:"users"`
+		Page       int             `json:"page"`
+		PageSize   int             `json:"page_size"`
+		Total      int64           `json:"total"`
+		TotalPages int64           `json:"total_pages"`
+		Query      string          `json:"query"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, nil, errors.InternalServerError("decode error", err)
 	}
-	meta := map[string]interface{}{"page":raw.Page, "page_size":raw.PageSize, "total":raw.Total, "total_pages":raw.TotalPages, "query":raw.Query}
+	meta := map[string]interface{}{"page": raw.Page, "page_size": raw.PageSize, "total": raw.Total, "total_pages": raw.TotalPages, "query": raw.Query}
 	return raw.Users, meta, nil
 }
 

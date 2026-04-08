@@ -1,13 +1,14 @@
 package router
 
 import (
-	"api-gateway/internal/config"
-	"api-gateway/internal/middleware"
-	"api-gateway/internal/proxy"
-	"api-gateway/internal/ratelimit"
 	"crypto/rsa"
 	"net/http"
 	"strings"
+
+	"github.com/PetoAdam/homenavi/api-gateway/internal/config"
+	"github.com/PetoAdam/homenavi/api-gateway/internal/middleware"
+	"github.com/PetoAdam/homenavi/api-gateway/internal/proxy"
+	"github.com/PetoAdam/homenavi/api-gateway/internal/ratelimit"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"

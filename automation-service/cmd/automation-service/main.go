@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"automation-service/internal/config"
-	"automation-service/internal/engine"
-	"automation-service/internal/httpapi"
-	"automation-service/internal/middleware"
-	"automation-service/internal/mqtt"
-	"automation-service/internal/store"
+	"github.com/PetoAdam/homenavi/automation-service/internal/config"
+	"github.com/PetoAdam/homenavi/automation-service/internal/engine"
+	"github.com/PetoAdam/homenavi/automation-service/internal/httpapi"
+	"github.com/PetoAdam/homenavi/automation-service/internal/middleware"
+	"github.com/PetoAdam/homenavi/automation-service/internal/mqtt"
+	"github.com/PetoAdam/homenavi/automation-service/internal/store"
 )
 
 func main() {

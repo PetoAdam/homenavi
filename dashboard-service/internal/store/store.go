@@ -1,16 +1,13 @@
 package store
 
 import (
-	"fmt"
+	"github.com/PetoAdam/homenavi/shared/dbx"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func OpenPostgres(user, pass, dbName, host, port, sslmode string) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, pass, dbName, sslmode,
-	)
+	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{Host: host, Port: port, User: user, Password: pass, DBName: dbName, SSLMode: sslmode})
 	return gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{})
 }

@@ -1,12 +1,13 @@
 package db
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/dbx"
+	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
@@ -16,13 +17,14 @@ import (
 var DB *gorm.DB
 
 func MustInitDB() {
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		os.Getenv("POSTGRES_HOST"),
-		os.Getenv("POSTGRES_USER"),
-		os.Getenv("POSTGRES_PASSWORD"),
-		os.Getenv("POSTGRES_DB"),
-		os.Getenv("POSTGRES_PORT"),
-	)
+	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{
+		Host:     envx.String("POSTGRES_HOST", "postgres"),
+		User:     envx.String("POSTGRES_USER", "postgres"),
+		Password: envx.String("POSTGRES_PASSWORD", ""),
+		DBName:   envx.String("POSTGRES_DB", "homenavi"),
+		Port:     envx.String("POSTGRES_PORT", "5432"),
+		SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
+	})
 	var err error
 	for i := 0; i < 30; i++ {
 		DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})

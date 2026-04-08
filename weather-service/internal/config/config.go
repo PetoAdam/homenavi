@@ -1,9 +1,9 @@
 package config
 
 import (
-	"os"
-	"strconv"
 	"time"
+
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 type Config struct {
@@ -13,32 +13,20 @@ type Config struct {
 }
 
 func Load() Config {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = os.Getenv("WEATHER_SERVICE_PORT")
-	}
-	if port == "" {
-		port = "8095"
-	}
+	port := envx.String("PORT", envx.String("WEATHER_SERVICE_PORT", "8095"))
 
 	ttl := 15 * time.Minute
-	if v := os.Getenv("CACHE_TTL_MINUTES"); v != "" {
-		if m, err := strconv.Atoi(v); err == nil && m > 0 {
-			ttl = time.Duration(m) * time.Minute
-		}
-	} else if v := os.Getenv("WEATHER_CACHE_TTL_MINUTES"); v != "" {
-		if m, err := strconv.Atoi(v); err == nil && m > 0 {
-			ttl = time.Duration(m) * time.Minute
-		}
-	} else if v := os.Getenv("WEATHER_CACHE_TTL"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			ttl = d
-		}
+	if minutes := envx.Int("CACHE_TTL_MINUTES", 0); minutes > 0 {
+		ttl = time.Duration(minutes) * time.Minute
+	} else if minutes := envx.Int("WEATHER_CACHE_TTL_MINUTES", 0); minutes > 0 {
+		ttl = time.Duration(minutes) * time.Minute
+	} else if duration := envx.Duration("WEATHER_CACHE_TTL", 0); duration > 0 {
+		ttl = duration
 	}
 
 	return Config{
 		Port:              port,
-		OpenWeatherAPIKey: os.Getenv("OPENWEATHER_API_KEY"),
+		OpenWeatherAPIKey: envx.String("OPENWEATHER_API_KEY", ""),
 		CacheTTL:          ttl,
 	}
 }

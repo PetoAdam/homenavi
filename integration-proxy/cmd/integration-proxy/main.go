@@ -7,26 +7,26 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	"homenavi/integration-proxy/internal/auth"
-	"homenavi/integration-proxy/internal/config"
-	"homenavi/integration-proxy/internal/server"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/server"
+	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
 func main() {
 	var (
 		listenAddr  = flag.String("listen", ":8099", "listen address")
-		configPath  = flag.String("config", getenv("INTEGRATIONS_CONFIG_PATH", "/config/integrations.yaml"), "path to integrations yaml")
-		schemaPath  = flag.String("schema", getenv("INTEGRATIONS_SCHEMA_PATH", "/config/homenavi-integration.schema.json"), "path to integration manifest jsonschema")
+		configPath  = flag.String("config", envx.String("INTEGRATIONS_CONFIG_PATH", "/config/integrations.yaml"), "path to integrations yaml")
+		schemaPath  = flag.String("schema", envx.String("INTEGRATIONS_SCHEMA_PATH", "/config/homenavi-integration.schema.json"), "path to integration manifest jsonschema")
 		refresh     = flag.Duration("refresh", 30*time.Second, "manifest refresh interval")
-		updateEvery = flag.Duration("updates-refresh", getenvDuration("INTEGRATIONS_UPDATE_CHECK_INTERVAL", 15*time.Minute), "integration update check interval (0 disables)")
+		updateEvery = flag.Duration("updates-refresh", envx.Duration("INTEGRATIONS_UPDATE_CHECK_INTERVAL", 15*time.Minute), "integration update check interval (0 disables)")
 	)
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "integration-proxy ", log.LstdFlags|log.LUTC)
-	pubKeyPath := strings.TrimSpace(os.Getenv("JWT_PUBLIC_KEY_PATH"))
+	pubKeyPath := envx.String("JWT_PUBLIC_KEY_PATH", "")
 	if pubKeyPath == "" {
 		logger.Fatalf("JWT_PUBLIC_KEY_PATH is required to protect /integrations/*")
 	}
@@ -62,24 +62,4 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatalf("server error: %v", err)
 	}
-}
-
-func getenv(key, def string) string {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return def
-	}
-	return v
-}
-
-func getenvDuration(key string, def time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return def
-	}
-	parsed, err := time.ParseDuration(raw)
-	if err != nil {
-		return def
-	}
-	return parsed
 }

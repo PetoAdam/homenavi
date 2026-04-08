@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"automation-service/internal/engine"
-	"automation-service/internal/middleware"
-	"automation-service/internal/store"
+	"github.com/PetoAdam/homenavi/automation-service/internal/engine"
+	"github.com/PetoAdam/homenavi/automation-service/internal/middleware"
+	"github.com/PetoAdam/homenavi/automation-service/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
