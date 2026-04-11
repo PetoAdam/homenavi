@@ -6,10 +6,10 @@ import (
 	"net/http"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
-	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	profiletransport "github.com/PetoAdam/homenavi/auth-service/internal/http/profile/transport"
 	usertransport "github.com/PetoAdam/homenavi/auth-service/internal/http/user/transport"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 )
 
 type ProfileHandler struct {

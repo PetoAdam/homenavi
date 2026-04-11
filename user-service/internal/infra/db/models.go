@@ -8,21 +8,21 @@ import (
 )
 
 type userRow struct {
-	ID                 uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	UserName           string     `gorm:"uniqueIndex"`
+	ID                 uuid.UUID `gorm:"type:uuid;primaryKey"`
+	UserName           string    `gorm:"uniqueIndex"`
 	NormalizedUserName string
-	Email              string     `gorm:"uniqueIndex"`
+	Email              string `gorm:"uniqueIndex"`
 	NormalizedEmail    string
 	FirstName          string
 	LastName           string
-	Role               string     `gorm:"type:varchar(16);default:'user'"`
+	Role               string `gorm:"type:varchar(16);default:'user'"`
 	EmailConfirmed     bool
-	ProfilePictureURL  *string    `gorm:"type:varchar(255)"`
+	ProfilePictureURL  *string `gorm:"type:varchar(255)"`
 	PasswordHash       *string
-	GoogleID           *string    `gorm:"uniqueIndex"`
+	GoogleID           *string `gorm:"uniqueIndex"`
 	TwoFactorEnabled   bool
-	TwoFactorType      string     `gorm:"type:varchar(16)"`
-	TwoFactorSecret    string     `gorm:"type:varchar(64)"`
+	TwoFactorType      string `gorm:"type:varchar(16)"`
+	TwoFactorSecret    string `gorm:"type:varchar(64)"`
 	LockoutEnd         *time.Time
 	LockoutEnabled     bool
 	AccessFailedCount  int

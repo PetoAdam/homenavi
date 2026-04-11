@@ -6,10 +6,10 @@ import (
 	"net/http"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
-	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	passwordtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/password/transport"
 	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 )
 
 type ResetHandler struct {
