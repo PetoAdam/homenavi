@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/model"
+	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
 )
 
 func SanitizeString(s string) string {

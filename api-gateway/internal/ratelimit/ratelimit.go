@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	apiMiddleware "github.com/PetoAdam/homenavi/api-gateway/internal/middleware"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -104,18 +105,18 @@ end
 	return allowed == 1, nil
 }
 
-// Key by IP address
-func KeyByIP(r *http.Request) string {
+// keyByIP extracts the client IP address for rate limiting.
+func keyByIP(r *http.Request) string {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return ip
 }
 
-// Key by user (JWT sub) if available, else IP
+// KeyByUserOrIP returns the JWT subject if available, otherwise the client IP.
 func KeyByUserOrIP(r *http.Request) string {
-	if claims, ok := r.Context().Value("claims").(interface{ GetSubject() string }); ok {
-		if sub := claims.GetSubject(); sub != "" {
+	if claims, ok := r.Context().Value(apiMiddleware.ClaimsKey).(*apiMiddleware.Claims); ok {
+		if sub, err := claims.GetSubject(); err == nil && sub != "" {
 			return sub
 		}
 	}
-	return KeyByIP(r)
+	return keyByIP(r)
 }

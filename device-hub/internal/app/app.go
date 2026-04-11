@@ -30,7 +30,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
-	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("device-hub")
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("device-hub")
+	if err != nil {
+		mqttClient.Close()
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promHandler)

@@ -17,14 +17,13 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v5"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
-	"github.com/PetoAdam/homenavi/integration-proxy/internal/models"
 )
 
 type Server struct {
 	logger      *log.Logger
 	proxies     map[string]*httputil.ReverseProxy
 	upstreams   map[string]*url.URL
-	manifests   map[string]models.Manifest
+	manifests   map[string]Manifest
 	manifestErr map[string]string
 	installStat map[string]installStatus
 	updates     map[string]integrationUpdateStatus
@@ -64,7 +63,7 @@ func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey
 		logger:      logger,
 		proxies:     make(map[string]*httputil.ReverseProxy),
 		upstreams:   make(map[string]*url.URL),
-		manifests:   make(map[string]models.Manifest),
+		manifests:   make(map[string]Manifest),
 		manifestErr: make(map[string]string),
 		installStat: make(map[string]installStatus),
 		updates:     make(map[string]integrationUpdateStatus),
@@ -75,10 +74,6 @@ func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey
 		schemaPath:  schemaPath,
 		configPath:  configPath,
 	}
-}
-
-func NewServer(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey, schemaPath, configPath string) *Server {
-	return New(logger, validator, pubKey, schemaPath, configPath)
 }
 
 func LoadSchema(schemaPath string) (*jsonschema.Schema, error) {
@@ -285,7 +280,7 @@ func (s *Server) ReloadFromConfig() error {
 	s.mu.Lock()
 	s.proxies = make(map[string]*httputil.ReverseProxy)
 	s.upstreams = make(map[string]*url.URL)
-	s.manifests = make(map[string]models.Manifest)
+	s.manifests = make(map[string]Manifest)
 	s.manifestErr = make(map[string]string)
 	s.installStat = make(map[string]installStatus)
 	s.updates = make(map[string]integrationUpdateStatus)

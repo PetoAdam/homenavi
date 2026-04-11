@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
-	"github.com/PetoAdam/homenavi/integration-proxy/internal/models"
 )
 
 func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +36,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reg := models.Registry{GeneratedAt: time.Now().UTC(), Integrations: make([]models.RegistryIntegration, 0)}
+	reg := Registry{GeneratedAt: time.Now().UTC(), Integrations: make([]RegistryIntegration, 0)}
 	for _, id := range ids {
 		s.mu.RLock()
 		m, ok := s.manifests[id]
@@ -51,7 +50,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			s.mu.RLock()
 			updateState := s.updates[id]
 			s.mu.RUnlock()
-			reg.Integrations = append(reg.Integrations, models.RegistryIntegration{
+			reg.Integrations = append(reg.Integrations, RegistryIntegration{
 				ID:               id,
 				DisplayName:      id,
 				Route:            "/apps/" + id,
@@ -63,7 +62,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 				UpdateCheckedAt:  updateState.CheckedAt,
 				UpdateError:      updateState.Error,
 				UpdateInProgress: updateState.InProgress,
-				Widgets:          []models.RegistryWidget{},
+				Widgets:          []RegistryWidget{},
 			})
 			continue
 		}
@@ -88,7 +87,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(icon, "/") && !strings.HasPrefix(icon, "/integrations/") {
 			icon = "/integrations/" + id + icon
 		}
-		regInt := models.RegistryIntegration{
+		regInt := RegistryIntegration{
 			ID:               id,
 			DisplayName:      firstNonEmpty(strings.TrimSpace(m.UI.Sidebar.Label), strings.TrimSpace(m.Name), id),
 			Description:      strings.TrimSpace(m.Description),
@@ -97,7 +96,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			DefaultUIPath:    defPath,
 			SetupUIPath:      setupPath,
 			InstalledVersion: strings.TrimSpace(m.Version),
-			Secrets:          append([]models.SecretSpec{}, m.Secrets...),
+			Secrets:          append([]SecretSpec{}, m.Secrets...),
 		}
 
 		if entry, ok := cfgByID[id]; ok {
@@ -124,7 +123,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if m.DeviceExtension.Enabled {
-			regInt.DeviceExtension = &models.RegistryDeviceExtension{
+			regInt.DeviceExtension = &RegistryDeviceExtension{
 				ProviderID:          strings.TrimSpace(m.DeviceExtension.ProviderID),
 				Protocol:            strings.TrimSpace(m.DeviceExtension.Protocol),
 				DiscoveryMode:       strings.TrimSpace(m.DeviceExtension.DiscoveryMode),
@@ -134,7 +133,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if m.AutomationExtension.Enabled {
-			regInt.AutomationExtension = &models.RegistryAutomationExtension{
+			regInt.AutomationExtension = &RegistryAutomationExtension{
 				Scope:           strings.TrimSpace(m.AutomationExtension.Scope),
 				StepsCatalogURL: strings.TrimSpace(m.AutomationExtension.StepsCatalogURL),
 				ExecuteEndpoint: strings.TrimSpace(m.AutomationExtension.ExecuteEndpoint),
@@ -161,7 +160,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 			if wdgIcon == "" {
 				wdgIcon = icon
 			}
-			regInt.Widgets = append(regInt.Widgets, models.RegistryWidget{
+			regInt.Widgets = append(regInt.Widgets, RegistryWidget{
 				ID:          wid,
 				DisplayName: firstNonEmpty(strings.TrimSpace(wdg.DisplayName), wid),
 				Description: strings.TrimSpace(wdg.Description),
@@ -177,7 +176,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	if q != "" {
-		filtered := make([]models.RegistryIntegration, 0, len(reg.Integrations))
+		filtered := make([]RegistryIntegration, 0, len(reg.Integrations))
 		for _, it := range reg.Integrations {
 			if strings.Contains(strings.ToLower(it.DisplayName), q) ||
 				strings.Contains(strings.ToLower(it.ID), q) ||
@@ -204,7 +203,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 	end := start + pageSize
 	if start >= reg.Total {
-		reg.Integrations = []models.RegistryIntegration{}
+		reg.Integrations = []RegistryIntegration{}
 	} else {
 		if end > reg.Total {
 			end = reg.Total
@@ -221,7 +220,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 type integrationSnapshot struct {
 	id       string
 	upstream *url.URL
-	manifest models.Manifest
+	manifest Manifest
 }
 
 func (s *Server) collectIntegrationSnapshots() []integrationSnapshot {
@@ -249,7 +248,7 @@ func (s *Server) collectIntegrationSnapshots() []integrationSnapshot {
 }
 
 func (s *Server) handleAutomationStepsCatalog(w http.ResponseWriter, r *http.Request) {
-	steps := models.AutomationStepsCatalog{GeneratedAt: time.Now().UTC()}
+	steps := AutomationStepsCatalog{GeneratedAt: time.Now().UTC()}
 
 	for _, it := range s.collectIntegrationSnapshots() {
 		a := it.manifest.AutomationExtension
@@ -296,13 +295,13 @@ func (s *Server) handleAutomationStepsCatalog(w http.ResponseWriter, r *http.Req
 		}
 
 		for _, action := range payload.Actions {
-			steps.Actions = append(steps.Actions, models.AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: action})
+			steps.Actions = append(steps.Actions, AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: action})
 		}
 		for _, trigger := range payload.Triggers {
-			steps.Triggers = append(steps.Triggers, models.AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: trigger})
+			steps.Triggers = append(steps.Triggers, AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: trigger})
 		}
 		for _, condition := range payload.Conditions {
-			steps.Conditions = append(steps.Conditions, models.AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: condition})
+			steps.Conditions = append(steps.Conditions, AutomationStepRecord{IntegrationID: it.id, Scope: scope, Step: condition})
 		}
 	}
 

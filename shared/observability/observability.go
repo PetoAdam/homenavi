@@ -2,7 +2,7 @@ package observability
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/propagation"
 	otelmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -33,31 +33,30 @@ func init() {
 	prometheus.MustRegister(requestCounter)
 }
 
-func SetupObservability(serviceName string) (shutdown func(), promHandler http.Handler, tracer oteltrace.Tracer) {
+func SetupObservability(serviceName string) (shutdown func(), promHandler http.Handler, tracer oteltrace.Tracer, err error) {
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	otel.SetTextMapPropagator(propagator)
 
 	promExporter, err := otelprom.New()
 	if err != nil {
-		slog.Error("failed to create prometheus exporter", "error", err)
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("create prometheus exporter: %w", err)
 	}
 	meterProvider := otelmetric.NewMeterProvider(otelmetric.WithReader(promExporter))
 	otel.SetMeterProvider(meterProvider)
 
 	res, err := resource.New(context.Background(), resource.WithAttributes(attribute.String("service.name", serviceName)))
 	if err != nil {
-		slog.Error("failed to create otel resource", "error", err)
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("create otel resource: %w", err)
 	}
 
-	jaegerURL := os.Getenv("JAEGER_ENDPOINT")
+	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
 	var tp *trace.TracerProvider
-	if jaegerURL != "" {
-		exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(jaegerURL)))
+	if otlpEndpoint != "" {
+		exp, err := otlptracehttp.New(context.Background(),
+			otlptracehttp.WithEndpointURL(otlpEndpoint),
+		)
 		if err != nil {
-			slog.Error("failed to create jaeger exporter", "error", err)
-			os.Exit(1)
+			return nil, nil, nil, fmt.Errorf("create OTLP trace exporter: %w", err)
 		}
 		tp = trace.NewTracerProvider(trace.WithBatcher(exp), trace.WithResource(res))
 	} else {
@@ -68,7 +67,7 @@ func SetupObservability(serviceName string) (shutdown func(), promHandler http.H
 	shutdown = func() { _ = tp.Shutdown(context.Background()) }
 	promHandler = promhttp.Handler()
 	tracer = otel.Tracer(serviceName)
-	return shutdown, promHandler, tracer
+	return shutdown, promHandler, tracer, nil
 }
 
 func MetricsAndTracingMiddleware(tracer oteltrace.Tracer, serviceName string) func(http.Handler) http.Handler {

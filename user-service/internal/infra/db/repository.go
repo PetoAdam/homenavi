@@ -38,7 +38,7 @@ func New(cfg Config, logger *slog.Logger) (*Repository, error) {
 	for i := 0; i < 30; i++ {
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 		if err == nil {
-			if err = db.AutoMigrate(&users.User{}, &users.EmailVerification{}); err == nil {
+			if err = db.AutoMigrate(&userRow{}, &emailVerificationRow{}); err == nil {
 				break
 			}
 		}
@@ -58,44 +58,49 @@ func New(cfg Config, logger *slog.Logger) (*Repository, error) {
 }
 
 func (r *Repository) Create(ctx context.Context, user *users.User) error {
-	return r.db.WithContext(ctx).Create(user).Error
+	row := toUserRow(*user)
+	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return err
+	}
+	*user = toUser(row)
+	return nil
 }
 
 func (r *Repository) FindByID(ctx context.Context, id uuid.UUID) (users.User, error) {
-	var user users.User
-	if err := r.db.WithContext(ctx).First(&user, id).Error; err != nil {
+	var row userRow
+	if err := r.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		return users.User{}, normalizeError(err)
 	}
-	return user, nil
+	return toUser(row), nil
 }
 
 func (r *Repository) FindByEmail(ctx context.Context, email string) (users.User, error) {
-	var user users.User
-	if err := r.db.WithContext(ctx).Where(&users.User{Email: email}).First(&user).Error; err != nil {
+	var row userRow
+	if err := r.db.WithContext(ctx).Where(&userRow{Email: email}).First(&row).Error; err != nil {
 		return users.User{}, normalizeError(err)
 	}
-	return user, nil
+	return toUser(row), nil
 }
 
 func (r *Repository) FindByUserName(ctx context.Context, userName string) (users.User, error) {
-	var user users.User
-	if err := r.db.WithContext(ctx).Where(&users.User{UserName: userName}).First(&user).Error; err != nil {
+	var row userRow
+	if err := r.db.WithContext(ctx).Where(&userRow{UserName: userName}).First(&row).Error; err != nil {
 		return users.User{}, normalizeError(err)
 	}
-	return user, nil
+	return toUser(row), nil
 }
 
 func (r *Repository) FindByGoogleID(ctx context.Context, googleID string) (users.User, error) {
-	var user users.User
-	if err := r.db.WithContext(ctx).Where(&users.User{GoogleID: &googleID}).First(&user).Error; err != nil {
+	var row userRow
+	if err := r.db.WithContext(ctx).Where(&userRow{GoogleID: &googleID}).First(&row).Error; err != nil {
 		return users.User{}, normalizeError(err)
 	}
-	return user, nil
+	return toUser(row), nil
 }
 
 func (r *Repository) List(ctx context.Context, query string, page, size int) ([]users.User, int64, error) {
 	offset := (page - 1) * size
-	dbq := r.db.WithContext(ctx).Model(&users.User{})
+	dbq := r.db.WithContext(ctx).Model(&userRow{})
 	if query != "" {
 		like := "%" + escapeLike(query) + "%"
 		likeNorm := "%" + strings.ToUpper(escapeLike(query)) + "%"
@@ -108,19 +113,23 @@ func (r *Repository) List(ctx context.Context, query string, page, size int) ([]
 	if err := dbq.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var items []users.User
-	if err := dbq.Order(clause.OrderByColumn{Column: clause.Column{Name: "created_at"}, Desc: true}).Offset(offset).Limit(size).Find(&items).Error; err != nil {
+	var rows []userRow
+	if err := dbq.Order(clause.OrderByColumn{Column: clause.Column{Name: "created_at"}, Desc: true}).Offset(offset).Limit(size).Find(&rows).Error; err != nil {
 		return nil, 0, err
+	}
+	items := make([]users.User, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, toUser(row))
 	}
 	return items, total, nil
 }
 
 func (r *Repository) UpdateFields(ctx context.Context, id uuid.UUID, fields map[string]any) error {
-	return normalizeError(r.db.WithContext(ctx).Model(&users.User{ID: id}).Updates(fields).Error)
+	return normalizeError(r.db.WithContext(ctx).Model(&userRow{ID: id}).Updates(fields).Error)
 }
 
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	return normalizeError(r.db.WithContext(ctx).Delete(&users.User{}, id).Error)
+	return normalizeError(r.db.WithContext(ctx).Delete(&userRow{}, id).Error)
 }
 
 func (r *Repository) ensureDefaultAdmin() error {
@@ -136,7 +145,7 @@ func (r *Repository) ensureDefaultAdmin() error {
 		return err
 	}
 	ph := string(hash)
-	user := users.User{
+	user := userRow{
 		ID:                 uuid.New(),
 		UserName:           adminUser,
 		NormalizedUserName: strings.ToUpper(adminUser),

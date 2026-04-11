@@ -9,27 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PetoAdam/homenavi/device-hub/internal/model"
+	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	"github.com/google/uuid"
 )
-
-func normalizeColorValue(input *model.DeviceInput, value any) any {
-	if value == nil {
-		return value
-	}
-	if m, ok := value.(map[string]any); ok {
-		if hexRaw, found := m["hex"]; found {
-			if hex, ok := hexRaw.(string); ok {
-				return map[string]any{"hex": strings.TrimSpace(hex)}
-			}
-		}
-		return value
-	}
-	if s, ok := value.(string); ok {
-		return map[string]any{"hex": strings.TrimSpace(s)}
-	}
-	return value
-}
 
 func (s *Server) publishDeviceMetadata(dev *model.Device) {
 	if dev == nil {

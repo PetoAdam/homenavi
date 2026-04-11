@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PetoAdam/homenavi/device-hub/internal/model"
+	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 
@@ -317,23 +317,6 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 			slog.Warn("hdp pairing progress publish failed", "protocol", session.Protocol, "error", err)
 		}
 	}
-}
-
-func (s *Server) handlePairingProgressEvent(_ paho.Client, msg mqttinfra.Message) {
-	if len(msg.Payload()) == 0 {
-		return
-	}
-	var evt struct {
-		Protocol   string `json:"protocol"`
-		Stage      string `json:"stage"`
-		Status     string `json:"status"`
-		ExternalID string `json:"external_id"`
-	}
-	if err := json.Unmarshal(msg.Payload(), &evt); err != nil {
-		slog.Debug("pairing progress decode failed", "error", err)
-		return
-	}
-	s.processPairingProgress(evt.Protocol, evt.Stage, evt.Status, evt.ExternalID)
 }
 
 func (s *Server) handleHDPPairingProgressEvent(_ paho.Client, msg mqttinfra.Message) {

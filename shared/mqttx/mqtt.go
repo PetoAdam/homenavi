@@ -133,14 +133,6 @@ func Connect(opts Options) (*Client, error) {
 	return &Client{cli: cli}, nil
 }
 
-func MustConnect(opts Options) *Client {
-	cli, err := Connect(opts)
-	if err != nil {
-		panic(err)
-	}
-	return cli
-}
-
 func (c *Client) Subscribe(topic string, cb Handler) error {
 	return c.SubscribeWithQoS(topic, 0, cb)
 }

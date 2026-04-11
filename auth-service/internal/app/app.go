@@ -9,14 +9,15 @@ import (
 	"time"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
-	authhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/auth"
-	emailhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/email"
-	oauthhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/oauth"
-	passwordhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/password"
-	profilehandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/profile"
-	twofactorhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/twofactor"
-	userhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/user"
 	httptransport "github.com/PetoAdam/homenavi/auth-service/internal/http"
+	authhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/auth"
+	emailhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/email"
+	oauthhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/oauth"
+	passwordhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/password"
+	profilehandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/profile"
+	twofactorhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/twofactor"
+	userhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/user"
+	cacheinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/cache"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
@@ -29,10 +30,9 @@ type App struct {
 	logger      *slog.Logger
 }
 
-func New(cfg Config, logger *slog.Logger) *App {
+func New(cfg Config, logger *slog.Logger) (*App, error) {
+	cacheStore := cacheinfra.NewRedisStore(cfg.RedisAddr, cfg.RedisPassword)
 	authService := authdomain.NewService(authdomain.Config{
-		RedisAddr:               cfg.RedisAddr,
-		RedisPassword:           cfg.RedisPassword,
 		JWTPrivateKey:           cfg.JWTPrivateKey,
 		AccessTokenTTL:          cfg.AccessTokenTTL,
 		RefreshTokenTTL:         cfg.RefreshTokenTTL,
@@ -46,7 +46,7 @@ func New(cfg Config, logger *slog.Logger) *App {
 		LoginLockoutSeconds:     cfg.LoginLockoutSeconds,
 		CodeMaxFailures:         cfg.CodeMaxFailures,
 		CodeLockoutSeconds:      cfg.CodeLockoutSeconds,
-	})
+	}, cacheStore)
 	userClient := clientsinfra.NewUserClient(clientsinfra.UserConfig{BaseURL: cfg.UserServiceURL, JWTPrivateKey: cfg.JWTPrivateKey})
 	emailClient := clientsinfra.NewEmailClient(cfg.EmailServiceURL)
 	profilePictureClient := clientsinfra.NewProfilePictureClient(cfg.ProfilePictureServiceURL)
@@ -67,7 +67,10 @@ func New(cfg Config, logger *slog.Logger) *App {
 	userManageHandler := userhandlers.NewManageHandler(authService, userClient)
 	googleOAuthHandler := oauthhandlers.NewGoogleHandler(authService, userClient)
 
-	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("auth-service")
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("auth-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	router := httptransport.NewRouter(httptransport.Routes{
 		HandleSignup:               signupHandler.HandleSignup,
 		HandleLoginStart:           loginHandler.HandleLoginStart,
@@ -109,7 +112,7 @@ func New(cfg Config, logger *slog.Logger) *App {
 		shutdownObs: shutdownObs,
 		authService: authService,
 		logger:      logger,
-	}
+	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {

@@ -14,7 +14,6 @@ type Client struct {
 // ClientAPI is the minimal surface area device-hub needs.
 type ClientAPI interface {
 	Subscribe(topic string, cb Handler) error
-	Unsubscribe(topic string) error
 	Publish(topic string, payload []byte) error
 	PublishWith(topic string, payload []byte, retain bool) error
 }
@@ -41,10 +40,6 @@ func (c *Client) Publish(topic string, payload []byte) error {
 
 func (c *Client) PublishWith(topic string, payload []byte, retain bool) error {
 	return c.cli.PublishWithOptions(topic, payload, 0, retain)
-}
-
-func (c *Client) Unsubscribe(topic string) error {
-	return c.cli.Unsubscribe(topic)
 }
 
 func (c *Client) Close() {

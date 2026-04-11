@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PetoAdam/homenavi/device-hub/internal/model"
+	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 )

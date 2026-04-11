@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/model"
+	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
 )
 

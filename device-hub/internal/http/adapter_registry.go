@@ -16,13 +16,13 @@ const (
 )
 
 type adapterStatus struct {
-	AdapterID string
-	Protocol  string
-	Status    string
-	Reason    string
-	Version   string
-	LastSeen  time.Time
-	Pairing   *PairingConfig
+	AdapterID       string
+	Protocol        string
+	Status          string
+	Reason          string
+	Version         string
+	LastSeen        time.Time
+	Pairing         *PairingConfig
 	SupportsPairing bool
 }
 

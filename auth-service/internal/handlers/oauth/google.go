@@ -7,7 +7,7 @@ import (
 	"time"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
-	"github.com/PetoAdam/homenavi/auth-service/internal/constants"
+	authhandlers "github.com/PetoAdam/homenavi/auth-service/internal/handlers/auth"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
 )
@@ -43,7 +43,7 @@ var _ googleUserService = (*clientsinfra.UserClient)(nil)
 func redirectOAuthLocked(w http.ResponseWriter, r *http.Request) {
 	// Keep the OAuth callback contract: redirect to frontend with an error code.
 	// Frontend reads `error` from URL params.
-	http.Redirect(w, r, "/?error=account_locked&reason="+constants.ReasonAdminLock, http.StatusTemporaryRedirect)
+	http.Redirect(w, r, "/?error=account_locked&reason="+authhandlers.ReasonAdminLock, http.StatusTemporaryRedirect)
 }
 
 func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http.Request) {

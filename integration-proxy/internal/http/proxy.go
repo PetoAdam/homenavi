@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-
-	"github.com/PetoAdam/homenavi/integration-proxy/internal/models"
 )
 
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +93,7 @@ func (s *Server) refreshManifest(ctx context.Context, id string, upstream *url.U
 		}
 	}
 
-	var m models.Manifest
+	var m Manifest
 	if err := json.Unmarshal(body, &m); err != nil {
 		s.setManifestErr(id, "invalid manifest")
 		return err

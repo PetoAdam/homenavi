@@ -27,13 +27,10 @@ type RateLimitConfig struct {
 }
 
 type Config struct {
-	ListenAddr        string          `mapstructure:"listen_addr"`
-	Routes            []RouteConfig   `mapstructure:"routes"`
-	JWTSecret         string          `mapstructure:"jwt_secret"`
-	JWTPrivateKeyPath string          `mapstructure:"jwt_private_key_path"`
-	JWTPublicKeyPath  string          `mapstructure:"jwt_public_key_path"`
-	LogLevel          string          `mapstructure:"log_level"`
-	RateLimit         RateLimitConfig `mapstructure:"rate_limit"`
+	ListenAddr       string          `mapstructure:"listen_addr"`
+	Routes           []RouteConfig   `mapstructure:"routes"`
+	JWTPublicKeyPath string          `mapstructure:"jwt_public_key_path"`
+	RateLimit        RateLimitConfig `mapstructure:"rate_limit"`
 }
 
 func LoadConfig(configPath, routesDir string) (Config, error) {
@@ -71,12 +68,6 @@ func LoadConfig(configPath, routesDir string) (Config, error) {
 		}
 	}
 
-	if envSecret := envx.String("JWT_SECRET", ""); envSecret != "" {
-		cfg.JWTSecret = envSecret
-	}
-	if envPriv := envx.String("JWT_PRIVATE_KEY_PATH", ""); envPriv != "" {
-		cfg.JWTPrivateKeyPath = envPriv
-	}
 	if envPub := envx.String("JWT_PUBLIC_KEY_PATH", ""); envPub != "" {
 		cfg.JWTPublicKeyPath = envPub
 	}

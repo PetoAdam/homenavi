@@ -36,7 +36,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("dashboard-service")
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("dashboard-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	catalogSource := clientsinfra.NewRegistryClient(cfg.IntegrationProxyURL, nil)
 	service := dashboard.NewService(repo, catalogSource)
 	handler := httptransport.NewHandler(service)

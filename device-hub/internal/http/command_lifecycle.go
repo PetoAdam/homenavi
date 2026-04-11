@@ -174,7 +174,7 @@ func (s *Server) publishCommandLifecycle(deviceID, corr, status, errMsg string, 
 		payload[key] = value
 	}
 	if data, err := json.Marshal(payload); err == nil {
-		if err := s.mqtt.Publish(hdpCommandResultPrefix + strings.TrimSpace(deviceID), data); err != nil {
+		if err := s.mqtt.Publish(hdpCommandResultPrefix+strings.TrimSpace(deviceID), data); err != nil {
 			slog.Warn("hdp command lifecycle publish failed", "device_id", deviceID, "corr", corr, "status", status, "error", err)
 		}
 	}

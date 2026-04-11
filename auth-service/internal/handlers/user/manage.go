@@ -3,12 +3,11 @@ package user
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
-	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -217,6 +216,3 @@ func (h *ManageHandler) HandleLockout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "lock": req.Lock})
 }
-
-// Helper to build query params (not used yet)
-func buildQuery(q url.Values) string { return q.Encode() }

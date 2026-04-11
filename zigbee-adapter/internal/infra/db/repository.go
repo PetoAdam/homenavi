@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/shared/dbx"
-	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/model"
+	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

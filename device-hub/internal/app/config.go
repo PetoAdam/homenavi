@@ -13,10 +13,6 @@ type Config struct {
 	MQTTBrokerURL string
 	LogLevel      string
 	DB            dbinfra.Config
-	RedisAddr     string
-	RedisPassword string
-	EnableMatter  bool
-	EnableThread  bool
 }
 
 func LoadConfig() (Config, error) {
@@ -32,10 +28,6 @@ func LoadConfig() (Config, error) {
 			Port:     envx.String("POSTGRES_PORT", "5432"),
 			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
 		},
-		RedisAddr:     envx.String("REDIS_ADDR", "redis:6379"),
-		RedisPassword: envx.String("REDIS_PASSWORD", ""),
-		EnableMatter:  envx.Bool("DEVICE_HUB_ENABLE_MATTER", false),
-		EnableThread:  envx.Bool("DEVICE_HUB_ENABLE_THREAD", false),
 	}
 	slog.Info("device-hub config loaded", "port", cfg.Port, "mqtt", cfg.MQTTBrokerURL)
 	return cfg, nil

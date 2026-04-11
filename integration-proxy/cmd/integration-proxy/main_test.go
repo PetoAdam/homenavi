@@ -18,7 +18,7 @@ func TestIntegrationProxyRoutesRequireResident(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 
-	s := httptransport.NewServer(nil, nil, &key.PublicKey, "", "")
+	s := httptransport.New(nil, nil, &key.PublicKey, "", "")
 	h := httptransport.NewRouter(s, &key.PublicKey)
 
 	req := httptest.NewRequest(http.MethodGet, "/integrations/registry.json", nil)

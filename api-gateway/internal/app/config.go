@@ -11,8 +11,6 @@ import (
 // Config holds bootstrap settings for api-gateway.
 type Config struct {
 	Gateway          gateway.Config
-	ConfigPath       string
-	RoutesDir        string
 	JWTPublicKeyPath string
 	RedisAddr        string
 	RedisPassword    string
@@ -31,8 +29,6 @@ func LoadConfig(args []string) (Config, error) {
 	}
 	cfg := Config{
 		Gateway:          gatewayConfig,
-		ConfigPath:       configPath,
-		RoutesDir:        routesDir,
 		JWTPublicKeyPath: envx.String("JWT_PUBLIC_KEY_PATH", gatewayConfig.JWTPublicKeyPath),
 		RedisAddr:        envx.String("REDIS_ADDR", "redis:6379"),
 		RedisPassword:    envx.String("REDIS_PASSWORD", ""),

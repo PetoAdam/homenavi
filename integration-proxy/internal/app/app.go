@@ -37,7 +37,7 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load schema: %w", err)
 	}
-	proxyServer := httptransport.NewServer(logger, validator, pubKey, cfg.SchemaPath, cfg.ConfigPath)
+	proxyServer := httptransport.New(logger, validator, pubKey, cfg.SchemaPath, cfg.ConfigPath)
 	for _, ic := range installed.Integrations {
 		if err := proxyServer.AddIntegration(ic); err != nil {
 			return nil, fmt.Errorf("add integration %q: %w", ic.ID, err)

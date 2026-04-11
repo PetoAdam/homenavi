@@ -27,7 +27,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
-	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("thread-adapter")
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("thread-adapter")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	adapterSvc := adapter.New(mqttClient, adapter.Config{Enabled: true, AdapterID: cfg.AdapterID, Version: cfg.Version})
 	router := httptransport.NewRouter(promHandler, tracer)
 
