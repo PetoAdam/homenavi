@@ -20,8 +20,11 @@ type App struct {
 	logger      *slog.Logger
 }
 
-func New(cfg Config, logger *slog.Logger) *App {
-	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("email-service")
+func New(cfg Config, logger *slog.Logger) (*App, error) {
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("email-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	sender := smtpinfra.NewSender(smtpinfra.Config{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
 		FromName: cfg.FromName, FromEmail: cfg.FromEmail,
@@ -35,7 +38,7 @@ func New(cfg Config, logger *slog.Logger) *App {
 		server:      &http.Server{Addr: ":" + cfg.Port, Handler: router},
 		shutdownObs: shutdownObs,
 		logger:      logger,
-	}
+	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {

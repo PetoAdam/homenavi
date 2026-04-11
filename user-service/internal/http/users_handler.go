@@ -46,7 +46,6 @@ func (h *UsersHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		Password:          req.Password,
 		FirstName:         req.FirstName,
 		LastName:          req.LastName,
-		RequestedRole:     req.Role,
 		GoogleID:          req.GoogleID,
 		ProfilePictureURL: req.ProfilePictureURL,
 	})

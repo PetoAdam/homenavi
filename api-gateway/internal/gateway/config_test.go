@@ -21,7 +21,6 @@ func TestLoadConfigMergesRouteFilesAndEnvOverrides(t *testing.T) {
 		t.Fatalf("write route file: %v", err)
 	}
 
-	t.Setenv("JWT_SECRET", "override-secret")
 	t.Setenv("JWT_PUBLIC_KEY_PATH", "/tmp/jwt.pem")
 
 	cfg, err := LoadConfig(configPath, routesDir)
@@ -30,9 +29,6 @@ func TestLoadConfigMergesRouteFilesAndEnvOverrides(t *testing.T) {
 	}
 	if cfg.ListenAddr != ":8080" {
 		t.Fatalf("expected listen addr, got %q", cfg.ListenAddr)
-	}
-	if cfg.JWTSecret != "override-secret" {
-		t.Fatalf("expected JWT secret override, got %q", cfg.JWTSecret)
 	}
 	if cfg.JWTPublicKeyPath != "/tmp/jwt.pem" {
 		t.Fatalf("expected JWT public key path override, got %q", cfg.JWTPublicKeyPath)

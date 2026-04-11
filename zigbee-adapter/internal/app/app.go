@@ -40,7 +40,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		_ = rdb.Close()
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
-	shutdownObs, promHandler, tracer := observability.SetupObservability("zigbee-adapter")
+	shutdownObs, promHandler, tracer, err := observability.SetupObservability("zigbee-adapter")
+	if err != nil {
+		_ = rdb.Close()
+		mqttClient.Close()
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	adapter := zigbee.New(mqttClient, repo, cache)
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

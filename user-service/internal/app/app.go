@@ -35,7 +35,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	shutdownObs, promHandler, tracer := sharedobs.SetupObservability("user-service")
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("user-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	service := users.NewService(repo)
 	handler := httptransport.NewUsersHandler(service)
 	router := httptransport.NewRouter(handler, promHandler, tracer, pubKey)

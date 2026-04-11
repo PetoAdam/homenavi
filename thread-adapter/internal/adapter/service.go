@@ -34,8 +34,6 @@ func New(client Client, cfg Config) *Service {
 	return &Service{client: client, enabled: cfg.Enabled, adapterID: cfg.AdapterID, version: cfg.Version}
 }
 
-func (s *Service) Name() string { return "thread" }
-
 func (s *Service) Start(ctx context.Context) error {
 	if !s.enabled {
 		slog.Info("thread adapter disabled", "status", "placeholder")

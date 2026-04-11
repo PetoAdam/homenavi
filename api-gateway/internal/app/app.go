@@ -33,7 +33,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("connect redis: %w", err)
 	}
 
-	shutdown, promHandler, tracer := sharedobs.SetupObservability("api-gateway")
+	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("api-gateway")
+	if err != nil {
+		_ = redisClient.Close()
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	wsRouter := httptransport.NewWebSocketRouter(cfg.Gateway, redisClient, pubKey)
 	mainRouter := httptransport.NewMainRouter(cfg.Gateway, redisClient, pubKey, promHandler, tracer, cfg.CORSAllowOrigins)
 	root := httptransport.NewRootRouter(wsRouter, mainRouter)
