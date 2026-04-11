@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
+	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 )

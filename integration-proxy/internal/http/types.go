@@ -7,14 +7,14 @@ import (
 )
 
 type Manifest struct {
-	SchemaVersion int        `json:"schema_version"`
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Version       string     `json:"version"`
-	Publisher     string     `json:"publisher,omitempty"`
-	Description   string     `json:"description,omitempty"`
-	Homepage      string     `json:"homepage,omitempty"`
-	Verified      bool       `json:"verified"`
+	SchemaVersion int          `json:"schema_version"`
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	Version       string       `json:"version"`
+	Publisher     string       `json:"publisher,omitempty"`
+	Description   string       `json:"description,omitempty"`
+	Homepage      string       `json:"homepage,omitempty"`
+	Verified      bool         `json:"verified"`
 	Secrets       []SecretSpec `json:"secrets,omitempty"`
 
 	UI struct {

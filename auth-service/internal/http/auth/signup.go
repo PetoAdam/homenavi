@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	authtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/auth/transport"
 	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
 	usertransport "github.com/PetoAdam/homenavi/auth-service/internal/http/user/transport"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 )
 
 type SignupHandler struct {

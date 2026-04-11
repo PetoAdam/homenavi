@@ -6,10 +6,10 @@ import (
 	"net/http"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
-	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
 	twofactortransport "github.com/PetoAdam/homenavi/auth-service/internal/http/twofactor/transport"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 
 	"github.com/pquerna/otp/totp"
 )
