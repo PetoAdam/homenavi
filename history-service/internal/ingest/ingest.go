@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/PetoAdam/homenavi/history-service/internal/store"
+	dbinfra "github.com/PetoAdam/homenavi/history-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/shared/hdp"
 
 	"gorm.io/datatypes"
@@ -16,7 +16,7 @@ import (
 var ErrNotAStateTopic = errors.New("not a state topic")
 
 type Ingestor struct {
-	Repo         *store.Repo
+	Repo         *dbinfra.Repository
 	StatePrefix  string
 	AllowRetains bool
 }
@@ -53,7 +53,7 @@ func (i *Ingestor) HandleMessage(ctx context.Context, msg MQTTMessage, receivedA
 		return
 	}
 
-	p := &store.DeviceStatePoint{
+	p := &dbinfra.DeviceStatePoint{
 		DeviceID: deviceID,
 		TS:       receivedAt.UTC(),
 		Payload:  datatypes.JSON(append([]byte(nil), payload...)),

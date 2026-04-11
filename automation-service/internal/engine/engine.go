@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PetoAdam/homenavi/automation-service/internal/mqtt"
-	"github.com/PetoAdam/homenavi/automation-service/internal/store"
+	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
+	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/hdp"
 
 	"github.com/google/uuid"
@@ -22,8 +22,8 @@ import (
 )
 
 type Engine struct {
-	repo   *store.Repo
-	mq     *mqtt.Client
+	repo   *dbinfra.Repository
+	mq     *mqttinfra.Client
 	events *RunEventHub
 
 	httpClient          *http.Client
@@ -36,7 +36,7 @@ type Engine struct {
 	selectorCache map[string]cachedSelector
 
 	mu          sync.RWMutex
-	workflows   map[uuid.UUID]store.Workflow
+	workflows   map[uuid.UUID]dbinfra.Workflow
 	defs        map[uuid.UUID]Definition
 	lastFiredAt map[string]time.Time
 
@@ -59,7 +59,7 @@ type Options struct {
 	IntegrationProxyURL string
 }
 
-func New(repo *store.Repo, mq *mqtt.Client, opts Options) *Engine {
+func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 	c := cron.New(cron.WithSeconds())
 	hc := opts.HTTPClient
 	if hc == nil {
@@ -73,7 +73,7 @@ func New(repo *store.Repo, mq *mqtt.Client, opts Options) *Engine {
 		emailServiceURL:     strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
 		ersServiceURL:       strings.TrimRight(strings.TrimSpace(opts.ERSServiceURL), "/"),
 		integrationProxyURL: strings.TrimRight(strings.TrimSpace(opts.IntegrationProxyURL), "/"),
-		workflows:           map[uuid.UUID]store.Workflow{},
+		workflows:           map[uuid.UUID]dbinfra.Workflow{},
 		defs:                map[uuid.UUID]Definition{},
 		lastFiredAt:         map[string]time.Time{},
 		cron:                c,
@@ -108,12 +108,12 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.cron.Start()
 
 	// Subscribe to HDP state + command_result.
-	if err := e.mq.Subscribe(hdp.StatePrefix+"#", func(m mqtt.Message) {
+	if err := e.mq.Subscribe(hdp.StatePrefix+"#", func(m mqttinfra.Message) {
 		e.handleState(ctx, m)
 	}); err != nil {
 		return err
 	}
-	if err := e.mq.Subscribe(hdp.CommandResultPrefix+"#", func(m mqtt.Message) {
+	if err := e.mq.Subscribe(hdp.CommandResultPrefix+"#", func(m mqttinfra.Message) {
 		e.handleCommandResult(ctx, m)
 	}); err != nil {
 		return err
@@ -171,7 +171,7 @@ func (e *Engine) reload(ctx context.Context) error {
 	}
 
 	// Build new maps; then swap.
-	newWF := map[uuid.UUID]store.Workflow{}
+	newWF := map[uuid.UUID]dbinfra.Workflow{}
 	newDefs := map[uuid.UUID]Definition{}
 
 	for _, w := range rows {
@@ -270,7 +270,7 @@ func (e *Engine) reconcileCron() {
 	}
 }
 
-func (e *Engine) handleState(ctx context.Context, m mqtt.Message) {
+func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	payload := m.Payload()
 	st, err := decodeJSON[HDPState](payload)
 	if err != nil {
@@ -447,7 +447,7 @@ func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string
 	return ids, nil
 }
 
-func (e *Engine) handleCommandResult(ctx context.Context, m mqtt.Message) {
+func (e *Engine) handleCommandResult(ctx context.Context, m mqttinfra.Message) {
 	res, err := decodeJSON[HDPCommandResult](m.Payload())
 	if err != nil {
 		return
@@ -602,7 +602,7 @@ func (e *Engine) StartWorkflowRun(ctx context.Context, wfID uuid.UUID, triggerNo
 	}
 
 	triggerJSON, _ := json.Marshal(triggerEvent)
-	run := &store.WorkflowRun{WorkflowID: wfID, Status: "running", TriggerEvent: datatypes.JSON(triggerJSON), StartedAt: time.Now().UTC()}
+	run := &dbinfra.WorkflowRun{WorkflowID: wfID, Status: "running", TriggerEvent: datatypes.JSON(triggerJSON), StartedAt: time.Now().UTC()}
 	if err := e.repo.CreateRun(ctx, run); err != nil {
 		slog.Warn("create run failed", "error", err)
 		return uuid.Nil, err
@@ -653,7 +653,7 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		}
 
 		stepIn, _ := json.Marshal(map[string]any{"node": n})
-		runStep := &store.WorkflowRunStep{RunID: runID, NodeID: n.ID, Status: "running", Input: datatypes.JSON(stepIn), StartedAt: time.Now().UTC()}
+		runStep := &dbinfra.WorkflowRunStep{RunID: runID, NodeID: n.ID, Status: "running", Input: datatypes.JSON(stepIn), StartedAt: time.Now().UTC()}
 		_ = e.repo.CreateStep(ctx, runStep)
 
 		startedEvt := RunEvent{Type: "node_started", WorkflowID: wfID.String(), NodeID: n.ID, StepID: runStep.ID.String(), NodeKind: kind, Status: "running"}
@@ -713,7 +713,7 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 						timeout = 15
 					}
 					exp := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
-					_ = e.repo.UpsertPendingCorr(ctx, &store.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
+					_ = e.repo.UpsertPendingCorr(ctx, &dbinfra.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
 					finish("success", "")
 					return errWaitForResult
 				}

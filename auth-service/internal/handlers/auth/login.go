@@ -6,22 +6,23 @@ import (
 	"net/http"
 	"time"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/constants"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 
 	"github.com/pquerna/otp/totp"
 )
 
 type LoginHandler struct {
-	authService  *services.AuthService
-	userService  *services.UserService
-	emailService *services.EmailService
+	authService  *authdomain.Service
+	userService  *clientsinfra.UserClient
+	emailService *clientsinfra.EmailClient
 }
 
-func NewLoginHandler(authService *services.AuthService, userService *services.UserService, emailService *services.EmailService) *LoginHandler {
+func NewLoginHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, emailService *clientsinfra.EmailClient) *LoginHandler {
 	return &LoginHandler{
 		authService:  authService,
 		userService:  userService,

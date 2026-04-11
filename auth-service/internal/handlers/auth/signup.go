@@ -5,17 +5,17 @@ import (
 	"log/slog"
 	"net/http"
 
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type SignupHandler struct {
-	userService *services.UserService
+	userService *clientsinfra.UserClient
 }
 
-func NewSignupHandler(userService *services.UserService) *SignupHandler {
+func NewSignupHandler(userService *clientsinfra.UserClient) *SignupHandler {
 	return &SignupHandler{
 		userService: userService,
 	}

@@ -3,96 +3,32 @@ package main
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
-	"github.com/PetoAdam/homenavi/history-service/internal/config"
-	"github.com/PetoAdam/homenavi/history-service/internal/httpapi"
-	"github.com/PetoAdam/homenavi/history-service/internal/ingest"
-	"github.com/PetoAdam/homenavi/history-service/internal/mqtt"
-	"github.com/PetoAdam/homenavi/history-service/internal/store"
+	"github.com/PetoAdam/homenavi/history-service/internal/app"
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := app.LoadConfig()
+	if err != nil {
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
 	setupLogging(cfg.LogLevel)
-
-	if strings.TrimSpace(cfg.MQTTBrokerURL) == "" {
-		slog.Error("missing required env", "key", "MQTT_BROKER_URL")
-		os.Exit(1)
-	}
-	if strings.TrimSpace(cfg.Postgres.User) == "" {
-		slog.Error("missing required env", "key", "POSTGRES_USER")
-		os.Exit(1)
-	}
-	if strings.TrimSpace(cfg.Postgres.DBName) == "" {
-		slog.Error("missing required env", "key", "POSTGRES_DB")
-		os.Exit(1)
-	}
-	if strings.TrimSpace(cfg.Postgres.Host) == "" {
-		slog.Error("missing required env", "key", "POSTGRES_HOST")
-		os.Exit(1)
-	}
-	if strings.TrimSpace(cfg.Postgres.Port) == "" {
-		slog.Error("missing required env", "key", "POSTGRES_PORT")
-		os.Exit(1)
-	}
-
-	db, err := store.OpenPostgres(cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.DBName, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.SSLMode)
+	application, err := app.New(cfg, slog.Default())
 	if err != nil {
-		slog.Error("db connect failed", "error", err)
+		slog.Error("failed to bootstrap application", "error", err)
 		os.Exit(1)
 	}
-	repo, err := store.New(db)
-	if err != nil {
-		slog.Error("db migrate failed", "error", err)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := application.Run(ctx); err != nil {
+		slog.Error("history-service stopped with error", "error", err)
 		os.Exit(1)
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	mq, err := mqtt.Connect(cfg.MQTTBrokerURL, cfg.MQTTClientID)
-	if err != nil {
-		slog.Error("mqtt connect failed", "error", err)
-		os.Exit(1)
-	}
-	defer mq.Close()
-
-	ing := &ingest.Ingestor{Repo: repo, StatePrefix: cfg.TopicPrefix, AllowRetains: cfg.IngestRetained}
-	subTopic := strings.TrimRight(cfg.TopicPrefix, "/") + "/#"
-	if err := mq.Subscribe(subTopic, func(m mqtt.Message) {
-		ing.HandleMessage(ctx, m, time.Now().UTC())
-	}); err != nil {
-		slog.Error("mqtt subscribe failed", "topic", subTopic, "error", err)
-		os.Exit(1)
-	}
-	slog.Info("history ingest subscribed", "topic", subTopic)
-
-	srv := httpapi.New(repo)
-	httpSrv := &http.Server{Addr: ":" + cfg.Port, Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second}
-
-	go func() {
-		slog.Info("history-service listening", "addr", httpSrv.Addr)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("http server error", "error", err)
-			cancel()
-		}
-	}()
-
-	stop := make(chan os.Signal, 2)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-	slog.Info("shutdown requested")
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-	_ = httpSrv.Shutdown(shutdownCtx)
-	cancel()
 }
 
 func setupLogging(level string) {

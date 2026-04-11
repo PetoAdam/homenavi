@@ -49,9 +49,9 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 
 // writeJSONError duplicated locally (could be refactored to shared package) to avoid import cycle.
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type","application/json")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = w.Write([]byte(`{"error":"`+msg+`","code":`+strconv.Itoa(status)+`}`))
+	_, _ = w.Write([]byte(`{"error":"` + msg + `","code":` + strconv.Itoa(status) + `}`))
 }
 
 func (rl *RateLimiter) allow(ctx context.Context, key string) (bool, error) {

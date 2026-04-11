@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
+	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 )
 
 type hdpDeviceListItem struct {
@@ -28,7 +28,7 @@ type hdpDeviceListItem struct {
 // canonical ERS device with an HDP binding.
 //
 // Returns how many devices were newly created.
-func RunOnce(ctx context.Context, repo *store.Repo, deviceHubURL string, httpClient *http.Client) (int, error) {
+func RunOnce(ctx context.Context, repo *dbinfra.Repository, deviceHubURL string, httpClient *http.Client) (int, error) {
 	if repo == nil {
 		return 0, errors.New("repo is required")
 	}
@@ -99,7 +99,7 @@ func RunOnce(ctx context.Context, repo *store.Repo, deviceHubURL string, httpCli
 
 // Start runs a best-effort backfill loop until a successful backfill occurs or
 // ctx is cancelled.
-func Start(ctx context.Context, repo *store.Repo, deviceHubURL string, httpClient *http.Client) {
+func Start(ctx context.Context, repo *dbinfra.Repository, deviceHubURL string, httpClient *http.Client) {
 	go func() {
 		delay := 2 * time.Second
 		for {

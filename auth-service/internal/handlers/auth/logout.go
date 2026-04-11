@@ -4,17 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type LogoutHandler struct {
-	authService *services.AuthService
+	authService *authdomain.Service
 }
 
-func NewLogoutHandler(authService *services.AuthService) *LogoutHandler {
+func NewLogoutHandler(authService *authdomain.Service) *LogoutHandler {
 	return &LogoutHandler{
 		authService: authService,
 	}
