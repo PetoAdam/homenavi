@@ -6,7 +6,6 @@ toolchain go1.26.1
 
 require (
 	github.com/PetoAdam/homenavi/shared v0.0.0
-	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/google/uuid v1.6.0
 	gorm.io/datatypes v1.2.0
 	gorm.io/driver/postgres v1.5.9
@@ -15,6 +14,7 @@ require (
 )
 
 require (
+	github.com/eclipse/paho.mqtt.golang v1.5.0 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -24,10 +24,10 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
-	golang.org/x/net v0.27.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/sync v0.14.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 	gorm.io/driver/mysql v1.4.7 // indirect
 )
 

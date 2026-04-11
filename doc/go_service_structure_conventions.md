@@ -172,7 +172,7 @@ Not every service needs every folder, but every service should follow the same i
 │  │  ├─ middleware.go
 │  │  └─ <capability>_handler.go
 │  ├─ infra/
-│  │  ├─ postgres/
+│  │  ├─ db/
 │  │  ├─ mqtt/
 │  │  ├─ redis/
 │  │  ├─ clients/
@@ -269,7 +269,7 @@ Concrete infrastructure adapters.
 
 Examples:
 
-- Postgres repositories
+- database repositories
 - Redis-backed caches
 - MQTT clients and publishers
 - HTTP clients to other services
@@ -280,10 +280,13 @@ This is where concrete code that talks to the outside world lives.
 
 Typical subfolders:
 
-- `infra/postgres`
+- `infra/db`
+- `infra/postgres` only when backend lock-in is intentional
 - `infra/mqtt`
 - `infra/redis`
 - `infra/clients`
+
+Prefer backend-neutral names like `db` when the service should be free to swap the concrete SQL backend later without a package rename.
 
 #### `internal/<capability>`
 
@@ -347,14 +350,17 @@ If a capability handler grows too large, split by use case:
 
 ### Infrastructure packages
 
-Name implementation files after the backend or responsibility:
+Name implementation files after the responsibility first, and after the backend only when that detail is intentionally part of the package contract:
 
-- `postgres_repository.go`
+- `repository.go`
+- `sql_repository.go`
 - `mqtt_publisher.go`
 - `redis_cache.go`
 - `marketplace_client.go`
 
-If a package has only one implementation, backend-specific file names are still clearer than generic `repository.go`.
+If a package has only one implementation inside a focused package like `infra/db`, generic names like `repository.go` are preferred.
+
+Use backend-specific file names only when the implementation detail must remain visible.
 
 ---
 
@@ -367,7 +373,7 @@ Use constructor injection.
 Example pattern:
 
 ```go
-repo := postgres.NewUserRepository(db)
+repo := db.NewRepository(sqlDB)
 publisher := mqtt.NewDevicePublisher(client)
 svc := users.NewService(repo, publisher, clock)
 handler := http.NewUsersHandler(svc)
@@ -500,7 +506,7 @@ Examples:
 
 ### 3. Persistence models / row mapping
 
-These live in `internal/infra/postgres` or the relevant infrastructure package.
+These live in `internal/infra/db` or the relevant infrastructure package.
 They represent database storage concerns.
 
 Examples:
@@ -570,7 +576,7 @@ internal/
 ├─ app/
 ├─ http/
 ├─ infra/
-│  ├─ postgres/
+│  ├─ db/
 │  ├─ redis/
 │  └─ clients/
 ├─ users/
@@ -597,7 +603,7 @@ internal/
 ├─ http/
 ├─ infra/
 │  ├─ mqtt/
-│  ├─ postgres/
+│  ├─ db/
 │  ├─ redis/
 │  └─ clients/
 ├─ ingest/
@@ -892,7 +898,7 @@ internal/
 │  ├─ <capability-a>_handler.go
 │  └─ <capability-b>_handler.go
 ├─ infra/
-│  ├─ postgres/
+│  ├─ db/
 │  ├─ redis/
 │  └─ clients/
 ├─ <capability-a>/
@@ -913,7 +919,7 @@ internal/
 ├─ http/
 ├─ infra/
 │  ├─ mqtt/
-│  ├─ postgres/
+│  ├─ db/
 │  ├─ redis/
 │  └─ clients/
 ├─ ingest/

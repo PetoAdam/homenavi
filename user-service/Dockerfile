@@ -4,9 +4,10 @@ COPY shared ./shared
 COPY user-service ./user-service
 WORKDIR /src/user-service
 RUN GOWORK=off go mod download
-RUN GOWORK=off go build -o /out/user-service
+RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -o /out/user-service ./cmd/user-service
 
 FROM alpine:3.22
+RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /out/user-service ./user-service
 EXPOSE 8001

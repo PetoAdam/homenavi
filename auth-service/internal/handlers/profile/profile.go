@@ -5,17 +5,18 @@ import (
 	"log/slog"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type ProfileHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewProfileHandler(authService *services.AuthService, userService *services.UserService) *ProfileHandler {
+func NewProfileHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *ProfileHandler {
 	return &ProfileHandler{
 		authService: authService,
 		userService: userService,
@@ -64,12 +65,12 @@ func (h *ProfileHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type AvatarHandler struct {
-	authService           *services.AuthService
-	userService           *services.UserService
-	profilePictureService *services.ProfilePictureService
+	authService           *authdomain.Service
+	userService           *clientsinfra.UserClient
+	profilePictureService *clientsinfra.ProfilePictureClient
 }
 
-func NewAvatarHandler(authService *services.AuthService, userService *services.UserService, profilePictureService *services.ProfilePictureService) *AvatarHandler {
+func NewAvatarHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, profilePictureService *clientsinfra.ProfilePictureClient) *AvatarHandler {
 	return &AvatarHandler{
 		authService:           authService,
 		userService:           userService,

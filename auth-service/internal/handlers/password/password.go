@@ -5,19 +5,20 @@ import (
 	"log/slog"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type ResetHandler struct {
-	authService  *services.AuthService
-	userService  *services.UserService
-	emailService *services.EmailService
+	authService  *authdomain.Service
+	userService  *clientsinfra.UserClient
+	emailService *clientsinfra.EmailClient
 }
 
-func NewResetHandler(authService *services.AuthService, userService *services.UserService, emailService *services.EmailService) *ResetHandler {
+func NewResetHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, emailService *clientsinfra.EmailClient) *ResetHandler {
 	return &ResetHandler{
 		authService:  authService,
 		userService:  userService,
@@ -97,11 +98,11 @@ func (h *ResetHandler) HandlePasswordResetConfirm(w http.ResponseWriter, r *http
 }
 
 type ChangeHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewChangeHandler(authService *services.AuthService, userService *services.UserService) *ChangeHandler {
+func NewChangeHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *ChangeHandler {
 	return &ChangeHandler{
 		authService: authService,
 		userService: userService,

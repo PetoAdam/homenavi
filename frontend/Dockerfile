@@ -7,7 +7,7 @@ RUN npm ci --no-audit --no-fund
 COPY . ./
 RUN npm run build
 
-FROM cgr.dev/chainguard/go:latest-dev AS server-build
+FROM golang:1.26.1-alpine3.22 AS server-build
 WORKDIR /src
 COPY proxy/go.mod ./
 COPY proxy/main.go ./

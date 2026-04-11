@@ -12,20 +12,21 @@ import (
 
 	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/PetoAdam/homenavi/shared/hdp"
-	"github.com/PetoAdam/homenavi/shared/mqttx"
 	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
+	dbinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/db"
+	mqttinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/mqtt"
+	redisinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/redis"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/model"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
-	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/store"
 )
 
 type ZigbeeAdapter struct {
-	client    *mqttx.Client
-	repo      *store.Repository
-	cache     *store.StateCache
+	client    *mqttinfra.Client
+	repo      *dbinfra.Repository
+	cache     *redisinfra.StateCache
 	adapterID string
 
 	ctx    context.Context
@@ -73,7 +74,7 @@ var deviceStateTopic = regexp.MustCompile(`^zigbee2mqtt/([^/]+)$`)
 
 var zigbeeIEEEExternal = regexp.MustCompile(`^0x[0-9a-f]{16}$`)
 
-func New(client *mqttx.Client, repo *store.Repository, cache *store.StateCache) *ZigbeeAdapter {
+func New(client *mqttinfra.Client, repo *dbinfra.Repository, cache *redisinfra.StateCache) *ZigbeeAdapter {
 	refresh := envx.Bool("ZIGBEE_ADAPTER_REFRESH_STATES", envx.Bool("DEVICE_HUB_REFRESH_STATES", true))
 	adapterID := envx.String("ZIGBEE_ADAPTER_ID", envx.String("DEVICE_HUB_ZIGBEE_ADAPTER_ID", "zigbee"))
 	return &ZigbeeAdapter{
@@ -362,7 +363,7 @@ func (z *ZigbeeAdapter) Stop() {
 	_ = z.publishStatus("offline", "shutdown")
 }
 
-func (z *ZigbeeAdapter) subscribe(topic string, handler mqttx.Handler) error {
+func (z *ZigbeeAdapter) subscribe(topic string, handler mqttinfra.Handler) error {
 	if err := z.client.Subscribe(topic, handler); err != nil {
 		return err
 	}

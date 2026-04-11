@@ -5,7 +5,7 @@ COPY shared ./shared
 COPY email-service ./email-service
 WORKDIR /src/email-service
 RUN GOWORK=off go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -a -installsuffix cgo -o /out/main .
+RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -a -installsuffix cgo -o /out/main ./cmd/email-service
 
 # Final stage
 FROM alpine:3.22

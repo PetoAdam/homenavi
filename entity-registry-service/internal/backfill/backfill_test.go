@@ -7,19 +7,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
+	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-func newTestRepo(t *testing.T) *store.Repo {
+func newTestRepo(t *testing.T) *dbinfra.Repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	repo, err := store.New(db)
+	repo, err := dbinfra.New(db)
 	if err != nil {
 		t.Fatalf("init repo: %v", err)
 	}

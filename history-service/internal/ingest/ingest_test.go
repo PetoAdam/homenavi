@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PetoAdam/homenavi/history-service/internal/store"
+	dbinfra "github.com/PetoAdam/homenavi/history-service/internal/infra/db"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -22,7 +22,7 @@ func (m fakeMsg) Topic() string   { return m.topic }
 func (m fakeMsg) Payload() []byte { return m.payload }
 func (m fakeMsg) Retained() bool  { return m.retained }
 
-func openRepo(t *testing.T) *store.Repo {
+func openRepo(t *testing.T) *dbinfra.Repository {
 	t.Helper()
 	// Use a unique in-memory DB per test (still shared cache within that DB)
 	// to avoid cross-test contamination when tests run in parallel.
@@ -31,7 +31,7 @@ func openRepo(t *testing.T) *store.Repo {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	repo, err := store.New(db)
+	repo, err := dbinfra.New(db)
 	if err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

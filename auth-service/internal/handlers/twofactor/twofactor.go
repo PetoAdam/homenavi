@@ -5,20 +5,21 @@ import (
 	"log/slog"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 
 	"github.com/pquerna/otp/totp"
 )
 
 type SetupHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewSetupHandler(authService *services.AuthService, userService *services.UserService) *SetupHandler {
+func NewSetupHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *SetupHandler {
 	return &SetupHandler{
 		authService: authService,
 		userService: userService,
@@ -87,11 +88,11 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 }
 
 type VerifyHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewVerifyHandler(authService *services.AuthService, userService *services.UserService) *VerifyHandler {
+func NewVerifyHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *VerifyHandler {
 	return &VerifyHandler{
 		authService: authService,
 		userService: userService,
@@ -162,12 +163,12 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 }
 
 type EmailHandler struct {
-	authService  *services.AuthService
-	userService  *services.UserService
-	emailService *services.EmailService
+	authService  *authdomain.Service
+	userService  *clientsinfra.UserClient
+	emailService *clientsinfra.EmailClient
 }
 
-func NewEmailHandler(authService *services.AuthService, userService *services.UserService, emailService *services.EmailService) *EmailHandler {
+func NewEmailHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, emailService *clientsinfra.EmailClient) *EmailHandler {
 	return &EmailHandler{
 		authService:  authService,
 		userService:  userService,

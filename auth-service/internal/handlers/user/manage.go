@@ -6,17 +6,18 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 type ManageHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewManageHandler(authService *services.AuthService, userService *services.UserService) *ManageHandler {
+func NewManageHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *ManageHandler {
 	return &ManageHandler{authService: authService, userService: userService}
 }
 

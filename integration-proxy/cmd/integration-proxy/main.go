@@ -2,64 +2,42 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log"
-	"net/http"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
-	"github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
-	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
-	"github.com/PetoAdam/homenavi/integration-proxy/internal/server"
-	"github.com/PetoAdam/homenavi/shared/envx"
+	"github.com/PetoAdam/homenavi/integration-proxy/internal/app"
 )
 
 func main() {
+	baseCfg := app.LoadConfig()
 	var (
-		listenAddr  = flag.String("listen", ":8099", "listen address")
-		configPath  = flag.String("config", envx.String("INTEGRATIONS_CONFIG_PATH", "/config/integrations.yaml"), "path to integrations yaml")
-		schemaPath  = flag.String("schema", envx.String("INTEGRATIONS_SCHEMA_PATH", "/config/homenavi-integration.schema.json"), "path to integration manifest jsonschema")
-		refresh     = flag.Duration("refresh", 30*time.Second, "manifest refresh interval")
-		updateEvery = flag.Duration("updates-refresh", envx.Duration("INTEGRATIONS_UPDATE_CHECK_INTERVAL", 15*time.Minute), "integration update check interval (0 disables)")
+		listenAddr  = flag.String("listen", baseCfg.ListenAddr, "listen address")
+		configPath  = flag.String("config", baseCfg.ConfigPath, "path to integrations yaml")
+		schemaPath  = flag.String("schema", baseCfg.SchemaPath, "path to integration manifest jsonschema")
+		refresh     = flag.Duration("refresh", baseCfg.RefreshInterval, "manifest refresh interval")
+		updateEvery = flag.Duration("updates-refresh", baseCfg.UpdateCheckInterval, "integration update check interval (0 disables)")
 	)
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "integration-proxy ", log.LstdFlags|log.LUTC)
-	pubKeyPath := envx.String("JWT_PUBLIC_KEY_PATH", "")
-	if pubKeyPath == "" {
-		logger.Fatalf("JWT_PUBLIC_KEY_PATH is required to protect /integrations/*")
-	}
-	pubKey, err := auth.LoadRSAPublicKey(pubKeyPath)
+	cfg := baseCfg
+	cfg.ListenAddr = *listenAddr
+	cfg.ConfigPath = *configPath
+	cfg.SchemaPath = *schemaPath
+	cfg.RefreshInterval = *refresh
+	cfg.UpdateCheckInterval = *updateEvery
+	application, err := app.New(cfg, logger)
 	if err != nil {
-		logger.Fatalf("load JWT public key: %v", err)
-	}
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		logger.Fatalf("load config: %v", err)
+		logger.Fatalf("application init: %v", err)
 	}
 
-	validator, err := server.LoadSchema(*schemaPath)
-	if err != nil {
-		logger.Fatalf("load schema: %v", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	s := server.New(logger, validator, pubKey, *schemaPath, *configPath)
-	for _, ic := range cfg.Integrations {
-		if err := s.AddIntegration(ic); err != nil {
-			logger.Fatalf("add integration %q: %v", ic.ID, err)
-		}
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go s.StartRefreshLoop(ctx, *refresh)
-	go s.StartUpdateLoop(ctx, *updateEvery)
-
-	h := auth.RequireResident(pubKey)(s.Routes())
-	srv := &http.Server{Addr: *listenAddr, Handler: h}
-	logger.Printf("listening on %s", *listenAddr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := application.Run(ctx); err != nil {
 		logger.Fatalf("server error: %v", err)
 	}
 }

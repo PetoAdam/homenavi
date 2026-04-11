@@ -4,19 +4,20 @@ import (
 	"encoding/json"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/constants"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type RefreshHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewRefreshHandler(authService *services.AuthService, userService *services.UserService) *RefreshHandler {
+func NewRefreshHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *RefreshHandler {
 	return &RefreshHandler{
 		authService: authService,
 		userService: userService,

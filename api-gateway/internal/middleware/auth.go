@@ -3,9 +3,9 @@ package middleware
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/json"
 	"net/http"
 	"os"
-	"encoding/json"
 
 	"github.com/golang-jwt/jwt/v5"
 )

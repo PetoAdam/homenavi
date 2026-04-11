@@ -5,17 +5,18 @@ import (
 	"log/slog"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type DeleteHandler struct {
-	authService *services.AuthService
-	userService *services.UserService
+	authService *authdomain.Service
+	userService *clientsinfra.UserClient
 }
 
-func NewDeleteHandler(authService *services.AuthService, userService *services.UserService) *DeleteHandler {
+func NewDeleteHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *DeleteHandler {
 	return &DeleteHandler{
 		authService: authService,
 		userService: userService,

@@ -5,19 +5,20 @@ import (
 	"log/slog"
 	"net/http"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/requests"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/responses"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 	"github.com/PetoAdam/homenavi/auth-service/pkg/errors"
 )
 
 type VerificationHandler struct {
-	authService  *services.AuthService
-	userService  *services.UserService
-	emailService *services.EmailService
+	authService  *authdomain.Service
+	userService  *clientsinfra.UserClient
+	emailService *clientsinfra.EmailClient
 }
 
-func NewVerificationHandler(authService *services.AuthService, userService *services.UserService, emailService *services.EmailService) *VerificationHandler {
+func NewVerificationHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, emailService *clientsinfra.EmailClient) *VerificationHandler {
 	return &VerificationHandler{
 		authService:  authService,
 		userService:  userService,

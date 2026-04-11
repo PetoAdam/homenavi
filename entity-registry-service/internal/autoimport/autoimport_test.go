@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/PetoAdam/homenavi/entity-registry-service/internal/store"
+	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -16,7 +16,7 @@ func TestAutoImport_DeviceRemovedDeletesBoundDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	repo, err := store.New(db)
+	repo, err := dbinfra.New(db)
 	if err != nil {
 		t.Fatalf("new repo: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestAutoImport_DeviceRemovedUnbindsWhenMultipleBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	repo, err := store.New(db)
+	repo, err := dbinfra.New(db)
 	if err != nil {
 		t.Fatalf("new repo: %v", err)
 	}

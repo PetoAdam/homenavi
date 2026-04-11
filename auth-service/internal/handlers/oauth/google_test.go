@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 )
 
 type fakeGoogleAuthService struct {
@@ -21,9 +21,9 @@ func (f *fakeGoogleAuthService) ValidateOAuthState(state string) error {
 	return nil
 }
 
-func (f *fakeGoogleAuthService) ExchangeGoogleOAuthCode(code, redirectURI string) (*services.GoogleUserInfo, error) {
+func (f *fakeGoogleAuthService) ExchangeGoogleOAuthCode(code, redirectURI string) (*authdomain.GoogleUserInfo, error) {
 	f.exchangeCalled = true
-	return &services.GoogleUserInfo{ID: "google-123", Email: "locked@example.com"}, nil
+	return &authdomain.GoogleUserInfo{ID: "google-123", Email: "locked@example.com"}, nil
 }
 
 func (f *fakeGoogleAuthService) IssueAccessToken(user *entities.User) (string, error) {
@@ -52,7 +52,7 @@ func (f *fakeGoogleUserService) LinkGoogleID(userID, googleID string) error {
 	return nil
 }
 
-func (f *fakeGoogleUserService) CreateGoogleUser(userInfo *services.GoogleUserInfo) (*entities.User, error) {
+func (f *fakeGoogleUserService) CreateGoogleUser(userInfo *authdomain.GoogleUserInfo) (*entities.User, error) {
 	return nil, http.ErrNoLocation
 }
 

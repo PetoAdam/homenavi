@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PetoAdam/homenavi/api-gateway/internal/config"
+	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -20,7 +20,7 @@ func TestMakeRestProxyHandler_WildcardPreservesSuffix(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	route := config.RouteConfig{
+	route := gateway.RouteConfig{
 		Path:     "/api/hdp/devices/*",
 		Upstream: upstream.URL + "/api/hdp/devices/*",
 		Methods:  []string{http.MethodPost},

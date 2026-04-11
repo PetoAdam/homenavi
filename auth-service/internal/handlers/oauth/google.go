@@ -6,14 +6,15 @@ import (
 	"net/http"
 	"time"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/constants"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/models/entities"
-	"github.com/PetoAdam/homenavi/auth-service/internal/services"
 )
 
 type googleAuthService interface {
 	ValidateOAuthState(state string) error
-	ExchangeGoogleOAuthCode(code, redirectURI string) (*services.GoogleUserInfo, error)
+	ExchangeGoogleOAuthCode(code, redirectURI string) (*authdomain.GoogleUserInfo, error)
 	IssueAccessToken(user *entities.User) (string, error)
 	IssueRefreshToken(userID string) (string, error)
 }
@@ -22,7 +23,7 @@ type googleUserService interface {
 	GetUserByEmail(email string) (*entities.User, error)
 	GetUserByGoogleID(googleID string) (*entities.User, error)
 	LinkGoogleID(userID, googleID string) error
-	CreateGoogleUser(userInfo *services.GoogleUserInfo) (*entities.User, error)
+	CreateGoogleUser(userInfo *authdomain.GoogleUserInfo) (*entities.User, error)
 }
 
 type GoogleHandler struct {
@@ -36,6 +37,8 @@ func NewGoogleHandler(authService googleAuthService, userService googleUserServi
 		userService: userService,
 	}
 }
+
+var _ googleUserService = (*clientsinfra.UserClient)(nil)
 
 func redirectOAuthLocked(w http.ResponseWriter, r *http.Request) {
 	// Keep the OAuth callback contract: redirect to frontend with an error code.

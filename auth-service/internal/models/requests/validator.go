@@ -43,17 +43,44 @@ func passwordPolicyCheck(pw string) (bool, []string) {
 	var repeatCount int
 	var lastRune rune
 	for i, r := range pw {
-		if r >= 'a' && r <= 'z' { hasLower = true }
-		if r >= 'A' && r <= 'Z' { hasUpper = true }
-		if r >= '0' && r <= '9' { hasDigit = true }
-		if r == ' ' || r == '\t' || r == '\n' { violations = append(violations, "no whitespace") ; break }
-		if i == 0 { lastRune = r; repeatCount = 1; continue }
-		if r == lastRune { repeatCount++ } else { lastRune = r; repeatCount = 1 }
-		if repeatCount == 3 { violations = append(violations, "no 3+ consecutive identical chars") ; break }
+		if r >= 'a' && r <= 'z' {
+			hasLower = true
+		}
+		if r >= 'A' && r <= 'Z' {
+			hasUpper = true
+		}
+		if r >= '0' && r <= '9' {
+			hasDigit = true
+		}
+		if r == ' ' || r == '\t' || r == '\n' {
+			violations = append(violations, "no whitespace")
+			break
+		}
+		if i == 0 {
+			lastRune = r
+			repeatCount = 1
+			continue
+		}
+		if r == lastRune {
+			repeatCount++
+		} else {
+			lastRune = r
+			repeatCount = 1
+		}
+		if repeatCount == 3 {
+			violations = append(violations, "no 3+ consecutive identical chars")
+			break
+		}
 	}
-	if !hasLower { violations = append(violations, "missing lowercase letter") }
-	if !hasUpper { violations = append(violations, "missing uppercase letter") }
-	if !hasDigit { violations = append(violations, "missing digit") }
+	if !hasLower {
+		violations = append(violations, "missing lowercase letter")
+	}
+	if !hasUpper {
+		violations = append(violations, "missing uppercase letter")
+	}
+	if !hasDigit {
+		violations = append(violations, "missing digit")
+	}
 	return len(violations) == 0, violations
 }
 
@@ -66,7 +93,9 @@ func IsValidPassword(password string) bool {
 // PasswordPolicyError builds a human-friendly error string for a password that failed validation.
 func PasswordPolicyError(password string) string {
 	_, violations := passwordPolicyCheck(password)
-	if len(violations) == 0 { return "" }
+	if len(violations) == 0 {
+		return ""
+	}
 	return "password does not meet policy: " + strings.Join(violations, ", ")
 }
 
