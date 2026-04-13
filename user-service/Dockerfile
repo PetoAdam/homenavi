@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 FROM golang:1.26.1-alpine3.22 AS builder
 WORKDIR /src
 COPY shared ./shared
@@ -9,6 +11,6 @@ RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -o /out/user-service ./cmd/user
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
-COPY --from=builder /out/user-service ./user-service
+COPY --from=builder /out/user-service /app/user-service
 EXPOSE 8001
-CMD ["./user-service"]
+ENTRYPOINT ["/app/user-service"]
