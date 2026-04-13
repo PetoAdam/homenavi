@@ -1,14 +1,16 @@
-FROM golang:1.24-alpine AS builder
-WORKDIR /app
-RUN apk add --no-cache ca-certificates
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN go build -o automation-service ./cmd/automation-service
+# syntax=docker/dockerfile:1
 
-FROM alpine:3.20
+FROM golang:1.26.1-alpine3.22 AS builder
+WORKDIR /src
+COPY shared ./shared
+COPY automation-service ./automation-service
+WORKDIR /src/automation-service
+RUN GOWORK=off go mod download
+RUN CGO_ENABLED=0 GOOS=linux GOWORK=off go build -o /out/automation-service ./cmd/automation-service
+
+FROM alpine:3.22
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
-COPY --from=builder /app/automation-service /app/automation-service
+COPY --from=builder /out/automation-service /app/automation-service
 EXPOSE 8094
 ENTRYPOINT ["/app/automation-service"]

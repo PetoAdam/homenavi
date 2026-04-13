@@ -137,6 +137,12 @@ cp .env.example .env   # adjust secrets / paths
 docker compose up --build
 ```
 
+If you have a physical Zigbee USB adapter connected and configured, include the optional hardware profile:
+
+```sh
+docker compose --profile zigbee-hardware up --build
+```
+
 Entry Points:
 * Frontend: http://localhost (served via Nginx)
 * API Gateway (REST): http://localhost/api

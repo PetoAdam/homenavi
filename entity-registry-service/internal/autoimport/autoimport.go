@@ -8,23 +8,21 @@ import (
 	"sync"
 	"time"
 
-	"entity-registry-service/internal/mqtt"
-	"entity-registry-service/internal/realtime"
-	"entity-registry-service/internal/store"
-
-	paho "github.com/eclipse/paho.mqtt.golang"
+	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
+	mqttinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/shared/hdp"
 )
 
 const (
-	hdpRoot         = "homenavi/hdp/"
-	hdpMetadataPref = hdpRoot + "device/metadata/"
-	hdpStatePref    = hdpRoot + "device/state/"
-	hdpEventPref    = hdpRoot + "device/event/"
+	hdpMetadataPref = hdp.MetadataPrefix
+	hdpStatePref    = hdp.StatePrefix
+	hdpEventPref    = hdp.EventPrefix
 )
 
 type Runner struct {
-	repo *store.Repo
-	cli  *mqtt.Client
+	repo *dbinfra.Repository
+	cli  *mqttinfra.Client
 	hub  *realtime.Hub
 
 	seenMu sync.Mutex
@@ -204,14 +202,18 @@ func (r *Runner) handleMessage(ctx context.Context, topic string, payload []byte
 	}
 }
 
-func Start(ctx context.Context, repo *store.Repo, brokerURL string, hub *realtime.Hub) *Runner {
+func Start(ctx context.Context, repo *dbinfra.Repository, brokerURL string, hub *realtime.Hub) *Runner {
 	if strings.TrimSpace(brokerURL) == "" {
 		brokerURL = "tcp://mosquitto:1883"
 	}
 	r := &Runner{repo: repo, hub: hub, seen: map[string]time.Time{}}
-	r.cli = mqtt.New(brokerURL, "entity-registry-autoimport")
+	cli, err := mqttinfra.Connect(brokerURL, "entity-registry-autoimport")
+	if err != nil {
+		panic(err)
+	}
+	r.cli = cli
 
-	h := func(_ paho.Client, msg mqtt.Message) {
+	h := func(msg mqttinfra.Message) {
 		r.handleMessage(ctx, msg.Topic(), msg.Payload())
 	}
 
@@ -222,7 +224,7 @@ func Start(ctx context.Context, repo *store.Repo, brokerURL string, hub *realtim
 
 	go func() {
 		<-ctx.Done()
-		r.cli.Disconnect(250)
+		r.cli.Close()
 	}()
 
 	return r

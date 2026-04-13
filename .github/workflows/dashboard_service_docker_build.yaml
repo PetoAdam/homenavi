@@ -1,0 +1,46 @@
+name: Build Dashboard Service Docker Image
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./dashboard-service/go.mod
+          cache-dependency-path: ./dashboard-service/go.sum
+
+      - name: Run static analysis
+        working-directory: ./dashboard-service
+        run: go vet ./...
+
+      - name: Run unit tests
+        working-directory: ./dashboard-service
+        run: go test ./...
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./dashboard-service/Dockerfile
+          push: false
+          tags: homenavi-dashboard-service:latest
+
+      - name: Save Docker image to tarball
+        run: docker save homenavi-dashboard-service:latest | gzip > homenavi-dashboard-service-latest.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homenavi-dashboard-service-latest
+          path: homenavi-dashboard-service-latest.tar.gz

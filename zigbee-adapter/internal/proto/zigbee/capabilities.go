@@ -6,8 +6,8 @@ import (
 	"math"
 	"strings"
 
-	"zigbee-adapter/internal/model"
-	"zigbee-adapter/internal/proto/adapterutil"
+	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
+	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
 )
 
 func extractExposes(raw map[string]any) ([]any, bool) {

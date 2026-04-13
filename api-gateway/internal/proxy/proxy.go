@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"api-gateway/internal/config"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,11 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 )
 
-func MakeRestProxyHandler(route config.RouteConfig) http.HandlerFunc {
+func MakeRestProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 	upstreamURL, err := url.Parse(route.Upstream)
 	if err != nil {
 		panic("Invalid upstream URL: " + route.Upstream)
@@ -59,7 +60,7 @@ func MakeRestProxyHandler(route config.RouteConfig) http.HandlerFunc {
 	}
 }
 
-func MakeWebSocketProxyHandler(route config.RouteConfig) http.HandlerFunc {
+func MakeWebSocketProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 	upstreamURL, err := url.Parse(route.Upstream)
 	if err != nil {
 		panic("Invalid upstream URL: " + route.Upstream)

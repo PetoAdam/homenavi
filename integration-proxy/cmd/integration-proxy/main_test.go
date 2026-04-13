@@ -7,8 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	proxyAuth "homenavi/integration-proxy/internal/auth"
-	"homenavi/integration-proxy/internal/server"
+	httptransport "github.com/PetoAdam/homenavi/integration-proxy/internal/http"
 )
 
 func TestIntegrationProxyRoutesRequireResident(t *testing.T) {
@@ -19,8 +18,8 @@ func TestIntegrationProxyRoutesRequireResident(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 
-	s := server.New(nil, nil, &key.PublicKey, "", "")
-	h := proxyAuth.RequireResident(&key.PublicKey)(s.Routes())
+	s := httptransport.New(nil, nil, &key.PublicKey, "", "")
+	h := httptransport.NewRouter(s, &key.PublicKey)
 
 	req := httptest.NewRequest(http.MethodGet, "/integrations/registry.json", nil)
 	rw := httptest.NewRecorder()

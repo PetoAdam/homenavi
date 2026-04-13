@@ -3,9 +3,9 @@ package middleware
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/json"
 	"net/http"
 	"os"
-	"encoding/json"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -18,7 +18,8 @@ type Claims struct {
 
 type claimsKeyType struct{}
 
-var claimsKey claimsKeyType
+// ClaimsKey is the context key used to store JWT claims.
+var ClaimsKey claimsKeyType
 
 func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 	keyData, err := os.ReadFile(path)
@@ -26,32 +27,6 @@ func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 		return nil, err
 	}
 	return jwt.ParseRSAPublicKeyFromPEM(keyData)
-}
-
-func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenStr := extractToken(r)
-			if tokenStr == "" {
-				writeJSONError(w, http.StatusUnauthorized, "missing token")
-				return
-			}
-			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-				return []byte(secret), nil
-			})
-			if err != nil || !token.Valid {
-				writeJSONError(w, http.StatusUnauthorized, "invalid token")
-				return
-			}
-			claims, ok := token.Claims.(*Claims)
-			if !ok {
-				writeJSONError(w, http.StatusUnauthorized, "invalid claims")
-				return
-			}
-			ctx := context.WithValue(r.Context(), claimsKey, claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
@@ -80,7 +55,7 @@ func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handl
 				writeJSONError(w, http.StatusUnauthorized, "invalid claims")
 				return
 			}
-			ctx := context.WithValue(r.Context(), claimsKey, claims)
+			ctx := context.WithValue(r.Context(), ClaimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -98,7 +73,7 @@ func RoleAtLeastMiddleware(required string) func(http.Handler) http.Handler {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := r.Context().Value(claimsKey).(*Claims)
+			claims, ok := r.Context().Value(ClaimsKey).(*Claims)
 			if !ok {
 				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 				return
@@ -132,9 +107,4 @@ func extractToken(r *http.Request) string {
 	}
 
 	return ""
-}
-
-func GetClaims(r *http.Request) *Claims {
-	claims, _ := r.Context().Value(claimsKey).(*Claims)
-	return claims
 }
