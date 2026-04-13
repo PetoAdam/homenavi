@@ -13,6 +13,6 @@ jobs:
     uses: ./.github/workflows/service_release.yml
     with:
       service: thread-adapter
-      context: ./thread-adapter
+      context: .
       dockerfile: ./thread-adapter/Dockerfile
     secrets: inherit

@@ -11,6 +11,21 @@ devices_snapshot.json
 docker-compose-pi.yml
 zigbee2mqtt-data/configuration-pi.yaml
 
+# Go service local binaries
+/api-gateway/api-gateway
+/auth-service/auth-service
+/automation-service/automation-service
+/dashboard-service/dashboard-service
+/device-hub/device-hub
+/email-service/email-service
+/entity-registry-service/entity-registry-service
+/history-service/history-service
+/integration-proxy/integration-proxy
+/thread-adapter/thread-adapter
+/user-service/user-service
+/weather-service/weather-service
+/zigbee-adapter/zigbee-adapter
+
 # Kubernetes local secret files
 k8s/secrets/*.env
 !k8s/secrets/*.env.example
@@ -23,6 +38,11 @@ integrations/**/config/integration.secrets.json
 integrations/secrets/*.secrets.json
 integrations/secrets/*
 !integrations/secrets/.gitkeep
+
+# Integration setup files (local per installation)
+integrations/setup/*.setup.json
+integrations/setup/*
+!integrations/setup/.gitkeep
 
 # Python
 __pycache__/

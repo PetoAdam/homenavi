@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./api-gateway
+          context: .
           file: ./api-gateway/Dockerfile
           push: false
           tags: homenavi-api-gateway:latest

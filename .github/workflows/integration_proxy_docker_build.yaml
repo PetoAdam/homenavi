@@ -31,7 +31,7 @@ jobs:
       - name: Build the Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./integration-proxy
+          context: .
           file: ./integration-proxy/Dockerfile
           push: false
           tags: homenavi-integration-proxy:latest
