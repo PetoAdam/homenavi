@@ -136,6 +136,7 @@ export default function WidgetSettingsModal({
   const { devices: realtimeDevices } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
     metadataMode: 'ws',
+    accessToken,
   });
   const { devices: ersDevices, loading: ersLoading } = useErsInventory({
     enabled: Boolean(isResidentOrAdmin && accessToken),

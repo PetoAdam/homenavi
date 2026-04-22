@@ -9,7 +9,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("THREAD_ADAPTER_VERSION", "1.2.3")
 
 	cfg := LoadConfig()
-	if cfg.Port != "9999" || cfg.MQTTBrokerURL != "mqtt://broker:1883" || cfg.AdapterID != "adapter-x" || cfg.Version != "1.2.3" {
+	if cfg.Port != "9999" || cfg.MQTT.BrokerURL != "mqtt://broker:1883" || cfg.AdapterID != "adapter-x" || cfg.Version != "1.2.3" {
 		t.Fatalf("unexpected config: %#v", cfg)
 	}
 }

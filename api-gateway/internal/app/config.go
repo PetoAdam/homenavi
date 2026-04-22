@@ -6,14 +6,14 @@ import (
 
 	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
 	"github.com/PetoAdam/homenavi/shared/envx"
+	"github.com/PetoAdam/homenavi/shared/redisx"
 )
 
 // Config holds bootstrap settings for api-gateway.
 type Config struct {
 	Gateway          gateway.Config
 	JWTPublicKeyPath string
-	RedisAddr        string
-	RedisPassword    string
+	Redis            redisx.Config
 	CORSAllowOrigins string
 }
 
@@ -27,11 +27,14 @@ func LoadConfig(args []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	redisConfig, err := redisx.LoadConfig(redisx.Config{Addrs: []string{"redis:6379"}})
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		Gateway:          gatewayConfig,
 		JWTPublicKeyPath: envx.String("JWT_PUBLIC_KEY_PATH", gatewayConfig.JWTPublicKeyPath),
-		RedisAddr:        envx.String("REDIS_ADDR", "redis:6379"),
-		RedisPassword:    envx.String("REDIS_PASSWORD", ""),
+		Redis:            redisConfig,
 		CORSAllowOrigins: envx.String("CORS_ALLOW_ORIGINS", ""),
 	}
 	if strings.TrimSpace(cfg.JWTPublicKeyPath) == "" {

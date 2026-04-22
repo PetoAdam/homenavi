@@ -1,10 +1,13 @@
 package mqttx
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestNormalizeBrokerURL(t *testing.T) {
 	cases := map[string]string{
-		"mqtt://mosquitto:1883":    "tcp://mosquitto:1883",
+		"mqtt://emqx:1883":         "tcp://emqx:1883",
 		"tcp://broker:1883":        "tcp://broker:1883",
 		"ssl://broker:8883":        "ssl://broker:8883",
 		"wss://broker.example/ws":  "wss://broker.example/ws",
@@ -50,5 +53,21 @@ func TestSessionOptionsPersistentSession(t *testing.T) {
 	}
 	if !resumeSubs {
 		t.Fatal("expected resume subscriptions to be enabled")
+	}
+}
+
+func TestReconnectIntervalsDefaultToFastRecovery(t *testing.T) {
+	connectRetryInterval, maxReconnectInterval := reconnectIntervals(Options{AutoReconnect: true, ConnectRetry: true})
+	if connectRetryInterval != 2*time.Second {
+		t.Fatalf("expected default connect retry interval 2s, got %s", connectRetryInterval)
+	}
+	if maxReconnectInterval != 2*time.Second {
+		t.Fatalf("expected default max reconnect interval 2s, got %s", maxReconnectInterval)
+	}
+}
+
+func TestResolvedWriteTimeoutDefaultsToFiveSeconds(t *testing.T) {
+	if got := resolvedWriteTimeout(Options{}); got != 5*time.Second {
+		t.Fatalf("expected default write timeout 5s, got %s", got)
 	}
 }

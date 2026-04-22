@@ -4,9 +4,9 @@ nginx/certs/
 .env
 keys/
 postgres-data/
-mosquitto/config/conf.d/*
-!mosquitto/config/conf.d/.gitkeep
-!mosquitto/config/conf.d/*.example
+emqx/bridge.d/*
+!emqx/bridge.d/.gitkeep
+!emqx/bridge.d/*.example.hocon
 devices_snapshot.json
 docker-compose-pi.yml
 zigbee2mqtt-data/configuration-pi.yaml

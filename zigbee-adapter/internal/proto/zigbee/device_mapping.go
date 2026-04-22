@@ -30,6 +30,9 @@ func (z *ZigbeeAdapter) resolveFriendlyName(external string) string {
 	if external == "" {
 		return ""
 	}
+	if isCanonicalZigbeeExternal(external) {
+		return strings.TrimSpace(external)
+	}
 	norm := adapterutil.NormalizeExternalKey(external)
 	if norm == "" {
 		return ""

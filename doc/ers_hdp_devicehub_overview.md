@@ -56,7 +56,7 @@ See [doc/hdp.md](doc/hdp.md) for the exact topic list and payload envelopes.
   - pairing start/stop
   - other HDP-facing operations
 
-The frontend connects to **MQTT-over-WebSocket** at `/ws/hdp` (via gateway → mosquitto) to receive realtime HDP traffic.
+The frontend connects to **MQTT-over-WebSocket** at `/ws/hdp` (via gateway → EMQX by default) to receive realtime HDP traffic.
 
 ### 3) ERS auto-import: HDP identity → canonical ERS devices
 
@@ -82,12 +82,14 @@ The important behaviors:
   - Emits inventory change events (a change-notification stream).
   - The canonical data is still fetched via REST.
 
-### HDP (device-hub + mosquitto)
+### HDP (device-hub + EMQX)
 
 - REST: `/api/hdp/*` (auth/resident depending on route)
   - Examples: `GET /api/hdp/devices`, `POST /api/hdp/devices/{id}/commands`, pairing endpoints.
 - WebSocket MQTT bridge: `/ws/hdp`
   - The frontend uses this to subscribe to HDP topics.
+
+External MQTT brokers should bridge directly into EMQX with explicit topic directions when interoperability is needed.
 
 ## Frontend: how it uses ERS + HDP
 

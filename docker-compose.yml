@@ -38,8 +38,12 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth-service:${AUTH_SERVICE_PORT}
       - USER_SERVICE_URL=http://user-service:${USER_SERVICE_PORT}
+      - MQTT_WEBSOCKET_UPSTREAM_URL=${MQTT_WEBSOCKET_UPSTREAM_URL:-ws://emqx:8083/mqtt}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - REDIS_MODE=standalone
       - REDIS_ADDR=redis:${REDIS_PORT}
+      - REDIS_MASTER_NAME=${REDIS_MASTER_NAME:-}
+      - REDIS_SENTINEL_ADDRS=${REDIS_SENTINEL_ADDRS:-}
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
@@ -53,6 +57,10 @@ services:
         condition: service_started
       dashboard-service:
         condition: service_started
+      redis:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
     networks:
       - homenavi-network
 
@@ -71,7 +79,10 @@ services:
       - USER_SERVICE_URL=http://user-service:${USER_SERVICE_PORT}
       - ERS_SERVICE_URL=http://entity-registry-service:${ENTITY_REGISTRY_PORT}
       - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
+      - REDIS_MODE=standalone
       - REDIS_ADDR=redis:${REDIS_PORT}
+      - REDIS_MASTER_NAME=${REDIS_MASTER_NAME:-}
+      - REDIS_SENTINEL_ADDRS=${REDIS_SENTINEL_ADDRS:-}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - EMAIL_SERVICE_URL=http://email-service:${EMAIL_SERVICE_PORT}
       - PROFILE_PICTURE_SERVICE_URL=http://profile-picture-service:${PROFILE_PICTURE_SERVICE_PORT}
@@ -87,7 +98,7 @@ services:
       user-service:
         condition: service_started
       redis:
-        condition: service_started
+        condition: service_healthy
       email-service:
         condition: service_started
       profile-picture-service:
@@ -98,6 +109,12 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
   # DEV:
   # ports:
   #   - "6379:6379"
@@ -143,7 +160,6 @@ services:
       - ./nginx/entrypoint.sh:/entrypoint.sh:ro
       - ${NGINX_CERT_ORIGIN}:/etc/nginx/certs/nginx.crt:ro
       - ${NGINX_KEY_ORIGIN}:/etc/nginx/certs/nginx.key:ro
-      - profile-pictures:/uploads
     environment:
       - NGINX_MODE=${NGINX_MODE}
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
@@ -163,6 +179,12 @@ services:
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - homenavi-network
   # DEV:
@@ -186,13 +208,14 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
       postgres:
-        condition: service_started
+        condition: service_healthy
     networks:
       - homenavi-network
     volumes:
@@ -213,12 +236,13 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
       postgres:
-        condition: service_started
+        condition: service_healthy
     networks:
       - homenavi-network
     volumes:
@@ -229,15 +253,54 @@ services:
     pull_policy: if_not_present
     build: ./profile-picture-service
     restart: unless-stopped
+    depends_on:
+      minio-create-bucket:
+        condition: service_completed_successfully
     environment:
       - PROFILE_PICTURE_SERVICE_PORT=${PROFILE_PICTURE_SERVICE_PORT}
-    volumes:
-      - profile-pictures:/uploads
+      - STORAGE_TYPE=${PROFILE_PICTURE_STORAGE_TYPE:-s3}
+      - PROFILE_PICTURE_PUBLIC_BASE_PATH=/api/profile-pictures
+      - STORAGE_S3_ENDPOINT=${PROFILE_PICTURE_STORAGE_S3_ENDPOINT:-http://minio:9000}
+      - STORAGE_S3_REGION=${PROFILE_PICTURE_STORAGE_S3_REGION:-us-east-1}
+      - STORAGE_S3_BUCKET=${PROFILE_PICTURE_STORAGE_S3_BUCKET:-profile-pictures}
+      - STORAGE_S3_ACCESS_KEY=${PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY:?set PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY in .env}
+      - STORAGE_S3_SECRET_KEY=${PROFILE_PICTURE_STORAGE_S3_SECRET_KEY:?set PROFILE_PICTURE_STORAGE_S3_SECRET_KEY in .env}
+      - STORAGE_S3_FORCE_PATH_STYLE=${PROFILE_PICTURE_STORAGE_S3_FORCE_PATH_STYLE:-true}
+      - STORAGE_PRESIGN_EXPIRY_SECONDS=${PROFILE_PICTURE_STORAGE_PRESIGN_EXPIRY_SECONDS:-900}
     networks:
       - homenavi-network
   # DEV:
   # ports:
   #   - "8086:8000"
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY:?set PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY in .env}
+      - MINIO_ROOT_PASSWORD=${PROFILE_PICTURE_STORAGE_S3_SECRET_KEY:?set PROFILE_PICTURE_STORAGE_S3_SECRET_KEY in .env}
+    volumes:
+      - minio_data:/data
+    networks:
+      - homenavi-network
+
+  minio-create-bucket:
+    image: minio/mc:RELEASE.2025-02-21T16-00-46Z
+    restart: "no"
+    depends_on:
+      - minio
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 "${PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY:?set PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY in .env}" "${PROFILE_PICTURE_STORAGE_S3_SECRET_KEY:?set PROFILE_PICTURE_STORAGE_S3_SECRET_KEY in .env}"; do
+          echo "waiting for minio..."
+          sleep 2
+        done
+        mc mb --ignore-existing local/${PROFILE_PICTURE_STORAGE_S3_BUCKET:-profile-pictures}
+    networks:
+      - homenavi-network
 
   email-service:
     image: ghcr.io/petoadam/homenavi-email-service:${HN_VERSION:-latest}
@@ -272,21 +335,32 @@ services:
   # ports:
   #   - "9000:9000"
 
-  mosquitto:
-    image: eclipse-mosquitto:2
+  emqx:
+    image: emqx/emqx:6.1.1
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "emqx ping | grep -q '^pong$'"]
+      interval: 5s
+      timeout: 10s
+      retries: 36
+      start_period: 30s
     networks:
       - homenavi-network
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_logs:/mosquitto/log
-      - ./mosquitto/config/conf.d:/mosquitto/config/conf.d:ro
-      - ./mosquitto/entrypoint.sh:/docker-entrypoint-nochown.sh:ro
-    entrypoint: ["/bin/sh", "/docker-entrypoint-nochown.sh"]
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./emqx/bridge.d:/opt/emqx/etc/homenavi-bridge.d:ro
+      - ./emqx/docker-entrypoint.sh:/opt/emqx/etc/docker-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/opt/emqx/etc/docker-entrypoint.sh"]
+    environment:
+      - EMQX_NODE__NAME=emqx@127.0.0.1
+      - EMQX_CLUSTER__DISCOVERY_STRATEGY=manual
+      - EMQX_CLUSTER__STATIC__SEEDS=
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=${EMQX_DASHBOARD_USERNAME:-admin}
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-public}
+      - EMQX_LISTENERS__WS__DEFAULT__BIND=0.0.0.0:8083
     ports:
       - "${MQTT_HOST_PORT}:${MQTT_PORT}"
-      - "${MQTT_WS_HOST_PORT}:${MQTT_WS_PORT}" # optional websocket listener if enabled in config
+      - "${MQTT_WS_HOST_PORT}:8083"
 
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
@@ -294,7 +368,8 @@ services:
       - zigbee-hardware
     restart: unless-stopped
     depends_on:
-      - mosquitto
+      emqx:
+        condition: service_healthy
     networks:
       - homenavi-network
     environment:
@@ -314,18 +389,19 @@ services:
       dockerfile: ./device-hub/Dockerfile
     restart: unless-stopped
     depends_on:
-      mosquitto:
-        condition: service_started
+      emqx:
+        condition: service_healthy
       postgres:
-        condition: service_started
+        condition: service_healthy
     environment:
       - DEVICE_HUB_PORT=${DEVICE_HUB_PORT}
-      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - DEVICE_HUB_ENABLE_THREAD=true
       - LOG_LEVEL=${LOG_LEVEL}
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
@@ -341,16 +417,20 @@ services:
       dockerfile: ./entity-registry-service/Dockerfile
     restart: unless-stopped
     depends_on:
-      - postgres
+      emqx:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       - ENTITY_REGISTRY_PORT=${ENTITY_REGISTRY_PORT}
-      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
       - DEVICE_HUB_URL=http://device-hub:${DEVICE_HUB_PORT}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
     networks:
       - homenavi-network
     # No ports exposed; internal only
@@ -363,20 +443,27 @@ services:
       dockerfile: ./zigbee-adapter/Dockerfile
     restart: unless-stopped
     depends_on:
-      - mosquitto
-      - postgres
-      - redis
+      emqx:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       - ZIGBEE_ADAPTER_PORT=${ZIGBEE_ADAPTER_PORT}
       - ZIGBEE_ADAPTER_ID=zigbee-adapter-1
       - ZIGBEE_ADAPTER_VERSION=dev
-      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
+      - REDIS_MODE=standalone
       - REDIS_ADDR=redis:${REDIS_PORT}
+      - REDIS_MASTER_NAME=${REDIS_MASTER_NAME:-}
+      - REDIS_SENTINEL_ADDRS=${REDIS_SENTINEL_ADDRS:-}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - LOG_LEVEL=${LOG_LEVEL}
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
@@ -391,10 +478,11 @@ services:
       dockerfile: ./thread-adapter/Dockerfile
     restart: unless-stopped
     depends_on:
-      - mosquitto
+      emqx:
+        condition: service_healthy
     environment:
       - THREAD_ADAPTER_PORT=${THREAD_ADAPTER_PORT}
-      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
       - THREAD_ADAPTER_ID=thread-adapter-1
       - THREAD_ADAPTER_VERSION=dev
       - LOG_LEVEL=${LOG_LEVEL}
@@ -410,11 +498,13 @@ services:
       dockerfile: ./history-service/Dockerfile
     restart: unless-stopped
     depends_on:
-      - mosquitto
-      - postgres
+      emqx:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       - HISTORY_SERVICE_PORT=${HISTORY_SERVICE_PORT}
-      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
       - HISTORY_SERVICE_MQTT_CLIENT_ID=${HISTORY_SERVICE_MQTT_CLIENT_ID:-}
       - HISTORY_INGEST_RETAINED=${HISTORY_INGEST_RETAINED}
       - HISTORY_HDP_STATE_PREFIX=${HISTORY_HDP_STATE_PREFIX}
@@ -438,13 +528,13 @@ services:
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
-      mosquitto:
-        condition: service_started
+      emqx:
+        condition: service_healthy
       postgres:
-        condition: service_started
+        condition: service_healthy
     environment:
       - AUTOMATION_SERVICE_PORT=${AUTOMATION_SERVICE_PORT}
-      - MQTT_BROKER_URL=mqtt://mosquitto:${MQTT_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
       - AUTOMATION_SERVICE_MQTT_CLIENT_ID=${AUTOMATION_SERVICE_MQTT_CLIENT_ID:-}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -512,9 +602,7 @@ services:
 volumes:
   postgres_data:
   auth_postgres_data:
-  profile-pictures:
-  mosquitto_data:
-  mosquitto_logs:
+  minio_data:
 
 networks:
   homenavi-network:

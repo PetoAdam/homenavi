@@ -32,6 +32,8 @@ func TestRouterHealth(t *testing.T) {
 		HandlePatchUser:            noop,
 		HandleLockoutUser:          noop,
 		HandleGenerateAvatar:       noop,
+		HandleCreateUploadURL:      noop,
+		HandleCompleteUpload:       noop,
 		HandleUploadProfilePicture: noop,
 		HandleGoogleOAuthLogin:     noop,
 		HandleGoogleOAuthCallback:  noop,

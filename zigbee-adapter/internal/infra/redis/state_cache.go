@@ -2,27 +2,22 @@ package redis
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/redisx"
 	redisv9 "github.com/redis/go-redis/v9"
 )
 
-type Client = redisv9.Client
+type Client = redisv9.UniversalClient
 
-type StateCache struct{ rdb *redisv9.Client }
+type StateCache struct{ rdb redisv9.UniversalClient }
 
-func Connect(addr, password string) (*Client, error) {
-	rdb := redisv9.NewClient(&redisv9.Options{Addr: addr, Password: password})
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		_ = rdb.Close()
-		return nil, fmt.Errorf("ping redis: %w", err)
-	}
-	return rdb, nil
+func Connect(cfg redisx.Config) (Client, error) {
+	return redisx.Connect(context.Background(), cfg)
 }
 
-func NewStateCache(rdb *Client) *StateCache {
+func NewStateCache(rdb Client) *StateCache {
 	return &StateCache{rdb: rdb}
 }
 

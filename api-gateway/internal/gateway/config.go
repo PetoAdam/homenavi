@@ -2,11 +2,15 @@ package gateway
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/spf13/viper"
 )
+
+var routeEnvPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 
 type RouteConfig struct {
 	Path      string   `mapstructure:"path"`
@@ -64,6 +68,10 @@ func LoadConfig(configPath, routesDir string) (Config, error) {
 			if err := v2.UnmarshalKey("routes", &routes); err != nil {
 				return Config{}, fmt.Errorf("failed to unmarshal routes in %s: %w", f, err)
 			}
+			for i := range routes {
+				routes[i].Path = expandRouteValue(routes[i].Path)
+				routes[i].Upstream = expandRouteValue(routes[i].Upstream)
+			}
 			cfg.Routes = append(cfg.Routes, routes...)
 		}
 	}
@@ -73,4 +81,24 @@ func LoadConfig(configPath, routesDir string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func expandRouteValue(value string) string {
+	if value == "" {
+		return ""
+	}
+	expanded := routeEnvPattern.ReplaceAllStringFunc(value, func(match string) string {
+		parts := routeEnvPattern.FindStringSubmatch(match)
+		if len(parts) == 0 {
+			return match
+		}
+		if resolved, ok := os.LookupEnv(parts[1]); ok && resolved != "" {
+			return resolved
+		}
+		if len(parts) >= 4 {
+			return parts[3]
+		}
+		return ""
+	})
+	return os.ExpandEnv(expanded)
 }

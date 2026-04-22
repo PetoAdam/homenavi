@@ -66,6 +66,7 @@ export default function DeviceGraphWidget({
   const { devices: realtimeDevices } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
     metadataMode: 'rest',
+    accessToken,
   });
 
   const { devices: ersDevices } = useErsInventory({

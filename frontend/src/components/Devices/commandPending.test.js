@@ -3,16 +3,57 @@ import { describe, expect, it } from 'vitest';
 import { applyPendingStateToDevice, shouldClearPendingFromDevice } from './commandPending';
 
 describe('shouldClearPendingFromDevice', () => {
-  it('clears pending when the device-hub emits a matching terminal lifecycle status', () => {
+  it('clears pending when the device-hub emits applied and the live state matches the expectation', () => {
     const pending = {
       corr: 'corr-123',
+      baselineState: { state: false },
+      expectedState: { state: true },
     };
 
     const device = {
+      state: { state: true },
       lastCommandResult: {
         corr: 'corr-123',
         origin: 'device-hub',
         status: 'applied',
+      },
+    };
+
+    expect(shouldClearPendingFromDevice(pending, device)).toBe(true);
+  });
+
+  it('keeps pending when applied arrives before the state changes', () => {
+    const pending = {
+      corr: 'corr-stale',
+      baselineState: { state: false },
+      expectedState: { state: true },
+    };
+
+    const device = {
+      state: { state: false },
+      lastCommandResult: {
+        corr: 'corr-stale',
+        origin: 'device-hub',
+        status: 'applied',
+      },
+    };
+
+    expect(shouldClearPendingFromDevice(pending, device)).toBe(false);
+  });
+
+  it('still clears failed terminal states immediately', () => {
+    const pending = {
+      corr: 'corr-fail',
+      baselineState: { state: false },
+      expectedState: { state: true },
+    };
+
+    const device = {
+      state: { state: false },
+      lastCommandResult: {
+        corr: 'corr-fail',
+        origin: 'device-hub',
+        status: 'failed',
       },
     };
 

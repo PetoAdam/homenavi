@@ -17,14 +17,7 @@ import (
 )
 
 // Config holds database connectivity settings for the current SQL backend.
-type Config struct {
-	Host     string
-	User     string
-	Password string
-	DBName   string
-	Port     string
-	SSLMode  string
-}
+type Config = dbx.PostgresConfig
 
 // Repository is the database-backed users repository implementation.
 type Repository struct {
@@ -32,7 +25,7 @@ type Repository struct {
 }
 
 func New(cfg Config, logger *slog.Logger) (*Repository, error) {
-	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{Host: cfg.Host, User: cfg.User, Password: cfg.Password, DBName: cfg.DBName, Port: cfg.Port, SSLMode: cfg.SSLMode})
+	dsn := dbx.BuildPostgresDSN(cfg)
 	var db *gorm.DB
 	var err error
 	for i := 0; i < 30; i++ {

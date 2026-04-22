@@ -26,7 +26,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open repository: %w", err)
 	}
-	mqttClient, err := mqttinfra.Connect(cfg.MQTTBrokerURL)
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT.BrokerURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}

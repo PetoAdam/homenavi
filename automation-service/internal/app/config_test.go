@@ -16,7 +16,7 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if cfg.Port != "9999" || cfg.LogLevel != "debug" || cfg.MQTTBrokerURL != "mqtt://broker:1883" {
+	if cfg.Port != "9999" || cfg.LogLevel != "debug" || cfg.MQTT.BrokerURL != "mqtt://broker:1883" {
 		t.Fatalf("unexpected config: %#v", cfg)
 	}
 	if cfg.DB.Host != "db" || cfg.DB.DBName != "automation" {

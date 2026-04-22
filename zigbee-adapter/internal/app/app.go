@@ -20,7 +20,7 @@ type App struct {
 	server      *http.Server
 	adapter     *zigbee.ZigbeeAdapter
 	mqtt        *mqttinfra.Client
-	rdb         *redisinfra.Client
+	rdb         redisinfra.Client
 	shutdownObs func()
 	logger      *slog.Logger
 }
@@ -30,12 +30,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open repository: %w", err)
 	}
-	rdb, err := redisinfra.Connect(cfg.RedisAddr, cfg.RedisPassword)
+	rdb, err := redisinfra.Connect(cfg.Redis)
 	if err != nil {
 		return nil, fmt.Errorf("connect redis: %w", err)
 	}
 	cache := redisinfra.NewStateCache(rdb)
-	mqttClient, err := mqttinfra.Connect(cfg.MQTTBrokerURL, "zigbee-adapter")
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT.BrokerURL, "zigbee-adapter")
 	if err != nil {
 		_ = rdb.Close()
 		return nil, fmt.Errorf("connect mqtt: %w", err)

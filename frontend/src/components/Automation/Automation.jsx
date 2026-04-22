@@ -186,7 +186,7 @@ function Automation() {
     devices: realtimeDevices,
     loading: realtimeLoading,
     error: realtimeError,
-  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest' });
+  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest', accessToken });
 
   const {
     devices: ersMergedDevices,

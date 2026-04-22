@@ -45,7 +45,7 @@ kubectl get nodes
 Use the repo script to deploy MVP in a single namespace (`homenavi`) plus marketplace:
 
 ```bash
-cd /home/adam/Projects/homenavi
+cd /path/to/homenavi
 ./scripts/deploy-minikube.sh
 ```
 
@@ -61,11 +61,11 @@ Optional flags:
 # keep previously deployed plane releases (default behavior is cleanup)
 ./scripts/deploy-minikube.sh --no-cleanup-planes
 
-# enable mosquitto bridge config from local file
-./scripts/deploy-minikube.sh --with-bridge
+# inject a local EMQX bridge snippet into the chart
+./scripts/deploy-minikube.sh --bridge-config-file ./emqx/bridge.d/20-external-bridge.hocon
 
 # use explicit env file for Kubernetes runtime secret ingestion
-./scripts/deploy-minikube.sh --env-file /home/adam/Projects/homenavi/.env
+./scripts/deploy-minikube.sh --env-file ./.env
 
 # auto-start frontend + marketplace port-forwards on first free ports
 ./scripts/deploy-minikube.sh --start-port-forwards
@@ -79,6 +79,8 @@ The script now suggests (and optionally starts) consistent preferred host ports:
 If either preferred port is busy, it automatically picks the next free port.
 
 The script creates/updates a Kubernetes secret (`homenavi-runtime-env` by default) from the env file and injects it into all chart services via `envFrom`.
+
+It also installs the CloudNativePG operator automatically when the cluster does not already have the required CRDs.
 
 The rest of this runbook documents the equivalent manual commands.
 
@@ -106,11 +108,18 @@ openssl rsa -in /tmp/homenavi-keys/jwt_private.pem -pubout -out /tmp/homenavi-ke
 Install/upgrade core chart:
 
 ```bash
-cd /home/adam/Projects/homenavi
+cd /path/to/homenavi
 helm upgrade --install homenavi ./helm/homenavi \
 	-n homenavi --create-namespace \
 	--set-file jwt.privateKey=/tmp/homenavi-keys/jwt_private.pem \
 	--set-file jwt.publicKey=/tmp/homenavi-keys/jwt_public.pem
+```
+
+If you are not using the helper script, install CloudNativePG first:
+
+```bash
+kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.1.yaml
+kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=180s
 ```
 
 Quick checks:
@@ -141,7 +150,7 @@ Expected chart target:
 Install/upgrade target command:
 
 ```bash
-cd /home/adam/Projects/homenavi-marketplace
+cd /path/to/homenavi-marketplace
 helm upgrade --install homenavi-marketplace ./helm/homenavi-marketplace -n homenavi-marketplace --create-namespace
 ```
 
@@ -179,7 +188,7 @@ kubectl -n homenavi rollout status deploy/homenavi-integration-proxy
 Alternative (Helm values update + upgrade):
 
 ```bash
-cd /home/adam/Projects/homenavi
+cd /path/to/homenavi
 helm upgrade --install homenavi ./helm/homenavi \
 	-n homenavi \
 	--set-file jwt.privateKey=/tmp/homenavi-keys/jwt_private.pem \
@@ -196,45 +205,32 @@ helm upgrade --install homenavi ./helm/homenavi \
 - Marketplace UI reachable via service port-forward
 - Integration proxy can query marketplace integrations endpoint
 
-## 5.1 Optional: bridge to an existing Zigbee2MQTT broker
+## 5.1 Optional: EMQX bridge snippets
 
-If you already run Zigbee2MQTT outside this cluster, you can bridge Homenavi's in-cluster Mosquitto to that external broker.
+The Helm defaults keep EMQX as the primary broker. If you need bridging, inject one or more `.hocon` snippets into `services.emqx.bridgeConfigFiles`.
 
-Create local bridge config (kept out of git by `.gitignore`):
+Use the fully commented starter at `./emqx/bridge.d/homenavi-bridge.example.hocon`, then add your live snippet to a small values override:
 
-```bash
-mkdir -p /home/adam/Projects/homenavi/mosquitto/config/conf.d
-cat > /home/adam/Projects/homenavi/mosquitto/config/conf.d/bridge.conf <<'EOF'
-connection zigbee-prod
-address 192.168.64.141:1883
-bridge_protocol_version mqttv311
-try_private false
-cleansession false
-remote_clientid homenavi-zigbee-bridge-local
-keepalive_interval 60
-restart_timeout 5 30
-topic zigbee2mqtt/+ in 1
-topic zigbee2mqtt/+/availability in 1
-topic zigbee2mqtt/bridge/# in 1
-topic zigbee2mqtt/+/set out 1
-topic zigbee2mqtt/+/set/# out 1
-topic zigbee2mqtt/bridge/request/# out 1
-EOF
+```yaml
+services:
+  emqx:
+    bridgeConfigFiles:
+      20-external-bridge.hocon: |
+        ## paste your enabled EMQX bridge config here
 ```
 
 Apply with Helm:
 
 ```bash
-cd /home/adam/Projects/homenavi
+cd /path/to/homenavi
 helm upgrade --install homenavi ./helm/homenavi \
 	-n homenavi \
 	--set-file jwt.privateKey=/tmp/homenavi-keys/jwt_private.pem \
 	--set-file jwt.publicKey=/tmp/homenavi-keys/jwt_public.pem \
-	--set services.mosquitto.bridge.enabled=true \
-	--set-file services.mosquitto.bridge.config=./mosquitto/config/conf.d/bridge.conf
+	-f ./bridge-values.yaml
 ```
 
-Disable later by setting `services.mosquitto.bridge.enabled=false` and upgrading again.
+Keep bridge directions explicit. Avoid broad bidirectional mirroring unless loops have been ruled out.
 
 ## 5.2 Secrets management for Helm (from local env file)
 
@@ -245,21 +241,21 @@ Recommended local workflow:
 1. Copy and fill your local env values:
 
 ```bash
-cp /home/adam/Projects/homenavi/k8s/secrets/homenavi.env.example /home/adam/Projects/homenavi/.env
+cp ./k8s/secrets/homenavi.env.example ./.env
 ```
 
 2. Deploy with script (creates/updates runtime secret automatically):
 
 ```bash
-cd /home/adam/Projects/homenavi
-./scripts/deploy-minikube.sh --env-file /home/adam/Projects/homenavi/.env
+cd /path/to/homenavi
+./scripts/deploy-minikube.sh --env-file ./.env
 ```
 
 Manual equivalent:
 
 ```bash
 kubectl -n homenavi create secret generic homenavi-runtime-env \
-	--from-env-file=/home/adam/Projects/homenavi/.env \
+	--from-env-file=./.env \
 	--dry-run=client -o yaml | kubectl apply -f -
 
 helm upgrade --install homenavi ./helm/homenavi \
@@ -277,6 +273,8 @@ This is the path to make features like weather API and Google OAuth receive runt
 - Add runtime behavior integration tests
 - Add verification/validation hardening and release checks
 
+For the current HA-oriented operational patterns, see [doc/helm_ha_operations.md](doc/helm_ha_operations.md).
+
 ## 7) Deployment model note
 
 The maintained local path is a single `homenavi` namespace (plus `homenavi-marketplace`).
@@ -286,5 +284,5 @@ Legacy multi-plane values profiles were removed to reduce drift and restart/debu
 Use:
 
 ```bash
-./scripts/deploy-minikube.sh --env-file /home/adam/Projects/homenavi/.env --start-port-forwards
+./scripts/deploy-minikube.sh --env-file ./.env --start-port-forwards
 ```
