@@ -25,13 +25,13 @@ func NewRootRouter(wsRouter, mainRouter http.Handler) http.Handler {
 	return mux
 }
 
-func NewWebSocketRouter(cfg gateway.Config, redisClient *redis.Client, pubKey *rsa.PublicKey) http.Handler {
+func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) http.Handler {
 	r := chi.NewRouter()
 	registerConfiguredRoutes(r, cfg, redisClient, pubKey)
 	return r
 }
 
-func NewMainRouter(cfg gateway.Config, redisClient *redis.Client, pubKey *rsa.PublicKey, promHandler http.Handler, tracer oteltrace.Tracer, corsAllowOrigins string) http.Handler {
+func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey, promHandler http.Handler, tracer oteltrace.Tracer, corsAllowOrigins string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -63,7 +63,7 @@ func NewMainRouter(cfg gateway.Config, redisClient *redis.Client, pubKey *rsa.Pu
 	return r
 }
 
-func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient *redis.Client, pubKey *rsa.PublicKey) {
+func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) {
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {

@@ -99,10 +99,30 @@ routes:
     methods: [POST]
     access: auth
     type: rest
+  - path: /api/auth/profile/upload-url
+    upstream: http://auth-service:8000/api/auth/profile/upload-url
+    methods: [POST]
+    access: auth
+    type: rest
+  - path: /api/auth/profile/upload-complete
+    upstream: http://auth-service:8000/api/auth/profile/upload-complete
+    methods: [POST]
+    access: auth
+    type: rest
   - path: /api/auth/profile/upload
     upstream: http://auth-service:8000/api/auth/profile/upload
     methods: [POST]
     access: auth
+    type: rest
+  - path: /api/profile-pictures/users/{user_id}/access-url
+    upstream: http://profile-picture-service:8000/profile-pictures/users/{user_id}/access-url
+    methods: [GET]
+    access: public
+    type: rest
+  - path: /api/profile-pictures/users/{user_id}
+    upstream: http://profile-picture-service:8000/profile-pictures/users/{user_id}
+    methods: [GET]
+    access: public
     type: rest
   # User management routes (auth-service consolidated)
   - path: /api/auth/users

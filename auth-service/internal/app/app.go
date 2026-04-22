@@ -31,7 +31,10 @@ type App struct {
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
-	cacheStore := cacheinfra.NewRedisStore(cfg.RedisAddr, cfg.RedisPassword)
+	cacheStore, err := cacheinfra.NewRedisStore(cfg.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("create redis store: %w", err)
+	}
 	authService := authdomain.NewService(authdomain.Config{
 		JWTPrivateKey:           cfg.JWTPrivateKey,
 		AccessTokenTTL:          cfg.AccessTokenTTL,
@@ -93,6 +96,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		HandlePatchUser:            userManageHandler.HandlePatch,
 		HandleLockoutUser:          userManageHandler.HandleLockout,
 		HandleGenerateAvatar:       avatarHandler.HandleGenerateAvatar,
+		HandleCreateUploadURL:      avatarHandler.HandleCreateUploadURL,
+		HandleCompleteUpload:       avatarHandler.HandleCompleteProfilePictureUpload,
 		HandleUploadProfilePicture: avatarHandler.HandleUploadProfilePicture,
 		HandleGoogleOAuthLogin: func(w http.ResponseWriter, r *http.Request) {
 			state, err := authService.GenerateOAuthState()

@@ -23,6 +23,16 @@ function stateChangedFromBaseline(baselineState, currentState) {
   return false;
 }
 
+function stateSatisfiesExpected(expectedState, currentState) {
+  if (!expectedState || typeof expectedState !== 'object') return true;
+  if (!currentState || typeof currentState !== 'object') return false;
+
+  return Object.entries(expectedState).every(([key, expectedValue]) => {
+    const currentValue = currentState[key];
+    return JSON.stringify(currentValue) === JSON.stringify(expectedValue);
+  });
+}
+
 export function createCommandCorrelationId(payload) {
   return (payload && payload.correlation_id)
     || (typeof crypto !== 'undefined' && crypto.randomUUID
@@ -57,7 +67,13 @@ export function shouldClearPendingFromDevice(pending, device) {
   if (!resultMatches) return false;
   if (result?.origin && result.origin !== 'device-hub') return false;
   const status = String(result?.status || '').trim().toLowerCase();
-  return TERMINAL_COMMAND_STATUSES.has(status);
+  if (!TERMINAL_COMMAND_STATUSES.has(status)) return false;
+  if (status !== 'applied') return true;
+
+  const currentState = device?.state;
+  if (stateSatisfiesExpected(pending.expectedState, currentState)) return true;
+  if (stateChangedFromBaseline(pending.baselineState, currentState)) return true;
+  return false;
 }
 
 export function baselineStateFromDevice(device) {

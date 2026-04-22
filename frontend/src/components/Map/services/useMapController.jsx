@@ -94,7 +94,7 @@ export default function useMapController() {
   const {
     devices: realtimeDevices,
     loading: realtimeLoading,
-  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'ws' });
+  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'ws', accessToken });
 
   const {
     devices,

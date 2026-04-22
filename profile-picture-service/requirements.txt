@@ -3,3 +3,4 @@ uvicorn[standard]==0.24.0
 Pillow==10.1.0
 requests==2.31.0
 python-multipart==0.0.9
+boto3==1.39.11

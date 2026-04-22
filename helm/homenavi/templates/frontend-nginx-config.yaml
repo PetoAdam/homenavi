@@ -69,12 +69,6 @@ data:
         add_header Cache-Control "public, max-age=2592000";
       }
 
-      location /uploads/ {
-        alias /uploads/;
-        autoindex off;
-        add_header Cache-Control "public, max-age=3600";
-      }
-
       location /manifest.webmanifest {
         try_files $uri =404;
         add_header Cache-Control "public, max-age=3600";

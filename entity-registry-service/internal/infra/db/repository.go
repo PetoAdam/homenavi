@@ -9,14 +9,7 @@ import (
 )
 
 // Config holds database connectivity settings for the current SQL backend.
-type Config struct {
-	User     string
-	Password string
-	DBName   string
-	Host     string
-	Port     string
-	SSLMode  string
-}
+type Config = dbx.PostgresConfig
 
 // Repository is the database-backed entity registry repository implementation.
 type Repository struct {
@@ -24,7 +17,7 @@ type Repository struct {
 }
 
 func Open(cfg Config) (*gorm.DB, error) {
-	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{User: cfg.User, Password: cfg.Password, DBName: cfg.DBName, Host: cfg.Host, Port: cfg.Port, SSLMode: cfg.SSLMode})
+	dsn := dbx.BuildPostgresDSN(cfg)
 	return gorm.Open(postgres.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
 }
 

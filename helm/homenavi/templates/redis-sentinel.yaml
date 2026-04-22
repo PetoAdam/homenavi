@@ -1,0 +1,211 @@
+{{- if and (eq (include "homenavi.redisProvider" .) "bundled") (eq (include "homenavi.redisMode" .) "sentinel") }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "homenavi.redisHeadlessServiceName" . }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "homenavi.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: sentinel
+      port: {{ include "homenavi.redisSentinelPort" . }}
+      targetPort: {{ include "homenavi.redisSentinelPort" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "homenavi.redisSentinelServiceName" . }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "homenavi.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+  ports:
+    - name: sentinel
+      port: {{ include "homenavi.redisSentinelPort" . }}
+      targetPort: {{ include "homenavi.redisSentinelPort" . }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "homenavi.redisStatefulSetName" . }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+spec:
+  serviceName: {{ include "homenavi.redisHeadlessServiceName" . }}
+  replicas: {{ default 3 .Values.redis.sentinel.replicas }}
+  selector:
+    matchLabels:
+      {{- include "homenavi.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "homenavi.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ printf "%s:%s" (default "redis" (index (index .Values.services "redis").image "repository")) (default "7.2-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
+          imagePullPolicy: {{ default .Values.global.imagePullPolicy (index (index .Values.services "redis").image "pullPolicy") }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              ORDINAL="${HOSTNAME##*-}"
+              SELF_HOST="${HOSTNAME}.{{ include "homenavi.redisHeadlessServiceName" . }}"
+              SELF_FQDN="${SELF_HOST}.{{ .Release.Namespace }}.svc.cluster.local"
+              DEFAULT_MASTER="{{ include "homenavi.redisStatefulSetName" . }}-0.{{ include "homenavi.redisHeadlessServiceName" . }}"
+              SENTINEL_HOST="{{ include "homenavi.redisSentinelServiceName" . }}"
+              SENTINEL_PORT="{{ include "homenavi.redisSentinelPort" . }}"
+              MASTER_NAME="{{ include "homenavi.redisMasterName" . }}"
+              MASTER_HOST=""
+              MASTER_PORT="6379"
+              if redis-cli -h "$SENTINEL_HOST" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
+                MASTER_HOST="$(sed -n '1p' /tmp/master.addr | tr -d '\r')"
+                MASTER_PORT="$(sed -n '2p' /tmp/master.addr | tr -d '\r')"
+              fi
+              if [ -z "$MASTER_HOST" ]; then
+                MASTER_HOST="$DEFAULT_MASTER"
+                MASTER_PORT="6379"
+              fi
+              IS_SELF_MASTER="false"
+              case "$MASTER_HOST" in
+                "$HOSTNAME"|"$SELF_HOST"|"$SELF_FQDN"|"${POD_IP:-}"|127.0.0.1|localhost)
+                  IS_SELF_MASTER="true"
+                  ;;
+                "$SELF_HOST".*|"$HOSTNAME".*)
+                  IS_SELF_MASTER="true"
+                  ;;
+              esac
+              set -- redis-server --appendonly yes --protected-mode no --port 6379 --dir /data
+              if [ -n "${REDIS_PASSWORD:-}" ]; then
+                set -- "$@" --requirepass "$REDIS_PASSWORD"
+                if [ "$IS_SELF_MASTER" != "true" ]; then
+                  set -- "$@" --masterauth "$REDIS_PASSWORD"
+                fi
+              fi
+              if [ "$IS_SELF_MASTER" != "true" ]; then
+                set -- "$@" --replicaof "$MASTER_HOST" "${MASTER_PORT:-6379}"
+              elif [ "$ORDINAL" != "0" ] && [ "$MASTER_HOST" = "$DEFAULT_MASTER" ]; then
+                set -- "$@" --replicaof "$DEFAULT_MASTER" 6379
+              fi
+              exec "$@"
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: REDIS_PASSWORD
+              {{- if ne (trim (include "homenavi.redisAuthSecretName" .)) "" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homenavi.redisAuthSecretName" . }}
+                  key: {{ include "homenavi.redisAuthPasswordKey" . }}
+              {{- else }}
+              value: {{ default "" .Values.redis.password | quote }}
+              {{- end }}
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+        - name: sentinel
+          image: {{ printf "%s:%s" (default "redis" (index (index .Values.services "redis").image "repository")) (default "7.2-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
+          imagePullPolicy: {{ default .Values.global.imagePullPolicy (index (index .Values.services "redis").image "pullPolicy") }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              MASTER="{{ include "homenavi.redisStatefulSetName" . }}-0.{{ include "homenavi.redisHeadlessServiceName" . }}"
+              cat >/tmp/sentinel.conf <<EOF
+              port {{ include "homenavi.redisSentinelPort" . }}
+              dir /tmp
+              sentinel resolve-hostnames yes
+              sentinel announce-hostnames yes
+              sentinel monitor {{ include "homenavi.redisMasterName" . }} ${MASTER} 6379 {{ default 2 .Values.redis.sentinel.quorum }}
+              sentinel down-after-milliseconds {{ include "homenavi.redisMasterName" . }} {{ default 5000 .Values.redis.sentinel.downAfterMilliseconds }}
+              sentinel failover-timeout {{ include "homenavi.redisMasterName" . }} {{ default 60000 .Values.redis.sentinel.failoverTimeoutMilliseconds }}
+              sentinel parallel-syncs {{ include "homenavi.redisMasterName" . }} {{ default 1 .Values.redis.sentinel.parallelSyncs }}
+              EOF
+              if [ -n "${REDIS_PASSWORD:-}" ]; then
+                printf 'sentinel auth-pass %s %s\n' '{{ include "homenavi.redisMasterName" . }}' "$REDIS_PASSWORD" >>/tmp/sentinel.conf
+              fi
+              exec redis-sentinel /tmp/sentinel.conf
+          env:
+            - name: REDIS_PASSWORD
+              {{- if ne (trim (include "homenavi.redisAuthSecretName" .)) "" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homenavi.redisAuthSecretName" . }}
+                  key: {{ include "homenavi.redisAuthPasswordKey" . }}
+              {{- else }}
+              value: {{ default "" .Values.redis.password | quote }}
+              {{- end }}
+          ports:
+            - name: sentinel
+              containerPort: {{ include "homenavi.redisSentinelPort" . }}
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: sentinel
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: sentinel
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: sentinel
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+        labels:
+          {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ default "2Gi" .Values.redis.sentinel.storage.size }}
+        {{- with .Values.redis.sentinel.storage.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+---
+{{- end }}

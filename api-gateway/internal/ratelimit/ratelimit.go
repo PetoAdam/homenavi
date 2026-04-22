@@ -18,12 +18,12 @@ type LimiterConfig struct {
 }
 
 type RateLimiter struct {
-	Redis  *redis.Client
+	Redis  redis.UniversalClient
 	Prefix string
 	Config LimiterConfig
 }
 
-func New(redis *redis.Client, prefix string, cfg LimiterConfig) *RateLimiter {
+func New(redis redis.UniversalClient, prefix string, cfg LimiterConfig) *RateLimiter {
 	return &RateLimiter{Redis: redis, Prefix: prefix, Config: cfg}
 }
 

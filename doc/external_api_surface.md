@@ -9,12 +9,12 @@ In the default `docker-compose.yml` config, clients primarily talk to **nginx** 
 - `http://<host>/` → Frontend SPA (container `frontend`)
 - `http://<host>/api/...` → API Gateway (container `api-gateway`)
 - `ws(s)://<host>/ws/...` → API Gateway websocket reverse-proxy (Upgrade)
-- `http://<host>/uploads/...` → static file hosting for profile pictures (nginx `alias /uploads/` backed by `profile-pictures` volume)
 
 Notes:
 - The SPA is built from `Frontend/` (capital F). (Case matters on Linux/CI.)
 - The API Gateway itself is also published on the host at `http://<host>:8080/` via `docker-compose.yml` (useful for debugging), but nginx is the intended public edge.
-- Mosquitto ports are published on the host (`1883`, `9001`) in `docker-compose.yml`. These are “external” at the network level, but the Frontend uses `/ws/hdp` through nginx → gateway → mosquitto.
+- The default Compose broker is EMQX, publishing MQTT on `1883` and MQTT-over-WebSocket on the configured host WebSocket port. The Frontend still uses `/ws/hdp` through nginx → gateway → broker.
+- Profile pictures default to S3-compatible object storage via bundled MinIO and are served through `/api/profile-pictures/users/{user_id}`.
 
 ## API Gateway meta endpoints
 
@@ -55,7 +55,13 @@ Authenticated:
 - `POST /api/auth/2fa/setup`
 - `POST /api/auth/2fa/verify`
 - `POST /api/auth/profile/generate-avatar`
+- `POST /api/auth/profile/upload-url`
+- `POST /api/auth/profile/upload-complete`
 - `POST /api/auth/profile/upload` (multipart)
+
+Public profile picture access:
+- `GET /api/profile-pictures/users/{user_id}`
+- `GET /api/profile-pictures/users/{user_id}/access-url`
 
 User management (consolidated in `auth-service`):
 - `GET /api/auth/users` (access: resident)
@@ -113,11 +119,12 @@ Base: `/api/automation` (access: resident)
 ### Generic WS (`echo-service`)
 - `GET /ws/echo` (access: auth)
 
-### MQTT-over-WS (Mosquitto)
-- `GET /ws/hdp` (access: auth) → `ws://mosquitto:9001/`
+### MQTT-over-WS (EMQX default)
+- `GET /ws/hdp` (access: auth) → `ws://emqx:8083/mqtt`
 
 Notes:
 - The gateway treats `type: websocket-mqtt` the same as `type: websocket` reverse proxy.
+- The upstream is provider-driven and defaults to EMQX for both Compose and Helm deployments.
 - The Frontend uses Paho MQTT over websockets at `/ws/hdp`.
 
 ### Automation run stream (`automation-service`)

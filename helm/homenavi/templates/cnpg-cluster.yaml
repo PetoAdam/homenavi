@@ -1,0 +1,54 @@
+{{- if and (eq (include "homenavi.postgresProvider" .) "bundled") (eq (include "homenavi.postgresMode" .) "cnpgManaged") }}
+{{- if eq (trim (default "" .Values.postgres.auth.existingSecretName)) "" }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "homenavi.postgresAppSecretName" . }}
+  labels:
+    {{- include "homenavi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+type: kubernetes.io/basic-auth
+stringData:
+  username: {{ include "homenavi.postgresUser" . | quote }}
+  password: {{ include "homenavi.postgresPassword" . | quote }}
+---
+{{- end }}
+{{- if eq (trim (default "" .Values.postgres.cnpg.superuserSecretName)) "" }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "homenavi.postgresSuperuserSecretName" . }}
+  labels:
+    {{- include "homenavi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: {{ default "postgres" .Values.postgres.cnpg.superuserPassword | quote }}
+---
+{{- end }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "homenavi.cnpgClusterName" . }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  instances: {{ default 3 .Values.postgres.cnpg.instances }}
+  imageName: {{ default "ghcr.io/cloudnative-pg/postgresql:16.6" .Values.postgres.cnpg.imageName | quote }}
+  primaryUpdateStrategy: unsupervised
+  superuserSecret:
+    name: {{ include "homenavi.postgresSuperuserSecretName" . }}
+  bootstrap:
+    initdb:
+      database: {{ include "homenavi.postgresDatabase" . | quote }}
+      owner: {{ include "homenavi.postgresUser" . | quote }}
+      secret:
+        name: {{ include "homenavi.postgresAuthSecretName" . }}
+  storage:
+    size: {{ default "10Gi" .Values.postgres.cnpg.storage.size }}
+    {{- with .Values.postgres.cnpg.storage.storageClassName }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+---
+{{- end }}

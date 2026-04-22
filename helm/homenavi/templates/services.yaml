@@ -1,5 +1,5 @@
 {{- range $name, $svc := .Values.services }}
-{{- if and $svc.enabled $svc.service.enabled }}
+{{- if and (eq (include "homenavi.serviceEnabled" (dict "root" $ "component" $name)) "true") $svc.service.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
