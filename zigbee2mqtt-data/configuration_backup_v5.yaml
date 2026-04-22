@@ -1,0 +1,23 @@
+homeassistant:
+  enabled: false
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://emqx:1883
+serial:
+  adapter: zstack
+  port: /dev/ttyACM0
+advanced:
+  log_level: info
+frontend:
+  enabled: true
+  port: 8081
+version: 5
+devices:
+  '0xa4c13867e32d96d4':
+    friendly_name: '0xa4c13867e32d96d4'
+  '0x54ef441000dbeb3e':
+    friendly_name: '0x54ef441000dbeb3e'
+  '0xb4e84287377c0000':
+    friendly_name: '0xb4e84287377c0000'
+  '0xd44867fffe0c37cd':
+    friendly_name: '0xd44867fffe0c37cd'
