@@ -1,4 +1,5 @@
 import Paho from 'paho-mqtt';
+import { onAuthCookieChange } from '../authCookie';
 
 const GLOBAL_KEY = '__homenaviSharedMqtt__';
 
@@ -88,6 +89,9 @@ class SharedMqttConnection {
 
     this.subscriptions = new Map(); // filter -> Set<handler>
     this.statusListeners = new Set();
+    this.unsubscribeAuthCookieChange = onAuthCookieChange(() => {
+      this.reconnect('auth-cookie-changed');
+    });
   }
 
   _emitStatus(next, detail) {
@@ -296,6 +300,34 @@ class SharedMqttConnection {
       this.client = null;
       this._emitStatus('idle');
     }, 60_000);
+  }
+
+  reconnect(reason = 'manual') {
+    this._clearReconnectTimer();
+    this._clearIdleDisconnectTimer();
+
+    const client = this.client;
+    this.client = null;
+
+    if (client) {
+      try {
+        client.onConnectionLost = null;
+      } catch {
+        // ignore
+      }
+      try {
+        if (typeof client.isConnected === 'function' && client.isConnected()) {
+          client.disconnect();
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    this._emitStatus('disconnected', { reason });
+    if (this._hasActiveListeners()) {
+      this._connect();
+    }
   }
 
   publish(topic, payloadString, { qos = 0, retained = false } = {}) {

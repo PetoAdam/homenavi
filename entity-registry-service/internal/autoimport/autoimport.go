@@ -204,7 +204,7 @@ func (r *Runner) handleMessage(ctx context.Context, topic string, payload []byte
 
 func Start(ctx context.Context, repo *dbinfra.Repository, brokerURL string, hub *realtime.Hub) *Runner {
 	if strings.TrimSpace(brokerURL) == "" {
-		brokerURL = "tcp://mosquitto:1883"
+		brokerURL = "tcp://emqx:1883"
 	}
 	r := &Runner{repo: repo, hub: hub, seen: map[string]time.Time{}}
 	cli, err := mqttinfra.Connect(brokerURL, "entity-registry-autoimport")

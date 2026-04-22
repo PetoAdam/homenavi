@@ -1,4 +1,3 @@
-{{- $pg := (index .Values.services "user-service").env -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -22,16 +21,30 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: PGPASSWORD
-              value: {{ default "password" (index $pg "POSTGRES_PASSWORD") | quote }}
+              {{- if ne (trim (include "homenavi.postgresAuthSecretName" .)) "" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homenavi.postgresAuthSecretName" . }}
+                  key: {{ include "homenavi.postgresAuthPasswordKey" . }}
+              {{- else }}
+              value: {{ include "homenavi.postgresPassword" . | quote }}
+              {{- end }}
           command:
             - /bin/sh
             - -ec
             - |
+              until pg_isready \
+                -h {{ include "homenavi.postgresHost" . | quote }} \
+                -p {{ include "homenavi.postgresPort" . | quote }} \
+                -U {{ include "homenavi.postgresUser" . | quote }}; do
+                echo "waiting for postgres..."
+                sleep 3
+              done
               psql \
-                -h {{ default "postgres" (index $pg "POSTGRES_HOST") | quote }} \
-                -p {{ default "5432" (index $pg "POSTGRES_PORT") | quote }} \
-                -U {{ default "user" (index $pg "POSTGRES_USER") | quote }} \
-                -d {{ default "users" (index $pg "POSTGRES_DB") | quote }} \
+                -h {{ include "homenavi.postgresHost" . | quote }} \
+                -p {{ include "homenavi.postgresPort" . | quote }} \
+                -U {{ include "homenavi.postgresUser" . | quote }} \
+                -d {{ include "homenavi.postgresDatabase" . | quote }} \
                 -v ON_ERROR_STOP=1 \
                 -c "CREATE TABLE IF NOT EXISTS ers_rooms (id uuid PRIMARY KEY, slug text NOT NULL UNIQUE, name text NOT NULL, sort_order integer DEFAULT 0, meta jsonb, created_at timestamptz, updated_at timestamptz);" \
                 -c "CREATE TABLE IF NOT EXISTS ers_tags (id uuid PRIMARY KEY, slug text NOT NULL UNIQUE, name text NOT NULL, created_at timestamptz, updated_at timestamptz);" \

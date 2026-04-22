@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+BRIDGE_DIR="/opt/emqx/etc/homenavi-bridge.d"
+TARGET="/opt/emqx/etc/homenavi-bridge.hocon"
+
+sanitize_bridge_suffix() {
+  printf '%s' "$1" | tr -cd 'A-Za-z0-9_-'
+}
+
+derive_bridge_client_id_suffix() {
+  local suffix=""
+
+  if [ -n "${HOMENAVI_EMQX_BRIDGE_CLIENT_ID_SUFFIX:-}" ]; then
+    suffix="$(sanitize_bridge_suffix "$HOMENAVI_EMQX_BRIDGE_CLIENT_ID_SUFFIX")"
+  fi
+
+  if [ -z "$suffix" ] && [ -n "${HOSTNAME:-}" ]; then
+    suffix="$(sanitize_bridge_suffix "$HOSTNAME" | sed -E 's/^.*(.{12})$/\1/')"
+  fi
+
+  if [ -z "$suffix" ]; then
+    suffix="$(od -An -N6 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+  fi
+
+  if [ -z "$suffix" ]; then
+    suffix="pid$$"
+  fi
+
+  printf '%s' "$suffix"
+}
+
+BRIDGE_CLIENT_ID_SUFFIX="$(derive_bridge_client_id_suffix)"
+
+: > "$TARGET"
+
+if [ -d "$BRIDGE_DIR" ]; then
+  find "$BRIDGE_DIR" -maxdepth 1 \( -type f -o -type l \) -name '*.hocon' | sort | while read -r file; do
+    printf '## Begin %s\n' "$(basename "$file")" >> "$TARGET"
+    sed -E "s/(clientid_prefix[[:space:]]*=[[:space:]]*\"[^\"]+)/\\1_${BRIDGE_CLIENT_ID_SUFFIX}/" "$file" >> "$TARGET"
+    printf '\n\n' >> "$TARGET"
+  done
+fi
+
+exec /usr/bin/docker-entrypoint.sh /opt/emqx/bin/emqx foreground

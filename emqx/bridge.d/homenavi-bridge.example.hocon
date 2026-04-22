@@ -1,0 +1,213 @@
+## Example local bridge configuration for Homenavi EMQX.
+##
+## Copy this file to any name ending in `.hocon` inside `emqx/bridge.d/`.
+## Every `*.hocon` file in that directory is concatenated at container startup.
+##
+## Example:
+##   cp emqx/bridge.d/homenavi-bridge.example.hocon emqx/bridge.d/10-pi-bridge.hocon
+##
+## Keep topic directions explicit to avoid command/state loops.
+
+## connectors {
+##   mqtt {
+##     remote_out {
+##       enable = true
+##       server = "broker.example.internal:1883"
+##       pool_size = 1
+##       clientid_prefix = "homenavi_remote_out"
+##       proto_ver = v4
+##       bridge_mode = false
+##       clean_start = true
+##       keepalive = 60s
+##       retry_interval = 15s
+##       max_inflight = 32
+##       ssl {
+##         enable = false
+##       }
+##       resource_opts {
+##         health_check_interval = 15s
+##         start_after_created = true
+##         start_timeout = 10s
+##       }
+##     }
+##
+##     remote_in {
+##       enable = true
+##       server = "broker.example.internal:1883"
+##       pool_size = 1
+##       clientid_prefix = "homenavi_remote_in"
+##       proto_ver = v4
+##       bridge_mode = false
+##       clean_start = true
+##       keepalive = 60s
+##       retry_interval = 15s
+##       max_inflight = 32
+##       ssl {
+##         enable = false
+##       }
+##       resource_opts {
+##         health_check_interval = 15s
+##         start_after_created = true
+##         start_timeout = 10s
+##       }
+##     }
+##   }
+## }
+##
+## actions {
+##   mqtt {
+##     remote_control_out {
+##       enable = true
+##       connector = "remote_out"
+##       parameters {
+##         topic = "${topic}"
+##         qos = "${qos}"
+##         retain = "${flags.retain}"
+##         payload = "${payload}"
+##       }
+##     }
+##   }
+## }
+##
+## sources {
+##   mqtt {
+##     remote_hdp_state {
+##       enable = true
+##       connector = "remote_in"
+##       parameters {
+##         topic = "homenavi/hdp/device/state/#"
+##         qos = 1
+##       }
+##     }
+##
+##     remote_hdp_metadata {
+##       enable = true
+##       connector = "remote_in"
+##       parameters {
+##         topic = "homenavi/hdp/device/metadata/#"
+##         qos = 1
+##       }
+##     }
+##
+##     remote_hdp_command_result {
+##       enable = true
+##       connector = "remote_in"
+##       parameters {
+##         topic = "homenavi/hdp/device/command_result/#"
+##         qos = 1
+##       }
+##     }
+##
+##     remote_z2m_state {
+##       enable = true
+##       connector = "remote_in"
+##       parameters {
+##         topic = "zigbee2mqtt/+"
+##         qos = 1
+##       }
+##     }
+##   }
+## }
+##
+## rule_engine {
+##   rules {
+##     forward_hdp_device_commands {
+##       enable = true
+##       description = "Forward HDP device commands to the remote broker"
+##       sql = "SELECT * FROM \"homenavi/hdp/device/command/#\""
+##       actions = ["mqtt:remote_control_out"]
+##     }
+##
+##     forward_hdp_pairing_commands {
+##       enable = true
+##       description = "Forward HDP pairing commands to the remote broker"
+##       sql = "SELECT * FROM \"homenavi/hdp/pairing/command/#\""
+##       actions = ["mqtt:remote_control_out"]
+##     }
+##
+##     forward_z2m_set {
+##       enable = true
+##       description = "Forward Zigbee2MQTT set commands to the remote broker"
+##       sql = "SELECT * FROM \"zigbee2mqtt/+/set\""
+##       actions = ["mqtt:remote_control_out"]
+##     }
+##
+##     forward_z2m_set_subtopics {
+##       enable = true
+##       description = "Forward nested Zigbee2MQTT set commands to the remote broker"
+##       sql = "SELECT * FROM \"zigbee2mqtt/+/set/#\""
+##       actions = ["mqtt:remote_control_out"]
+##     }
+##
+##     forward_z2m_bridge_requests {
+##       enable = true
+##       description = "Forward Zigbee2MQTT bridge requests to the remote broker"
+##       sql = "SELECT * FROM \"zigbee2mqtt/bridge/request/#\""
+##       actions = ["mqtt:remote_control_out"]
+##     }
+##
+##     ingest_remote_hdp_state {
+##       enable = true
+##       description = "Republish remote HDP state into local EMQX"
+##       sql = "SELECT * FROM \"$bridges/mqtt:remote_hdp_state\""
+##       actions = [{
+##         function = republish
+##         args = {
+##           topic = "${topic}"
+##           qos = "${qos}"
+##           retain = "${retain}"
+##           payload = "${payload}"
+##           direct_dispatch = false
+##         }
+##       }]
+##     }
+##
+##     ingest_remote_hdp_metadata {
+##       enable = true
+##       description = "Republish remote HDP metadata into local EMQX"
+##       sql = "SELECT * FROM \"$bridges/mqtt:remote_hdp_metadata\""
+##       actions = [{
+##         function = republish
+##         args = {
+##           topic = "${topic}"
+##           qos = "${qos}"
+##           retain = "${retain}"
+##           payload = "${payload}"
+##           direct_dispatch = false
+##         }
+##       }]
+##     }
+##
+##     ingest_remote_hdp_command_result {
+##       enable = true
+##       description = "Republish remote HDP command results into local EMQX"
+##       sql = "SELECT * FROM \"$bridges/mqtt:remote_hdp_command_result\""
+##       actions = [{
+##         function = republish
+##         args = {
+##           topic = "${topic}"
+##           qos = "${qos}"
+##           retain = "${retain}"
+##           payload = "${payload}"
+##           direct_dispatch = false
+##         }
+##       }]
+##     }
+##
+##     ingest_remote_z2m_state {
+##       enable = true
+##       description = "Republish remote Zigbee2MQTT state into local EMQX"
+##       sql = "SELECT * FROM \"$bridges/mqtt:remote_z2m_state\""
+##       actions = [{
+##         function = republish
+##         args = {
+##           topic = "${topic}"
+##           qos = "${qos}"
+##           retain = "${retain}"
+##           payload = "${payload}"
+##           direct_dispatch = false
+##         }
+##       }]
+##     }
+##   }
+## }

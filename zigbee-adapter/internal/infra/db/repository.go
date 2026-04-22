@@ -19,14 +19,7 @@ import (
 )
 
 // Config holds database connectivity settings for the current SQL backend.
-type Config struct {
-	User     string
-	Password string
-	DBName   string
-	Host     string
-	Port     string
-	SSLMode  string
-}
+type Config = dbx.PostgresConfig
 
 type Repository struct {
 	db *gorm.DB
@@ -47,7 +40,7 @@ type DeviceState struct {
 }
 
 func Open(cfg Config) (*Repository, error) {
-	dsn := dbx.BuildPostgresDSN(dbx.PostgresConfig{Host: cfg.Host, User: cfg.User, Password: cfg.Password, DBName: cfg.DBName, Port: cfg.Port, SSLMode: cfg.SSLMode})
+	dsn := dbx.BuildPostgresDSN(cfg)
 	gormLogger := logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{SlowThreshold: 2 * time.Second, LogLevel: logger.Warn, IgnoreRecordNotFoundError: true, Colorful: false})
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormLogger})
 	if err != nil {

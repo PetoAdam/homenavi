@@ -118,8 +118,17 @@ export async function generateAvatar(accessToken) {
 export async function uploadProfilePicture(file, accessToken, userId = null) {
   const form = new FormData();
   form.append('file', file);
-  const params = userId ? { user_id: userId } : undefined;
-  return await http.post(`${AUTH_BASE}/profile/upload`, form, { token: accessToken, contentType: 'multipart/form-data', params });
+
+  const options = {
+    token: accessToken,
+    contentType: 'multipart/form-data',
+  };
+
+  if (userId) {
+    options.params = { user_id: userId };
+  }
+
+  return await http.post(`${AUTH_BASE}/profile/upload`, form, options);
 }
 
 // OAuth

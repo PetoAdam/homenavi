@@ -1,7 +1,7 @@
 package app
 
 import (
-	dbinfra "github.com/PetoAdam/homenavi/dashboard-service/internal/infra/db"
+	"github.com/PetoAdam/homenavi/shared/dbx"
 	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
@@ -10,7 +10,7 @@ type Config struct {
 	Port                string
 	JWTPublicKeyPath    string
 	IntegrationProxyURL string
-	DB                  dbinfra.Config
+	DB                  dbx.PostgresConfig
 }
 
 func LoadConfig() Config {
@@ -18,13 +18,6 @@ func LoadConfig() Config {
 		Port:                envx.String("DASHBOARD_SERVICE_PORT", "8097"),
 		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),
 		IntegrationProxyURL: envx.String("INTEGRATION_PROXY_URL", ""),
-		DB: dbinfra.Config{
-			User:     envx.String("POSTGRES_USER", "postgres"),
-			Password: envx.String("POSTGRES_PASSWORD", "postgres"),
-			DBName:   envx.String("POSTGRES_DB", "homenavi"),
-			Host:     envx.String("POSTGRES_HOST", "postgres"),
-			Port:     envx.String("POSTGRES_PORT", "5432"),
-			SSLMode:  envx.String("POSTGRES_SSLMODE", "disable"),
-		},
+		DB:                  dbx.LoadPostgresConfig(dbx.PostgresConfig{User: "postgres", Password: "postgres", DBName: "homenavi", Host: "postgres", Port: "5432", SSLMode: "disable"}),
 	}
 }

@@ -33,6 +33,8 @@ type Routes struct {
 	HandlePatchUser            http.HandlerFunc
 	HandleLockoutUser          http.HandlerFunc
 	HandleGenerateAvatar       http.HandlerFunc
+	HandleCreateUploadURL      http.HandlerFunc
+	HandleCompleteUpload       http.HandlerFunc
 	HandleUploadProfilePicture http.HandlerFunc
 	HandleGoogleOAuthLogin     http.HandlerFunc
 	HandleGoogleOAuthCallback  http.HandlerFunc
@@ -74,6 +76,8 @@ func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer)
 		r.Patch("/users/{id}", orNotImplemented(routes.HandlePatchUser))
 		r.Post("/users/{id}/lockout", orNotImplemented(routes.HandleLockoutUser))
 		r.Post("/profile/generate-avatar", orNotImplemented(routes.HandleGenerateAvatar))
+		r.Post("/profile/upload-url", orNotImplemented(routes.HandleCreateUploadURL))
+		r.Post("/profile/upload-complete", orNotImplemented(routes.HandleCompleteUpload))
 		r.Post("/profile/upload", orNotImplemented(routes.HandleUploadProfilePicture))
 		r.Get("/oauth/google/login", orNotImplemented(routes.HandleGoogleOAuthLogin))
 		r.Get("/oauth/google/callback", orNotImplemented(routes.HandleGoogleOAuthCallback))

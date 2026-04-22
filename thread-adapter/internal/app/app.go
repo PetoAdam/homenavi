@@ -23,7 +23,7 @@ type App struct {
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
-	mqttClient, err := mqttx.Connect(mqttx.Options{BrokerURL: cfg.MQTTBrokerURL, ClientIDPrefix: "thread-adapter"})
+	mqttClient, err := mqttx.Connect(mqttx.Options{BrokerURL: cfg.MQTT.BrokerURL, ClientIDPrefix: "thread-adapter"})
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}

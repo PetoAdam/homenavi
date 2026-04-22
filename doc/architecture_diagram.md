@@ -41,7 +41,8 @@ flowchart TB
     Email["Email Service"]
     ProfilePic["Profile Picture Service"]
 
-    Mosquitto["Mosquitto (MQTT broker)"]
+    EMQX["EMQX (default MQTT broker)"]
+    ExternalBroker["External MQTT broker (optional)"]
     Postgres[("PostgreSQL")]
     Redis[("Redis")]
 
@@ -83,7 +84,7 @@ flowchart TB
   Gateway <-->|"WS upstream"| ERS
 
   Browser <-->|"MQTT-over-WS /ws/hdp"| Gateway
-  Gateway <-->|"MQTT-over-WS upstream"| Mosquitto
+  Gateway <-->|"MQTT-over-WS upstream"| EMQX
 
   Browser <-->|"WS /ws/echo"| Gateway
   Gateway <-->|"WS upstream"| Echo
@@ -96,10 +97,11 @@ flowchart TB
   Spotify -->|"OAuth + Web API"| ExternalAPI
 
   %% MQTT (HDP)
-  Zigbee <-->|"MQTT (HDP topics)"| Mosquitto
-  Thread <-->|"MQTT (HDP topics)"| Mosquitto
-  DeviceHub <-->|"MQTT subscribe/publish"| Mosquitto
-  ERS <-->|"MQTT subscribe (auto-import)"| Mosquitto
+  Zigbee <-->|"MQTT (HDP topics)"| EMQX
+  Thread <-->|"MQTT (HDP topics)"| EMQX
+  DeviceHub <-->|"MQTT subscribe/publish"| EMQX
+  ERS <-->|"MQTT subscribe (auto-import)"| EMQX
+  ExternalBroker <-->|"Optional bridge"| EMQX
 
   %% Persistence
   User -->|SQL| Postgres
@@ -146,7 +148,7 @@ sequenceDiagram
   autonumber
   participant UI as Frontend (Browser)
   participant GW as API Gateway
-  participant MQTT as Mosquitto
+  participant MQTT as EMQX
   participant DH as Device Hub
   participant ERS as Entity Registry (ERS)
 
@@ -173,7 +175,8 @@ sequenceDiagram
 ## Notes
 
 - The websocket `/ws/ers` is intentionally a **change notification stream**; clients fetch canonical payloads via REST.
-- The websocket `/ws/hdp` is MQTT-over-websocket for realtime HDP traffic (telemetry/events/commands).
+- The websocket `/ws/hdp` is MQTT-over-websocket for realtime HDP traffic (telemetry/events/commands) and targets EMQX by default.
+- When bridging to older deployments, prefer a direct external-broker-to-EMQX bridge with explicit topic directions.
 
 Related docs:
 - [doc/ers_hdp_devicehub_overview.md](doc/ers_hdp_devicehub_overview.md)

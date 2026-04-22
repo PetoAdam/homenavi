@@ -18,6 +18,8 @@ The scaffold currently includes deployable defaults for:
 - integration-proxy
 - email-service
 - profile-picture-service
+- emqx
+- minio
 - postgres
 - redis
 
@@ -49,7 +51,13 @@ helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
 ## Notes
 
 - Default values are intentionally conservative and intended as a baseline scaffold.
+- The default bundled MQTT provider is EMQX. Keep EMQX as the primary broker and prefer direct bridges into it when integrating external MQTT deployments.
+- The default bundled PostgreSQL provider is CloudNativePG.
+- The default bundled Redis mode is Sentinel.
+- The default profile-picture backend is MinIO-backed S3 storage.
+- Bundled dependency startup in Kubernetes is handled with readiness/startup probes plus narrow init-container dependency waits, rather than strict global startup ordering.
 - Sensitive values should be provided via `services.<name>.envFromSecrets`.
+- Per-service secret or configMap-backed env vars can also be injected with `services.<name>.envValueFrom`.
 - Persistent storage can be enabled through `persistentVolumeClaims` and referenced by service volumes.
 - `integration-proxy` defaults to `INTEGRATIONS_RUNTIME_MODE=helm` in this chart.
 - Released charts default service image tags to the chart `appVersion`, so tag-based releases stay aligned with GHCR images by default.
@@ -62,7 +70,7 @@ Use a Kubernetes secret created from an env file and inject it globally:
 
 ```bash
 kubectl -n homenavi create secret generic homenavi-runtime-env \
-	--from-env-file=/home/adam/Projects/homenavi/.env \
+	--from-env-file=./.env \
 	--dry-run=client -o yaml | kubectl apply -f -
 
 helm upgrade --install homenavi ./helm/homenavi -n homenavi \
@@ -71,43 +79,44 @@ helm upgrade --install homenavi ./helm/homenavi -n homenavi \
 
 The chart applies `global.envFromSecrets` to all enabled services via `envFrom`.
 
-## Optional: bridge to external Zigbee2MQTT broker
+## Optional: load EMQX bridge snippets
 
-If you already run Zigbee2MQTT elsewhere, you can bridge this chart's Mosquitto to that broker.
+The chart defaults to EMQX for Homenavi services. If you need broker bridging, add bridge snippets under `services.emqx.bridgeConfigFiles`.
 
-1. Create a local bridge config file (gitignored in this repo):
+See [doc/mqtt_broker_topologies.md](../../doc/mqtt_broker_topologies.md) for the preferred topology and bridge-direction guidance.
 
-```bash
-mkdir -p mosquitto/config/conf.d
-cat > mosquitto/config/conf.d/bridge.conf <<'EOF'
-connection zigbee-prod
-address 192.168.64.141:1883
-bridge_protocol_version mqttv311
-try_private false
-cleansession false
-remote_clientid homenavi-zigbee-bridge-local
-keepalive_interval 60
-restart_timeout 5 30
-topic zigbee2mqtt/+ in 1
-topic zigbee2mqtt/+/availability in 1
-topic zigbee2mqtt/bridge/# in 1
-topic zigbee2mqtt/+/set out 1
-topic zigbee2mqtt/+/set/# out 1
-topic zigbee2mqtt/bridge/request/# out 1
-EOF
+Use [emqx/bridge.d/homenavi-bridge.example.hocon](../../emqx/bridge.d/homenavi-bridge.example.hocon) as the starting point for custom snippets.
+
+Example values override:
+
+```yaml
+services:
+	emqx:
+		bridgeConfigFiles:
+			20-external-zigbee.hocon: |
+				## Example only.
+				## Copy the commented starter from emqx/bridge.d/homenavi-bridge.example.hocon
+				## and then enable just the connector/action/source/rule blocks you need.
 ```
 
-2. Enable bridge config during install/upgrade:
+Apply it with:
 
 ```bash
-helm upgrade --install homenavi ./helm/homenavi -n homenavi \
-	--set services.mosquitto.bridge.enabled=true \
-	--set-file services.mosquitto.bridge.config=./mosquitto/config/conf.d/bridge.conf
+helm upgrade --install homenavi ./helm/homenavi -n homenavi -f custom-values.yaml
 ```
 
-By default, bridge mode is disabled and no external broker link is created.
+By default, no external bridge is created.
 
-Important: avoid `topic zigbee2mqtt/# both 1` unless you really need full mirroring. It can create command/state echo loops and high-rate Zigbee2MQTT converter errors on constrained devices (e.g. Raspberry Pi).
+## External dependency secrets and HA policy primitives
+
+The chart supports existing secret references for PostgreSQL, Redis, and S3/MinIO credentials, plus raw Kubernetes scheduling/policy primitives for later scale-out.
+
+See [doc/helm_ha_operations.md](../../doc/helm_ha_operations.md) for:
+
+- external PostgreSQL / Redis / storage secret reference patterns
+- CNPG backup and recovery checks
+- Redis Sentinel failover checks
+- optional PodDisruptionBudget, anti-affinity, topology spread, and NetworkPolicy examples
 
 ## Deployment mode
 
