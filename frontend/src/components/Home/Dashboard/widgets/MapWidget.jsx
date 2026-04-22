@@ -106,6 +106,7 @@ export default function MapWidget({
   const { devices: realtimeDevices, loading: realtimeLoading } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
     metadataMode: 'ws',
+    accessToken,
   });
 
   const { devices, rooms, loading } = useErsInventory({

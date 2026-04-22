@@ -73,9 +73,6 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 	if dev == nil || len(state) == 0 {
 		return false
 	}
-	if correlationID != "" {
-		z.setCorrelation(dev.ID.String(), correlationID)
-	}
 	var transitionMs float64
 	var hasTransitionMs bool
 	var hasTransition bool
@@ -136,6 +133,9 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 	if err := z.client.Publish("zigbee2mqtt/"+target+"/set", b); err != nil {
 		slog.Warn("zigbee command publish failed", "external", dev.ExternalID, "target", target, "err", err)
 		return false
+	}
+	if correlationID != "" {
+		z.setCorrelation(dev.ID.String(), correlationID)
 	}
 	slog.Info("zigbee command published", "external", dev.ExternalID, "target", target, "bytes", len(b))
 	return true

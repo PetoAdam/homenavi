@@ -333,7 +333,7 @@ function computeStats(devices) {
 }
 
 export default function useDeviceHubDevices(options = {}) {
-  const { enabled = true, metadataMode: rawMetadataMode = 'rest' } = options;
+  const { enabled = true, metadataMode: rawMetadataMode = 'rest', accessToken = '' } = options;
   const metadataMode = rawMetadataMode === 'ws' ? 'ws' : 'rest';
   const [devices, setDevices] = useState([]);
   const [stats, setStats] = useState({ total: 0, online: 0, withState: 0, sensors: 0 });
@@ -399,9 +399,19 @@ export default function useDeviceHubDevices(options = {}) {
     }
   }, []);
 
+  const buildFetchOptions = useCallback(() => {
+    const headers = {};
+    if (typeof accessToken === 'string' && accessToken.trim()) {
+      headers.Authorization = `Bearer ${accessToken.trim()}`;
+    }
+    return Object.keys(headers).length > 0
+      ? { credentials: 'include', headers }
+      : { credentials: 'include' };
+  }, [accessToken]);
+
   const refreshPairings = useCallback(async () => {
     try {
-      const response = await fetch('/api/hdp/pairings', { credentials: 'include' });
+      const response = await fetch('/api/hdp/pairings', buildFetchOptions());
       if (!response.ok) {
         throw new Error(`pairing request failed with status ${response.status}`);
       }
@@ -413,11 +423,11 @@ export default function useDeviceHubDevices(options = {}) {
     } catch (err) {
       console.warn('Pairing status fetch failed', err);
     }
-  }, []);
+  }, [buildFetchOptions]);
 
   const refreshPairingConfig = useCallback(async () => {
     try {
-      const response = await fetch('/api/hdp/pairing-config', { credentials: 'include' });
+      const response = await fetch('/api/hdp/pairing-config', buildFetchOptions());
       if (!response.ok) {
         throw new Error(`pairing config request failed with status ${response.status}`);
       }
@@ -431,7 +441,7 @@ export default function useDeviceHubDevices(options = {}) {
     } catch (err) {
       console.warn('Pairing config fetch failed', err);
     }
-  }, []);
+  }, [buildFetchOptions]);
 
   useEffect(() => {
     if (!enabledRef.current) {
@@ -441,13 +451,9 @@ export default function useDeviceHubDevices(options = {}) {
     refreshPairingConfig();
   }, [enabled, refreshPairings, refreshPairingConfig]);
 
-  const loadInitialDevices = useCallback(async () => {
-    if (metadataMode !== 'rest') {
-      setMetadataStatus({ connected: false, source: 'ws' });
-      return;
-    }
+  const loadInitialDevices = useCallback(async ({ silent = false } = {}) => {
     try {
-      const response = await fetch('/api/hdp/devices', { credentials: 'include' });
+      const response = await fetch('/api/hdp/devices', buildFetchOptions());
       if (!response.ok) {
         throw new Error(`request failed with status ${response.status}`);
       }
@@ -457,6 +463,7 @@ export default function useDeviceHubDevices(options = {}) {
       }
       const now = Date.now();
       const next = new Map();
+      const previousEntries = devicesRef.current;
       payload.forEach(item => {
         if (!item || typeof item !== 'object') return;
         const idFromApi = item.device_id || item.external_id || item.id;
@@ -470,7 +477,9 @@ export default function useDeviceHubDevices(options = {}) {
         }
 
         const stateObj = ensureStateObject(item.state);
+        const prev = previousEntries.get(mapKey) || {};
         next.set(mapKey, {
+          ...prev,
           ...item,
           id: mapKey,
           mapKey,
@@ -481,9 +490,9 @@ export default function useDeviceHubDevices(options = {}) {
           capabilities: ensureArray(item.capabilities),
           inputs: ensureArray(item.inputs),
           description: normalizeDescription(item.description),
-          _last_state: stateObj,
+          _last_state: Object.keys(stateObj).length > 0 ? stateObj : ensureStateObject(prev._last_state),
           metadataUpdatedAt: now,
-          stateUpdatedAt: Object.keys(stateObj).length > 0 ? now : null,
+          stateUpdatedAt: Object.keys(stateObj).length > 0 ? now : (prev.stateUpdatedAt ?? null),
           __hasMetadata: true,
         });
       });
@@ -491,19 +500,27 @@ export default function useDeviceHubDevices(options = {}) {
         return;
       }
       devicesRef.current = next;
-      setMetadataStatus({ connected: true, source: 'rest' });
-      setError(prev => (prev && prev.includes('device list') ? null : prev));
+      if (metadataMode === 'rest') {
+        setMetadataStatus({ connected: true, source: 'rest' });
+      }
+      setError(prev => {
+        if (!prev) return prev;
+        if (prev.includes('device list') || prev.includes('device stream')) return null;
+        return prev;
+      });
       schedulePublish();
     } catch (err) {
       console.warn('Device list fetch failed', err);
       if (!mountedRef.current || !enabledRef.current) {
         return;
       }
-      setMetadataStatus({ connected: false, source: 'rest' });
-      setError(prev => prev || 'Unable to load device list');
-      setLoading(false);
+      if (!silent && metadataMode === 'rest') {
+        setMetadataStatus({ connected: false, source: 'rest' });
+        setError(prev => prev || 'Unable to load device list');
+        setLoading(false);
+      }
     }
-  }, [metadataMode, schedulePublish]);
+  }, [buildFetchOptions, metadataMode, schedulePublish]);
 
   const handleRealtimeMessage = useCallback(({ topic, payloadString, payloadBytes }) => {
     if (!enabledRef.current || !topic) return;
@@ -669,6 +686,7 @@ export default function useDeviceHubDevices(options = {}) {
       }
       if (connected) {
         setError(prev => (prev && prev.includes('device stream') ? null : prev));
+        void loadInitialDevices({ silent: true });
       }
     });
 

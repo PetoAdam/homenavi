@@ -161,6 +161,17 @@
   font-size: 0.75rem;
   font-weight: 600;
   gap: 0.2rem;
+  text-align: center;
+  padding: 0 0.35rem;
+}
+
+.profile-avatar-overlay-icon {
+  line-height: 1;
+}
+
+.profile-avatar-overlay-label {
+  width: 100%;
+  line-height: 1.2;
 }
 
 .profile-avatar-container:hover .profile-avatar-overlay {

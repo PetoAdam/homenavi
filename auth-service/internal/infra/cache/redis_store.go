@@ -5,6 +5,7 @@ import (
 	stdErrors "errors"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/redisx"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -22,11 +23,14 @@ type Store interface {
 }
 
 type RedisStore struct {
-	client *redis.Client
+	client redis.UniversalClient
 }
 
-func NewRedisStore(addr, password string) *RedisStore {
-	return &RedisStore{client: redis.NewClient(&redis.Options{Addr: addr, Password: password, DB: 0})}
+func NewRedisStore(cfg redisx.Config) (*RedisStore, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &RedisStore{client: redis.NewUniversalClient(cfg.UniversalOptions())}, nil
 }
 
 func (s *RedisStore) Set(ctx context.Context, key string, value string, ttl time.Duration) error {

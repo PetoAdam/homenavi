@@ -2,8 +2,10 @@ package profile
 
 import (
 	"encoding/json"
+	stderrors "errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
@@ -64,22 +66,26 @@ func NewAvatarHandler(authService *authdomain.Service, userService *clientsinfra
 	}
 }
 
-func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Request) {
-	// Extract JWT token from Authorization header
+func (h *AvatarHandler) extractAuthenticatedUserID(r *http.Request) (string, string, *errors.AppError) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		errors.WriteError(w, errors.Unauthorized("missing or invalid authorization header"))
-		return
+		return "", "", errors.Unauthorized("missing or invalid authorization header")
 	}
-
 	token := authHeader[7:]
 	userID, err := h.authService.ExtractUserIDFromToken(token)
 	if err != nil {
-		errors.WriteError(w, errors.Unauthorized("invalid token"))
+		return "", "", errors.Unauthorized("invalid token")
+	}
+	return userID, token, nil
+}
+
+func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Request) {
+	userID, token, authErr := h.extractAuthenticatedUserID(r)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
 		return
 	}
 
-	// Call profile picture service to generate avatar
 	avatarURL, err := h.profilePictureService.GenerateAvatar(userID)
 	if err != nil {
 		slog.Error("failed to generate avatar", "user_id", userID, "error", err)
@@ -110,18 +116,93 @@ func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(response)
 }
 
-func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *http.Request) {
-	// Extract JWT token from Authorization header
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		errors.WriteError(w, errors.Unauthorized("missing or invalid authorization header"))
+func (h *AvatarHandler) HandleCreateUploadURL(w http.ResponseWriter, r *http.Request) {
+	userID, _, authErr := h.extractAuthenticatedUserID(r)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
 		return
 	}
 
-	token := authHeader[7:]
-	userID, err := h.authService.ExtractUserIDFromToken(token)
+	var payload struct {
+		Filename    string `json:"filename"`
+		ContentType string `json:"content_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		errors.WriteError(w, errors.BadRequest("invalid request body"))
+		return
+	}
+	payload.Filename = strings.TrimSpace(payload.Filename)
+	payload.ContentType = strings.TrimSpace(payload.ContentType)
+	if payload.Filename == "" {
+		errors.WriteError(w, errors.BadRequest("filename is required"))
+		return
+	}
+
+	prepared, err := h.profilePictureService.CreateUploadURL(userID, payload.Filename, payload.ContentType)
 	if err != nil {
-		errors.WriteError(w, errors.Unauthorized("invalid token"))
+		slog.Error("failed to create upload url", "user_id", userID, "error", err)
+		errors.WriteError(w, errors.InternalServerError("failed to create upload url", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(profiletransport.ProfilePictureUploadURLResponse{
+		Success:   true,
+		UploadURL: prepared.UploadURL,
+		ObjectKey: prepared.ObjectKey,
+		Method:    prepared.Method,
+		Headers:   prepared.Headers,
+		ExpiresIn: prepared.ExpiresIn,
+		Message:   "Profile picture upload URL created successfully",
+	})
+}
+
+func (h *AvatarHandler) HandleCompleteProfilePictureUpload(w http.ResponseWriter, r *http.Request) {
+	userID, token, authErr := h.extractAuthenticatedUserID(r)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+
+	var payload struct {
+		ObjectKey string `json:"object_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		errors.WriteError(w, errors.BadRequest("invalid request body"))
+		return
+	}
+	payload.ObjectKey = strings.TrimSpace(payload.ObjectKey)
+	if payload.ObjectKey == "" {
+		errors.WriteError(w, errors.BadRequest("object_key is required"))
+		return
+	}
+
+	pictureURL, err := h.profilePictureService.CompleteUpload(userID, payload.ObjectKey)
+	if err != nil {
+		slog.Error("failed to complete profile picture upload", "user_id", userID, "error", err)
+		errors.WriteError(w, errors.InternalServerError("failed to complete profile picture upload", err))
+		return
+	}
+
+	updates := map[string]interface{}{"profile_picture_url": pictureURL}
+	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+		slog.Error("failed to update user profile picture url", "error", err)
+		errors.WriteError(w, errors.InternalServerError("failed to update profile picture", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(profiletransport.ProfilePictureResponse{
+		Success: true,
+		URL:     pictureURL,
+		Message: "Profile picture uploaded successfully",
+	})
+}
+
+func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *http.Request) {
+	userID, token, authErr := h.extractAuthenticatedUserID(r)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
 		return
 	}
 
@@ -155,7 +236,7 @@ func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *htt
 	pictureURL, err := h.profilePictureService.UploadProfilePicture(userID, file, header)
 	if err != nil {
 		slog.Error("failed to upload profile picture", "user_id", userID, "error", err)
-		errors.WriteError(w, errors.InternalServerError("failed to upload profile picture", err))
+		writeProfilePictureClientError(w, "failed to upload profile picture", err)
 		return
 	}
 
@@ -180,4 +261,52 @@ func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *htt
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func writeProfilePictureClientError(w http.ResponseWriter, fallbackMessage string, err error) {
+	var downstreamErr *clientsinfra.DownstreamHTTPError
+	if !stderrors.As(err, &downstreamErr) {
+		errors.WriteError(w, errors.InternalServerError(fallbackMessage, err))
+		return
+	}
+
+	message := extractDownstreamErrorMessage(downstreamErr.Body)
+	if message == "" {
+		message = fallbackMessage
+	}
+
+	switch downstreamErr.StatusCode {
+	case http.StatusBadRequest:
+		errors.WriteError(w, errors.BadRequest(message))
+	case http.StatusUnauthorized:
+		errors.WriteError(w, errors.Unauthorized(message))
+	case http.StatusForbidden:
+		errors.WriteError(w, errors.Forbidden(message))
+	case http.StatusNotFound:
+		errors.WriteError(w, errors.NotFound(message))
+	default:
+		errors.WriteError(w, errors.InternalServerError(fallbackMessage, err))
+	}
+}
+
+func extractDownstreamErrorMessage(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	var payload struct {
+		Detail string `json:"detail"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+		if payload.Detail != "" {
+			return payload.Detail
+		}
+		if payload.Error != "" {
+			return payload.Error
+		}
+	}
+
+	return raw
 }

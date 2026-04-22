@@ -1,3 +1,5 @@
+import { onAuthCookieChange } from '../authCookie';
+
 const GLOBAL_KEY = '__homenaviSharedWebSockets__';
 
 function getStore() {
@@ -30,6 +32,9 @@ class SharedWebSocket {
 
     this.messageListeners = new Set();
     this.statusListeners = new Set();
+    this.unsubscribeAuthCookieChange = onAuthCookieChange(() => {
+      this.reconnect('auth-cookie-changed');
+    });
   }
 
   _emitStatus(next, detail) {
@@ -169,6 +174,31 @@ class SharedWebSocket {
       this._emitStatus('idle');
       // Manager will delete us when asked.
     }, 10_000);
+  }
+
+  reconnect(reason = 'manual') {
+    this._clearReconnectTimer();
+    this._clearIdleCloseTimer();
+
+    const ws = this.ws;
+    this.ws = null;
+
+    if (ws) {
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
+      } catch {
+        // ignore
+      }
+    }
+
+    this._emitStatus('closed', { reason });
+    if (this.messageListeners.size > 0) {
+      this._connect();
+    }
   }
 
   send(data) {

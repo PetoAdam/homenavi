@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/shared/envx"
+	"github.com/PetoAdam/homenavi/shared/redisx"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 // Config holds bootstrap settings for auth-service.
 type Config struct {
 	Port                     string
-	RedisAddr                string
-	RedisPassword            string
+	Redis                    redisx.Config
 	UserServiceURL           string
 	EmailServiceURL          string
 	ProfilePictureServiceURL string
@@ -44,10 +44,14 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 
+	redisConfig, err := redisx.LoadConfig(redisx.Config{Addrs: []string{"redis:6379"}})
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Port:                     envx.String("AUTH_SERVICE_PORT", "8000"),
-		RedisAddr:                envx.String("REDIS_ADDR", "redis:6379"),
-		RedisPassword:            envx.String("REDIS_PASSWORD", ""),
+		Redis:                    redisConfig,
 		UserServiceURL:           envx.String("USER_SERVICE_URL", "http://user-service:8001"),
 		EmailServiceURL:          envx.String("EMAIL_SERVICE_URL", "http://email-service:8002"),
 		ProfilePictureServiceURL: envx.String("PROFILE_PICTURE_SERVICE_URL", "http://profile-picture-service:8003"),

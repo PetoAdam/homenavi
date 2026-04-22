@@ -1,157 +1,145 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse
-from PIL import Image, ImageDraw
-import io
-import os
-import hashlib
-import random
-from typing import Optional
-import uuid
+from __future__ import annotations
 
-app = FastAPI(title="Profile Picture Generator", version="1.0.0")
+import logging
+from typing import Any
 
-# Ensure uploads directory exists
-UPLOAD_DIR = "/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import JSONResponse
 
-def generate_pixel_avatar(seed: str, size: int = 256) -> Image.Image:
-    """Generate a pixel art avatar based on a seed string"""
-    # Use seed to create deterministic random state
-    random.seed(hashlib.md5(seed.encode()).hexdigest())
-    
-    # Create base image
-    img = Image.new('RGB', (size, size), (240, 240, 240))
-    draw = ImageDraw.Draw(img)
-    
-    # Grid size (8x8 pixels, each pixel will be size/8)
-    grid_size = 8
-    pixel_size = size // grid_size
-    
-    # Generate colors
-    primary_color = (
-        random.randint(50, 200),
-        random.randint(50, 200), 
-        random.randint(50, 200)
-    )
-    secondary_color = (
-        min(255, primary_color[0] + 50),
-        min(255, primary_color[1] + 50),
-        min(255, primary_color[2] + 50)
-    )
-    
-    # Generate symmetric pattern (only generate left half, mirror to right)
-    for y in range(grid_size):
-        for x in range(grid_size // 2):
-            if random.random() > 0.5:  # 50% chance to fill pixel
-                color = primary_color if random.random() > 0.3 else secondary_color
-                
-                # Draw left side
-                left_x = x * pixel_size
-                left_y = y * pixel_size
-                draw.rectangle([
-                    left_x, left_y,
-                    left_x + pixel_size, left_y + pixel_size
-                ], fill=color)
-                
-                # Mirror to right side
-                right_x = (grid_size - 1 - x) * pixel_size
-                draw.rectangle([
-                    right_x, left_y,
-                    right_x + pixel_size, left_y + pixel_size
-                ], fill=color)
-    
-    return img
+from config import ConfigurationError, Settings, load_settings
+from service import ALLOWED_UPLOAD_TYPES, ProfilePictureService
+from storage import ObjectNotFoundError, S3Storage
 
-@app.get("/")
-async def root():
-    return {"message": "Profile Picture Generator Service", "version": "1.0.0"}
+logger = logging.getLogger(__name__)
 
-@app.post("/generate/{user_id}")
-async def generate_avatar(user_id: str, size: int = 256):
-    """Generate a pixel art avatar for a user"""
-    try:
-        # Add random seed for uniqueness
-        random_part = uuid.uuid4().hex
-        avatar = generate_pixel_avatar(f"{user_id}_{random_part}", size)
-        
-        # Save to uploads directory
-        filename = f"avatar_{user_id}_{size}_{random_part}.png"
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        avatar.save(filepath, "PNG")
-        
+
+def _build_app() -> FastAPI:
+    settings = load_settings()
+    storage = S3Storage(settings)
+    service = ProfilePictureService(settings, storage)
+
+    app = FastAPI(title="Profile Picture Generator", version="2.0.0")
+    app.state.settings = settings
+    app.state.profile_picture_service = service
+
+    @app.get("/")
+    async def root() -> dict[str, Any]:
         return {
-            "success": True,
-            "filename": filename,
-            "url": f"/uploads/{filename}",
-            "size": size
+            "message": "Profile Picture Generator Service",
+            "version": "2.0.0",
+            "storage_type": settings.storage_type,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Avatar generation failed: {str(e)}")
 
-@app.post("/upload")
-async def upload_profile_picture(
-    user_id: str = Form(...),
-    file: UploadFile = File(...)
-):
-    """Upload a custom profile picture"""
-    try:
-        # Validate file type by content type and extension
-        allowed_types = {"image/jpeg", "image/png", "image/jpg", "image/gif", "image/webp"}
-        allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-        ext = os.path.splitext(file.filename)[1].lower()
-        if file.content_type not in allowed_types and ext not in allowed_exts:
-            raise HTTPException(status_code=400, detail=f"File must be an image (got content_type={file.content_type}, ext={ext})")
-        
-        # Validate file size (max 5MB)
-        content = await file.read()
-        if len(content) > 5 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="File too large (max 5MB)")
-        
-        # Try to open with PIL to confirm it's a valid image
+    @app.post("/generate/{user_id}")
+    async def generate_avatar(user_id: str, size: int = 256) -> dict[str, Any]:
         try:
-            image = Image.open(io.BytesIO(content))
-            image.verify()  # Will raise if not a valid image
-            image = Image.open(io.BytesIO(content))  # Reopen for actual processing
-        except Exception:
-            raise HTTPException(status_code=400, detail="File is not a valid image")
-        
-        # Convert to RGB if necessary
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # Resize to standard sizes
-        sizes = [64, 128, 256]
-        filenames = []
-        
-        for size in sizes:
-            # Resize maintaining aspect ratio
-            image_resized = image.copy()
-            image_resized.thumbnail((size, size), Image.Resampling.LANCZOS)
-            
-            # Create square image with padding if needed
-            square_img = Image.new('RGB', (size, size), (255, 255, 255))
-            offset = ((size - image_resized.width) // 2, (size - image_resized.height) // 2)
-            square_img.paste(image_resized, offset)
-            
-            # Save file
-            filename = f"profile_{user_id}_{size}_{uuid.uuid4().hex[:8]}.png"
-            filepath = os.path.join(UPLOAD_DIR, filename)
-            square_img.save(filepath, "PNG")
-            filenames.append(filename)
-        
+            result = service.generate_avatar(user_id, size)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("avatar generation failed", extra={"user_id": user_id})
+            raise HTTPException(status_code=500, detail=f"Avatar generation failed: {exc}") from exc
         return {
             "success": True,
-            "filenames": filenames,
-            "urls": [f"/uploads/{fn}" for fn in filenames],
-            "primary_url": f"/uploads/{filenames[2]}"  # 256px version
+            "asset_key": result.asset_key,
+            "url": result.public_url,
+            "access_url": result.access_url,
+            "size": size,
         }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Upload error: {str(e)}")  # Add logging
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+    @app.post("/upload")
+    async def upload_profile_picture(user_id: str = Form(...), file: UploadFile = File(...)) -> dict[str, Any]:
+        content_type = (file.content_type or "").lower()
+        if content_type and content_type not in ALLOWED_UPLOAD_TYPES:
+            raise HTTPException(status_code=400, detail=f"File must be an image (got content_type={file.content_type})")
+        content = await file.read()
+        try:
+            result = service.upload_profile_picture(user_id, content)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("upload failed", extra={"user_id": user_id})
+            raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
+        return {
+            "success": True,
+            "asset_key": result.asset_key,
+            "url": result.public_url,
+            "access_url": result.access_url,
+            "primary_url": result.public_url,
+        }
+
+    @app.post("/profile-pictures/upload-url")
+    async def create_upload_url(payload: dict[str, Any]) -> dict[str, Any]:
+        user_id = str(payload.get("user_id", "")).strip()
+        filename = str(payload.get("filename", "")).strip()
+        content_type = str(payload.get("content_type", "")).strip().lower()
+        if not user_id or not filename:
+            raise HTTPException(status_code=400, detail="user_id and filename are required")
+        if content_type and content_type not in ALLOWED_UPLOAD_TYPES:
+            raise HTTPException(status_code=400, detail="unsupported content type")
+        prepared = service.prepare_upload(user_id, filename, content_type or "application/octet-stream")
+        return {
+            "success": True,
+            "object_key": prepared.object_key,
+            "upload_url": prepared.upload_url,
+            "method": prepared.method,
+            "headers": prepared.headers,
+            "expires_in": prepared.expires_in,
+        }
+
+    @app.post("/profile-pictures/complete")
+    async def complete_upload(payload: dict[str, Any]) -> dict[str, Any]:
+        user_id = str(payload.get("user_id", "")).strip()
+        object_key = str(payload.get("object_key", "")).strip()
+        if not user_id or not object_key:
+            raise HTTPException(status_code=400, detail="user_id and object_key are required")
+        try:
+            result = service.complete_upload(user_id, object_key)
+        except ObjectNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="uploaded object not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("upload completion failed", extra={"user_id": user_id, "object_key": object_key})
+            raise HTTPException(status_code=500, detail=f"Upload completion failed: {exc}") from exc
+        return {
+            "success": True,
+            "asset_key": result.asset_key,
+            "url": result.public_url,
+            "access_url": result.access_url,
+        }
+
+    @app.get("/profile-pictures/users/{user_id}")
+    async def get_avatar(user_id: str) -> Response:
+        try:
+            content = service.get_avatar(user_id)
+            content_type = service.get_avatar_content_type(user_id)
+        except ObjectNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="avatar not found") from exc
+        return Response(content=content, media_type=content_type, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+    @app.get("/profile-pictures/users/{user_id}/access-url")
+    async def get_avatar_access_url(user_id: str) -> dict[str, Any]:
+        try:
+            url = service.get_access_url(user_id)
+        except ObjectNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="avatar not found") from exc
+        return {"success": True, "url": url, "expires_in": settings.presign_expiry_seconds}
+
+    @app.get("/health")
+    async def health_check() -> dict[str, Any]:
+        return {"status": "healthy", "storage_type": settings.storage_type}
+
+    return app
+
+
+try:
+    app = _build_app()
+except ConfigurationError as exc:
+    logger.exception("profile picture service configuration error")
+    config_error_message = str(exc)
+    error_app = FastAPI(title="Profile Picture Generator", version="2.0.0")
+
+    @error_app.get("/health")
+    async def broken_health() -> JSONResponse:
+        return JSONResponse(status_code=500, content={"status": "broken", "error": config_error_message})
+
+    app = error_app

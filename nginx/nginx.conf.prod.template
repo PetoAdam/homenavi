@@ -55,13 +55,6 @@ http {
             proxy_read_timeout 86400;
         }
         
-        location /uploads/ {
-            alias /uploads/;
-            expires 30d;
-            add_header Cache-Control "public, immutable";
-            add_header Access-Control-Allow-Origin "*";
-        }
-        
         location / {
             set $frontend_upstream http://frontend:80;
             proxy_pass $frontend_upstream;

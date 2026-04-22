@@ -1,0 +1,31 @@
+{{- range $name, $svc := .Values.services }}
+{{- if and (eq (include "homenavi.serviceEnabled" (dict "root" $ "component" $name)) "true") $svc.networkPolicy $svc.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "homenavi.componentName" (dict "root" $ "component" $name) }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" $ "component" $name) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "homenavi.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  policyTypes:
+    {{- with $svc.networkPolicy.policyTypes }}
+{{ toYaml . | nindent 4 }}
+    {{- else }}
+    - Ingress
+    - Egress
+    {{- end }}
+  {{- with $svc.networkPolicy.ingress }}
+  ingress:
+{{ toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $svc.networkPolicy.egress }}
+  egress:
+{{ toYaml . | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
+{{- end }}

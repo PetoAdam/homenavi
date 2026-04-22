@@ -10,13 +10,14 @@ import (
 	httptransport "github.com/PetoAdam/homenavi/api-gateway/internal/http"
 	apiMiddleware "github.com/PetoAdam/homenavi/api-gateway/internal/middleware"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
+	"github.com/PetoAdam/homenavi/shared/redisx"
 	"github.com/redis/go-redis/v9"
 )
 
 // App is the composed api-gateway application.
 type App struct {
 	server      *http.Server
-	redisClient *redis.Client
+	redisClient redis.UniversalClient
 	shutdownObs func()
 	logger      *slog.Logger
 }
@@ -27,9 +28,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("load JWT public key: %w", err)
 	}
 
-	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: 0})
-	if _, err := redisClient.Ping(context.Background()).Result(); err != nil {
-		_ = redisClient.Close()
+	redisClient, err := redisx.Connect(context.Background(), cfg.Redis)
+	if err != nil {
 		return nil, fmt.Errorf("connect redis: %w", err)
 	}
 

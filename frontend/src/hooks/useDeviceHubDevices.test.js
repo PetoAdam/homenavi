@@ -72,4 +72,23 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
 
     expect(merged).toBeNull();
   });
+
+  it('preserves the previous live state when a REST snapshot arrives without state values', () => {
+    const prev = {
+      __hasMetadata: true,
+      _last_state: { state: true, brightness: 120 },
+      stateUpdatedAt: 200,
+      online: false,
+    };
+
+    const merged = mergeMetadataRecord(prev, {
+      device_id: 'zigbee/0xa4c13867e32d96d4',
+      protocol: 'zigbee',
+      manufacturer: 'Test',
+      online: true,
+    }, 'zigbee/0xa4c13867e32d96d4', 'zigbee');
+
+    expect(merged._last_state).toEqual({ state: true, brightness: 120 });
+    expect(merged.online).toBe(true);
+  });
 });

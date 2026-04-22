@@ -231,7 +231,7 @@ func (s *Server) defaultHelmMQTTBrokerURL() string {
 	if coreNamespace == "" {
 		coreNamespace = "homenavi"
 	}
-	return fmt.Sprintf("mqtt://mosquitto.%s.svc.cluster.local:1883", coreNamespace)
+	return fmt.Sprintf("mqtt://emqx.%s.svc.cluster.local:1883", coreNamespace)
 }
 
 func (s *Server) helmUninstall(ctx context.Context, releaseName, namespace string) error {

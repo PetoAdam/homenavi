@@ -65,7 +65,7 @@ export default function MapCard() {
   const {
     devices: realtimeDevices,
     loading: realtimeLoading,
-  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'ws' });
+  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'ws', accessToken });
 
   const { devices, rooms, loading, error } = useErsInventory({
     enabled: Boolean(isResidentOrAdmin && accessToken),

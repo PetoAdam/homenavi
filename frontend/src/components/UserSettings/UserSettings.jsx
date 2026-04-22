@@ -241,8 +241,8 @@ export default function UserSettings({ onClose }) {
                   <UserAvatar user={user} size={64} />
                 </div>
                 <div className="profile-avatar-overlay">
-                  <span>📷</span>
-                  <div>Change Photo</div>
+                  <span className="profile-avatar-overlay-icon">📷</span>
+                  <div className="profile-avatar-overlay-label">Change Photo</div>
                 </div>
               </div>
               <div className="profile-info">

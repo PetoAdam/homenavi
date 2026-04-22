@@ -14,6 +14,80 @@ global:
   logLevel: info
   envFromSecrets: []
 
+storage:
+  type: s3
+  s3:
+    endpoint: ""
+    region: us-east-1
+    bucket: profile-pictures
+    accessKey: ""
+    secretKey: ""
+    forcePathStyle: true
+    presignExpirySeconds: 900
+    existingSecretName: ""
+    accessKeyKey: accessKey
+    secretKeyKey: secretKey
+
+dependencies:
+  mqtt:
+    provider: emqx
+  objectStorage:
+    provider: minio
+  postgres:
+    provider: bundled
+  redis:
+    provider: bundled
+
+mqtt:
+  brokerUrl: ""
+  websocketUpstreamUrl: ""
+  dependencyHost: ""
+  dependencyPort: ""
+
+postgres:
+  mode: cnpgManaged
+  host: ""
+  port: "5432"
+  database: users
+  username: user
+  password: password
+  sslMode: disable
+  auth:
+    existingSecretName: ""
+    usernameKey: username
+    passwordKey: password
+  cnpg:
+    clusterName: ""
+    imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+    instances: 3
+    superuserSecretName: ""
+    superuserPassword: postgres
+    storage:
+      size: 10Gi
+      storageClassName: ""
+
+redis:
+  mode: sentinel
+  addr: ""
+  password: ""
+  masterName: homenavi-redis
+  sentinelAddrs: []
+  auth:
+    existingSecretName: ""
+    passwordKey: password
+  standalone:
+    port: "6379"
+  sentinel:
+    port: "26379"
+    replicas: 3
+    quorum: 2
+    downAfterMilliseconds: 5000
+    failoverTimeoutMilliseconds: 60000
+    parallelSyncs: 1
+    storage:
+      size: 2Gi
+      storageClassName: ""
+
 frontendProxy:
   apiGatewayHost: api-gateway
   apiGatewayPort: 8080
@@ -60,29 +134,17 @@ ingress:
 
 persistentVolumeClaims:
   postgres-data:
-    enabled: true
+    enabled: false
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
     size: 10Gi
-  profile-pictures:
+  minio-data:
     enabled: true
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
-    size: 1Gi
-  mosquitto-data:
-    enabled: true
-    storageClassName: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 2Gi
-  mosquitto-logs:
-    enabled: true
-    storageClassName: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 1Gi
+    size: 5Gi
   zigbee2mqtt-data:
     enabled: true
     storageClassName: ""
@@ -115,19 +177,15 @@ services:
       - name: frontend-nginx-config
         mountPath: /etc/nginx/conf.d/default.conf
         subPath: default.conf
-      - name: profile-pictures
-        mountPath: /uploads
     volumes:
       - name: frontend-nginx-config
         type: configMap
         configMapName: homenavi-frontend-nginx
-      - name: profile-pictures
-        type: generatedPVC
-        claimKey: profile-pictures
 
   api-gateway:
     enabled: true
     replicas: 1
+    injectMQTTWebsocketUpstream: true
     image:
       repository: ghcr.io/petoadam/homenavi-api-gateway
       tag: ""
@@ -139,7 +197,10 @@ services:
     env:
       AUTH_SERVICE_URL: http://auth-service:8000
       USER_SERVICE_URL: http://user-service:8001
+      REDIS_MODE: standalone
       REDIS_ADDR: redis:6379
+      REDIS_MASTER_NAME: ""
+      REDIS_SENTINEL_ADDRS: ""
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
       LOG_LEVEL: info
     envFromSecrets: []
@@ -174,7 +235,10 @@ services:
       AUTH_SERVICE_PORT: "8000"
       USER_SERVICE_URL: http://user-service:8001
       ERS_SERVICE_URL: http://entity-registry-service:8005
+      REDIS_MODE: standalone
       REDIS_ADDR: redis:6379
+      REDIS_MASTER_NAME: ""
+      REDIS_SENTINEL_ADDRS: ""
       EMAIL_SERVICE_URL: http://email-service:8002
       PROFILE_PICTURE_SERVICE_URL: http://profile-picture-service:8000
       JWT_PRIVATE_KEY_PATH: /app/keys/jwt_private.pem
@@ -216,6 +280,7 @@ services:
       POSTGRES_DB: users
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
+      POSTGRES_SSLMODE: disable
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
       LOG_LEVEL: info
     envFromSecrets: []
@@ -299,15 +364,17 @@ services:
       port: 8000
     env:
       PROFILE_PICTURE_SERVICE_PORT: "8000"
+      STORAGE_TYPE: s3
+      PROFILE_PICTURE_PUBLIC_BASE_PATH: /api/profile-pictures
+      STORAGE_S3_ENDPOINT: http://minio:9000
+      STORAGE_S3_REGION: us-east-1
+      STORAGE_S3_BUCKET: profile-pictures
+      STORAGE_S3_ACCESS_KEY: ""
+      STORAGE_S3_SECRET_KEY: ""
+      STORAGE_S3_FORCE_PATH_STYLE: "true"
+      STORAGE_PRESIGN_EXPIRY_SECONDS: "900"
     envFromSecrets: []
     resources: {}
-    volumeMounts:
-      - name: profile-pictures
-        mountPath: /uploads
-    volumes:
-      - name: profile-pictures
-        type: generatedPVC
-        claimKey: profile-pictures
 
   integration-proxy:
     enabled: true
@@ -363,6 +430,33 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     envFromSecrets: []
+    startupProbe:
+      exec:
+        command:
+          - /bin/sh
+          - -ec
+          - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 24
+    readinessProbe:
+      exec:
+        command:
+          - /bin/sh
+          - -ec
+          - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 6
+    livenessProbe:
+      exec:
+        command:
+          - /bin/sh
+          - -ec
+          - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
     resources: {}
     volumeMounts:
       - name: postgres-data
@@ -377,7 +471,7 @@ services:
     replicas: 1
     image:
       repository: redis
-      tag: 7-alpine
+      tag: 7.2-alpine
     containerPort: 6379
     service:
       enabled: true
@@ -385,12 +479,31 @@ services:
       port: 6379
     env: {}
     envFromSecrets: []
+    startupProbe:
+      tcpSocket:
+        port: 6379
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 24
+    readinessProbe:
+      tcpSocket:
+        port: 6379
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 6
+    livenessProbe:
+      tcpSocket:
+        port: 6379
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 6
     resources: {}
 
   echo-service:
     enabled: true
     replicas: 1
     image:
+      POSTGRES_SSLMODE: disable
       repository: ghcr.io/petoadam/homenavi-echo-service
       tag: ""
     containerPort: 9000
@@ -402,16 +515,16 @@ services:
     envFromSecrets: []
     resources: {}
 
-  mosquitto:
+  emqx:
     enabled: true
     replicas: 1
     image:
-      repository: eclipse-mosquitto
-      tag: "2"
+      repository: emqx/emqx
+      tag: 6.1.1
     containerPort: 1883
     extraContainerPorts:
       - name: websocket
-        containerPort: 9001
+        containerPort: 8083
         protocol: TCP
     service:
       enabled: true
@@ -420,47 +533,140 @@ services:
       targetPort: 1883
       extraPorts:
         - name: websocket
+          port: 8083
+          targetPort: 8083
+          protocol: TCP
+    env:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: manual
+      EMQX_CLUSTER__STATIC__SEEDS: ""
+      EMQX_DASHBOARD__DEFAULT_USERNAME: admin
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: public
+      EMQX_LISTENERS__WS__DEFAULT__BIND: 0.0.0.0:8083
+    config: |
+      ## Place read-only configurations in this file.
+      ## To define configurations that can later be overridden through UI/API/CLI, add
+      ## them to `etc/base.hocon`.
+      ##
+      ## Config precedence order:
+      ##   etc/base.hocon < cluster.hocon < emqx.conf < environment variables
+      ##
+      ## See https://www.emqx.io/docs/en/latest/configuration/configuration.html for more information.
+      ## Configuration full example can be found in etc/examples
+
+      node {
+        name = "emqx@127.0.0.1"
+        cookie = "emqxsecretcookie"
+        data_dir = "data"
+      }
+
+      cluster {
+        name = emqxcl
+        discovery_strategy = manual
+      }
+
+      dashboard {
+          listeners {
+              http.bind = 18083
+              https {
+                  ssl_options {
+                      certfile = "${EMQX_ETC_DIR}/certs/cert.pem"
+                      keyfile = "${EMQX_ETC_DIR}/certs/key.pem"
+                  }
+              }
+          }
+      }
+
+      include "homenavi-bridge.hocon"
+    bridgeConfigFiles: {}
+    envFromSecrets: []
+    startupProbe:
+      exec:
+        command:
+          - /bin/sh
+          - -ec
+          - emqx ping | grep -q '^pong$'
+      initialDelaySeconds: 15
+      periodSeconds: 5
+      timeoutSeconds: 10
+      failureThreshold: 36
+    readinessProbe:
+      tcpSocket:
+        port: 1883
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 6
+    livenessProbe:
+      exec:
+        command:
+          - /bin/sh
+          - -ec
+          - emqx ping | grep -q '^pong$'
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 6
+    resources: {}
+    command:
+      - /bin/sh
+      - /opt/emqx/etc/bootstrap/docker-entrypoint.sh
+    volumeMounts:
+      - name: emqx-config
+        mountPath: /opt/emqx/etc/emqx.conf
+        subPath: emqx.conf
+      - name: emqx-config
+        mountPath: /opt/emqx/etc/bootstrap/docker-entrypoint.sh
+        subPath: docker-entrypoint.sh
+      - name: emqx-config
+        mountPath: /opt/emqx/etc/homenavi-bridge.d
+    volumes:
+      - name: emqx-config
+        type: configMap
+        configMapNameTemplate: homenavi.emqxConfigMapName
+
+  minio:
+    enabled: true
+    replicas: 1
+    image:
+      repository: minio/minio
+      tag: RELEASE.2025-02-28T09-55-16Z
+    containerPort: 9000
+    extraContainerPorts:
+      - name: console
+        containerPort: 9001
+        protocol: TCP
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 9000
+      targetPort: 9000
+      extraPorts:
+        - name: console
           port: 9001
           targetPort: 9001
           protocol: TCP
-    env: {}
+    env:
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
     envFromSecrets: []
     resources: {}
-    config: |
-      persistence true
-      persistence_location /mosquitto/data/
-      log_dest file /mosquitto/log/mosquitto.log
-
-      listener 1883 0.0.0.0
-      allow_anonymous true
-
-      listener 9001 0.0.0.0
-      protocol websockets
-    bridge:
-      enabled: false
-      config: ""
+    args:
+      - server
+      - /data
+      - --console-address
+      - :9001
     volumeMounts:
-      - name: mosquitto-data
-        mountPath: /mosquitto/data
-      - name: mosquitto-logs
-        mountPath: /mosquitto/log
-      - name: mosquitto-config
-        mountPath: /mosquitto/config/mosquitto.conf
-        subPath: mosquitto.conf
+      - name: minio-data
+        mountPath: /data
     volumes:
-      - name: mosquitto-data
+      - name: minio-data
         type: generatedPVC
-        claimKey: mosquitto-data
-      - name: mosquitto-logs
-        type: generatedPVC
-        claimKey: mosquitto-logs
-      - name: mosquitto-config
-        type: configMap
-        configMapName: homenavi-mosquitto-config
+        claimKey: minio-data
 
   device-hub:
     enabled: true
     replicas: 1
+    usesMQTT: true
     image:
       repository: ghcr.io/petoadam/homenavi-device-hub
       tag: ""
@@ -471,18 +677,16 @@ services:
       port: 8090
     env:
       DEVICE_HUB_PORT: "8090"
-      MQTT_BROKER_URL: mqtt://mosquitto:1883
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: users
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
       DEVICE_HUB_ENABLE_THREAD: "true"
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
-      - host: mosquitto
-        port: 1883
       - host: postgres
         port: 5432
     resources: {}
@@ -490,6 +694,7 @@ services:
   entity-registry-service:
     enabled: true
     replicas: 1
+    usesMQTT: true
     image:
       repository: ghcr.io/petoadam/homenavi-entity-registry-service
       tag: ""
@@ -500,24 +705,23 @@ services:
       port: 8095
     env:
       ENTITY_REGISTRY_PORT: "8095"
-      MQTT_BROKER_URL: mqtt://mosquitto:1883
       DEVICE_HUB_URL: http://device-hub:8090
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: users
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
     envFromSecrets: []
     dependsOn:
       - host: postgres
         port: 5432
-      - host: mosquitto
-        port: 1883
     resources: {}
 
   zigbee-adapter:
     enabled: true
     replicas: 1
+    usesMQTT: true
     image:
       repository: ghcr.io/petoadam/homenavi-zigbee-adapter
       tag: ""
@@ -530,18 +734,19 @@ services:
       ZIGBEE_ADAPTER_PORT: "8091"
       ZIGBEE_ADAPTER_ID: zigbee-adapter-1
       ZIGBEE_ADAPTER_VERSION: dev
-      MQTT_BROKER_URL: mqtt://mosquitto:1883
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: users
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      REDIS_MODE: standalone
       REDIS_ADDR: redis:6379
+      REDIS_MASTER_NAME: ""
+      REDIS_SENTINEL_ADDRS: ""
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
-      - host: mosquitto
-        port: 1883
       - host: postgres
         port: 5432
       - host: redis
@@ -551,6 +756,7 @@ services:
   thread-adapter:
     enabled: true
     replicas: 1
+    usesMQTT: true
     image:
       repository: ghcr.io/petoadam/homenavi-thread-adapter
       tag: ""
@@ -561,19 +767,16 @@ services:
       port: 8092
     env:
       THREAD_ADAPTER_PORT: "8092"
-      MQTT_BROKER_URL: mqtt://mosquitto:1883
       THREAD_ADAPTER_ID: thread-adapter-1
       THREAD_ADAPTER_VERSION: dev
       LOG_LEVEL: info
     envFromSecrets: []
-    dependsOn:
-      - host: mosquitto
-        port: 1883
     resources: {}
 
   history-service:
     enabled: true
     replicas: 1
+    usesMQTT: true
     image:
       repository: ghcr.io/petoadam/homenavi-history-service
       tag: ""
@@ -584,7 +787,6 @@ services:
       port: 8093
     env:
       HISTORY_SERVICE_PORT: "8093"
-      MQTT_BROKER_URL: mqtt://mosquitto:1883
       HISTORY_INGEST_RETAINED: "false"
       HISTORY_HDP_STATE_PREFIX: homenavi/hdp/device/state/
       POSTGRES_USER: user
@@ -596,8 +798,6 @@ services:
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
-      - host: mosquitto
-        port: 1883
       - host: postgres
         port: 5432
     resources: {}
@@ -605,6 +805,7 @@ services:
   automation-service:
     enabled: true
     replicas: 1
+    usesMQTT: true
     image:
       repository: ghcr.io/petoadam/homenavi-automation-service
       tag: ""
@@ -615,7 +816,6 @@ services:
       port: 8094
     env:
       AUTOMATION_SERVICE_PORT: "8094"
-      MQTT_BROKER_URL: mqtt://mosquitto:1883
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: users
@@ -628,8 +828,6 @@ services:
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
-      - host: mosquitto
-        port: 1883
       - host: postgres
         port: 5432
     resources: {}
@@ -724,7 +922,7 @@ services:
       TZ: UTC
     envFromSecrets: []
     dependsOn:
-      - host: mosquitto
+      - host: emqx
         port: 1883
     resources: {}
     volumeMounts:

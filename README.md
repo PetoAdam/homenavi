@@ -143,6 +143,8 @@ If you have a physical Zigbee USB adapter connected and configured, include the 
 docker compose --profile zigbee-hardware up --build
 ```
 
+By default, the stack now uses **EMQX** as the main MQTT broker. If you need to connect Homenavi to an external MQTT deployment, load one or more bridge snippets from `emqx/bridge.d/*.hocon`. A fully commented starter lives at `emqx/bridge.d/homenavi-bridge.example.hocon`. See [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md).
+
 Entry Points:
 * Frontend: http://localhost (served via Nginx)
 * API Gateway (REST): http://localhost/api
@@ -177,7 +179,7 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 Support:
 * `nginx/` reverse proxy templates.
 * `prometheus/` scrape config.
-* `mosquitto/` local MQTT broker config + data dirs for Device Hub adapters.
+* `emqx/` broker configuration, including gitignored bridge snippets loaded from `emqx/bridge.d/`.
 * `keys/` (DO NOT COMMIT PRIVATE KEYS IN PRODUCTION REPOS).
 * `doc/` guides and design docs.
 
@@ -319,13 +321,15 @@ The local marketplace deployment in that runbook is for development and end-to-e
 
 For single-namespace MVP deployment in one step, run [scripts/deploy-minikube.sh](scripts/deploy-minikube.sh).
 
-The script supports Kubernetes-native secret ingestion from env files (for Helm deployments), and optional Mosquitto bridge enablement:
+The script supports Kubernetes-native secret ingestion from env files, installs the CloudNativePG operator when needed, and can inject a local EMQX bridge snippet into the Helm release:
 
 ```bash
-./scripts/deploy-minikube.sh --env-file /home/adam/Projects/homenavi/.env
-./scripts/deploy-minikube.sh --with-bridge --bridge-config-file /home/adam/Projects/homenavi/mosquitto/config/conf.d/bridge.conf
+./scripts/deploy-minikube.sh --env-file ./.env
+./scripts/deploy-minikube.sh --bridge-config-file ./emqx/bridge.d/20-external-bridge.hocon
 ./scripts/deploy-minikube.sh --start-port-forwards
 ```
+
+For broker topology guidance, including the preferred direct-bridge pattern and EMQX bridge snippet layout, see [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md).
 
 For a safe starter template, use [k8s/secrets/homenavi.env.example](k8s/secrets/homenavi.env.example).
 

@@ -17,11 +17,12 @@ func TestLoadConfigMergesRouteFilesAndEnvOverrides(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("listen_addr: ':8080'\njwt_secret: old\nrate_limit:\n  enabled: true\n  rps: 10\n  burst: 20\nroutes:\n  - path: /inline\n    upstream: http://inline\n    methods: [GET]\n    access: public\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(routesDir, "extra.yaml"), []byte("routes:\n  - path: /extra\n    upstream: http://extra\n    methods: [POST]\n    access: admin\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(routesDir, "extra.yaml"), []byte("routes:\n  - path: /extra\n    upstream: ${TEST_UPSTREAM_URL:-http://default-upstream}\n    methods: [POST]\n    access: admin\n"), 0o644); err != nil {
 		t.Fatalf("write route file: %v", err)
 	}
 
 	t.Setenv("JWT_PUBLIC_KEY_PATH", "/tmp/jwt.pem")
+	t.Setenv("TEST_UPSTREAM_URL", "ws://emqx:8083/mqtt")
 
 	cfg, err := LoadConfig(configPath, routesDir)
 	if err != nil {
@@ -35,5 +36,8 @@ func TestLoadConfigMergesRouteFilesAndEnvOverrides(t *testing.T) {
 	}
 	if len(cfg.Routes) != 2 {
 		t.Fatalf("expected 2 routes, got %d", len(cfg.Routes))
+	}
+	if cfg.Routes[1].Upstream != "ws://emqx:8083/mqtt" {
+		t.Fatalf("expected expanded route upstream, got %q", cfg.Routes[1].Upstream)
 	}
 }

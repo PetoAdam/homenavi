@@ -59,8 +59,8 @@ func (a *App) Run(ctx context.Context) error {
 
 	if a.cfg.AutoImport {
 		backfill.Start(ctx, a.repo, a.cfg.DeviceHubURL, &http.Client{Timeout: 10 * time.Second})
-		autoimport.Start(ctx, a.repo, a.cfg.MQTTBrokerURL, a.hub)
-		a.logger.Info("ers auto-import enabled", "broker", a.cfg.MQTTBrokerURL, "device_hub", a.cfg.DeviceHubURL)
+		autoimport.Start(ctx, a.repo, a.cfg.MQTT.BrokerURL, a.hub)
+		a.logger.Info("ers auto-import enabled", "broker", a.cfg.MQTT.BrokerURL, "device_hub", a.cfg.DeviceHubURL)
 	}
 
 	errCh := make(chan error, 1)
