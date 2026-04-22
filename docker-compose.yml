@@ -364,8 +364,6 @@ services:
 
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
-    profiles:
-      - zigbee-hardware
     restart: unless-stopped
     depends_on:
       emqx:
