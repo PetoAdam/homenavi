@@ -84,6 +84,9 @@ redis:
     downAfterMilliseconds: 5000
     failoverTimeoutMilliseconds: 60000
     parallelSyncs: 1
+    volumeClaimTemplateLabels:
+      helm.sh/chart: homenavi-0.1.0
+      app.kubernetes.io/version: latest
     storage:
       size: 2Gi
       storageClassName: ""
