@@ -17,7 +17,11 @@ spec:
       labels:
         {{- include "homenavi.selectorLabels" $ | nindent 8 }}
         app.kubernetes.io/component: {{ $name }}
-      {{- if or (eq $name "frontend") (eq $name "integration-proxy") (eq $name "emqx") (eq (include "homenavi.jwtStaticSecret" $) "true") }}
+      {{- $zigbee2mqttInlineConfig := trim (default "" $svc.configuration) }}
+      {{- $zigbee2mqttExistingConfigMap := trim (default "" $svc.existingConfigurationConfigMap) }}
+      {{- $zigbee2mqttConfigKey := default "configuration.yaml" $svc.configurationConfigMapKey }}
+      {{- $zigbee2mqttHasConfigSource := and (eq $name "zigbee2mqtt") (or (ne $zigbee2mqttInlineConfig "") (ne $zigbee2mqttExistingConfigMap "")) }}
+      {{- if or (eq $name "frontend") (eq $name "integration-proxy") (eq $name "emqx") $zigbee2mqttHasConfigSource (eq (include "homenavi.jwtStaticSecret" $) "true") }}
       annotations:
         {{- if eq $name "frontend" }}
         checksum/frontend-nginx-config: {{ include (print $.Template.BasePath "/frontend-nginx-config.yaml") $ | sha256sum }}
@@ -27,6 +31,9 @@ spec:
         {{- end }}
         {{- if eq $name "emqx" }}
         checksum/emqx-config: {{ include (print $.Template.BasePath "/emqx-config.yaml") $ | sha256sum }}
+        {{- end }}
+        {{- if and (eq $name "zigbee2mqtt") (ne $zigbee2mqttInlineConfig "") }}
+        checksum/zigbee2mqtt-config: {{ include (print $.Template.BasePath "/zigbee2mqtt-config.yaml") $ | sha256sum }}
         {{- end }}
         {{- if eq (include "homenavi.jwtStaticSecret" $) "true" }}
         checksum/jwt-secret: {{ include (print $.Template.BasePath "/jwt-secret.yaml") $ | sha256sum }}
@@ -46,6 +53,8 @@ spec:
       {{- $usesMQTT := default false $svc.usesMQTT }}
       {{- $injectMQTTWebsocketUpstream := default false $svc.injectMQTTWebsocketUpstream }}
       {{- $serviceDependencies := default (list) $svc.dependsOn }}
+      {{- $zigbee2mqttBootstrapEnabled := and $zigbee2mqttHasConfigSource (default true $svc.bootstrapConfiguration) }}
+      {{- $zigbee2mqttOverwriteOnDeploy := and $zigbee2mqttBootstrapEnabled (default false $svc.overwriteConfigurationOnDeploy) }}
       {{- with $svc.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -100,7 +109,7 @@ spec:
       {{- end }}
       {{- end }}
       {{- $extraInitContainers := default (list) $svc.initContainers }}
-      {{- if or (eq $name "profile-picture-service") (eq $name "integration-proxy") (gt (len $dedupedServiceDependencies) 0) (gt (len $extraInitContainers) 0) }}
+      {{- if or (eq $name "profile-picture-service") (eq $name "integration-proxy") $zigbee2mqttBootstrapEnabled (gt (len $dedupedServiceDependencies) 0) (gt (len $extraInitContainers) 0) }}
       initContainers:
         {{- if and (eq $name "profile-picture-service") (eq (include "homenavi.storageType" $) "s3") (eq (include "homenavi.objectStorageProvider" $) "minio") }}
         - name: ensure-profile-picture-bucket
@@ -153,6 +162,31 @@ spec:
               mountPath: /var/lib/integration-proxy
             - name: integration-config-bootstrap
               mountPath: /bootstrap-config
+        {{- end }}
+        {{- if $zigbee2mqttBootstrapEnabled }}
+        - name: bootstrap-zigbee2mqtt-config
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              set -e
+              mkdir -p /app/data
+              {{- if $zigbee2mqttOverwriteOnDeploy }}
+              cp /bootstrap-config/{{ $zigbee2mqttConfigKey }} /app/data/configuration.yaml
+              {{- else }}
+              if [ ! -s /app/data/configuration.yaml ]; then
+                cp /bootstrap-config/{{ $zigbee2mqttConfigKey }} /app/data/configuration.yaml
+              fi
+              {{- end }}
+          volumeMounts:
+            - name: zigbee2mqtt-data
+              mountPath: /app/data
+            - name: zigbee2mqtt-bootstrap-config
+              mountPath: /bootstrap-config/{{ $zigbee2mqttConfigKey }}
+              subPath: {{ $zigbee2mqttConfigKey }}
+              readOnly: true
         {{- end }}
         {{- if gt (len $dedupedServiceDependencies) 0 }}
         - name: wait-for-dependencies
@@ -349,12 +383,14 @@ spec:
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with $.Values.securityContext }}
+          {{- $containerSecurityContext := mergeOverwrite (deepCopy (default (dict) $.Values.securityContext)) (deepCopy (default (dict) $svc.securityContext)) }}
+          {{- if gt (len $containerSecurityContext) 0 }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
+            {{- toYaml $containerSecurityContext | nindent 12 }}
           {{- end }}
-      {{- with $svc.volumes }}
+      {{- if or $svc.volumes $zigbee2mqttHasConfigSource }}
       volumes:
+        {{- with $svc.volumes }}
         {{- range $volume := . }}
         - name: {{ $volume.name }}
           {{- if eq $volume.type "generatedPVC" }}
@@ -381,6 +417,15 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if $zigbee2mqttHasConfigSource }}
+        - name: zigbee2mqtt-bootstrap-config
+          configMap:
+            name: {{ include "homenavi.zigbee2mqttConfigMapName" (dict "root" $ "service" $svc) }}
+            items:
+              - key: {{ $zigbee2mqttConfigKey }}
+                path: {{ $zigbee2mqttConfigKey }}
         {{- end }}
       {{- end }}
 ---

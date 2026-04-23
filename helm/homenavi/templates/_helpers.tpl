@@ -179,6 +179,15 @@ http://minio:9000
 {{- printf "%s-emqx-config" (include "homenavi.fullname" .) -}}
 {{- end -}}
 
+{{- define "homenavi.zigbee2mqttConfigMapName" -}}
+{{- $existing := trim (default "" .service.existingConfigurationConfigMap) -}}
+{{- if ne $existing "" -}}
+{{- $existing -}}
+{{- else -}}
+{{- printf "%s-zigbee2mqtt-config" (include "homenavi.fullname" .root) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "homenavi.cnpgClusterName" -}}
 {{- default (printf "%s-postgres" (include "homenavi.fullname" .)) .Values.postgres.cnpg.clusterName -}}
 {{- end -}}
