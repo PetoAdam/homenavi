@@ -1,0 +1,13 @@
+{{- $svc := .Values.services.zigbee2mqtt -}}
+{{- $config := trim (default "" $svc.configuration) -}}
+{{- if and (eq (include "homenavi.serviceEnabled" (dict "root" . "component" "zigbee2mqtt")) "true") (ne $config "") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "homenavi.zigbee2mqttConfigMapName" (dict "root" . "service" $svc) }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "zigbee2mqtt") | nindent 4 }}
+data:
+  {{ default "configuration.yaml" $svc.configurationConfigMapKey }}: |
+{{ tpl $svc.configuration . | nindent 4 }}
+{{- end }}

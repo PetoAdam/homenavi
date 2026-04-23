@@ -920,6 +920,17 @@ services:
       port: 8080
     env:
       TZ: UTC
+    # Optional bootstrap source for /app/data/configuration.yaml.
+    # If set, the chart seeds the persistent data directory once so Zigbee2MQTT
+    # starts with the same on-disk layout as the Docker Compose deployment.
+    configuration: ""
+    existingConfigurationConfigMap: ""
+    configurationConfigMapKey: configuration.yaml
+    bootstrapConfiguration: true
+    # When true, the chart overwrites /app/data/configuration.yaml on every pod
+    # start from the configured source. Keep false if you want Zigbee2MQTT/API/UI
+    # driven config changes to persist in the PVC between restarts.
+    overwriteConfigurationOnDeploy: false
     envFromSecrets: []
     dependsOn:
       - host: emqx
@@ -928,7 +939,12 @@ services:
     volumeMounts:
       - name: zigbee2mqtt-data
         mountPath: /app/data
+      - name: zigbee2mqtt-tmp
+        mountPath: /tmp
     volumes:
       - name: zigbee2mqtt-data
         type: generatedPVC
         claimKey: zigbee2mqtt-data
+      - name: zigbee2mqtt-tmp
+    securityContext:
+      readOnlyRootFilesystem: false
