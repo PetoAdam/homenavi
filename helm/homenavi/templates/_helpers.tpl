@@ -52,6 +52,13 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
+{{- define "homenavi.redisPVCCompatibilityLabels" -}}
+{{ include "homenavi.componentStableLabels" (dict "root" . "component" "redis") }}
+{{- with .Values.redis.sentinel.volumeClaimTemplateLabels }}
+{{ toYaml . }}
+{{- end }}
+{{- end -}}
+
 {{- define "homenavi.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "homenavi.fullname" .) .Values.serviceAccount.name -}}
