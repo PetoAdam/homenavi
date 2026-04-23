@@ -41,6 +41,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
+{{- define "homenavi.stableLabels" -}}
+app.kubernetes.io/name: {{ include "homenavi.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{- define "homenavi.componentStableLabels" -}}
+{{ include "homenavi.stableLabels" .root }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
 {{- define "homenavi.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "homenavi.fullname" .) .Values.serviceAccount.name -}}
