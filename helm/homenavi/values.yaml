@@ -863,7 +863,7 @@ services:
     replicas: 1
     image:
       repository: jaegertracing/all-in-one
-      tag: latest
+      tag: 1.76.0
     containerPort: 16686
     service:
       enabled: true
@@ -879,7 +879,7 @@ services:
     replicas: 1
     image:
       repository: prom/prometheus
-      tag: latest
+      tag: v3.9.1
     containerPort: 9090
     service:
       enabled: true
@@ -894,7 +894,7 @@ services:
     replicas: 1
     image:
       repository: grafana/grafana
-      tag: latest
+      tag: 12.3.2
     containerPort: 3000
     service:
       enabled: true
@@ -912,7 +912,7 @@ services:
     replicas: 1
     image:
       repository: koenkk/zigbee2mqtt
-      tag: latest
+      tag: 2.8.0
     containerPort: 8080
     service:
       enabled: true

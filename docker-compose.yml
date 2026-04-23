@@ -122,7 +122,7 @@ services:
       - homenavi-network
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v3.9.1
     restart: unless-stopped
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -132,7 +132,7 @@ services:
       - "${PROMETHEUS_HOST_PORT}:${PROMETHEUS_PORT}"
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:12.3.2
     restart: unless-stopped
     networks:
       - homenavi-network
@@ -142,7 +142,7 @@ services:
       - "${GRAFANA_HOST_PORT}:${GRAFANA_PORT}"
 
   jaeger:
-    image: jaegertracing/all-in-one
+    image: jaegertracing/all-in-one:1.76.0
     restart: unless-stopped
     networks:
       - homenavi-network
@@ -363,7 +363,7 @@ services:
       - "${MQTT_WS_HOST_PORT}:8083"
 
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:latest
+    image: koenkk/zigbee2mqtt:2.8.0
     restart: unless-stopped
     depends_on:
       emqx:
