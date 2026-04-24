@@ -102,6 +102,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-storage-auth" (include "homenavi.fullname" .) -}}
 {{- end -}}
 
+{{- define "homenavi.storageUsesExistingSecret" -}}
+{{- ne (trim (default "" .Values.storage.s3.existingSecretName)) "" -}}
+{{- end -}}
+
+{{- define "homenavi.storageUsesManagedSecret" -}}
+{{- and (eq (include "homenavi.objectStorageProvider" .) "minio") (not (eq (include "homenavi.storageUsesExistingSecret" .) "true")) -}}
+{{- end -}}
+
 {{- define "homenavi.storageS3Endpoint" -}}
 {{- $override := trim (default "" .Values.storage.s3.endpoint) -}}
 {{- if ne $override "" -}}
@@ -122,10 +130,9 @@ http://minio:9000
 {{- end -}}
 
 {{- define "homenavi.storageS3AuthSecretName" -}}
-{{- $existing := trim (default "" .Values.storage.s3.existingSecretName) -}}
-{{- if ne $existing "" -}}
-{{- $existing -}}
-{{- else if eq (include "homenavi.objectStorageProvider" .) "minio" -}}
+{{- if eq (include "homenavi.storageUsesExistingSecret" .) "true" -}}
+{{- trim .Values.storage.s3.existingSecretName -}}
+{{- else if eq (include "homenavi.storageUsesManagedSecret" .) "true" -}}
 {{- include "homenavi.storageManagedSecretName" . -}}
 {{- else -}}
 {{- "" -}}
