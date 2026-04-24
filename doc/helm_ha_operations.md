@@ -95,6 +95,8 @@ The chart uses those secret refs for:
 - the profile picture bucket bootstrap init container
 - bundled MinIO when `dependencies.objectStorage.provider=minio`
 
+When `storage.s3.existingSecretName` is set, the chart treats that secret as the only source of truth for storage credentials. It does not render a managed `*-storage-auth` secret in that mode.
+
 ### Generic per-service `envValueFrom`
 
 Each service also supports explicit `envValueFrom` entries for one-off secret or config map references.
