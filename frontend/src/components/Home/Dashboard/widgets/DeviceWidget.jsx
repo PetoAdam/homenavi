@@ -384,7 +384,7 @@ export default function DeviceWidget({
   onRemove,
 }) {
   const navigate = useNavigate();
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
   const [commandError, setCommandError] = useState('');
@@ -405,9 +405,11 @@ export default function DeviceWidget({
     };
   }, []);
 
-  const { devices: realtimeDevices, loading: hdpLoading } = useDeviceHubDevices({
+  const { devices: realtimeDevices, loading: hdpLoading, connectionInfo } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
     metadataMode: 'rest',
+    accessToken,
+    authReady: Boolean(accessToken) && !bootstrapping,
   });
 
   const { devices: ersDevices, loading: ersLoading } = useErsInventory({
@@ -578,6 +580,8 @@ export default function DeviceWidget({
 
   const toggleValue = primaryToggleKey ? toControlBoolean(controlValues[primaryToggleKey]) : null;
   const isPending = Boolean(device?.id && pendingCommands[device.id]);
+  const commandsReady = Boolean(connectionInfo?.commandsReady);
+  const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
 
   useEffect(() => {
     if (!device?.id) return;
@@ -599,6 +603,10 @@ export default function DeviceWidget({
 
   const handleCommand = useCallback((dev, payload) => {
     if (!dev?.id) return Promise.resolve();
+    if (!commandsReady) {
+      setCommandError(commandLockReason);
+      return Promise.reject(new Error(commandLockReason));
+    }
     if (!accessToken) {
       setCommandError('Authentication required');
       return Promise.reject(new Error('Authentication required'));
@@ -653,7 +661,7 @@ export default function DeviceWidget({
         throw err;
       })
       .finally(() => {});
-  }, [accessToken]);
+  }, [accessToken, commandLockReason, commandsReady]);
 
   const handleInputCommand = useCallback((input, value) => {
     if (!device) return;
@@ -728,6 +736,7 @@ export default function DeviceWidget({
     >
         <div className="device-widget__content">
         {commandError && <div className="device-widget__command-error">{commandError}</div>}
+        {!commandError && !commandsReady ? <div className="device-widget__command-error">{commandLockReason}</div> : null}
         
         {/* Header - Prominent icon and name */}
         <div className="device-widget__header">
@@ -751,7 +760,7 @@ export default function DeviceWidget({
             >
               <GlassSwitch
                 checked={Boolean(toggleValue)}
-                disabled={isPending}
+                disabled={isPending || !commandsReady}
                 onChange={handlePrimaryToggle}
               />
             </div>
@@ -765,7 +774,7 @@ export default function DeviceWidget({
             <DeviceControlList
               inputs={interactiveInputs}
               values={controlValues}
-              pending={isPending}
+              pending={isPending || !commandsReady}
               onValueChange={handleValueChange}
               onCommand={handleInputCommand}
               layout={fieldsLayout}
