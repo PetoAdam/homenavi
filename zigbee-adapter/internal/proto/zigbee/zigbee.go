@@ -45,12 +45,18 @@ type ZigbeeAdapter struct {
 	devicesReqMu   sync.Mutex
 	lastDevicesReq time.Time
 	correlationMu  sync.Mutex
-	correlationMap map[string]string
+	correlationMap map[string]pendingCorrelation
 }
 
 type pendingZigbeeState struct {
 	payload    []byte
 	receivedAt time.Time
+}
+
+type pendingCorrelation struct {
+	cid               string
+	remainingPublishes int
+	expiresAt         time.Time
 }
 
 const (
@@ -84,7 +90,7 @@ func New(client *mqttinfra.Client, repo *dbinfra.Repository, cache *redisinfra.S
 		friendlyIndex:  map[string]string{},
 		friendlyTopic:  map[string]string{},
 		pendingState:   map[string]pendingZigbeeState{},
-		correlationMap: map[string]string{},
+		correlationMap: map[string]pendingCorrelation{},
 	}
 }
 
