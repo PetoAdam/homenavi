@@ -2,5 +2,5 @@ apiVersion: v2
 name: homenavi
 description: Helm chart for deploying the Homenavi core platform
 type: application
-version: 0.4.7
-appVersion: "v0.4.7"
+version: 0.4.8
+appVersion: "v0.4.8"
