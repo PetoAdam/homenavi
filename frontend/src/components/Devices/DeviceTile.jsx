@@ -807,7 +807,19 @@ function formatControlValue(input, value) {
   }
 }
 
-export default function DeviceTile({ device, protocolLabel, onCommand, onRename, onUpdateIcon, pending, onDelete, onOpen, actionLayout = 'menu' }) {
+export default function DeviceTile({
+  device,
+  protocolLabel,
+  onCommand,
+  onRename,
+  onUpdateIcon,
+  pending,
+  controlsLocked = false,
+  controlsLockReason = '',
+  onDelete,
+  onOpen,
+  actionLayout = 'menu',
+}) {
   const capabilities = useMemo(
     () => collectCapabilities(device),
     [device],
@@ -916,7 +928,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
   const primaryToggleKey = primaryToggleInput ? sanitizeInputKey(primaryToggleInput) : null;
 
   const showHeaderToggle = Boolean(primaryToggleInput && onCommand && device?.id);
-  const toggleDisabled = pending;
+  const toggleDisabled = pending || controlsLocked;
 
   const interactiveInputs = useMemo(() => {
     const base = (!showHeaderToggle || !primaryToggleInput)
@@ -1559,7 +1571,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
                     </div>
                     <GlassSwitch
                       checked={Boolean(value)}
-                      disabled={pending}
+                      disabled={pending || controlsLocked}
                       onChange={next => handleToggleInput(input, next)}
                     />
                   </div>
@@ -1579,7 +1591,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
                         max={max}
                         step={step}
                         value={value ?? min}
-                        disabled={pending}
+                        disabled={pending || controlsLocked}
                         onChange={e => handleSliderChange(input, e.target.value)}
                         onMouseUp={e => handleSliderCommit(input, e.target.value)}
                         onTouchEnd={e => handleSliderCommit(input, e.target.value)}
@@ -1604,7 +1616,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
                     <select
                       className="device-control-select"
                       value={value ?? (input.options[0]?.value || '')}
-                      disabled={pending}
+                      disabled={pending || controlsLocked}
                       onChange={e => handleSelectChange(input, e.target.value)}
                     >
                       {(input.options || []).map(option => (
@@ -1629,7 +1641,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
                       max={max}
                       step={step || 1}
                       value={value === '' ? '' : value ?? ''}
-                      disabled={pending}
+                      disabled={pending || controlsLocked}
                       onChange={e => {
                         const raw = e.target.value;
                         if (raw === '') {
@@ -1657,7 +1669,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
                     label={label}
                     icon={icon}
                     value={normalizedValue}
-                    pending={pending}
+                    pending={pending || controlsLocked}
                     dataKey={key}
                     onChange={(hex) => updateControlValue(input, hex)}
                     onCommit={(hex) => handleInputCommand(input, hex)}
@@ -1704,6 +1716,7 @@ export default function DeviceTile({ device, protocolLabel, onCommand, onRename,
         <div className="device-footer">
           <span className="device-last-seen">Last seen {formatRelativeTime(device.lastSeen || device.stateUpdatedAt || device.updatedAt)}</span>
           {pending ? <span className="device-command-pending">Updating…</span> : null}
+          {!pending && controlsLocked ? <span className="device-command-pending">{controlsLockReason || 'Preparing live controls…'}</span> : null}
         </div>
       </div>
       </GlassCard>

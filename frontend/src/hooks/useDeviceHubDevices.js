@@ -10,6 +10,13 @@ const PAIRING_PREFIX = `${HDP_ROOT}pairing/progress/`;
 const COMMAND_PREFIX = `${HDP_ROOT}device/command/`;
 const COMMAND_RESULT_PREFIX = `${HDP_ROOT}device/command_result/`;
 const REALTIME_PATH = '/ws/hdp';
+const REALTIME_SUBSCRIPTION_FILTERS = [
+  METADATA_PREFIX + '#',
+  STATE_PREFIX + '#',
+  EVENT_PREFIX + '#',
+  PAIRING_PREFIX + '#',
+  COMMAND_RESULT_PREFIX + '#',
+];
 
 const CANONICAL_ZIGBEE_ID_RE = /^zigbee\/0x[0-9a-f]{16}$/i;
 
@@ -332,15 +339,37 @@ function computeStats(devices) {
   return { total, online, withState, sensors };
 }
 
+function nowMs() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function createRealtimeInitMetrics() {
+  return {
+    authReadyMs: null,
+    socketOpenMs: null,
+    subscribeCompleteMs: null,
+    firstStateReceivedMs: null,
+  };
+}
+
 export default function useDeviceHubDevices(options = {}) {
-  const { enabled = true, metadataMode: rawMetadataMode = 'rest', accessToken = '' } = options;
+  const {
+    enabled = true,
+    metadataMode: rawMetadataMode = 'rest',
+    accessToken = '',
+    authReady = false,
+  } = options;
   const metadataMode = rawMetadataMode === 'ws' ? 'ws' : 'rest';
   const [devices, setDevices] = useState([]);
   const [stats, setStats] = useState({ total: 0, online: 0, withState: 0, sensors: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [metadataStatus, setMetadataStatus] = useState(() => ({ connected: false, source: metadataMode }));
-  const [stateStatus, setStateStatus] = useState({ connected: false });
+  const [stateStatus, setStateStatus] = useState({ connected: false, subscribed: false, firstStateReceived: false });
+  const [realtimeMetrics, setRealtimeMetrics] = useState(createRealtimeInitMetrics);
   const [pairingSessions, setPairingSessions] = useState({});
   const [pairingConfig, setPairingConfig] = useState({});
 
@@ -349,6 +378,8 @@ export default function useDeviceHubDevices(options = {}) {
   const updateScheduledRef = useRef(false);
   const mountedRef = useRef(false);
   const enabledRef = useRef(enabled);
+  const realtimeInitStartedAtRef = useRef(0);
+  const subscriptionAcksRef = useRef(new Set());
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -364,6 +395,28 @@ export default function useDeviceHubDevices(options = {}) {
   useEffect(() => {
     setMetadataStatus({ connected: false, source: metadataMode });
   }, [metadataMode]);
+
+  const resetRealtimeInitMetrics = useCallback(() => {
+    realtimeInitStartedAtRef.current = nowMs();
+    subscriptionAcksRef.current = new Set();
+    setRealtimeMetrics(createRealtimeInitMetrics());
+    setStateStatus({ connected: false, subscribed: false, firstStateReceived: false });
+  }, []);
+
+  const markRealtimeMetric = useCallback((key) => {
+    const startedAt = realtimeInitStartedAtRef.current;
+    if (!startedAt) return;
+    const elapsed = Math.max(0, Math.round(nowMs() - startedAt));
+    setRealtimeMetrics((prev) => {
+      if (prev[key] != null) return prev;
+      return { ...prev, [key]: elapsed };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || !authReady) return;
+    markRealtimeMetric('authReadyMs');
+  }, [authReady, enabled, markRealtimeMetric]);
 
   const schedulePublish = useCallback(() => {
     if (updateScheduledRef.current || !enabledRef.current) return;
@@ -629,6 +682,8 @@ export default function useDeviceHubDevices(options = {}) {
     }
 
     if (topic.startsWith(STATE_PREFIX)) {
+      markRealtimeMetric('firstStateReceivedMs');
+      setStateStatus((prev) => (prev.firstStateReceived ? prev : { ...prev, firstStateReceived: true }));
       const stateEnvelope = safeParseJSON(payload) || {};
       const norm = normalizeDeviceId(stateEnvelope.device_id || topic.slice(STATE_PREFIX.length));
       const mapKey = norm.hdpId || '';
@@ -644,7 +699,7 @@ export default function useDeviceHubDevices(options = {}) {
       devicesRef.current.set(mapKey, merged);
       schedulePublish();
     }
-  }, [schedulePublish]);
+  }, [markRealtimeMetric, schedulePublish]);
 
   useEffect(() => {
     devicesRef.current = new Map();
@@ -656,16 +711,17 @@ export default function useDeviceHubDevices(options = {}) {
       setDevices([]);
       setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
       setMetadataStatus({ connected: false, source: metadataMode });
-      setStateStatus({ connected: false });
+      setStateStatus({ connected: false, subscribed: false, firstStateReceived: false });
+      setRealtimeMetrics(createRealtimeInitMetrics());
       setLoading(false);
       setError(null);
       return undefined;
     }
 
+    resetRealtimeInitMetrics();
     setDevices([]);
     setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
     setMetadataStatus({ connected: false, source: metadataMode });
-    setStateStatus({ connected: false });
     setError(null);
     setLoading(true);
 
@@ -676,7 +732,16 @@ export default function useDeviceHubDevices(options = {}) {
 
     const unsubStatus = conn.onStatus(({ connected, status }) => {
       if (!mountedRef.current || !enabledRef.current) return;
-      setStateStatus({ connected: Boolean(connected) });
+      if (connected) {
+        markRealtimeMetric('socketOpenMs');
+      } else {
+        subscriptionAcksRef.current = new Set();
+      }
+      setStateStatus((prev) => ({
+        ...prev,
+        connected: Boolean(connected),
+        subscribed: Boolean(connected) ? prev.subscribed : false,
+      }));
       if (metadataMode === 'ws') {
         setMetadataStatus({ connected: Boolean(connected), source: 'ws' });
         setLoading(false);
@@ -690,13 +755,19 @@ export default function useDeviceHubDevices(options = {}) {
       }
     });
 
-    const unsubs = [
-      conn.subscribe(METADATA_PREFIX + '#', handleRealtimeMessage),
-      conn.subscribe(STATE_PREFIX + '#', handleRealtimeMessage),
-      conn.subscribe(EVENT_PREFIX + '#', handleRealtimeMessage),
-      conn.subscribe(PAIRING_PREFIX + '#', handleRealtimeMessage),
-      conn.subscribe(COMMAND_RESULT_PREFIX + '#', handleRealtimeMessage),
-    ];
+    const unsubs = REALTIME_SUBSCRIPTION_FILTERS.map((filter) => conn.subscribe(filter, handleRealtimeMessage, {
+      onSubscribed: ({ filter: subscribedFilter }) => {
+        subscriptionAcksRef.current.add(subscribedFilter);
+        const subscribed = subscriptionAcksRef.current.size >= REALTIME_SUBSCRIPTION_FILTERS.length;
+        if (subscribed) {
+          markRealtimeMetric('subscribeCompleteMs');
+        }
+        setStateStatus((prev) => ({
+          ...prev,
+          subscribed,
+        }));
+      },
+    }));
 
     return () => {
       unsubs.forEach(fn => {
@@ -709,7 +780,7 @@ export default function useDeviceHubDevices(options = {}) {
       unsubStatus();
       mqttConnRef.current = null;
     };
-  }, [enabled, loadInitialDevices, metadataMode, handleRealtimeMessage]);
+  }, [enabled, loadInitialDevices, markRealtimeMetric, metadataMode, handleRealtimeMessage, resetRealtimeInitMetrics]);
 
   const sendDeviceCommand = useCallback((deviceId, statePatch) => new Promise((resolve, reject) => {
     const conn = mqttConnRef.current;
@@ -754,10 +825,22 @@ export default function useDeviceHubDevices(options = {}) {
 
   const renameDevice = useCallback(() => Promise.reject(new Error('Rename over MQTT is disabled; use HTTP fallback')), []);
 
+  const commandLockReason = useMemo(() => {
+    if (!authReady) return 'Waiting for authentication to finish.';
+    if (!stateStatus.connected) return 'Connecting live device channel…';
+    if (!stateStatus.subscribed) return 'Waiting for live topic subscriptions…';
+    return '';
+  }, [authReady, stateStatus.connected, stateStatus.subscribed]);
+
+  const commandsReady = Boolean(authReady && stateStatus.connected && stateStatus.subscribed);
+
   const connectionInfo = useMemo(() => ({
     metadata: metadataStatus,
     state: stateStatus,
-  }), [metadataStatus, stateStatus]);
+    timings: realtimeMetrics,
+    commandsReady,
+    commandLockReason,
+  }), [commandLockReason, commandsReady, metadataStatus, realtimeMetrics, stateStatus]);
 
   return {
     devices,

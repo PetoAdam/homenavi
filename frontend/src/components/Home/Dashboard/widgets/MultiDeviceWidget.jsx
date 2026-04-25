@@ -176,7 +176,7 @@ export default function MultiDeviceWidget({
   onSettings,
   onRemove,
 }) {
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
   const [commandError, setCommandError] = useState('');
@@ -193,9 +193,11 @@ export default function MultiDeviceWidget({
     });
   }, []);
 
-  const { devices: realtimeDevices, loading: hdpLoading } = useDeviceHubDevices({
+  const { devices: realtimeDevices, loading: hdpLoading, connectionInfo } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
     metadataMode: 'ws',
+    accessToken,
+    authReady: Boolean(accessToken) && !bootstrapping,
   });
 
   const { devices: ersDevices, loading: ersLoading } = useErsInventory({
@@ -263,10 +265,17 @@ export default function MultiDeviceWidget({
     });
   }, [devices]);
 
+  const commandsReady = Boolean(connectionInfo?.commandsReady);
+  const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
+
   const handleToggle = useCallback((device) => {
     const deviceId = getDeviceCommandId(device);
     if (!deviceId) return;
     if (!canToggleDevice(device)) return;
+    if (!commandsReady) {
+      setCommandError(commandLockReason);
+      return;
+    }
     if (!accessToken) {
       setCommandError('Authentication required');
       return;
@@ -308,7 +317,7 @@ export default function MultiDeviceWidget({
         });
       })
       .finally(() => {});
-  }, [accessToken]);
+  }, [accessToken, commandLockReason, commandsReady]);
 
   if (!selectedIds.length) {
     return (
@@ -359,6 +368,7 @@ export default function MultiDeviceWidget({
     >
       <div className="multi-device-widget__content">
         {commandError && <div className="multi-device-widget__error">{commandError}</div>}
+        {!commandError && !commandsReady ? <div className="multi-device-widget__error">{commandLockReason}</div> : null}
         <div className="multi-device-widget__grid">
           {devices.map((device) => {
             const commandId = getDeviceCommandId(device);
@@ -377,7 +387,7 @@ export default function MultiDeviceWidget({
                 type="button"
                 className={`multi-device-widget__tile${isOn ? ' on' : ''}`}
                 onClick={() => handleToggle(device)}
-                disabled={pending || !canToggle}
+                disabled={pending || !canToggle || !commandsReady}
               >
                 <div className="multi-device-widget__tile-header">
                   <div className="multi-device-widget__tile-icon">

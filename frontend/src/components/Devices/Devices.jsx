@@ -80,7 +80,14 @@ export default function Devices() {
     pairingSessions,
     pairingConfig,
     refreshPairings,
-  } = useDeviceHubDevices({ enabled: isResidentOrAdmin, metadataMode });
+  } = useDeviceHubDevices({
+    enabled: isResidentOrAdmin,
+    metadataMode,
+    accessToken,
+    authReady: Boolean(accessToken),
+  });
+  const commandsReady = Boolean(connectionInfo?.commandsReady);
+  const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
 
   const {
     devices,
@@ -149,6 +156,7 @@ export default function Devices() {
   const connectionPills = useMemo(() => {
     const pills = [];
     const metadataStatus = connectionInfo?.metadata || { connected: false };
+    const timings = connectionInfo?.timings || {};
     const metadataLabel = metadataMode === 'rest'
       ? 'HDP metadata: REST'
       : 'HDP metadata: WebSocket';
@@ -163,12 +171,32 @@ export default function Devices() {
       onClick: toggleMetadataMode,
     });
     if (connectionInfo?.state) {
-      const tone = connectionInfo.state.connected ? 'success' : 'warning';
-      const label = connectionInfo.state.connected ? 'State: connected' : 'State stream offline';
+      const tone = connectionInfo.state.connected
+        ? (connectionInfo.state.subscribed ? 'success' : 'warning')
+        : 'warning';
+      const label = !connectionInfo.state.connected
+        ? 'State stream offline'
+        : connectionInfo.state.subscribed
+          ? 'State: subscribed'
+          : 'State: connecting';
       pills.push({ key: 'state', text: label, tone, icon: faSignal });
     }
+    pills.push({
+      key: 'commands',
+      text: commandsReady ? 'Commands: ready' : 'Commands: locked',
+      tone: commandsReady ? 'success' : 'warning',
+      icon: faBolt,
+      title: commandLockReason,
+    });
+    pills.push({
+      key: 'timings',
+      text: `RT init A/S/C/F: ${timings.authReadyMs ?? '—'}/${timings.socketOpenMs ?? '—'}/${timings.subscribeCompleteMs ?? '—'}/${timings.firstStateReceivedMs ?? '—'} ms`,
+      tone: 'default',
+      icon: faSatelliteDish,
+      title: 'Realtime init timings: auth ready / socket open / subscribe complete / first state received.',
+    });
     return pills;
-  }, [connectionInfo, metadataMode, toggleMetadataMode]);
+  }, [commandLockReason, commandsReady, connectionInfo, metadataMode, toggleMetadataMode]);
 
   const subtitleText = useMemo(() => {
     const segments = ['Live inventory sourced from the Device Hub over MQTT/WebSocket'];
@@ -183,6 +211,11 @@ export default function Devices() {
 
   const handleCommand = (device, payload) => {
     if (!device?.id) return Promise.resolve();
+    if (!commandsReady) {
+      const message = commandLockReason;
+      setCommandError(message);
+      return Promise.reject(new Error(message));
+    }
     setCommandError(null);
 
     const stateVersionAtSend = stateVersionFromDevice(device);
@@ -824,6 +857,8 @@ export default function Devices() {
                         device={displayDevice}
                         protocolLabel={resolveProtocolLabel(displayDevice.protocol, displayDevice.protocol)}
                         pending={Boolean(device.id && pendingCommands[device.id])}
+                        controlsLocked={!commandsReady}
+                        controlsLockReason={commandLockReason}
                         onCommand={handleCommand}
                         onRename={handleRename}
                         onUpdateIcon={handleUpdateIcon}
@@ -847,6 +882,8 @@ export default function Devices() {
                 device={displayDevice}
                 protocolLabel={resolveProtocolLabel(displayDevice.protocol, displayDevice.protocol)}
                 pending={Boolean(device.id && pendingCommands[device.id])}
+                controlsLocked={!commandsReady}
+                controlsLockReason={commandLockReason}
                 onCommand={handleCommand}
                 onRename={handleRename}
                 onUpdateIcon={handleUpdateIcon}

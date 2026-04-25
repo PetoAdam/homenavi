@@ -87,11 +87,33 @@ class SharedMqttConnection {
     this.reconnectTimer = null;
     this.idleDisconnectTimer = null;
 
-    this.subscriptions = new Map(); // filter -> Set<handler>
+    this.subscriptions = new Map(); // filter -> { handlers:Set<fn>, ackListeners:Set<fn>, subscribed:boolean, subscribedAt:number }
     this.statusListeners = new Set();
     this.unsubscribeAuthCookieChange = onAuthCookieChange(() => {
       this.reconnect('auth-cookie-changed');
     });
+  }
+
+  _getOrCreateSubscriptionEntry(filter) {
+    const key = String(filter || '').trim();
+    if (!key) return null;
+    if (!this.subscriptions.has(key)) {
+      this.subscriptions.set(key, {
+        handlers: new Set(),
+        ackListeners: new Set(),
+        subscribed: false,
+        subscribedAt: 0,
+      });
+    }
+    return this.subscriptions.get(key);
+  }
+
+  _resetSubscriptionState() {
+    for (const entry of this.subscriptions.values()) {
+      if (!entry) continue;
+      entry.subscribed = false;
+      entry.subscribedAt = 0;
+    }
   }
 
   _emitStatus(next, detail) {
@@ -106,8 +128,8 @@ class SharedMqttConnection {
   }
 
   _hasActiveListeners() {
-    for (const set of this.subscriptions.values()) {
-      if (set && set.size) return true;
+    for (const entry of this.subscriptions.values()) {
+      if (entry?.handlers && entry.handlers.size) return true;
     }
     return false;
   }
@@ -141,6 +163,7 @@ class SharedMqttConnection {
     this.client = client;
 
     client.onConnectionLost = (response) => {
+      this._resetSubscriptionState();
       this._emitStatus('disconnected', response);
       if (this._hasActiveListeners()) {
         this._scheduleReconnect();
@@ -153,7 +176,8 @@ class SharedMqttConnection {
       const payloadString = typeof message.payloadString === 'string' ? message.payloadString : '';
       const payloadBytes = message.payloadBytes;
 
-      for (const [filter, handlers] of this.subscriptions.entries()) {
+      for (const [filter, entry] of this.subscriptions.entries()) {
+        const handlers = entry?.handlers;
         if (!handlers || handlers.size === 0) continue;
         if (!mqttTopicMatches(filter, topic)) continue;
         for (const handler of handlers) {
@@ -196,6 +220,7 @@ class SharedMqttConnection {
         cleanSession: true,
         onSuccess: () => {
           this.reconnectAttempt = 0;
+          this._resetSubscriptionState();
           this._emitStatus('connected');
           this._ensureBrokerSubscriptions();
         },
@@ -223,10 +248,35 @@ class SharedMqttConnection {
     const client = this.client;
     if (!client || typeof client.isConnected !== 'function' || !client.isConnected()) return;
 
-    for (const [filter, handlers] of this.subscriptions.entries()) {
+    for (const [filter, entry] of this.subscriptions.entries()) {
+      const handlers = entry?.handlers;
       if (!handlers || handlers.size === 0) continue;
+      if (entry.subscribed) continue;
       try {
-        client.subscribe(filter, { qos: 0 });
+        client.subscribe(filter, {
+          qos: 0,
+          onSuccess: () => {
+            const current = this.subscriptions.get(filter);
+            if (!current) return;
+            current.subscribed = true;
+            current.subscribedAt = Date.now();
+            for (const listener of current.ackListeners) {
+              try {
+                listener({ filter, subscribedAt: current.subscribedAt });
+              } catch {
+                // ignore
+              }
+            }
+          },
+          onFailure: (err) => {
+            const current = this.subscriptions.get(filter);
+            if (current) {
+              current.subscribed = false;
+              current.subscribedAt = 0;
+            }
+            this._emitStatus('error', { filter, error: err });
+          },
+        });
       } catch {
         // ignore
       }
@@ -246,7 +296,7 @@ class SharedMqttConnection {
     };
   }
 
-  subscribe(filter, handler) {
+  subscribe(filter, handler, options = {}) {
     const topicFilter = String(filter || '').trim();
     if (!topicFilter || typeof handler !== 'function') {
       return () => {};
@@ -254,11 +304,22 @@ class SharedMqttConnection {
 
     this._clearIdleDisconnectTimer();
 
-    if (!this.subscriptions.has(topicFilter)) {
-      this.subscriptions.set(topicFilter, new Set());
+    const entry = this._getOrCreateSubscriptionEntry(topicFilter);
+    if (!entry) {
+      return () => {};
     }
-    const set = this.subscriptions.get(topicFilter);
-    set.add(handler);
+    entry.handlers.add(handler);
+    const onSubscribed = typeof options.onSubscribed === 'function' ? options.onSubscribed : null;
+    if (onSubscribed) {
+      entry.ackListeners.add(onSubscribed);
+      if (entry.subscribed) {
+        try {
+          onSubscribed({ filter: topicFilter, subscribedAt: entry.subscribedAt || Date.now() });
+        } catch {
+          // ignore
+        }
+      }
+    }
 
     this._connect();
 
@@ -268,8 +329,11 @@ class SharedMqttConnection {
     return () => {
       const current = this.subscriptions.get(topicFilter);
       if (current) {
-        current.delete(handler);
-        if (current.size === 0) {
+        current.handlers.delete(handler);
+        if (onSubscribed) {
+          current.ackListeners.delete(onSubscribed);
+        }
+        if (current.handlers.size === 0) {
           this.subscriptions.delete(topicFilter);
           try {
             this.client?.unsubscribe?.(topicFilter);
@@ -308,6 +372,7 @@ class SharedMqttConnection {
 
     const client = this.client;
     this.client = null;
+    this._resetSubscriptionState();
 
     if (client) {
       try {

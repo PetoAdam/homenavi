@@ -316,7 +316,13 @@ export default function DeviceDetail() {
     devices: realtimeDevices,
     loading: realtimeLoading,
     error: realtimeError,
-  } = useDeviceHubDevices({ enabled: Boolean(isResidentOrAdmin), metadataMode: 'rest' });
+    connectionInfo,
+  } = useDeviceHubDevices({
+    enabled: Boolean(isResidentOrAdmin),
+    metadataMode: 'rest',
+    accessToken,
+    authReady: Boolean(accessToken),
+  });
 
   const {
     devices: ersMergedDevices,
@@ -341,6 +347,8 @@ export default function DeviceDetail() {
   const resolvedDevice = useMemo(() => ersDevice || device || null, [ersDevice, device]);
   const loading = Boolean(realtimeLoading || ersLoading);
   const error = realtimeError || ersError || '';
+  const commandsReady = Boolean(connectionInfo?.commandsReady);
+  const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
 
   const [pendingCommand, setPendingCommand] = useState(null);
   const displayDevice = useMemo(() => applyPendingStateToDevice(resolvedDevice, pendingCommand), [resolvedDevice, pendingCommand]);
@@ -452,6 +460,9 @@ export default function DeviceDetail() {
 
   const handleCommand = useCallback(async (dev, payload) => {
     if (!dev?.id) return;
+    if (!commandsReady) {
+      throw new Error(commandLockReason);
+    }
     if (!accessToken) {
       throw new Error('Authentication required');
     }
@@ -489,7 +500,7 @@ export default function DeviceDetail() {
       });
       throw err;
     }
-  }, [accessToken]);
+  }, [accessToken, commandLockReason, commandsReady]);
 
   useEffect(() => {
     if (!pendingCommand || !resolvedDevice) return;
@@ -925,6 +936,8 @@ export default function DeviceDetail() {
             <DeviceTile
               device={displayDevice}
               pending={Boolean(pendingCommand)}
+              controlsLocked={!commandsReady}
+              controlsLockReason={commandLockReason}
               onCommand={handleCommand}
               onRename={handleRename}
               onUpdateIcon={handleUpdateIcon}
