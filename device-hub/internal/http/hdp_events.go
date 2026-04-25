@@ -191,7 +191,7 @@ func (s *Server) consumeState(deviceTopicID string, state map[string]any, corr s
 		}
 	}
 	slog.Info("state persisted", "device_id", deviceUUID, "external_id", externalID, "corr", corr, "ts", ts, "keys", len(state))
-	s.processCommandStateLifecycle(externalID, state, corr)
+	s.processCommandStateLifecycle(externalID, state, corr, ts)
 	if !publishHDP {
 		return
 	}

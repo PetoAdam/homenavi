@@ -30,6 +30,7 @@ type pendingCommand struct {
 	Corr       string
 	Expected   map[string]any
 	Baseline   map[string]any
+	StartedAt  int64
 	LastStatus string
 	Timer      *time.Timer
 }
@@ -58,6 +59,7 @@ func (s *Server) beginCommandLifecycle(deviceID, corr string, expected, baseline
 		Corr:     strings.TrimSpace(corr),
 		Expected: cloneAnyMap(expected),
 		Baseline: cloneAnyMap(baseline),
+		StartedAt: time.Now().UnixMilli(),
 	}
 	entry.Timer = time.AfterFunc(s.commandTimeout, func() {
 		s.handleCommandTimeout(entry.DeviceID, entry.Corr)
@@ -293,7 +295,7 @@ func (s *Server) processAdapterCommandResult(deviceID, corr, status, errMsg stri
 	}
 }
 
-func (s *Server) processCommandStateLifecycle(deviceID string, state map[string]any, corr string) {
+func (s *Server) processCommandStateLifecycle(deviceID string, state map[string]any, corr string, stateTs int64) {
 	if s == nil || strings.TrimSpace(deviceID) == "" || len(state) == 0 {
 		return
 	}
@@ -301,29 +303,31 @@ func (s *Server) processCommandStateLifecycle(deviceID string, state map[string]
 	if entry == nil {
 		return
 	}
-	if !pendingCommandSatisfied(entry, state, corr) {
+	if !pendingCommandSatisfied(entry, state, corr, stateTs) {
 		return
 	}
 	s.removePendingCommand(entry.DeviceID, entry.Corr)
 	s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusApplied, "", nil)
 }
 
-func pendingCommandSatisfied(entry *pendingCommand, state map[string]any, corr string) bool {
+func pendingCommandSatisfied(entry *pendingCommand, state map[string]any, corr string, stateTs int64) bool {
 	if entry == nil || len(state) == 0 {
 		return false
 	}
 	corrMatches := strings.TrimSpace(corr) != "" && strings.EqualFold(strings.TrimSpace(entry.Corr), strings.TrimSpace(corr))
+	stateAfterCommand := stateTs > 0 && entry.StartedAt > 0 && stateTs >= entry.StartedAt
+	stateChangedFromBaseline := len(entry.Baseline) > 0 && stateMapsDiffer(state, entry.Baseline)
 	if len(entry.Expected) > 0 {
 		if expectedStateSatisfied(state, entry.Expected) {
 			return true
 		}
-		if corrMatches && len(entry.Baseline) > 0 {
-			return stateMapsDiffer(state, entry.Baseline)
+		if stateChangedFromBaseline && (corrMatches || stateAfterCommand) {
+			return true
 		}
 		return false
 	}
 	if len(entry.Baseline) > 0 {
-		return stateMapsDiffer(state, entry.Baseline)
+		return stateChangedFromBaseline && (corrMatches || stateAfterCommand)
 	}
 	return corrMatches
 }

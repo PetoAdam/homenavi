@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	correlationRetentionPublishes = 3
+	correlationRetentionWindow    = 20 * time.Second
+)
+
 func (z *ZigbeeAdapter) stashPendingState(friendly string, payload []byte) {
 	friendly = strings.TrimSpace(friendly)
 	if friendly == "" || len(payload) == 0 {
@@ -140,25 +145,42 @@ func (z *ZigbeeAdapter) ingestState(ctx context.Context, friendly, canonical str
 	}
 }
 
-// setCorrelation records the latest correlation_id for a device so it can be echoed with the next state event.
+// setCorrelation records correlation_id for a device so it can be echoed across a short burst of state events.
 func (z *ZigbeeAdapter) setCorrelation(deviceID, cid string) {
 	if deviceID == "" || cid == "" {
 		return
 	}
 	z.correlationMu.Lock()
-	z.correlationMap[deviceID] = cid
+	z.correlationMap[deviceID] = pendingCorrelation{
+		cid:               cid,
+		remainingPublishes: correlationRetentionPublishes,
+		expiresAt:         time.Now().Add(correlationRetentionWindow),
+	}
 	z.correlationMu.Unlock()
 }
 
-// consumeCorrelation retrieves and clears the pending correlation_id for a device.
+// consumeCorrelation retrieves correlation_id for a device and keeps it for a short, bounded number of publishes.
 func (z *ZigbeeAdapter) consumeCorrelation(deviceID string) string {
 	if deviceID == "" {
 		return ""
 	}
 	z.correlationMu.Lock()
-	cid := z.correlationMap[deviceID]
-	if cid != "" {
+	entry, ok := z.correlationMap[deviceID]
+	if !ok || entry.cid == "" {
+		z.correlationMu.Unlock()
+		return ""
+	}
+	if !entry.expiresAt.IsZero() && time.Now().After(entry.expiresAt) {
 		delete(z.correlationMap, deviceID)
+		z.correlationMu.Unlock()
+		return ""
+	}
+	entry.remainingPublishes--
+	cid := entry.cid
+	if entry.remainingPublishes <= 0 {
+		delete(z.correlationMap, deviceID)
+	} else {
+		z.correlationMap[deviceID] = entry
 	}
 	z.correlationMu.Unlock()
 	return cid

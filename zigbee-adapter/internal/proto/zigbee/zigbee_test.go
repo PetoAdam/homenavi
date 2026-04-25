@@ -50,13 +50,19 @@ func TestInterviewStageFromStatus(t *testing.T) {
 }
 
 func TestCorrelationSetAndConsume(t *testing.T) {
-	z := &ZigbeeAdapter{correlationMap: map[string]string{}}
+	z := &ZigbeeAdapter{correlationMap: map[string]pendingCorrelation{}}
 	z.setCorrelation("dev1", "cid1")
 	if got := z.consumeCorrelation("dev1"); got != "cid1" {
 		t.Fatalf("expected cid1, got %q", got)
 	}
+	if got := z.consumeCorrelation("dev1"); got != "cid1" {
+		t.Fatalf("expected retained cid1 on second publish, got %q", got)
+	}
+	if got := z.consumeCorrelation("dev1"); got != "cid1" {
+		t.Fatalf("expected retained cid1 on third publish, got %q", got)
+	}
 	if got := z.consumeCorrelation("dev1"); got != "" {
-		t.Fatalf("expected cleared mapping, got %q", got)
+		t.Fatalf("expected cleared mapping after bounded publishes, got %q", got)
 	}
 	z.setCorrelation("", "cid2")
 	if got := z.consumeCorrelation(""); got != "" {
