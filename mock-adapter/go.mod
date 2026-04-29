@@ -1,4 +1,4 @@
-module github.com/PetoAdam/homenavi/thread-adapter
+module github.com/PetoAdam/homenavi/mock-adapter
 
 go 1.26.0
 

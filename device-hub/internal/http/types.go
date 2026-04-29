@@ -47,5 +47,8 @@ type refreshRequest struct {
 type pairingStartRequest struct {
 	Protocol string          `json:"protocol"`
 	Timeout  int             `json:"timeout"`
+	Mode     string          `json:"mode"`
+	FlowID   string          `json:"flow_id"`
+	Inputs   map[string]any  `json:"inputs"`
 	Metadata pairingMetadata `json:"metadata"`
 }

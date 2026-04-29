@@ -28,6 +28,7 @@ type IntegrationDescriptor struct {
 // This lets the frontend avoid protocol-specific hardcoding.
 type PairingConfig struct {
 	Protocol          string   `json:"protocol"`
+	SchemaVersion     string   `json:"schema_version"`
 	Label             string   `json:"label"`
 	Supported         bool     `json:"supported"`
 	SupportsInterview bool     `json:"supports_interview"`
@@ -35,6 +36,7 @@ type PairingConfig struct {
 	Instructions      []string `json:"instructions,omitempty"`
 	CTALabel          string   `json:"cta_label,omitempty"`
 	Notes             string   `json:"notes,omitempty"`
+	Flow              any      `json:"flow,omitempty"`
 }
 
 type pairingMetadata struct {
@@ -48,6 +50,13 @@ type pairingMetadata struct {
 type pairingSession struct {
 	ID                  string          `json:"id"`
 	Protocol            string          `json:"protocol"`
+	Mode                string          `json:"mode,omitempty"`
+	FlowID              string          `json:"flow_id,omitempty"`
+	Inputs              map[string]any  `json:"inputs,omitempty"`
+	Stage               string          `json:"stage,omitempty"`
+	Message             string          `json:"message,omitempty"`
+	ErrorCode           string          `json:"error_code,omitempty"`
+	RequiredInputs      []string        `json:"required_inputs,omitempty"`
 	Status              string          `json:"status"`
 	Active              bool            `json:"active"`
 	StartedAt           time.Time       `json:"started_at"`
@@ -67,6 +76,15 @@ func (p *pairingSession) clone() pairingSession {
 	clone := *p
 	clone.cancel = nil
 	clone.knownDevices = nil
+	if len(p.Inputs) > 0 {
+		clone.Inputs = make(map[string]any, len(p.Inputs))
+		for key, value := range p.Inputs {
+			clone.Inputs[key] = value
+		}
+	}
+	if len(p.RequiredInputs) > 0 {
+		clone.RequiredInputs = append([]string(nil), p.RequiredInputs...)
+	}
 	clone.candidateExternalID = ""
 	clone.awaitingInterview = false
 	return clone
