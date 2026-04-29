@@ -53,7 +53,7 @@ func (s *Server) handlePairings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		defer r.Body.Close()
 		var req pairingStartRequest
-		if err := json.NewDecoder(io.LimitReader(r.Body, 8*1024)).Decode(&req); err != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
@@ -62,7 +62,7 @@ func (s *Server) handlePairings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "protocol is required", http.StatusBadRequest)
 			return
 		}
-		session, err := s.startPairing(protocol, req.Timeout, req.Metadata)
+		session, err := s.startPairing(protocol, req.Timeout, req.Mode, req.FlowID, req.Inputs, req.Metadata)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, errPairingActive) {
@@ -123,7 +123,7 @@ func (s *Server) snapshotPairings() []pairingSession {
 	if len(expired) > 0 {
 		go func(items []pairingSession) {
 			for _, item := range items {
-				_ = s.publishPairingCommand(item.Protocol, "stop", 0)
+				_ = s.publishPairingCommand(item.Protocol, "stop", 0, "", "", nil)
 				s.emitPairingEvent(item)
 			}
 		}(expired)
@@ -131,7 +131,7 @@ func (s *Server) snapshotPairings() []pairingSession {
 	return result
 }
 
-func (s *Server) startPairing(protocol string, timeout int, metadata pairingMetadata) (*pairingSession, error) {
+func (s *Server) startPairing(protocol string, timeout int, mode, flowID string, inputs map[string]any, metadata pairingMetadata) (*pairingSession, error) {
 	if err := s.ensurePairingSupported(protocol); err != nil {
 		return nil, err
 	}
@@ -145,6 +145,10 @@ func (s *Server) startPairing(protocol string, timeout int, metadata pairingMeta
 	session := &pairingSession{
 		ID:           uuid.NewString(),
 		Protocol:     protocol,
+		Mode:         strings.TrimSpace(strings.ToLower(mode)),
+		FlowID:       strings.TrimSpace(flowID),
+		Inputs:       sanitizePairingInputs(inputs),
+		Stage:        "starting",
 		Status:       "starting",
 		Active:       true,
 		StartedAt:    now,
@@ -164,7 +168,7 @@ func (s *Server) startPairing(protocol string, timeout int, metadata pairingMeta
 			}
 			expired := existing.clone()
 			s.pairingMu.Unlock()
-			_ = s.publishPairingCommand(protocol, "stop", 0)
+			_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 			s.emitPairingEvent(expired)
 		} else {
 			clone := existing.clone()
@@ -177,13 +181,14 @@ func (s *Server) startPairing(protocol string, timeout int, metadata pairingMeta
 	s.pairingMu.Lock()
 	s.pairings[protocol] = session
 	s.pairingMu.Unlock()
-	if err := s.publishPairingCommand(protocol, "start", timeout); err != nil {
+	if err := s.publishPairingCommand(protocol, "start", timeout, mode, flowID, inputs); err != nil {
 		s.pairingMu.Lock()
 		delete(s.pairings, protocol)
 		s.pairingMu.Unlock()
 		return nil, fmt.Errorf("failed to start pairing: %w", err)
 	}
 	session.Status = "active"
+	session.Stage = "active"
 	s.emitPairingEvent(session.clone())
 	s.startPairingTimeout(protocol, session.ID, session.ExpiresAt)
 	clone := session.clone()
@@ -209,7 +214,7 @@ func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
 	session.ExpiresAt = time.Now().UTC()
 	clone := session.clone()
 	s.pairingMu.Unlock()
-	_ = s.publishPairingCommand(protocol, "stop", 0)
+	_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 	s.emitPairingEvent(clone)
 	return &clone, nil
 }
@@ -254,11 +259,11 @@ func (s *Server) handlePairingTimeout(protocol, sessionID string) {
 	}
 	clone := session.clone()
 	s.pairingMu.Unlock()
-	_ = s.publishPairingCommand(protocol, "stop", 0)
+	_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 	s.emitPairingEvent(clone)
 }
 
-func (s *Server) publishPairingCommand(protocol, action string, timeout int) error {
+func (s *Server) publishPairingCommand(protocol, action string, timeout int, mode, flowID string, inputs map[string]any) error {
 	hdpPayload := map[string]any{
 		"schema":   hdpSchema,
 		"type":     "pairing_command",
@@ -266,7 +271,17 @@ func (s *Server) publishPairingCommand(protocol, action string, timeout int) err
 		"action":   action,
 	}
 	if timeout > 0 {
+		hdpPayload["timeout"] = timeout
 		hdpPayload["timeout_sec"] = timeout
+	}
+	if m := strings.TrimSpace(mode); m != "" {
+		hdpPayload["mode"] = m
+	}
+	if f := strings.TrimSpace(flowID); f != "" {
+		hdpPayload["flow_id"] = f
+	}
+	if len(inputs) > 0 {
+		hdpPayload["inputs"] = sanitizePairingInputs(inputs)
 	}
 	b, err := json.Marshal(hdpPayload)
 	if err != nil {
@@ -276,6 +291,24 @@ func (s *Server) publishPairingCommand(protocol, action string, timeout int) err
 		return err
 	}
 	return nil
+}
+
+func sanitizePairingInputs(inputs map[string]any) map[string]any {
+	if len(inputs) == 0 {
+		return nil
+	}
+	normalized := make(map[string]any, len(inputs))
+	for rawKey, value := range inputs {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			continue
+		}
+		normalized[key] = value
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func (s *Server) emitPairingEvent(session pairingSession) {
@@ -299,9 +332,12 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 		"type":     "pairing_progress",
 		"protocol": session.Protocol,
 		"origin":   "device-hub",
-		"stage":    session.Status,
+		"stage":    session.Stage,
 		"status":   session.Status,
 		"ts":       time.Now().UnixMilli(),
+	}
+	if session.Stage == "" {
+		envelope["stage"] = session.Status
 	}
 	if session.DeviceID != "" {
 		envelope["device_id"] = session.DeviceID
@@ -311,6 +347,24 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 	}
 	if (session.Metadata != pairingMetadata{}) {
 		envelope["metadata"] = session.Metadata
+	}
+	if session.Mode != "" {
+		envelope["mode"] = session.Mode
+	}
+	if session.FlowID != "" {
+		envelope["flow_id"] = session.FlowID
+	}
+	if len(session.Inputs) > 0 {
+		envelope["inputs"] = session.Inputs
+	}
+	if session.Message != "" {
+		envelope["message"] = session.Message
+	}
+	if session.ErrorCode != "" {
+		envelope["error_code"] = session.ErrorCode
+	}
+	if len(session.RequiredInputs) > 0 {
+		envelope["required_inputs"] = session.RequiredInputs
 	}
 	if b, err := json.Marshal(envelope); err == nil {
 		if err := s.mqtt.Publish(hdpPairingProgressPrefix+session.Protocol, b); err != nil {
@@ -337,47 +391,52 @@ func (s *Server) handleHDPPairingProgressEvent(_ paho.Client, msg mqttinfra.Mess
 	}
 	stage := asString(evt["stage"])
 	status := asString(evt["status"])
+	message := strings.TrimSpace(asString(evt["message"]))
+	errorCode := strings.TrimSpace(asString(evt["error_code"]))
+	mode := strings.TrimSpace(strings.ToLower(asString(evt["mode"])))
+	flowID := strings.TrimSpace(asString(evt["flow_id"]))
+	inputs, _ := evt["inputs"].(map[string]any)
+	requiredInputs := stringSlice(evt["required_inputs"])
 	external := asString(evt["external_id"])
 	if external == "" {
 		external = asString(evt["device_id"])
 	}
-	s.processPairingProgress(protocol, stage, status, external)
+	s.processPairingProgress(protocol, stage, status, external, pairingProgressUpdate{
+		Message:        message,
+		ErrorCode:      errorCode,
+		Mode:           mode,
+		FlowID:         flowID,
+		Inputs:         sanitizePairingInputs(inputs),
+		RequiredInputs: requiredInputs,
+	})
 }
 
-func (s *Server) processPairingProgress(protocol, stage, status, externalID string) {
+type pairingProgressUpdate struct {
+	Message        string
+	ErrorCode      string
+	Mode           string
+	FlowID         string
+	Inputs         map[string]any
+	RequiredInputs []string
+}
+
+func isTerminalPairingState(value string) bool {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "timeout", "stopped", "failed", "error", "completed":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) processPairingProgress(protocol, stage, status, externalID string, update pairingProgressUpdate) {
 	proto := normalizeProtocol(protocol)
 	if proto == "" {
 		return
 	}
 	stage = strings.TrimSpace(strings.ToLower(stage))
 	status = strings.TrimSpace(strings.ToLower(status))
-	if stage == "timeout" || stage == "stopped" || stage == "failed" || stage == "error" || stage == "completed" ||
-		status == "timeout" || status == "stopped" || status == "failed" || status == "error" || status == "completed" {
-		s.pairingMu.Lock()
-		session, ok := s.pairings[proto]
-		if !ok || !session.Active {
-			s.pairingMu.Unlock()
-			return
-		}
-		if stage != "" {
-			session.Status = stage
-		} else if status != "" {
-			session.Status = status
-		}
-		session.Active = false
-		session.ExpiresAt = time.Now().UTC()
-		if session.cancel != nil {
-			session.cancel()
-			session.cancel = nil
-		}
-		snapshot := session.clone()
-		s.pairingMu.Unlock()
-		s.emitPairingEvent(snapshot)
-		return
-	}
-	if !s.supportsInterviewTracking(proto) {
-		return
-	}
+
 	s.pairingMu.Lock()
 	session, ok := s.pairings[proto]
 	if !ok || !session.Active {
@@ -394,45 +453,72 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 		}
 		session.candidateExternalID = strings.ToLower(normalized)
 	}
-	updated := false
-	finalStatus := ""
-	switch stage {
-	case "device_joined", "device_announced":
-		session.Status = "device_joined"
-		session.awaitingInterview = true
-		updated = true
-	case "interview_started", "interviewing":
-		session.Status = "interviewing"
-		session.awaitingInterview = true
-		updated = true
-	case "interview_succeeded", "interview_complete", "completed":
-		session.Status = "interview_complete"
-		session.awaitingInterview = false
-		updated = true
-		finalStatus = "completed"
-	case "interview_failed", "failed":
-		session.Status = "failed"
+	if stage != "" {
+		session.Stage = stage
+	}
+	if status != "" {
+		session.Status = status
+	}
+	if session.Status == "" && stage != "" {
+		session.Status = stage
+	}
+
+	if s.supportsInterviewTracking(proto) {
+		switch stage {
+		case "device_joined", "device_announced":
+			session.awaitingInterview = true
+			if status == "" {
+				session.Status = "device_joined"
+			}
+		case "interview_started", "interviewing":
+			session.awaitingInterview = true
+			if status == "" {
+				session.Status = "interviewing"
+			}
+		case "interview_succeeded", "interview_complete":
+			session.awaitingInterview = false
+			if status == "" {
+				session.Status = "interview_complete"
+			}
+		case "interview_failed":
+			session.awaitingInterview = false
+			if status == "" {
+				session.Status = "failed"
+			}
+		}
+	}
+
+	if update.Message != "" {
+		session.Message = update.Message
+	}
+	if update.ErrorCode != "" {
+		session.ErrorCode = update.ErrorCode
+	}
+	if update.Mode != "" {
+		session.Mode = update.Mode
+	}
+	if update.FlowID != "" {
+		session.FlowID = update.FlowID
+	}
+	if len(update.Inputs) > 0 {
+		session.Inputs = update.Inputs
+	}
+	if update.RequiredInputs != nil {
+		session.RequiredInputs = append([]string(nil), update.RequiredInputs...)
+	}
+
+	if isTerminalPairingState(stage) || isTerminalPairingState(status) || isTerminalPairingState(session.Status) {
 		session.Active = false
+		session.ExpiresAt = time.Now().UTC()
 		session.awaitingInterview = false
-		updated = true
-		finalStatus = "failed"
-	default:
-		s.pairingMu.Unlock()
-		return
+		if session.cancel != nil {
+			session.cancel()
+			session.cancel = nil
+		}
 	}
 	snapshot := session.clone()
 	s.pairingMu.Unlock()
-	if !updated {
-		return
-	}
 	s.emitPairingEvent(snapshot)
-	if finalStatus != "" {
-		go func(proto, status string) {
-			if _, err := s.stopPairing(proto, status); err != nil && !errors.Is(err, errPairingNotFound) {
-				slog.Warn("pairing finalize failed", "protocol", proto, "status", status, "error", err)
-			}
-		}(proto, finalStatus)
-	}
 }
 
 func (s *Server) shouldAcceptPairingCandidate(session *pairingSession, dev *model.Device) bool {
@@ -461,6 +547,9 @@ func (s *Server) shouldAcceptPairingCandidate(session *pairingSession, dev *mode
 }
 
 func (s *Server) snapshotKnownDevices() map[string]struct{} {
+	if s == nil || s.repo == nil {
+		return nil
+	}
 	ctx := context.Background()
 	devices, err := s.repo.List(ctx)
 	if err != nil {
@@ -547,7 +636,7 @@ func (s *Server) handlePairingCandidate(dev *model.Device) {
 	s.emitPairingEvent(snapshot)
 	go s.applyPairingMetadata(deviceID, meta)
 	go func(proto string, deferCompletion bool) {
-		if err := s.publishPairingCommand(proto, "stop", 0); err != nil {
+		if err := s.publishPairingCommand(proto, "stop", 0, "", "", nil); err != nil {
 			slog.Warn("pairing permit stop failed", "protocol", proto, "error", err)
 		}
 		if !deferCompletion {

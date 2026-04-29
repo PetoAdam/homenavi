@@ -458,6 +458,288 @@
   gap: 0.5rem;
 }
 
+.add-device-guided-schema-renderer {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.add-device-pairing-step-header {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.add-device-pairing-step-header h5 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--color-white);
+}
+
+.add-device-pairing-step-header p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(var(--color-white-rgb), 0.74);
+}
+
+.add-device-pairing-step-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(var(--color-white-rgb), 0.62);
+}
+
+.add-device-pairing-guided-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.45rem;
+}
+
+.add-device-pairing-guided-step {
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.6rem;
+  display: grid;
+  gap: 0.18rem;
+  background: rgba(var(--color-white-rgb), 0.03);
+}
+
+.add-device-pairing-guided-step span {
+  font-size: 0.72rem;
+  color: rgba(197, 216, 255, 0.86);
+}
+
+.add-device-pairing-guided-step strong {
+  font-size: 0.78rem;
+  color: rgba(236, 244, 255, 0.95);
+}
+
+.add-device-pairing-guided-step.active {
+  border-color: rgba(var(--color-accent-rgb), 0.8);
+  background: rgba(var(--color-accent-rgb), 0.14);
+}
+
+.add-device-pairing-guided-step.complete {
+  border-color: rgba(var(--color-success-rgb), 0.55);
+}
+
+.add-device-pairing-guidance-list {
+  margin: 0;
+  padding-left: 1.05rem;
+  display: grid;
+  gap: 0.28rem;
+  font-size: 0.82rem;
+  color: rgba(var(--color-white-rgb), 0.84);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  border-radius: 0.7rem;
+  background: rgba(var(--color-white-rgb), 0.03);
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+  padding-right: 0.75rem;
+}
+
+.add-device-pairing-guided-actions {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.add-device-pairing-guided-actions > button {
+  flex: 1 1 0;
+}
+
+.add-device-pairing-terminal-actions {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.09);
+  padding-top: 0.75rem;
+}
+
+.add-device-pairing-terminal-guidance {
+  border: 1px solid rgba(var(--color-accent-rgb), 0.24);
+  border-radius: 0.72rem;
+  background: rgba(var(--color-accent-rgb), 0.08);
+  padding: 0.6rem 0.7rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.add-device-pairing-terminal-guidance p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(var(--color-white-rgb), 0.9);
+}
+
+.add-device-pairing-terminal-guidance ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.22rem;
+  font-size: 0.78rem;
+  color: rgba(var(--color-white-rgb), 0.8);
+}
+
+.add-device-pairing-terminal-actions .auth-modal-btn,
+.add-device-pairing-terminal-actions .add-device-secondary-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.add-device-pairing-review {
+  border: 1px solid rgba(var(--color-accent-rgb), 0.3);
+  border-radius: 0.7rem;
+  background: rgba(var(--color-accent-rgb), 0.08);
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.add-device-pairing-review > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+}
+
+.add-device-pairing-review span {
+  color: rgba(var(--color-white-rgb), 0.86);
+  text-align: right;
+}
+
+.add-device-pairing-runtime-header {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  background: rgba(var(--color-white-rgb), 0.02);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.add-device-pairing-runtime-header h5 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--color-white);
+  text-transform: capitalize;
+}
+
+.add-device-pairing-runtime-header p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(var(--color-white-rgb), 0.72);
+}
+
+.add-device-pairing-stage-breadcrumb {
+  margin-top: 0.15rem;
+  border: 1px solid rgba(var(--color-accent-rgb), 0.22);
+  background: rgba(var(--color-accent-rgb), 0.08);
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.add-device-pairing-stage-breadcrumb span {
+  font-size: 0.72rem;
+  color: rgba(var(--color-white-rgb), 0.68);
+}
+
+.add-device-pairing-stage-breadcrumb strong {
+  font-size: 0.82rem;
+  color: var(--color-white);
+  text-align: right;
+}
+
+.add-device-pairing-fields-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.add-device-pairing-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.add-device-pairing-field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(245, 248, 255, 0.9);
+}
+
+.add-device-pairing-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.add-device-pairing-selector {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.add-device-pairing-selector.cards {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.add-device-pairing-selector.list {
+  grid-template-columns: 1fr;
+}
+
+.add-device-pairing-selector-item {
+  border: 1px solid rgba(154, 180, 255, 0.32);
+  border-radius: 0.7rem;
+  background: rgba(12, 18, 34, 0.5);
+  color: rgba(238, 244, 255, 0.92);
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  text-align: left;
+  gap: 0.25rem;
+}
+
+.add-device-pairing-selector-item.active {
+  border-color: rgba(96, 168, 255, 0.9);
+  background: rgba(18, 31, 58, 0.8);
+}
+
+.add-device-pairing-selector-item span {
+  font-size: 0.78rem;
+  color: rgba(201, 216, 255, 0.88);
+}
+
+.add-device-pairing-text-block {
+  font-size: 0.88rem;
+  color: rgba(219, 230, 255, 0.95);
+  background: rgba(14, 23, 42, 0.45);
+  border: 1px solid rgba(143, 169, 255, 0.28);
+  border-radius: 0.65rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.add-device-pairing-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: rgba(219, 230, 255, 0.9);
+}
+
+.add-device-pairing-spinner {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  border: 2px solid rgba(158, 186, 255, 0.28);
+  border-top-color: rgba(143, 199, 255, 0.95);
+  animation: add-device-spin 0.9s linear infinite;
+}
+
+@keyframes add-device-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .add-device-guided-action {
   width: 100%;
   justify-content: center;

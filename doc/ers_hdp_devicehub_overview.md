@@ -43,7 +43,7 @@ Owns **inventory and user customization**:
 
 ### 1) Adapters → MQTT (HDP)
 
-Adapters (e.g. Zigbee adapter, Thread adapter) publish HDP frames to MQTT topics under `homenavi/hdp/*`.
+Adapters (e.g. Zigbee adapter, Mock adapter) publish HDP frames to MQTT topics under `homenavi/hdp/*`.
 
 See [doc/hdp.md](doc/hdp.md) for the exact topic list and payload envelopes.
 

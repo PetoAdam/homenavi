@@ -34,7 +34,7 @@ These conventions apply to all Go services in the repo, including:
 - `entity-registry-service`
 - `history-service`
 - `integration-proxy`
-- `thread-adapter`
+- `mock-adapter`
 - `user-service`
 - `weather-service`
 - `zigbee-adapter`
@@ -538,7 +538,7 @@ Different Homenavi services are not identical. The structure should be consisten
 
 Examples:
 
-- `thread-adapter`
+- `mock-adapter`
 - `weather-service`
 - smaller integration runtimes
 
@@ -1063,7 +1063,7 @@ Likely capabilities:
 
 This is a strong candidate for splitting a large server package by capability.
 
-### `thread-adapter` and `zigbee-adapter`
+### `mock-adapter` and `zigbee-adapter`
 
 Likely capabilities:
 

@@ -117,10 +117,18 @@ function mapPairingSession(raw) {
     protocol,
     status: raw.status || 'unknown',
     active: Boolean(raw.active),
+    stage: raw.stage || '',
+    mode: raw.mode || '',
+    flowId: raw.flow_id || raw.flowId || '',
+    message: raw.message || '',
+    errorCode: raw.error_code || raw.errorCode || '',
+    requiredInputs: Array.isArray(raw.required_inputs) ? raw.required_inputs : [],
+    inputs: raw.inputs && typeof raw.inputs === 'object' ? { ...raw.inputs } : {},
     startedAt: normalizeDate(raw.started_at),
     expiresAt: normalizeDate(raw.expires_at),
     deviceId: raw.device_id || raw.deviceId || '',
     metadata: raw.metadata && typeof raw.metadata === 'object' ? { ...raw.metadata } : {},
+    progress: raw,
   };
 }
 
@@ -415,8 +423,9 @@ export default function useDeviceHubDevices(options = {}) {
 
   useEffect(() => {
     if (!enabled || !authReady) return;
+    if (realtimeMetrics.authReadyMs != null) return;
     markRealtimeMetric('authReadyMs');
-  }, [authReady, enabled, markRealtimeMetric]);
+  }, [authReady, enabled, markRealtimeMetric, realtimeMetrics.authReadyMs]);
 
   const schedulePublish = useCallback(() => {
     if (updateScheduledRef.current || !enabledRef.current) return;
@@ -593,7 +602,7 @@ export default function useDeviceHubDevices(options = {}) {
       }
       const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
       if (!protocol) return;
-      const status = data.stage || data.status || 'in_progress';
+      const status = data.status || data.stage || 'in_progress';
       const sessionId = data.id || protocol;
       const isTerminal = ['completed', 'failed', 'timeout', 'stopped', 'error'].includes(String(status).toLowerCase());
       const isActive = !isTerminal;
@@ -603,11 +612,22 @@ export default function useDeviceHubDevices(options = {}) {
         status,
         active: isActive,
         metadata: data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {},
+        stage: data.stage || '',
+        mode: data.mode || '',
+        flowId: data.flow_id || data.flowId || '',
+        message: data.message || '',
+        errorCode: data.error_code || data.errorCode || '',
+        requiredInputs: Array.isArray(data.required_inputs) ? data.required_inputs : [],
+        progress: data,
       };
       setPairingSessions(prev => {
         const existing = prev?.[protocol];
         if (existing?.active && isTerminal && sessionId && existing.id && sessionId !== existing.id) {
           return prev;
+        }
+        const hasNewMetadata = session.metadata && Object.keys(session.metadata).length > 0;
+        if (existing && !hasNewMetadata && existing.metadata) {
+          session.metadata = existing.metadata;
         }
         return { ...prev, [protocol]: session };
       });
@@ -719,6 +739,9 @@ export default function useDeviceHubDevices(options = {}) {
     }
 
     resetRealtimeInitMetrics();
+    if (authReady) {
+      markRealtimeMetric('authReadyMs');
+    }
     setDevices([]);
     setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
     setMetadataStatus({ connected: false, source: metadataMode });
@@ -780,7 +803,7 @@ export default function useDeviceHubDevices(options = {}) {
       unsubStatus();
       mqttConnRef.current = null;
     };
-  }, [enabled, loadInitialDevices, markRealtimeMetric, metadataMode, handleRealtimeMessage, resetRealtimeInitMetrics]);
+  }, [authReady, enabled, loadInitialDevices, markRealtimeMetric, metadataMode, handleRealtimeMessage, resetRealtimeInitMetrics]);
 
   const sendDeviceCommand = useCallback((deviceId, statePatch) => new Promise((resolve, reject) => {
     const conn = mqttConnRef.current;

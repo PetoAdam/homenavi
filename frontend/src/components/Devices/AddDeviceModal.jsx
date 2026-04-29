@@ -3,33 +3,17 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faCircleCheck } from '@fortawesome/free-solid-svg-icons';
 import { DEVICE_ICON_CHOICES } from './deviceIconChoices';
 import BaseModal from '../common/BaseModal/BaseModal';
+import PairingFlowRenderer from './pairing/PairingFlowRenderer';
+import PairingProgressPanel from './pairing/PairingProgressPanel';
+import {
+  buildPairingStartPayload,
+  deriveRecoveryPreset,
+  getBlockedReason,
+  getPairingProfile,
+  getProtocolOptions,
+  isPairingSupported,
+} from './pairing/pairingSchema';
 import './AddDeviceModal.css';
-
-const CAPABILITIES_EXAMPLE = '[{ "id": "state", "kind": "binary" }]';
-const INPUTS_EXAMPLE = '[{ "type": "toggle", "property": "state" }]';
-const PAIRING_INSTRUCTIONS = {
-  zigbee: [
-    'Reset or power-cycle the device to enter pairing mode.',
-    'Keep it close to the Zigbee coordinator while pairing runs.',
-    'Wait here—we will auto-register it as soon as it is detected.',
-  ],
-  thread: [
-    'Make sure the Thread border router is online.',
-    'Put the Thread device into commissioning mode.',
-    'We will record the session as soon as the adapter reports it.',
-  ],
-  matter: [
-    'Open the Matter device commissioning window.',
-    'Keep the QR code handy in case an app flow is required.',
-    'We will attach the device when the hub sees it join.',
-  ],
-};
-
-const DEFAULT_PAIRING_INSTRUCTIONS = [
-  'Power-cycle or reset the device to start discovery.',
-  'Keep it close to the hub while pairing runs.',
-  'We will register it automatically when detected.',
-];
 
 const FLOW_STEPS = [
   { id: 'form', label: 'Details' },
@@ -37,78 +21,15 @@ const FLOW_STEPS = [
   { id: 'success', label: 'Complete' },
 ];
 
-const PAIRING_PHASES = [
-  {
-    id: 'listening',
-    label: 'Listening for joins',
-    description: 'Permit join is open.',
-    matches: ['starting', 'active'],
-  },
-  {
-    id: 'detected',
-    label: 'Device detected',
-    description: 'Candidate preparing for interview.',
-    matches: ['device_detected', 'device_joined'],
-  },
-  {
-    id: 'interview',
-    label: 'Interview in progress',
-    description: 'Reading clusters & capabilities.',
-    matches: ['interviewing'],
-  },
-  {
-    id: 'finalize',
-    label: 'Finalizing provisioning',
-    description: 'Saving metadata and enabling automations.',
-    matches: ['interview_complete'],
-  },
-];
-
-function buildPairingPhaseStates(status) {
-  const normalized = (status || '').toLowerCase();
-  const activeIndex = (() => {
-    if (!normalized) return 0;
-    const idx = PAIRING_PHASES.findIndex(phase => phase.matches.includes(normalized));
-    if (idx >= 0) return idx;
-    if (normalized === 'completed') return PAIRING_PHASES.length - 1;
-    return 0;
-  })();
-  return PAIRING_PHASES.map((phase, index) => {
-    let state = 'upcoming';
-    if (activeIndex > index) {
-      state = 'complete';
-    } else if (activeIndex === index) {
-      state = 'active';
-    }
-    return { ...phase, state };
-  });
-}
-
 const defaultForm = {
   protocol: '',
   name: '',
-  identifier: '',
   type: '',
   manufacturer: '',
   model: '',
   description: '',
-  firmware: '',
-  capabilities: '',
-  inputs: '',
   icon: 'auto',
 };
-
-function getPairingHints(protocol, pairingProfile) {
-  const instructions = pairingProfile?.instructions;
-  if (Array.isArray(instructions) && instructions.length > 0) {
-    return instructions;
-  }
-  const key = (protocol || '').toLowerCase();
-  if (key && Array.isArray(PAIRING_INSTRUCTIONS[key])) {
-    return PAIRING_INSTRUCTIONS[key];
-  }
-  return DEFAULT_PAIRING_INSTRUCTIONS;
-}
 
 function getProtocolLabel(protocol, options) {
   if (!protocol) return 'Device';
@@ -117,49 +38,69 @@ function getProtocolLabel(protocol, options) {
   return protocol.charAt(0).toUpperCase() + protocol.slice(1);
 }
 
-function getPairingProfile(protocol, config) {
-  const key = (protocol || '').toLowerCase();
-  if (!key) return null;
-  return config?.[key] || null;
+function normalizeErrorCode(value) {
+  return `${value || ''}`.trim().toUpperCase();
 }
 
-function slugify(value) {
-  return value
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-}
+function buildTerminalRecoveryCopy(context, protocolLabel) {
+  const status = `${context?.status || ''}`.trim().toLowerCase();
+  const requiredInputs = Array.isArray(context?.requiredInputs)
+    ? context.requiredInputs.filter(Boolean)
+    : [];
+  const fallbackLabel = protocolLabel || 'device';
 
-function parseOptionalJson(raw, label) {
-  if (!raw || !raw.trim()) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error(`${label} must be valid JSON`);
+  const response = {
+    summary: context?.message || `Pairing did not complete for this ${fallbackLabel.toLowerCase()}.`,
+    recommendations: [
+      'Retry with previous inputs to continue quickly.',
+      'Change mode if the current path is unstable for this device.',
+    ],
+    primaryAction: 'retry',
+    retryLabel: 'Retry with previous inputs',
+    modeLabel: 'Change mode',
+    detailsLabel: 'Return to details',
+  };
+
+  if (status === 'timeout') {
+    response.summary = `Pairing timed out before ${fallbackLabel} commissioning completed.`;
+    response.recommendations = [
+      'Reset or wake the device, then retry immediately.',
+      'Keep the device near the coordinator during the full flow.',
+    ];
+    response.retryLabel = 'Retry pairing now';
   }
-}
 
-function ensureProtocolPrefixedIdentifier(protocol, value) {
-  const proto = (protocol || '').toLowerCase();
-  const raw = (value || '').trim();
-  if (!proto || !raw) return raw;
-  const segments = raw.split('/').filter(Boolean);
-  const suffix = segments.length ? segments[segments.length - 1] : raw;
-  return `${proto}/${suffix}`;
-}
+  if (status === 'stopped') {
+    response.summary = `Pairing was stopped before ${fallbackLabel} setup finished.`;
+    response.recommendations = [
+      'Retry to resume with the same values.',
+      'Use a different mode if the device behavior changed.',
+    ];
+    response.retryLabel = 'Start pairing again';
+  }
 
-function buildIdentifier(protocol, name, manual) {
-  const base = (manual && manual.trim()) || slugify(name) || `device-${Date.now().toString(36)}`;
-  return ensureProtocolPrefixedIdentifier(protocol, base);
+  if (requiredInputs.length > 0) {
+    response.primaryAction = 'mode';
+    const normalizedError = normalizeErrorCode(context?.errorCode);
+    if (normalizedError) {
+      response.summary = `Pairing requires additional input (${normalizedError}).`;
+    } else {
+      response.summary = 'Pairing requires additional input before continuing.';
+    }
+    response.recommendations = [
+      `Required inputs: ${requiredInputs.join(', ')}`,
+      ...response.recommendations,
+    ];
+    response.retryLabel = 'Retry after updating inputs';
+    response.modeLabel = 'Edit required inputs';
+  }
+
+  return response;
 }
 
 export default function AddDeviceModal({
   open,
   onClose,
-  onCreate,
   integrations = [],
   pairingSessions = {},
   pairingConfig = {},
@@ -168,8 +109,6 @@ export default function AddDeviceModal({
 }) {
   const [form, setForm] = useState(defaultForm);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState(null);
   const [flowStep, setFlowStep] = useState('form');
   const [activePairing, setActivePairing] = useState(null);
   const [pairingNotice, setPairingNotice] = useState('');
@@ -177,6 +116,13 @@ export default function AddDeviceModal({
   const [secondsRemaining, setSecondsRemaining] = useState(null);
   const [stopPending, setStopPending] = useState(false);
   const [pairingStartPending, setPairingStartPending] = useState(false);
+  const [pairingSetupOverride, setPairingSetupOverride] = useState(false);
+  const [pairingRecoveryDraft, setPairingRecoveryDraft] = useState(null);
+  const [pairingTerminalContext, setPairingTerminalContext] = useState(null);
+
+  const modalRef = useRef(null);
+  const resumePairingRef = useRef(false);
+
   const resetFlow = useCallback(() => {
     setFlowStep('form');
     setActivePairing(null);
@@ -186,21 +132,15 @@ export default function AddDeviceModal({
     setStopPending(false);
     setPairingStartPending(false);
     setShowAdvanced(false);
+    setPairingSetupOverride(false);
+    setPairingRecoveryDraft(null);
+    setPairingTerminalContext(null);
   }, []);
-  const modalRef = useRef(null);
-  const resumePairingRef = useRef(false);
 
-  const protocolOptions = useMemo(() => {
-    const filtered = (integrations || []).filter(item => item && item.protocol && item.status !== 'planned');
-    if (filtered.length > 0) {
-      return filtered;
-    }
-    return [
-      { protocol: 'zigbee', label: 'Zigbee', status: 'active' },
-      { protocol: 'matter', label: 'Matter', status: 'experimental' },
-      { protocol: 'thread', label: 'Thread', status: 'experimental' },
-    ];
-  }, [integrations]);
+  const protocolOptions = useMemo(
+    () => getProtocolOptions(integrations, pairingConfig),
+    [integrations, pairingConfig],
+  );
 
   const selectedProtocol = form.protocol || protocolOptions[0]?.protocol || '';
   const selectedIntegration = useMemo(
@@ -217,37 +157,25 @@ export default function AddDeviceModal({
   );
   const pairingTitleLabel = pairingProfile?.label || selectedProtocolLabel;
   const selectedIcon = form.icon || 'auto';
-  const identifierPreview = useMemo(() => buildIdentifier(selectedProtocol, form.name, form.identifier), [selectedProtocol, form.name, form.identifier]);
-  const handleIdentifierChange = useCallback(event => {
-    const next = event.target.value.replaceAll('/', '');
-    setForm(prev => ({ ...prev, identifier: next }));
-  }, []);
-  const pairingSupported = useMemo(() => {
-    const integrationBlocked = selectedIntegration?.status === 'planned';
-    if (typeof pairingProfile?.supported === 'boolean') {
-      return pairingProfile.supported && !integrationBlocked;
-    }
-    return selectedProtocol === 'zigbee' && !integrationBlocked;
-  }, [pairingProfile, selectedIntegration, selectedProtocol]);
+
+  const pairingSupported = useMemo(
+    () => isPairingSupported(pairingProfile, selectedIntegration?.status || ''),
+    [pairingProfile, selectedIntegration],
+  );
+
   const activeSessionForSelected = useMemo(
     () => pairingSessions?.[selectedProtocol],
     [pairingSessions, selectedProtocol],
   );
-  const currentStepIndex = useMemo(() => {
-    const idx = FLOW_STEPS.findIndex(step => step.id === flowStep);
-    return idx >= 0 ? idx : 0;
-  }, [flowStep]);
-  const progressPercent = useMemo(() => {
-    if (FLOW_STEPS.length <= 1) return 100;
-    const pct = (currentStepIndex / (FLOW_STEPS.length - 1)) * 100;
-    return Math.min(100, Math.max(0, pct));
-  }, [currentStepIndex]);
+
+  const pairingBlockedReason = useMemo(
+    () => getBlockedReason(pairingSupported, activeSessionForSelected, pairingProfile),
+    [pairingSupported, activeSessionForSelected, pairingProfile],
+  );
 
   const activePairingSession = useMemo(() => {
     if (!activePairing || !activePairing.protocol) return null;
-    const session = pairingSessions?.[activePairing.protocol];
-    if (!session) return null;
-    return session;
+    return pairingSessions?.[activePairing.protocol] || null;
   }, [activePairing, pairingSessions]);
 
   const sessionStatus = useMemo(() => {
@@ -256,60 +184,34 @@ export default function AddDeviceModal({
     if (activePairing) return activePairing.status || 'starting';
     return 'starting';
   }, [activePairingSession, activePairing]);
-  const pairingBlockedReason = useMemo(() => {
-    if (pairingSupported) {
-      return activeSessionForSelected?.active ? 'Pairing already running for this protocol.' : '';
-    }
-    if (pairingProfile?.notes) {
-      return pairingProfile.notes;
-    }
-    return 'Guided pairing is not available for this protocol yet.';
-  }, [activeSessionForSelected, pairingProfile, pairingSupported]);
-  const pairingPhaseStates = useMemo(() => buildPairingPhaseStates(sessionStatus), [sessionStatus]);
+
+  // Stage is a finer-grained progress signal from the adapter.
+  // Use it in addition to status so the step timeline can advance properly.
+  const sessionStage = activePairingSession?.stage || '';
+
   const pairingCtaLabel = pairingProfile?.cta_label || pairingProfile?.ctaLabel || `Start ${pairingTitleLabel} pairing`;
+  const canEnterPairingFlow = Boolean(selectedProtocol) && pairingSupported;
+  const terminalRecoveryCopy = useMemo(
+    () => buildTerminalRecoveryCopy(pairingTerminalContext, pairingTitleLabel),
+    [pairingTerminalContext, pairingTitleLabel],
+  );
+  const terminalActionOrder = useMemo(() => {
+    const primary = `${terminalRecoveryCopy?.primaryAction || 'retry'}`.trim().toLowerCase();
+    if (primary === 'mode') return ['mode', 'retry', 'details'];
+    if (primary === 'details') return ['details', 'retry', 'mode'];
+    return ['retry', 'mode', 'details'];
+  }, [terminalRecoveryCopy]);
 
-  const handleStopPairing = useCallback(async () => {
-    if (!activePairing || typeof onStopPairing !== 'function') {
-      resetFlow();
-      return;
-    }
-    try {
-      setStopPending(true);
-      await onStopPairing(activePairing.protocol);
-      resetFlow();
-    } catch (err) {
-      console.warn('Failed to stop pairing', err);
-      setPairingError(err?.message || 'Unable to stop pairing');
-    } finally {
-      setStopPending(false);
-    }
-  }, [activePairing, onStopPairing, resetFlow]);
+  const currentStepIndex = useMemo(() => {
+    const idx = FLOW_STEPS.findIndex(step => step.id === flowStep);
+    return idx >= 0 ? idx : 0;
+  }, [flowStep]);
 
-  const handleClose = useCallback(() => {
-    if (typeof onStopPairing === 'function') {
-      const protocolToStop = activePairing?.protocol
-        || activePairingSession?.protocol
-        || (activeSessionForSelected?.active ? activeSessionForSelected.protocol : '')
-        || '';
-      if (protocolToStop) {
-        onStopPairing(protocolToStop).catch(() => {});
-      }
-    }
-    onClose?.();
-  }, [activePairing, activePairingSession, activeSessionForSelected, onStopPairing, onClose]);
-
-  const handleSuccessDismiss = useCallback(() => {
-    resetFlow();
-    setForm(defaultForm);
-    setShowAdvanced(false);
-    handleClose();
-  }, [resetFlow, handleClose]);
-
-  const handleAddAnother = useCallback(() => {
-    resetFlow();
-    setForm(defaultForm);
-    setShowAdvanced(false);
-  }, [resetFlow]);
+  const progressPercent = useMemo(() => {
+    if (FLOW_STEPS.length <= 1) return 100;
+    const pct = (currentStepIndex / (FLOW_STEPS.length - 1)) * 100;
+    return Math.min(100, Math.max(0, pct));
+  }, [currentStepIndex]);
 
   const buildPairingMetadata = useCallback(() => {
     const normalizedIcon = (form.icon || '').trim().toLowerCase();
@@ -323,9 +225,9 @@ export default function AddDeviceModal({
     };
   }, [form]);
 
-  const beginGuidedPairing = useCallback(async () => {
+  const beginGuidedPairing = useCallback(async payload => {
     if (!pairingSupported) {
-      setPairingError(pairingProfile?.notes || 'Guided pairing is not available for this protocol yet.');
+      setPairingError(pairingBlockedReason || 'Guided pairing is not available for this protocol yet.');
       return;
     }
     if (activeSessionForSelected?.active) {
@@ -337,42 +239,182 @@ export default function AddDeviceModal({
       setPairingError('Pairing is not available right now.');
       return;
     }
+
     try {
       setPairingStartPending(true);
       setPairingError(null);
-      const timeout = pairingProfile?.default_timeout_sec
-        || pairingProfile?.defaultTimeoutSec
-        || 180;
-      const payload = {
+      const metadata = buildPairingMetadata();
+      const response = await onStartPairing({
+        ...payload,
         protocol: selectedProtocol.trim().toLowerCase(),
-        timeout,
-        metadata: buildPairingMetadata(),
-      };
-      const response = await onStartPairing(payload);
+        metadata,
+      });
       const session = response?.data || response;
       if (!session) {
         throw new Error('Pairing session missing in response');
       }
       const startedAt = session.started_at ? new Date(session.started_at) : new Date();
-      const expiresAt = session.expires_at ? new Date(session.expires_at) : new Date(startedAt.getTime() + timeout * 1000);
+      const expiresAt = session.expires_at ? new Date(session.expires_at) : new Date(startedAt.getTime() + Number(payload?.timeout || 180) * 1000);
       setActivePairing({
-        id: session.id || `${payload.protocol}-${Date.now()}`,
-        protocol: payload.protocol,
+        id: session.id || `${selectedProtocol}-${Date.now()}`,
+        protocol: selectedProtocol,
         startedAt,
         expiresAt,
         status: session.status || 'active',
       });
       setFlowStep('pairing');
+      setPairingSetupOverride(false);
+      setPairingRecoveryDraft(null);
+      setPairingTerminalContext(null);
       setPairingNotice(pairingProfile?.notes || 'Permit join enabled. Put your device into pairing mode now.');
-      setFormError(null);
       resumePairingRef.current = true;
-    } catch (err) {
-      console.error('Failed to start pairing', err);
-      setPairingError(err?.message || 'Unable to start pairing');
+    } catch (error) {
+      setPairingError(error?.message || 'Unable to start pairing');
     } finally {
       setPairingStartPending(false);
     }
-  }, [pairingSupported, activeSessionForSelected, onStartPairing, selectedProtocol, pairingProfile, buildPairingMetadata]);
+  }, [
+    activeSessionForSelected,
+    buildPairingMetadata,
+    onStartPairing,
+    pairingBlockedReason,
+    pairingProfile,
+    pairingSupported,
+    selectedProtocol,
+  ]);
+
+  const handleStopPairing = useCallback(async () => {
+    const protocolToStop = activePairing?.protocol
+      || activePairingSession?.protocol
+      || (activeSessionForSelected?.active ? activeSessionForSelected.protocol : '')
+      || '';
+    if (!protocolToStop || typeof onStopPairing !== 'function') {
+      resetFlow();
+      return;
+    }
+    try {
+      setStopPending(true);
+      await onStopPairing(protocolToStop);
+      resetFlow();
+    } catch (error) {
+      setPairingError(error?.message || 'Unable to stop pairing');
+    } finally {
+      setStopPending(false);
+    }
+  }, [activePairing, activePairingSession, activeSessionForSelected, onStopPairing, resetFlow]);
+
+  const handleClose = useCallback(() => {
+    if (typeof onStopPairing === 'function') {
+      const protocolToStop = (activePairing || activePairingSession?.active || activeSessionForSelected?.active)
+        ? ((activePairing?.protocol || activePairingSession?.protocol || '')
+          || (activeSessionForSelected?.active ? activeSessionForSelected.protocol : '')
+          || '')
+        : '';
+      if (protocolToStop) {
+        onStopPairing(protocolToStop).catch(() => {});
+      }
+    }
+    onClose?.();
+  }, [activePairing, activePairingSession, activeSessionForSelected, onStopPairing, onClose]);
+
+  const handleSuccessDismiss = useCallback(() => {
+    resetFlow();
+    setForm(defaultForm);
+    handleClose();
+  }, [resetFlow, handleClose]);
+
+  const handleAddAnother = useCallback(() => {
+    resetFlow();
+    setForm(defaultForm);
+  }, [resetFlow]);
+
+  const handleEnterPairingFlow = useCallback(() => {
+    setPairingError(null);
+    setPairingNotice('');
+    setPairingSetupOverride(true);
+    setPairingRecoveryDraft(null);
+    setPairingTerminalContext(null);
+    setFlowStep('pairing');
+  }, []);
+
+  const handleRetryPairing = useCallback(async () => {
+    if (!pairingProfile || !selectedProtocol) {
+      setPairingError('Pairing profile is unavailable for retry.');
+      return;
+    }
+
+    const mode = (pairingRecoveryDraft?.mode || '').trim().toLowerCase()
+      || (((pairingProfile?.flow?.entry_modes || [])[0] || '').trim().toLowerCase())
+      || 'default';
+    const payload = buildPairingStartPayload({
+      protocol: selectedProtocol,
+      pairingProfile,
+      selectedMode: mode,
+      fieldValues: pairingRecoveryDraft?.values || {},
+    });
+    await beginGuidedPairing(payload);
+  }, [beginGuidedPairing, pairingProfile, pairingRecoveryDraft, selectedProtocol]);
+
+  const handleChangeMode = useCallback(() => {
+    const recoveryPreset = deriveRecoveryPreset({
+      pairingProfile,
+      currentMode: pairingRecoveryDraft?.mode || '',
+      currentValues: pairingRecoveryDraft?.values || {},
+      requiredFieldIds: pairingRecoveryDraft?.requiredFieldIds || [],
+      terminalStatus: pairingTerminalContext?.status || '',
+      errorCode: pairingTerminalContext?.errorCode || '',
+      preferAlternateMode: true,
+    });
+    setPairingError(null);
+    setPairingNotice('Choose a different mode and continue pairing.');
+    setPairingSetupOverride(true);
+    setPairingRecoveryDraft(recoveryPreset);
+    setPairingTerminalContext(null);
+    setFlowStep('pairing');
+  }, [pairingProfile, pairingRecoveryDraft, pairingTerminalContext]);
+
+  const handleReturnToDetails = useCallback(() => {
+    setPairingSetupOverride(false);
+    setPairingRecoveryDraft(null);
+    setPairingTerminalContext(null);
+    setFlowStep('form');
+  }, []);
+
+  const handleResolveNeedsInput = useCallback(async () => {
+    const protocol = activePairing?.protocol || activePairingSession?.protocol || selectedProtocol;
+    if (!protocol) {
+      setPairingError('Unable to resolve required inputs for pairing session.');
+      return;
+    }
+
+    const requiredFieldIds = Array.isArray(activePairingSession?.requiredInputs)
+      ? activePairingSession.requiredInputs
+      : [];
+    const recoveryValues = activePairingSession?.progress?.inputs && typeof activePairingSession.progress.inputs === 'object'
+      ? { ...activePairingSession.progress.inputs }
+      : (activePairingSession?.inputs && typeof activePairingSession.inputs === 'object' ? { ...activePairingSession.inputs } : {});
+
+    try {
+      setStopPending(true);
+      if (typeof onStopPairing === 'function') {
+        await onStopPairing(protocol);
+      }
+      setPairingSetupOverride(true);
+      setPairingRecoveryDraft({
+        mode: activePairingSession?.mode || '',
+        values: recoveryValues,
+        requiredFieldIds,
+      });
+      setPairingTerminalContext(null);
+      setPairingError(null);
+      setPairingNotice('Provide the missing fields and continue pairing.');
+      setActivePairing(null);
+    } catch (error) {
+      setPairingError(error?.message || 'Unable to switch to required input flow.');
+    } finally {
+      setStopPending(false);
+    }
+  }, [activePairing, activePairingSession, onStopPairing, selectedProtocol]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -428,23 +470,8 @@ export default function AddDeviceModal({
   }, [open, pairingSessions]);
 
   useEffect(() => {
-    if (open || !onStopPairing) {
-      return;
-    }
-    const protocolToStop = activePairing?.protocol
-      || activePairingSession?.protocol
-      || (activeSessionForSelected?.active ? activeSessionForSelected.protocol : '')
-      || '';
-    if (protocolToStop) {
-      onStopPairing(protocolToStop).catch(() => {});
-    }
-  }, [open, activePairing, activePairingSession, activeSessionForSelected, onStopPairing]);
-
-  useEffect(() => {
     if (!open) {
       setForm(defaultForm);
-      setShowAdvanced(false);
-      setFormError(null);
       resetFlow();
     }
   }, [open, resetFlow]);
@@ -458,11 +485,15 @@ export default function AddDeviceModal({
     const session = activePairingSession || activePairing;
     const sessionStatusForTimer = (activePairingSession?.status || '').toLowerCase();
     if (['interviewing', 'interview_complete', 'completed'].includes(sessionStatusForTimer)) {
-      // Once the interview begins, the permit-join timeout is no longer a useful UX signal.
       setSecondsRemaining(null);
       return;
     }
-    const expirationRaw = session?.expiresAt || session?.expires_at;
+    // Prefer the expiresAt we stored from the API response when the session
+    // started — device-hub pairing-progress republishes don't carry expires_at.
+    const expirationRaw = activePairing?.expiresAt
+      || activePairing?.expires_at
+      || session?.expiresAt
+      || session?.expires_at;
     if (!expirationRaw) {
       setSecondsRemaining(null);
       return;
@@ -502,133 +533,69 @@ export default function AddDeviceModal({
       setPairingError(null);
       return;
     }
+    if (status === 'needs_input') {
+      setPairingNotice(activePairingSession?.message || 'Additional pairing input is required.');
+      setPairingError(null);
+      setPairingTerminalContext(null);
+      return;
+    }
     if (status === 'completed') {
       setPairingNotice('Device paired successfully.');
       setPairingError(null);
       setFlowStep('success');
       setSecondsRemaining(null);
       setActivePairing(null);
+      setPairingSetupOverride(false);
+      setPairingRecoveryDraft(null);
+      setPairingTerminalContext(null);
       return;
     }
     if (['timeout', 'failed', 'stopped', 'error'].includes(status)) {
       const errorMessage =
         status === 'timeout'
           ? 'Pairing timed out. Try again after resetting your device.'
-          : 'Pairing stopped. You can try again.';
+          : (activePairingSession?.message || 'Pairing stopped. You can try again.');
       setPairingError(errorMessage);
       setPairingNotice('');
-      setFlowStep('form');
+      setFlowStep('pairing');
       setActivePairing(null);
+      setPairingSetupOverride(true);
+      const terminalInputs = activePairingSession?.progress?.inputs && typeof activePairingSession.progress.inputs === 'object'
+        ? { ...activePairingSession.progress.inputs }
+        : (activePairingSession?.inputs && typeof activePairingSession.inputs === 'object'
+          ? { ...activePairingSession.inputs }
+          : {});
+      const terminalErrorCode = activePairingSession?.errorCode
+        || activePairingSession?.error_code
+        || activePairingSession?.progress?.error_code
+        || '';
+      const recoveryPreset = deriveRecoveryPreset({
+        pairingProfile,
+        currentMode: activePairingSession?.mode || '',
+        currentValues: terminalInputs,
+        requiredFieldIds: Array.isArray(activePairingSession?.requiredInputs)
+          ? activePairingSession.requiredInputs
+          : [],
+        terminalStatus: status,
+        errorCode: terminalErrorCode,
+      });
+      setPairingRecoveryDraft(recoveryPreset);
+      setPairingTerminalContext({
+        status,
+        message: activePairingSession?.message || '',
+        errorCode: terminalErrorCode,
+        requiredInputs: Array.isArray(activePairingSession?.requiredInputs)
+          ? activePairingSession.requiredInputs
+          : [],
+      });
       setSecondsRemaining(null);
     }
-  }, [activePairingSession]);
-
-  const handleManualCreate = async () => {
-    if (!onCreate) return;
-    if (!selectedProtocol) {
-      setFormError('Select a protocol');
-      return;
-    }
-    try {
-      setSubmitting(true);
-      setFormError(null);
-      const externalId = buildIdentifier(selectedProtocol, form.name, form.identifier);
-      if (!externalId) {
-        throw new Error('Identifier is required');
-      }
-      const payload = {
-        protocol: selectedProtocol.trim().toLowerCase(),
-        external_id: externalId,
-      };
-      if (form.name.trim()) payload.name = form.name.trim();
-      if (form.type.trim()) payload.type = form.type.trim();
-      if (form.manufacturer.trim()) payload.manufacturer = form.manufacturer.trim();
-      if (form.model.trim()) payload.model = form.model.trim();
-      if (form.description.trim()) payload.description = form.description.trim();
-      if (form.firmware.trim()) payload.firmware = form.firmware.trim();
-      const capabilities = parseOptionalJson(form.capabilities, 'Capabilities');
-      const inputs = parseOptionalJson(form.inputs, 'Inputs');
-      if (capabilities) payload.capabilities = capabilities;
-      if (inputs) payload.inputs = inputs;
-      const normalizedIcon = (form.icon || '').trim().toLowerCase();
-      if (normalizedIcon && normalizedIcon !== 'auto') {
-        payload.icon = normalizedIcon;
-      }
-      await onCreate(payload);
-      setSubmitting(false);
-      setForm(defaultForm);
-      handleClose();
-    } catch (err) {
-      setSubmitting(false);
-      setFormError(err?.message || 'Unable to create device');
-    }
-  };
+  }, [activePairingSession, pairingProfile]);
 
   const handleBackdropMouseDown = event => {
     if (event.target === event.currentTarget) {
       handleClose();
     }
-  };
-
-  const renderPairingStep = () => {
-    const countdownLabel = secondsRemaining ?? '—';
-    const statusLabel = sessionStatus.replace(/_/g, ' ');
-    const pairingProtocol = activePairing?.protocol || selectedProtocol;
-    const pairingProfileForView = getPairingProfile(pairingProtocol, pairingConfig) || pairingProfile;
-    const pairingHints = getPairingHints(pairingProtocol, pairingProfileForView);
-    const pairingMeta = activePairingSession?.metadata;
-    const pairingDeviceId = activePairingSession?.deviceId || activePairingSession?.device_id;
-    const fallbackPairingNotice = pairingProfileForView?.notes || 'Permit join active — reset the device and keep it near the coordinator.';
-    return (
-      <div className="auth-modal-content-inner add-device-step add-device-pairing-step">
-        <div className="add-device-pairing-panel">
-          <div className="add-device-pairing-progress">
-            <div className="add-device-pairing-stages">
-              {pairingPhaseStates.map((phase, index) => (
-                <div key={phase.id} className={`add-device-pairing-stage-card ${phase.state}`}>
-                  <span className="add-device-pairing-stage-index">{index + 1}</span>
-                  <div className="add-device-pairing-stage-body">
-                    <span className="add-device-pairing-stage-label">{phase.label}</span>
-                    <p>{phase.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="add-device-pairing-timer">
-              <div>
-                <span className="add-device-pairing-label">Time left</span>
-                <div className="add-device-countdown-number">{countdownLabel}</div>
-              </div>
-              <div className="add-device-pairing-status-pill">{statusLabel}</div>
-            </div>
-          </div>
-          <p className="add-device-pairing-note">{pairingNotice || fallbackPairingNotice}</p>
-          <div className="add-device-pairing-inline-tips">
-            {pairingHints.map(instruction => (
-              <span key={instruction}>{instruction}</span>
-            ))}
-          </div>
-          {pairingMeta ? (
-            <div className="add-device-pairing-meta">
-              <span className="add-device-pairing-label">Metadata applied after join</span>
-              <div className="add-device-pairing-meta-grid">
-                {pairingMeta.type ? <span><strong>Type:</strong> {pairingMeta.type}</span> : null}
-                {pairingMeta.manufacturer ? <span><strong>Mfr:</strong> {pairingMeta.manufacturer}</span> : null}
-                {pairingMeta.model ? <span><strong>Model:</strong> {pairingMeta.model}</span> : null}
-                {pairingMeta.icon ? <span><strong>Icon:</strong> {pairingMeta.icon}</span> : null}
-                {pairingDeviceId ? <span><strong>Device ID:</strong> {pairingDeviceId}</span> : null}
-              </div>
-            </div>
-          ) : null}
-          {pairingError ? <div className="auth-modal-error add-device-error">{pairingError}</div> : null}
-          <div className="add-device-pairing-actions">
-            <button type="button" className="auth-modal-btn" onClick={handleStopPairing} disabled={stopPending}>
-              {stopPending ? 'Stopping…' : 'Stop pairing'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   const renderSuccessStep = () => (
@@ -668,263 +635,301 @@ export default function AddDeviceModal({
       closeAriaLabel="Close add device dialog"
     >
       <div className="auth-modal-content add-device-shell" ref={modalRef}>
-          <div className="add-device-toolbar">
-            <div className="add-device-toolbar-title">
-              <div className="add-device-toolbar-heading">
-                <h2>{headerTitle}</h2>
+        <div className="add-device-toolbar">
+          <div className="add-device-toolbar-title">
+            <div className="add-device-toolbar-heading">
+              <h2>{headerTitle}</h2>
+            </div>
+          </div>
+          <div className="add-device-progress-bar add-device-toolbar-progress">
+            <span style={{ width: `${progressPercent}%` }} />
+          </div>
+        </div>
+
+        <div className="add-device-step-tabs">
+          {FLOW_STEPS.map((step, index) => {
+            const status = index < currentStepIndex ? 'complete' : index === currentStepIndex ? 'active' : 'upcoming';
+            return (
+              <div key={step.id} className={`add-device-step-tab ${status}`}>
+                <span className="add-device-step-index">0{index + 1}</span>
+                <span className="add-device-step-label">{step.label}</span>
               </div>
-            </div>
-            <div className="add-device-progress-bar add-device-toolbar-progress">
-              <span style={{ width: `${progressPercent}%` }} />
-            </div>
-          </div>
-          <div className="add-device-step-tabs">
-            {FLOW_STEPS.map((step, index) => {
-              const status = index < currentStepIndex ? 'complete' : index === currentStepIndex ? 'active' : 'upcoming';
-              return (
-                <div key={step.id} className={`add-device-step-tab ${status}`}>
-                  <span className="add-device-step-index">0{index + 1}</span>
-                  <span className="add-device-step-label">{step.label}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="auth-modal-content-outer add-device-scroll-region">
-            {flowStep === 'form' ? (
-              <div className="auth-modal-content-inner add-device-form-shell">
-                <form className="auth-modal-form add-device-form" onSubmit={event => event.preventDefault()} noValidate>
-                  <div className="add-device-body-grid">
-                    <div className="add-device-panel add-device-panel-primary">
-                      <div className="add-device-card add-device-card-emphasis">
-                        <div className="add-device-card-head add-device-card-head-center">
-                          <div>
-                            <h4>Device details</h4>
-                            <p>Share the essentials now; you can polish the details anytime.</p>
-                          </div>
+            );
+          })}
+        </div>
+
+        <div className="auth-modal-content-outer add-device-scroll-region">
+          {flowStep === 'form' ? (
+            <div className="auth-modal-content-inner add-device-form-shell">
+              <form className="auth-modal-form add-device-form" onSubmit={event => event.preventDefault()} noValidate>
+                <div className="add-device-body-grid">
+                  <div className="add-device-panel add-device-panel-primary">
+                    <div className="add-device-card add-device-card-emphasis">
+                      <div className="add-device-card-head add-device-card-head-center">
+                        <div>
+                          <h4>Device details</h4>
+                          <p>Protocol-independent parameters used as pairing metadata.</p>
                         </div>
-                        <div className="add-device-grid add-device-basics-grid">
-                          <div className={`auth-modal-field add-device-field add-device-field-select add-device-grid-span-2${selectedProtocol ? ' filled' : ''}`}>
-                            <select
-                              id="add-device-protocol"
-                              className="auth-modal-input add-device-select"
-                              value={selectedProtocol}
-                              onChange={event => setForm(prev => ({ ...prev, protocol: event.target.value }))}
-                              required
-                            >
-                              {protocolOptions.map(option => (
-                                <option key={option.protocol} value={option.protocol}>
-                                  {option.label || option.protocol}
-                                  {option.status ? ` (${option.status})` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <label className="auth-modal-label" htmlFor="add-device-protocol">Protocol</label>
-                          </div>
-                          <div className="auth-modal-field add-device-field">
-                            <input
-                              id="add-device-name"
-                              className="auth-modal-input"
-                              type="text"
-                              placeholder=" "
-                              value={form.name}
-                              onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
-                            />
-                            <label className="auth-modal-label" htmlFor="add-device-name">Name (optional)</label>
-                          </div>
-                          <div className="auth-modal-field add-device-field">
-                            <input
-                              id="add-device-identifier"
-                              className="auth-modal-input"
-                              type="text"
-                              placeholder=" "
-                              value={form.identifier}
-                              onChange={handleIdentifierChange}
-                            />
-                            <label className="auth-modal-label" htmlFor="add-device-identifier">Identifier (optional)</label>
-                            <small className="add-device-modal-hint">Preview: {identifierPreview}</small>
-                          </div>
-                        </div>
-                        <div className="add-device-icon-field">
-                          <div className="add-device-icon-label">Icon</div>
-                          <div className="device-icon-picker-grid add-device-icon-grid">
-                            {DEVICE_ICON_CHOICES.map(choice => (
-                              <button
-                                key={choice.key}
-                                type="button"
-                                className={`device-icon-choice${selectedIcon === choice.key ? ' active' : ''}`}
-                                onClick={() => setForm(prev => ({ ...prev, icon: choice.key }))}
-                              >
-                                <FontAwesomeIcon icon={choice.icon} />
-                                <span>{choice.label}</span>
-                              </button>
+                      </div>
+
+                      <div className="add-device-grid add-device-basics-grid">
+                        <div className={`auth-modal-field add-device-field add-device-field-select add-device-grid-span-2${selectedProtocol ? ' filled' : ''}`}>
+                          <select
+                            id="add-device-protocol"
+                            className="auth-modal-input add-device-select"
+                            value={selectedProtocol}
+                            onChange={event => setForm(prev => ({ ...prev, protocol: event.target.value }))}
+                            required
+                          >
+                            {protocolOptions.map(option => (
+                              <option key={option.protocol} value={option.protocol}>
+                                {option.label || option.protocol}
+                                {option.status ? ` (${option.status})` : ''}
+                              </option>
                             ))}
-                          </div>
+                          </select>
+                          <label className="auth-modal-label" htmlFor="add-device-protocol">Protocol</label>
+                        </div>
+
+                        <div className="auth-modal-field add-device-field">
+                          <input
+                            id="add-device-name"
+                            className="auth-modal-input"
+                            type="text"
+                            placeholder=" "
+                            value={form.name}
+                            onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+                          />
+                          <label className="auth-modal-label" htmlFor="add-device-name">Name (optional)</label>
+                        </div>
+
+                        <div className="auth-modal-field add-device-field">
+                          <input
+                            id="add-device-type"
+                            className="auth-modal-input"
+                            type="text"
+                            placeholder=" "
+                            value={form.type}
+                            onChange={event => setForm(prev => ({ ...prev, type: event.target.value }))}
+                          />
+                          <label className="auth-modal-label" htmlFor="add-device-type">Type</label>
                         </div>
                       </div>
 
-                      <div className="add-device-card add-device-advanced-card">
-                        <button
-                          type="button"
-                          className={`add-device-advanced-toggle${showAdvanced ? ' open' : ''}`}
-                          onClick={() => setShowAdvanced(prev => !prev)}
-                          aria-expanded={showAdvanced}
-                        >
-                          <div>
-                            <span>Advanced setup & metadata</span>
-                            <p>Manufacturer, firmware, payloads, and manual registration.</p>
-                          </div>
-                          <FontAwesomeIcon icon={faChevronDown} />
-                        </button>
-                        <div className={`add-device-advanced${showAdvanced ? ' open' : ''}`}>
-                          <div className="add-device-grid add-device-advanced-grid">
-                            <div className="auth-modal-field add-device-field">
-                              <input
-                                id="add-device-type"
-                                className="auth-modal-input"
-                                type="text"
-                                placeholder=" "
-                                value={form.type}
-                                onChange={event => setForm(prev => ({ ...prev, type: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-type">Type</label>
-                            </div>
-                            <div className="auth-modal-field add-device-field">
-                              <input
-                                id="add-device-manufacturer"
-                                className="auth-modal-input"
-                                type="text"
-                                placeholder=" "
-                                value={form.manufacturer}
-                                onChange={event => setForm(prev => ({ ...prev, manufacturer: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-manufacturer">Manufacturer</label>
-                            </div>
-                            <div className="auth-modal-field add-device-field">
-                              <input
-                                id="add-device-model"
-                                className="auth-modal-input"
-                                type="text"
-                                placeholder=" "
-                                value={form.model}
-                                onChange={event => setForm(prev => ({ ...prev, model: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-model">Model</label>
-                            </div>
-                            <div className="auth-modal-field add-device-field add-device-grid-span-2 add-device-description-field">
-                              <textarea
-                                id="add-device-description"
-                                className="auth-modal-input add-device-textarea"
-                                rows={2}
-                                placeholder=" "
-                                value={form.description}
-                                onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-description">Description</label>
-                            </div>
-                            <div className="auth-modal-field add-device-field">
-                              <input
-                                id="add-device-firmware"
-                                className="auth-modal-input"
-                                type="text"
-                                placeholder=" "
-                                value={form.firmware}
-                                onChange={event => setForm(prev => ({ ...prev, firmware: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-firmware">Firmware</label>
-                            </div>
-                            <div className="auth-modal-field add-device-field add-device-grid-span-2">
-                              <textarea
-                                id="add-device-capabilities"
-                                className="auth-modal-input add-device-textarea"
-                                rows={3}
-                                placeholder=" "
-                                value={form.capabilities}
-                                onChange={event => setForm(prev => ({ ...prev, capabilities: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-capabilities">Capabilities JSON</label>
-                              <small className="add-device-modal-hint">Example: {CAPABILITIES_EXAMPLE}</small>
-                            </div>
-                            <div className="auth-modal-field add-device-field add-device-grid-span-2">
-                              <textarea
-                                id="add-device-inputs"
-                                className="auth-modal-input add-device-textarea"
-                                rows={3}
-                                placeholder=" "
-                                value={form.inputs}
-                                onChange={event => setForm(prev => ({ ...prev, inputs: event.target.value }))}
-                              />
-                              <label className="auth-modal-label" htmlFor="add-device-inputs">Inputs JSON</label>
-                              <small className="add-device-modal-hint">Example: {INPUTS_EXAMPLE}</small>
-                            </div>
-                          </div>
-                          <div className="add-device-advanced-actions">
-                            {formError ? <div className="auth-modal-error add-device-error">{formError}</div> : null}
+                      <div className="add-device-icon-field">
+                        <div className="add-device-icon-label">Icon</div>
+                        <div className="device-icon-picker-grid add-device-icon-grid">
+                          {DEVICE_ICON_CHOICES.map(choice => (
                             <button
+                              key={choice.key}
                               type="button"
-                              className="add-device-secondary-btn add-device-manual-btn"
-                              onClick={handleManualCreate}
-                              disabled={submitting}
+                              className={`device-icon-choice${selectedIcon === choice.key ? ' active' : ''}`}
+                              onClick={() => setForm(prev => ({ ...prev, icon: choice.key }))}
                             >
-                              {submitting ? 'Saving…' : 'Register manually'}
+                              <FontAwesomeIcon icon={choice.icon} />
+                              <span>{choice.label}</span>
                             </button>
-                            <small className="add-device-modal-hint">Use this for MQTT, HTTP, or other advanced integrations.</small>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="add-device-card add-device-guided-card">
-                        <div className="add-device-card-head add-device-card-head-center">
-                          <div>
-                            <h4>{pairingSupported ? `Guided ${pairingTitleLabel} pairing` : 'Manual onboarding'}</h4>
-                              <p>{pairingSupported
-                                ? (pairingProfile?.notes || 'Kick off permit-join right when you reset the device.')
-                                : 'Use advanced setup or manual registration for this protocol.'}
-                              </p>
-                          </div>
-                        </div>
-                        {pairingError ? <div className="auth-modal-error add-device-error">{pairingError}</div> : null}
-                        <div className="add-device-guided-actions">
-                          {pairingSupported ? (
-                            <button
-                              type="button"
-                              className="auth-modal-btn add-device-guided-action"
-                              onClick={beginGuidedPairing}
-                              disabled={pairingStartPending || activeSessionForSelected?.active}
-                            >
-                              {activeSessionForSelected?.active
-                                ? 'Pairing in progress'
-                                : pairingStartPending
-                                  ? 'Starting…'
-                                  : pairingCtaLabel}
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="add-device-secondary-btn add-device-guided-action"
-                              onClick={() => setShowAdvanced(true)}
-                            >
-                              Open advanced setup
-                            </button>
-                          )}
-                          <small className="add-device-modal-hint">
-                            {pairingSupported
-                              ? (pairingBlockedReason || 'Need manual control? Expand Advanced setup above.')
-                              : (pairingBlockedReason || 'Guided pairing is not available for this protocol yet.')}
-                          </small>
+                          ))}
                         </div>
                       </div>
                     </div>
 
+                    <div className="add-device-card add-device-advanced-card">
+                      <button
+                        type="button"
+                        className={`add-device-advanced-toggle${showAdvanced ? ' open' : ''}`}
+                        onClick={() => setShowAdvanced(prev => !prev)}
+                        aria-expanded={showAdvanced}
+                      >
+                        <div>
+                          <span>Additional metadata</span>
+                          <p>Attach richer protocol-independent details to pairing.</p>
+                        </div>
+                        <FontAwesomeIcon icon={faChevronDown} />
+                      </button>
+
+                      <div className={`add-device-advanced${showAdvanced ? ' open' : ''}`}>
+                        <div className="add-device-grid add-device-advanced-grid">
+                          <div className="auth-modal-field add-device-field">
+                            <input
+                              id="add-device-manufacturer"
+                              className="auth-modal-input"
+                              type="text"
+                              placeholder=" "
+                              value={form.manufacturer}
+                              onChange={event => setForm(prev => ({ ...prev, manufacturer: event.target.value }))}
+                            />
+                            <label className="auth-modal-label" htmlFor="add-device-manufacturer">Manufacturer</label>
+                          </div>
+                          <div className="auth-modal-field add-device-field">
+                            <input
+                              id="add-device-model"
+                              className="auth-modal-input"
+                              type="text"
+                              placeholder=" "
+                              value={form.model}
+                              onChange={event => setForm(prev => ({ ...prev, model: event.target.value }))}
+                            />
+                            <label className="auth-modal-label" htmlFor="add-device-model">Model</label>
+                          </div>
+                          <div className="auth-modal-field add-device-field add-device-grid-span-2 add-device-description-field">
+                            <textarea
+                              id="add-device-description"
+                              className="auth-modal-input add-device-textarea"
+                              rows={2}
+                              placeholder=" "
+                              value={form.description}
+                              onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
+                            />
+                            <label className="auth-modal-label" htmlFor="add-device-description">Description</label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="add-device-card add-device-guided-card">
+                      <div className="add-device-card-head add-device-card-head-center">
+                        <div>
+                          <h4>{pairingSupported ? 'Ready for pairing flow' : 'Guided pairing unavailable'}</h4>
+                          <p>
+                            {pairingSupported
+                              ? 'Continue to Step 02 for adapter-guided pairing instructions and runtime progress.'
+                              : (pairingBlockedReason || 'This protocol does not currently publish a guided pairing schema.')}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="add-device-guided-actions">
+                        <button
+                          type="button"
+                          className="auth-modal-btn add-device-guided-action"
+                          onClick={handleEnterPairingFlow}
+                          disabled={!canEnterPairingFlow}
+                        >
+                          Continue to pairing flow
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </form>
-              </div>
-            ) : flowStep === 'pairing' ? (
-              renderPairingStep()
+                </div>
+              </form>
+            </div>
+          ) : flowStep === 'pairing' ? (
+            (!pairingSetupOverride && (activePairingSession || activePairing)) ? (
+              <PairingProgressPanel
+                activePairing={activePairing}
+                activePairingSession={activePairingSession}
+                selectedProtocol={selectedProtocol}
+                pairingConfig={pairingConfig}
+                fallbackPairingProfile={pairingProfile}
+                sessionStatus={sessionStatus}
+                sessionStage={sessionStage}
+                pairingNotice={pairingNotice}
+                pairingError={pairingError}
+                secondsRemaining={secondsRemaining}
+                onStop={handleStopPairing}
+                stopPending={stopPending}
+                onResolveNeedsInput={handleResolveNeedsInput}
+              />
             ) : (
-              renderSuccessStep()
-            )}
-          </div>
+              <div className="auth-modal-content-inner add-device-step add-device-pairing-step">
+                <div className="add-device-pairing-panel">
+                  <div className="add-device-card-head add-device-card-head-center">
+                    <div>
+                      <h4>{pairingSupported ? `Guided ${pairingTitleLabel} pairing` : 'Guided pairing unavailable'}</h4>
+                      <p>
+                        {pairingSupported
+                          ? (pairingProfile?.notes || 'Follow the guided steps below to start pairing.')
+                          : (pairingBlockedReason || 'This protocol does not currently publish a guided pairing schema.')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {pairingError ? <div className="auth-modal-error add-device-error">{pairingError}</div> : null}
+
+                  {pairingSupported ? (
+                    <PairingFlowRenderer
+                      protocol={selectedProtocol}
+                      pairingProfile={pairingProfile}
+                      disabled={Boolean(activeSessionForSelected?.active)}
+                      busy={pairingStartPending}
+                      ctaLabel={activeSessionForSelected?.active ? 'Pairing in progress' : pairingCtaLabel}
+                      blockedReason={pairingBlockedReason}
+                      onError={setPairingError}
+                      onStart={beginGuidedPairing}
+                      initialMode={pairingRecoveryDraft?.mode || ''}
+                      initialValues={pairingRecoveryDraft?.values || null}
+                      requiredFieldIds={pairingRecoveryDraft?.requiredFieldIds || []}
+                    />
+                  ) : (
+                    <div className="add-device-guided-actions">
+                      <button type="button" className="auth-modal-btn add-device-guided-action" disabled>
+                        Guided pairing unavailable
+                      </button>
+                    </div>
+                  )}
+
+                  {pairingError && pairingRecoveryDraft ? (
+                    <div className="add-device-pairing-terminal-actions">
+                      <div className="add-device-pairing-terminal-guidance">
+                        <p>{terminalRecoveryCopy.summary}</p>
+                        {terminalRecoveryCopy.recommendations.length > 0 ? (
+                          <ul>
+                            {terminalRecoveryCopy.recommendations.map(item => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                      {terminalActionOrder.map(actionId => {
+                        if (actionId === 'retry') {
+                          return (
+                            <button
+                              key="retry"
+                              type="button"
+                              className={terminalRecoveryCopy.primaryAction === 'retry' ? 'auth-modal-btn' : 'add-device-secondary-btn'}
+                              onClick={handleRetryPairing}
+                              disabled={pairingStartPending}
+                            >
+                              {pairingStartPending ? 'Retrying…' : terminalRecoveryCopy.retryLabel}
+                            </button>
+                          );
+                        }
+                        if (actionId === 'mode') {
+                          return (
+                            <button
+                              key="mode"
+                              type="button"
+                              className={terminalRecoveryCopy.primaryAction === 'mode' ? 'auth-modal-btn' : 'add-device-secondary-btn'}
+                              onClick={handleChangeMode}
+                              disabled={pairingStartPending}
+                            >
+                              {terminalRecoveryCopy.modeLabel}
+                            </button>
+                          );
+                        }
+                        return (
+                          <button
+                            key="details"
+                            type="button"
+                            className={terminalRecoveryCopy.primaryAction === 'details' ? 'auth-modal-btn' : 'add-device-secondary-btn'}
+                            onClick={handleReturnToDetails}
+                            disabled={pairingStartPending}
+                          >
+                            {terminalRecoveryCopy.detailsLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )
+          ) : (
+            renderSuccessStep()
+          )}
         </div>
+      </div>
     </BaseModal>
   );
 
