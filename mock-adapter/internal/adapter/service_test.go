@@ -57,7 +57,7 @@ var _ paho.Message = fakeMessage{}
 
 func TestStartPublishesHelloAndStatusAndSubscribes(t *testing.T) {
 	client := newFakeClient()
-	svc := New(client, Config{Enabled: true, AdapterID: "thread-adapter-1", Version: "dev"})
+	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
 
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatalf("start: %v", err)
@@ -67,44 +67,79 @@ func TestStartPublishesHelloAndStatusAndSubscribes(t *testing.T) {
 	if len(client.published) < 2 {
 		t.Fatalf("expected hello and status messages, got %d", len(client.published))
 	}
-	if _, ok := client.subscribed[hdp.PairingCommandPrefix+"thread"]; !ok {
+	if _, ok := client.subscribed[hdp.PairingCommandPrefix+"mock"]; !ok {
 		t.Fatal("expected pairing subscription")
 	}
-	if _, ok := client.subscribed[hdp.CommandPrefix+"thread/#"]; !ok {
+	if _, ok := client.subscribed[hdp.CommandPrefix+"mock/#"]; !ok {
 		t.Fatal("expected command subscription")
 	}
-	if client.published[1].topic != hdp.AdapterStatusPrefix+"thread-adapter-1" || !client.published[1].retain {
+	if client.published[1].topic != hdp.AdapterStatusPrefix+"mock-adapter-1" || !client.published[1].retain {
 		t.Fatal("expected retained adapter status publish")
 	}
 }
 
 func TestHandlePairingStartPublishesProgress(t *testing.T) {
 	client := newFakeClient()
-	svc := New(client, Config{Enabled: true, AdapterID: "thread-adapter-1", Version: "dev"})
+	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
 
-	svc.handlePairingCommand(nil, fakeMessage{topic: hdp.PairingCommandPrefix + "thread", payload: []byte(`{"action":"start"}`)})
+	svc.handlePairingCommand(nil, fakeMessage{topic: hdp.PairingCommandPrefix + "mock", payload: []byte(`{"action":"start","mode":"default","flow_id":"flow-a"}`)})
 
 	if len(client.published) != 2 {
 		t.Fatalf("expected two progress messages, got %d", len(client.published))
 	}
 	for _, msg := range client.published {
-		if msg.topic != hdp.PairingProgressPrefix+"thread" {
+		if msg.topic != hdp.PairingProgressPrefix+"mock" {
 			t.Fatalf("unexpected topic %q", msg.topic)
 		}
+	}
+	var completed map[string]any
+	if err := json.Unmarshal(client.published[1].payload, &completed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if completed["status"] != "completed" {
+		t.Fatalf("expected completed status, got %v", completed["status"])
+	}
+	if completed["mode"] != "default" {
+		t.Fatalf("expected mode to be echoed, got %v", completed["mode"])
+	}
+	if completed["flow_id"] != "flow-a" {
+		t.Fatalf("expected flow_id to be echoed, got %v", completed["flow_id"])
+	}
+}
+
+func TestHandlePairingStartNeedsInputForQRCodeMode(t *testing.T) {
+	client := newFakeClient()
+	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
+
+	svc.handlePairingCommand(nil, fakeMessage{topic: hdp.PairingCommandPrefix + "mock", payload: []byte(`{"action":"start","mode":"qr_code","inputs":{}}`)})
+
+	if len(client.published) != 1 {
+		t.Fatalf("expected one progress message, got %d", len(client.published))
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(client.published[0].payload, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload["status"] != "needs_input" {
+		t.Fatalf("expected needs_input status, got %v", payload["status"])
+	}
+	required, ok := payload["required_inputs"].([]any)
+	if !ok || len(required) != 1 || required[0] != "onboarding_payload" {
+		t.Fatalf("expected required onboarding_payload input, got %#v", payload["required_inputs"])
 	}
 }
 
 func TestHandleDeviceCommandRejectsAndPublishesResult(t *testing.T) {
 	client := newFakeClient()
-	svc := New(client, Config{Enabled: true, AdapterID: "thread-adapter-1", Version: "dev"})
-	payload := []byte(`{"device_id":"thread/node-1","corr":"corr-1"}`)
+	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
+	payload := []byte(`{"device_id":"mock/node-1","corr":"corr-1"}`)
 
-	svc.handleDeviceCommand(nil, fakeMessage{topic: hdp.CommandPrefix + "thread/node-1", payload: payload})
+	svc.handleDeviceCommand(nil, fakeMessage{topic: hdp.CommandPrefix + "mock/node-1", payload: payload})
 
 	if len(client.published) != 1 {
 		t.Fatalf("expected one command_result publish, got %d", len(client.published))
 	}
-	if client.published[0].topic != hdp.CommandResultPrefix+"thread/node-1" {
+	if client.published[0].topic != hdp.CommandResultPrefix+"mock/node-1" {
 		t.Fatalf("unexpected topic %q", client.published[0].topic)
 	}
 	var body map[string]any
@@ -118,11 +153,11 @@ func TestHandleDeviceCommandRejectsAndPublishesResult(t *testing.T) {
 
 func TestDeviceIDHelpers(t *testing.T) {
 	svc := New(newFakeClient(), Config{})
-	if got := svc.hdpDeviceID("node-1"); got != "thread/node-1" {
+	if got := svc.hdpDeviceID("node-1"); got != "mock/node-1" {
 		t.Fatalf("unexpected hdpDeviceID: %q", got)
 	}
-	proto, external := svc.externalFromHDP("thread/floor1/node-1")
-	if proto != "thread" || external != "node-1" {
+	proto, external := svc.externalFromHDP("mock/floor1/node-1")
+	if proto != "mock" || external != "node-1" {
 		t.Fatalf("unexpected externalFromHDP result: %q %q", proto, external)
 	}
 }

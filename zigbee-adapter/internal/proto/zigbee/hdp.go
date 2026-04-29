@@ -24,6 +24,7 @@ func (z *ZigbeeAdapter) publishHello() error {
 			"supports_interview":   true,
 		},
 		"pairing": map[string]any{
+			"schema_version":      "1.0",
 			"label":               "Zigbee (Zigbee2MQTT)",
 			"supported":           true,
 			"supports_interview":  true,
@@ -34,6 +35,27 @@ func (z *ZigbeeAdapter) publishHello() error {
 				"We will auto-register it as soon as it is detected.",
 			},
 			"cta_label": "Start Zigbee pairing",
+			"flow": map[string]any{
+				"id":          "zigbee-default-flow",
+				"entry_modes": []string{"default"},
+				"forms": []map[string]any{
+					{
+						"mode":  "default",
+						"label": "Default",
+						"fields": []map[string]any{
+							{"id": "timeout", "component": "number", "label": "Permit join timeout (seconds)", "bind": "timeout", "min": 30, "max": 300, "default": 60},
+							{"id": "network_key_permit", "component": "checkbox", "label": "Allow network key exchange", "default": true},
+							{"id": "join_strategy", "component": "select", "label": "Join strategy", "options": []map[string]any{{"value": "auto", "label": "Auto"}, {"value": "router-first", "label": "Router first"}}, "default": "auto"},
+						},
+					},
+				},
+				"steps": []map[string]any{
+					{"id": "active", "label": "Pairing Active", "stage": "active"},
+					{"id": "detected", "label": "Device Detected", "stage": "device_detected"},
+					{"id": "interview", "label": "Interview", "stage": "interviewing"},
+					{"id": "completed", "label": "Completed", "stage": "completed"},
+				},
+			},
 		},
 		"ts": time.Now().UnixMilli(),
 	}
@@ -57,11 +79,25 @@ func (z *ZigbeeAdapter) publishStatus(status, reason string) error {
 			"supports_interview": true,
 		},
 		"pairing": map[string]any{
+			"schema_version":      "1.0",
 			"label":               "Zigbee (Zigbee2MQTT)",
 			"supported":           true,
 			"supports_interview":  true,
 			"default_timeout_sec": 60,
 			"cta_label":           "Start Zigbee pairing",
+			"flow": map[string]any{
+				"id":          "zigbee-default-flow",
+				"entry_modes": []string{"default"},
+				"forms": []map[string]any{
+					{
+						"mode":  "default",
+						"label": "Default",
+						"fields": []map[string]any{
+							{"id": "timeout", "component": "number", "label": "Permit join timeout (seconds)", "bind": "timeout", "min": 30, "max": 300, "default": 60},
+						},
+					},
+				},
+			},
 		},
 		"ts": time.Now().UnixMilli(),
 	}

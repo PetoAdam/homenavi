@@ -5,7 +5,7 @@ import (
 	"github.com/PetoAdam/homenavi/shared/mqttx"
 )
 
-// Config holds the bootstrap configuration for thread-adapter.
+// Config holds the bootstrap configuration for mock-adapter.
 type Config struct {
 	Port      string
 	MQTT      mqttx.Config
@@ -15,9 +15,9 @@ type Config struct {
 
 func LoadConfig() Config {
 	return Config{
-		Port:      envx.String("THREAD_ADAPTER_PORT", "8092"),
+		Port:      envx.String("MOCK_ADAPTER_PORT", "8092"),
 		MQTT:      mqttx.LoadConfig("mqtt://emqx:1883"),
-		AdapterID: envx.String("THREAD_ADAPTER_ID", "thread-adapter-1"),
-		Version:   envx.String("THREAD_ADAPTER_VERSION", "dev"),
+		AdapterID: envx.String("MOCK_ADAPTER_ID", "mock-adapter-1"),
+		Version:   envx.String("MOCK_ADAPTER_VERSION", "dev"),
 	}
 }

@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/PetoAdam/homenavi/mock-adapter/internal/adapter"
+	httptransport "github.com/PetoAdam/homenavi/mock-adapter/internal/http"
 	"github.com/PetoAdam/homenavi/shared/mqttx"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
-	"github.com/PetoAdam/homenavi/thread-adapter/internal/adapter"
-	httptransport "github.com/PetoAdam/homenavi/thread-adapter/internal/http"
 )
 
-// App is the composed thread-adapter application.
+// App is the composed mock-adapter application.
 type App struct {
 	server      *http.Server
 	adapter     *adapter.Service
@@ -23,11 +23,11 @@ type App struct {
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
-	mqttClient, err := mqttx.Connect(mqttx.Options{BrokerURL: cfg.MQTT.BrokerURL, ClientIDPrefix: "thread-adapter"})
+	mqttClient, err := mqttx.Connect(mqttx.Options{BrokerURL: cfg.MQTT.BrokerURL, ClientIDPrefix: "mock-adapter"})
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
-	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("thread-adapter")
+	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("mock-adapter")
 	if err != nil {
 		return nil, fmt.Errorf("setup observability: %w", err)
 	}
@@ -53,7 +53,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		a.logger.Info("thread-adapter started", "addr", a.server.Addr)
+		a.logger.Info("mock-adapter started", "addr", a.server.Addr)
 		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 			return

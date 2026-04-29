@@ -16,14 +16,79 @@ const (
 )
 
 type adapterStatus struct {
-	AdapterID       string
-	Protocol        string
-	Status          string
-	Reason          string
-	Version         string
-	LastSeen        time.Time
-	Pairing         *PairingConfig
-	SupportsPairing bool
+	AdapterID string
+	Protocol  string
+	Status    string
+	Reason    string
+	Version   string
+	LastSeen  time.Time
+	Pairing   *PairingConfig
+}
+
+func mergeFlow(existing, incoming any) any {
+	existingMap, existingOK := existing.(map[string]any)
+	incomingMap, incomingOK := incoming.(map[string]any)
+	if !existingOK {
+		if incomingOK {
+			return incomingMap
+		}
+		if incoming != nil {
+			return incoming
+		}
+		return existing
+	}
+	if !incomingOK {
+		if incoming != nil {
+			return incoming
+		}
+		return existingMap
+	}
+	merged := make(map[string]any, len(existingMap)+len(incomingMap))
+	for k, v := range existingMap {
+		merged[k] = v
+	}
+	for k, v := range incomingMap {
+		if v == nil {
+			continue
+		}
+		merged[k] = v
+	}
+	return merged
+}
+
+func mergePairingConfig(existing, incoming *PairingConfig) *PairingConfig {
+	if existing == nil {
+		return incoming
+	}
+	if incoming == nil {
+		return existing
+	}
+	merged := *existing
+	if incoming.Protocol != "" {
+		merged.Protocol = incoming.Protocol
+	}
+	if incoming.SchemaVersion != "" {
+		merged.SchemaVersion = incoming.SchemaVersion
+	}
+	if incoming.Label != "" {
+		merged.Label = incoming.Label
+	}
+	merged.Supported = incoming.Supported
+	merged.SupportsInterview = incoming.SupportsInterview
+	if incoming.DefaultTimeoutSec > 0 {
+		merged.DefaultTimeoutSec = incoming.DefaultTimeoutSec
+	}
+	if len(incoming.Instructions) > 0 {
+		merged.Instructions = incoming.Instructions
+	}
+	if incoming.CTALabel != "" {
+		merged.CTALabel = incoming.CTALabel
+	}
+	if incoming.Notes != "" {
+		merged.Notes = incoming.Notes
+	}
+	merged.Flow = mergeFlow(existing.Flow, incoming.Flow)
+	return &merged
 }
 
 func boolish(v any) bool {
@@ -93,7 +158,11 @@ func parsePairingConfig(protocol string, msg map[string]any) (*PairingConfig, bo
 		return nil, false
 	}
 	if raw, ok := msg["pairing"].(map[string]any); ok {
-		cfg := &PairingConfig{Protocol: proto}
+		schemaVersion := strings.TrimSpace(asString(raw["schema_version"]))
+		if schemaVersion == "" {
+			return nil, false
+		}
+		cfg := &PairingConfig{Protocol: proto, SchemaVersion: schemaVersion}
 		if label := strings.TrimSpace(asString(raw["label"])); label != "" {
 			cfg.Label = label
 		}
@@ -108,12 +177,9 @@ func parsePairingConfig(protocol string, msg map[string]any) (*PairingConfig, bo
 		cfg.Instructions = stringSlice(raw["instructions"])
 		cfg.CTALabel = strings.TrimSpace(asString(raw["cta_label"]))
 		cfg.Notes = strings.TrimSpace(asString(raw["notes"]))
-		return cfg, true
-	}
-	features, _ := msg["features"].(map[string]any)
-	if features != nil && boolish(features["supports_pairing"]) {
-		cfg := &PairingConfig{Protocol: proto, Label: strings.ToUpper(proto[:1]) + proto[1:], Supported: true, DefaultTimeoutSec: 180}
-		cfg.SupportsInterview = boolish(features["supports_interview"])
+		if flow, ok := raw["flow"]; ok {
+			cfg.Flow = flow
+		}
 		return cfg, true
 	}
 	return nil, false
@@ -160,11 +226,17 @@ func (r *adapterRegistry) upsertFromStatusTopic(topic string, payload []byte) {
 	entry := adapterStatus{AdapterID: adapterID, Protocol: protocol, Status: status, Reason: reason, Version: version, LastSeen: r.nowFn()}
 	if cfg, ok := parsePairingConfig(protocol, msg); ok {
 		entry.Pairing = cfg
-		entry.SupportsPairing = cfg.Supported
-	} else if features, ok := msg["features"].(map[string]any); ok {
-		entry.SupportsPairing = boolish(features["supports_pairing"])
 	}
 	r.mu.Lock()
+	if existing, ok := r.byID[adapterID]; ok {
+		if entry.Protocol == "" {
+			entry.Protocol = existing.Protocol
+		}
+		if entry.Version == "" {
+			entry.Version = existing.Version
+		}
+		entry.Pairing = mergePairingConfig(existing.Pairing, entry.Pairing)
+	}
 	r.byID[adapterID] = entry
 	r.mu.Unlock()
 	if r.onUpdate != nil {
@@ -188,14 +260,10 @@ func (r *adapterRegistry) upsertFromHello(payload []byte) {
 	protocol := normalizeProtocol(asString(msg["protocol"]))
 	version := strings.TrimSpace(asString(msg["version"]))
 	var pairingCfg *PairingConfig
-	var supportsPairing bool
 	if cfg, ok := parsePairingConfig(protocol, msg); ok {
 		pairingCfg = cfg
-		supportsPairing = cfg.Supported
-	} else if features, ok := msg["features"].(map[string]any); ok {
-		supportsPairing = boolish(features["supports_pairing"])
 	}
-	entry := adapterStatus{AdapterID: adapterID, Protocol: protocol, Status: "online", Reason: "hello", Version: version, LastSeen: r.nowFn(), Pairing: pairingCfg, SupportsPairing: supportsPairing}
+	entry := adapterStatus{AdapterID: adapterID, Protocol: protocol, Status: "online", Reason: "hello", Version: version, LastSeen: r.nowFn(), Pairing: pairingCfg}
 	r.mu.Lock()
 	existing, ok := r.byID[adapterID]
 	if ok {
@@ -205,12 +273,7 @@ func (r *adapterRegistry) upsertFromHello(payload []byte) {
 		if existing.Version == "" {
 			existing.Version = entry.Version
 		}
-		if existing.Pairing == nil && entry.Pairing != nil {
-			existing.Pairing = entry.Pairing
-		}
-		if !existing.SupportsPairing && entry.SupportsPairing {
-			existing.SupportsPairing = true
-		}
+		existing.Pairing = mergePairingConfig(existing.Pairing, entry.Pairing)
 		existing.LastSeen = entry.LastSeen
 		r.byID[adapterID] = existing
 	} else {
@@ -268,7 +331,7 @@ func (r *adapterRegistry) pairingConfigsSnapshot() []PairingConfig {
 	byProto := map[string]PairingConfig{}
 	for _, entry := range r.byID {
 		proto := normalizeProtocol(entry.Protocol)
-		if proto == "" {
+		if proto == "" || entry.Pairing == nil {
 			continue
 		}
 		isOnline := r.isOnline(entry)
@@ -276,20 +339,13 @@ func (r *adapterRegistry) pairingConfigsSnapshot() []PairingConfig {
 		if !ok {
 			cfg = PairingConfig{Protocol: proto, Label: strings.ToUpper(proto[:1]) + proto[1:]}
 		}
-		if entry.Pairing != nil {
-			candidate := *entry.Pairing
-			candidate.Protocol = proto
-			candidate.Supported = candidate.Supported && isOnline
-			if cfg.Protocol == "" || (isOnline && !cfg.Supported) || (isOnline && cfg.Label == strings.ToUpper(proto[:1])+proto[1:]) {
-				cfg = candidate
-			} else if isOnline && candidate.Supported {
-				cfg = candidate
-			}
-		} else if entry.SupportsPairing {
-			cfg.Supported = isOnline
-			if cfg.DefaultTimeoutSec == 0 {
-				cfg.DefaultTimeoutSec = 180
-			}
+		candidate := *entry.Pairing
+		candidate.Protocol = proto
+		candidate.Supported = candidate.Supported && isOnline
+		if cfg.Protocol == "" || (isOnline && !cfg.Supported) || (isOnline && cfg.Label == strings.ToUpper(proto[:1])+proto[1:]) {
+			cfg = candidate
+		} else if isOnline && candidate.Supported {
+			cfg = candidate
 		}
 		byProto[proto] = cfg
 	}
@@ -316,9 +372,6 @@ func (r *adapterRegistry) isPairingSupported(protocol string) bool {
 				return true
 			}
 			continue
-		}
-		if entry.SupportsPairing {
-			return true
 		}
 	}
 	return false

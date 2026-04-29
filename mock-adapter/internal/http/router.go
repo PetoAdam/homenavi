@@ -13,5 +13,5 @@ func NewRouter(promHandler http.Handler, tracer oteltrace.Tracer) http.Handler {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	return sharedobs.WrapHandler(tracer, "thread-adapter", mux)
+	return sharedobs.WrapHandler(tracer, "mock-adapter", mux)
 }

@@ -36,7 +36,7 @@ func New(client Client, cfg Config) *Service {
 
 func (s *Service) Start(ctx context.Context) error {
 	if !s.enabled {
-		slog.Info("thread adapter disabled", "status", "placeholder")
+		slog.Info("mock adapter disabled", "status", "placeholder")
 		return nil
 	}
 	if ctx == nil {
@@ -45,19 +45,19 @@ func (s *Service) Start(ctx context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.publishHello()
 	s.publishStatus("online", "placeholder")
-	if err := s.client.Subscribe(hdp.PairingCommandPrefix+"thread", s.handlePairingCommand); err != nil {
-		slog.Warn("thread adapter pairing subscribe failed", "error", err)
+	if err := s.client.Subscribe(hdp.PairingCommandPrefix+"mock", s.handlePairingCommand); err != nil {
+		slog.Warn("mock adapter pairing subscribe failed", "error", err)
 	}
-	if err := s.client.Subscribe(hdp.CommandPrefix+"thread/#", s.handleDeviceCommand); err != nil {
-		slog.Warn("thread adapter command subscribe failed", "error", err)
+	if err := s.client.Subscribe(hdp.CommandPrefix+"mock/#", s.handleDeviceCommand); err != nil {
+		slog.Warn("mock adapter command subscribe failed", "error", err)
 	}
 	go s.runHeartbeat()
-	slog.Info("thread adapter placeholder running", "status", "planned")
+	slog.Info("mock adapter placeholder running", "status", "planned")
 	return nil
 }
 
 func (s *Service) Stop() {
-	slog.Info("thread adapter stopping")
+	slog.Info("mock adapter stopping")
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -82,7 +82,7 @@ func (s *Service) hdpDeviceID(deviceID string) string {
 	if id == "" {
 		return ""
 	}
-	if strings.HasPrefix(id, "thread/") {
+	if strings.HasPrefix(id, "mock/") {
 		return id
 	}
 	parts := strings.Split(id, "/")
@@ -90,7 +90,7 @@ func (s *Service) hdpDeviceID(deviceID string) string {
 	if suffix == "" {
 		return ""
 	}
-	return "thread/" + suffix
+	return "mock/" + suffix
 }
 
 func (s *Service) externalFromHDP(deviceID string) (string, string) {
@@ -100,7 +100,7 @@ func (s *Service) externalFromHDP(deviceID string) (string, string) {
 	}
 	parts := strings.Split(id, "/")
 	if len(parts) == 1 {
-		return "thread", parts[0]
+		return "mock", parts[0]
 	}
 	proto := strings.ToLower(parts[0])
 	if len(parts) >= 3 {

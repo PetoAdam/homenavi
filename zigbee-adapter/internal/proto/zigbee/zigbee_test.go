@@ -1,6 +1,7 @@
 package zigbee
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 )
@@ -47,6 +48,57 @@ func TestInterviewStageFromStatus(t *testing.T) {
 			t.Fatalf("status %q: expected %q, got %q", input, want, got)
 		}
 	}
+}
+
+func TestMockBridgeResponseLifecycleStage(t *testing.T) {
+	payload := []byte(`{"type":"device_joined","data":{"friendly_name":"ikea-bulb-1","ieee_address":"0x00124b0024abcd01"}}`)
+	var evt struct {
+		Type string         `json:"type"`
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &evt); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := bridgeLifecycleStage(evt.Type); got != "device_joined" {
+		t.Fatalf("expected device_joined stage, got %q", got)
+	}
+	if ext := canonicalExternalID(evt.Data); ext != "0x00124b0024abcd01" {
+		t.Fatalf("expected canonical external id, got %q", ext)
+	}
+}
+
+func TestMockBridgeResponseInterviewStages(t *testing.T) {
+	cases := []struct {
+		name   string
+		status string
+		want   string
+	}{
+		{name: "started", status: "started", want: "interviewing"},
+		{name: "success", status: "successful", want: "interview_complete"},
+		{name: "failed", status: "failed", want: "failed"},
+	}
+
+	for _, tc := range cases {
+		payload := []byte(`{"type":"device_interview","data":{"friendly_name":"ikea-bulb-1","ieee_address":"0x00124b0024abcd01","status":"` + tc.status + `"}}`)
+		var evt struct {
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(payload, &evt); err != nil {
+			t.Fatalf("%s: unmarshal: %v", tc.name, err)
+		}
+		got := interviewStageFromStatus(asString(evt.Data["status"]))
+		if got != tc.want {
+			t.Fatalf("%s: expected %q, got %q", tc.name, tc.want, got)
+		}
+	}
+}
+
+func asString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func TestCorrelationSetAndConsume(t *testing.T) {
