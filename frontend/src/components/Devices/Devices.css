@@ -493,6 +493,25 @@
 
   .devices-header-pills {
     justify-content: center;
+    gap: 0.35rem;
+  }
+
+  .devices-header-pills .devices-header-pill {
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0.3rem;
+    justify-content: center;
+    border-radius: 0.75rem;
+  }
+
+  .devices-header-pills .devices-header-pill > span {
+    display: none;
+  }
+
+  .devices-header-pills .devices-header-pill .glass-pill-icon {
+    font-size: 0.82rem;
+    margin: 0;
+    opacity: 0.96;
   }
 
   .devices-summary-card .devices-summary-content {

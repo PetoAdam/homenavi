@@ -147,6 +147,20 @@ If integration supports local onboarding:
 - HomeNavi sends HDP pairing command to integration protocol
 - integration emits pairing progress events
 
+#### Pairing preset UI component contract
+
+To keep pairing UX consistent and usable across protocols, integrations/adapters should define pairing flows using preset UI components instead of custom frontend logic:
+
+- `PresetStepTimeline`: staged flow cards (`flow.steps[]` with stage/status matching)
+- `PresetStatusPill`: current pairing status label
+- `PresetCountdown`: optional timeout display from session `expires_at`
+- `PresetHintsInline`: inline instructions/hints from schema
+- `PresetMetadataPreview`: metadata summary after detection/join
+- `PresetActionRow`: start/stop/retry action row with adapter-defined labels
+
+Design constraint:
+- presets must align with existing Add Device pairing modal structure, spacing, and interaction patterns; protocol adapters provide data/schema, not custom UI branching.
+
 ---
 
 ## Security model

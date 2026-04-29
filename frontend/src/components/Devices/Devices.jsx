@@ -699,6 +699,7 @@ export default function Devices() {
                 text={pill.text}
                 title={pill.title}
                 onClick={pill.onClick}
+                className="devices-header-pill"
               />
             ))}
           </div>

@@ -41,7 +41,7 @@ First service migration wave:
 - Rename migrated service modules to fully qualified import paths
 
 ### Milestone 3 — Device plane
-- Migrate `device-hub`, `zigbee-adapter`, `thread-adapter` to shared `hdp` and `mqttx`
+- Migrate `device-hub`, `zigbee-adapter`, `mock-adapter` to shared `hdp` and `mqttx`
 - Standardize retained publish semantics behind shared APIs
 
 ### Milestone 4 — Broader consolidation

@@ -18,7 +18,7 @@ flowchart TB
   %% Edge / device plane
   subgraph Edge["Edge / device plane"]
     Zigbee["Zigbee Adapter"]
-    Thread["Thread Adapter"]
+    Thread["Mock Adapter"]
   end
 
   %% Core plane
