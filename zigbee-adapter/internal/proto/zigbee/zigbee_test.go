@@ -139,3 +139,42 @@ func TestAdapterVersion(t *testing.T) {
 		t.Fatalf("expected custom, got %q", got)
 	}
 }
+
+func TestNormalizeZigbeeStateCommandPayload(t *testing.T) {
+	payload := normalizeZigbeeStateCommandPayload(map[string]any{
+		"state":         true,
+		"brightness":    150,
+		"transition_ms": 1200,
+	})
+
+	if got := payload["state"]; got != "ON" {
+		t.Fatalf("expected state to normalize to ON, got %#v", got)
+	}
+	if got := payload["brightness"]; got != 150 {
+		t.Fatalf("expected brightness to be preserved, got %#v", got)
+	}
+	if got := payload["transition"]; got != 1.2 {
+		t.Fatalf("expected transition seconds to be 1.2, got %#v", got)
+	}
+	if _, exists := payload["transition_ms"]; exists {
+		t.Fatalf("expected transition_ms to be omitted from final zigbee payload")
+	}
+}
+
+func TestNormalizeZigbeeStateCommandPayload_PowerAndOnBool(t *testing.T) {
+	cases := []struct {
+		name  string
+		input map[string]any
+		want  string
+	}{
+		{name: "power false", input: map[string]any{"power": false}, want: "OFF"},
+		{name: "on true", input: map[string]any{"on": true}, want: "ON"},
+	}
+
+	for _, tc := range cases {
+		payload := normalizeZigbeeStateCommandPayload(tc.input)
+		if got := payload["state"]; got != tc.want {
+			t.Fatalf("%s: expected %q, got %#v", tc.name, tc.want, got)
+		}
+	}
+}

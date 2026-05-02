@@ -69,9 +69,9 @@ func (z *ZigbeeAdapter) PublishCommand(ctx context.Context, device *model.Device
 	return z.client.Publish(topic, b)
 }
 
-func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]any, correlationID string) bool {
-	if dev == nil || len(state) == 0 {
-		return false
+func normalizeZigbeeStateCommandPayload(state map[string]any) map[string]any {
+	if len(state) == 0 {
+		return nil
 	}
 	var transitionMs float64
 	var hasTransitionMs bool
@@ -79,14 +79,16 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 	payload := map[string]any{}
 	for k, v := range state {
 		switch k {
-		case "on":
+		case "on", "state", "power":
 			if vb, ok := v.(bool); ok {
 				if vb {
 					payload["state"] = "ON"
 				} else {
 					payload["state"] = "OFF"
 				}
+				continue
 			}
+			payload[k] = v
 		case "transition":
 			hasTransition = true
 			payload[k] = v
@@ -115,6 +117,14 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 	if !hasTransition && hasTransitionMs && transitionMs > 0 {
 		payload["transition"] = transitionMs / 1000.0
 	}
+	return payload
+}
+
+func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]any, correlationID string) bool {
+	if dev == nil || len(state) == 0 {
+		return false
+	}
+	payload := normalizeZigbeeStateCommandPayload(state)
 	// Do not forward correlation_id to Zigbee2MQTT: it is not a standard writable property and
 	// causes noisy "No converter available" errors. We still echo correlation_id back to the
 	// UI by attaching it to the *next* HDP state publish (see setCorrelation/consumeCorrelation).
