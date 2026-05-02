@@ -36,6 +36,7 @@ import {
   applyPendingStateToDevice,
   baselineStateFromDevice,
   clearPendingTimeout,
+  createPendingCommand,
   createCommandCorrelationId,
   shouldClearPendingFromDevice,
   stateVersionFromDevice,
@@ -218,26 +219,25 @@ export default function Devices() {
     }
     setCommandError(null);
 
-    const stateVersionAtSend = stateVersionFromDevice(device);
-    const startedAt = Date.now();
+    const { corr, enrichedPayload, pending } = createPendingCommand(device, payload, {
+      onTimeout: ({ corr: expiredCorr }) => {
+        setCommandError('Device did not confirm the command in time');
+        setPendingCommands(prev => {
+          const next = { ...prev };
+          const current = next[device.id];
+          if (!current || current.corr !== expiredCorr) return prev;
+          clearPendingTimeout(current);
+          delete next[device.id];
+          return next;
+        });
+      },
+    });
 
-    const corr = createCommandCorrelationId(payload);
-    const enrichedPayload = withCommandCorrelation(payload, corr);
-
-    // Keep UI in "pending" until we see a matching command_result AND the state reflects
-    // what we asked for (or a timeout). This prevents cloud devices from flickering back.
-    const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
-      ? payload.state
-      : null;
+    // Keep UI in pending until we see the device-hub lifecycle complete or a matching
+    // newer HDP state echo arrives.
     setPendingCommands(prev => ({
       ...prev,
-      [device.id]: {
-        corr,
-        startedAt,
-        stateVersion: stateVersionAtSend,
-        baselineState: baselineStateFromDevice(device),
-        expectedState,
-      },
+      [device.id]: pending,
     }));
 
     return sendDeviceCommandApi(device.id, enrichedPayload, accessToken)

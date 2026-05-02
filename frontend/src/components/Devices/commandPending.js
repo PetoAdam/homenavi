@@ -1,4 +1,50 @@
+const DEFAULT_COMMAND_LIFECYCLE_TIMEOUT_MS = 45000;
 const TERMINAL_COMMAND_STATUSES = new Set(['applied', 'rejected', 'failed', 'timeout']);
+
+function parsePositiveTimeoutMs(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRuntimeConfig() {
+  if (typeof window === 'undefined') return {};
+  return window.__HOMENAVI_RUNTIME_CONFIG__ || {};
+}
+
+export function getCommandLifecycleTimeoutMs() {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    parsePositiveTimeoutMs(runtimeConfig.deviceCommandLifecycleTimeoutMs)
+    ?? parsePositiveTimeoutMs(runtimeConfig.deviceCommandTimeoutMs)
+    ?? parsePositiveTimeoutMs(runtimeConfig.deviceCommandRequestTimeoutMs)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_DEVICE_COMMAND_LIFECYCLE_TIMEOUT_MS)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_DEVICE_COMMAND_TIMEOUT_MS)
+    ?? parsePositiveTimeoutMs(import.meta.env?.VITE_DEVICE_COMMAND_REQUEST_TIMEOUT_MS)
+    ?? DEFAULT_COMMAND_LIFECYCLE_TIMEOUT_MS
+  );
+}
+
+function normalizeLifecycleStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  switch (normalized) {
+  case 'accepted':
+  case 'queued':
+  case 'in_progress':
+  case 'applied':
+  case 'rejected':
+  case 'failed':
+  case 'timeout':
+    return normalized;
+  default:
+    return '';
+  }
+}
+
+export function isTerminalCommandResult(result) {
+  if (!result || typeof result !== 'object') return false;
+  if (typeof result.terminal === 'boolean') return result.terminal;
+  return TERMINAL_COMMAND_STATUSES.has(normalizeLifecycleStatus(result.status));
+}
 
 function clonePlainObject(value) {
   if (!value || typeof value !== 'object') return null;
@@ -60,19 +106,63 @@ export function clearPendingTimeout(entry) {
   }
 }
 
+export function createPendingCommand(device, payload, options = {}) {
+  const corr = createCommandCorrelationId(payload);
+  const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
+    ? payload.state
+    : null;
+  const timeoutMs = parsePositiveTimeoutMs(options.timeoutMs) ?? getCommandLifecycleTimeoutMs();
+  const pending = {
+    corr,
+    startedAt: Date.now(),
+    stateVersion: stateVersionFromDevice(device),
+    baselineState: baselineStateFromDevice(device),
+    expectedState,
+    timeoutId: null,
+  };
+
+  if (typeof options.onTimeout === 'function' && timeoutMs > 0) {
+    pending.timeoutId = setTimeout(() => {
+      options.onTimeout({ corr, pending });
+    }, timeoutMs);
+  }
+
+  return {
+    corr,
+    enrichedPayload: withCommandCorrelation(payload, corr),
+    pending,
+  };
+}
+
 export function shouldClearPendingFromDevice(pending, device) {
   if (!pending || !device) return false;
+  const currentState = device?.state;
+  const currentStateVersion = stateVersionFromDevice(device);
+  const pendingStateVersion = Number(pending?.stateVersion || 0);
+  const stateCorrMatches = Boolean(device?.lastStateCorr && pending?.corr && device.lastStateCorr === pending.corr);
+  const stateVersionAdvanced = currentStateVersion > pendingStateVersion;
+  const stateMatchesExpected = stateSatisfiesExpected(pending.expectedState, currentState);
+  const stateChanged = stateChangedFromBaseline(pending.baselineState, currentState);
+
+  // State echoes can arrive without a matching terminal command_result. When we observe
+  // a newer state (or the matching state correlation) that satisfies the expected patch,
+  // treat the pending command as completed so the UI does not stay locked indefinitely.
+  if (stateCorrMatches || stateVersionAdvanced) {
+    if (stateMatchesExpected) return true;
+    if (stateCorrMatches && stateChanged) return true;
+    if (!pending?.expectedState && stateChanged) return true;
+  }
+
   const result = device.lastCommandResult;
   const resultMatches = Boolean(result?.corr && pending.corr === result.corr);
   if (!resultMatches) return false;
   if (result?.origin && result.origin !== 'device-hub') return false;
-  const status = String(result?.status || '').trim().toLowerCase();
-  if (!TERMINAL_COMMAND_STATUSES.has(status)) return false;
+  const status = normalizeLifecycleStatus(result?.status);
+  if (!isTerminalCommandResult(result) && !TERMINAL_COMMAND_STATUSES.has(status)) return false;
   if (status !== 'applied') return true;
 
-  const currentState = device?.state;
-  if (stateSatisfiesExpected(pending.expectedState, currentState)) return true;
-  if (stateChangedFromBaseline(pending.baselineState, currentState)) return true;
+  if (stateMatchesExpected) return true;
+  if (stateChanged) return true;
   return false;
 }
 

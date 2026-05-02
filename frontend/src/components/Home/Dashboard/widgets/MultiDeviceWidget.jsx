@@ -19,12 +19,9 @@ import WidgetShell from '../../../common/WidgetShell/WidgetShell';
 import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
 import {
   applyPendingStateToDevice,
-  baselineStateFromDevice,
   clearPendingTimeout,
-  createCommandCorrelationId,
+  createPendingCommand,
   shouldClearPendingFromDevice,
-  stateVersionFromDevice,
-  withCommandCorrelation,
 } from '../../../Devices/commandPending';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
 import './MultiDeviceWidget.css';
@@ -286,19 +283,23 @@ export default function MultiDeviceWidget({
     if (!payload) return;
 
     setCommandError('');
-    const corr = createCommandCorrelationId(payload);
-    const enrichedPayload = withCommandCorrelation(payload, corr);
+    const { corr, enrichedPayload, pending } = createPendingCommand(device, payload, {
+      onTimeout: ({ corr: expiredCorr }) => {
+        setCommandError('Device did not confirm the command in time');
+        setPendingMap((prev) => {
+          const next = { ...prev };
+          const current = next[deviceId];
+          if (!current || current.corr !== expiredCorr) return prev;
+          clearPendingTimeout(current);
+          delete next[deviceId];
+          return next;
+        });
+      },
+    });
 
     setPendingMap((prev) => ({
       ...prev,
-      [deviceId]: {
-        corr,
-        startedAt: Date.now(),
-        stateVersion: stateVersionFromDevice(device),
-        baselineState: baselineStateFromDevice(device),
-        expectedState: payload.state,
-        timeoutId: null,
-      },
+      [deviceId]: pending,
     }));
 
     sendDeviceCommand(deviceId, enrichedPayload, accessToken)

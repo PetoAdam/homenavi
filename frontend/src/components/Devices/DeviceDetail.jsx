@@ -18,12 +18,9 @@ import { listStatePoints } from '../../services/historyService';
 import HistoryChart from '../History/HistoryChart';
 import {
   applyPendingStateToDevice,
-  baselineStateFromDevice,
   clearPendingTimeout,
-  createCommandCorrelationId,
+  createPendingCommand,
   shouldClearPendingFromDevice,
-  stateVersionFromDevice,
-  withCommandCorrelation,
 } from './commandPending';
 import './DeviceDetail.css';
 
@@ -351,6 +348,7 @@ export default function DeviceDetail() {
   const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
 
   const [pendingCommand, setPendingCommand] = useState(null);
+  const [commandError, setCommandError] = useState('');
   const displayDevice = useMemo(() => applyPendingStateToDevice(resolvedDevice, pendingCommand), [resolvedDevice, pendingCommand]);
 
   const [ersMetaSaving, setErsMetaSaving] = useState(false);
@@ -467,25 +465,21 @@ export default function DeviceDetail() {
       throw new Error('Authentication required');
     }
 
-    const stateVersionAtSend = stateVersionFromDevice(dev);
-    const startedAt = Date.now();
-
-    const corr = createCommandCorrelationId(payload);
-    const enrichedPayload = withCommandCorrelation(payload, corr);
-    const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
-      ? payload.state
-      : null;
+    setCommandError('');
+    const { corr, enrichedPayload, pending } = createPendingCommand(dev, payload, {
+      onTimeout: ({ corr: expiredCorr }) => {
+        setCommandError('Device did not confirm the command in time');
+        setPendingCommand(prev => {
+          if (!prev || prev.corr !== expiredCorr) return prev;
+          clearPendingTimeout(prev);
+          return null;
+        });
+      },
+    });
 
     setPendingCommand(prev => {
       clearPendingTimeout(prev);
-      return {
-        corr,
-        startedAt,
-        stateVersion: stateVersionAtSend,
-        baselineState: baselineStateFromDevice(dev),
-        expectedState,
-        deviceId: dev.id,
-      };
+      return { ...pending, deviceId: dev.id };
     });
 
     try {
@@ -493,6 +487,7 @@ export default function DeviceDetail() {
       if (!res.success) throw new Error(res.error || 'Unable to send command');
       return res.data;
     } catch (err) {
+      setCommandError(err?.message || 'Unable to send command');
       setPendingCommand(prev => {
         if (!prev || prev.corr !== corr) return prev;
         clearPendingTimeout(prev);
@@ -915,6 +910,12 @@ export default function DeviceDetail() {
       {error ? (
         <GlassCard className="device-detail-error" interactive={false}>
           <div className="device-detail-error-text">{error}</div>
+        </GlassCard>
+      ) : null}
+
+      {!error && commandError ? (
+        <GlassCard className="device-detail-error" interactive={false}>
+          <div className="device-detail-error-text">{commandError}</div>
         </GlassCard>
       ) : null}
 

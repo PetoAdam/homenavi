@@ -28,12 +28,9 @@ import DeviceMetricsRenderer from '../../../common/DeviceMetricsRenderer/DeviceM
 import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
 import {
   applyPendingStateToDevice,
-  baselineStateFromDevice,
   clearPendingTimeout,
-  createCommandCorrelationId,
+  createPendingCommand,
   shouldClearPendingFromDevice,
-  stateVersionFromDevice,
-  withCommandCorrelation,
 } from '../../../Devices/commandPending';
 import { normalizeColorHex } from '../../../../utils/colorHex';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
@@ -613,14 +610,19 @@ export default function DeviceWidget({
     }
     setCommandError('');
 
-    const stateVersionAtSend = stateVersionFromDevice(dev);
-    const startedAt = Date.now();
-
-    const corr = createCommandCorrelationId(payload);
-    const enrichedPayload = withCommandCorrelation(payload, corr);
-    const expectedState = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
-      ? payload.state
-      : null;
+    const { corr, enrichedPayload, pending } = createPendingCommand(dev, payload, {
+      onTimeout: ({ corr: expiredCorr }) => {
+        setCommandError('Device did not confirm the command in time');
+        setPendingCommands((prev) => {
+          const next = { ...prev };
+          const current = next[dev.id];
+          if (!current || current.corr !== expiredCorr) return prev;
+          clearPendingTimeout(current);
+          delete next[dev.id];
+          return next;
+        });
+      },
+    });
 
     setPendingCommands((prev) => {
       const next = { ...prev };
@@ -628,14 +630,7 @@ export default function DeviceWidget({
       if (existing?.timeoutId) {
         clearTimeout(existing.timeoutId);
       }
-      next[dev.id] = {
-        corr,
-        startedAt,
-        stateVersion: stateVersionAtSend,
-        baselineState: baselineStateFromDevice(dev),
-        expectedState,
-        timeoutId: null,
-      };
+      next[dev.id] = pending;
       return next;
     });
 
