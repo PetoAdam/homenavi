@@ -18,24 +18,27 @@ func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 		"version":"test",
 		"features": {"supports_pairing": true, "supports_interview": true},
 		"pairing": {
+                  "schema_version": "1.0",
 		  "label":"Zigbee",
 		  "supported": true,
 		  "supports_interview": true,
 		  "default_timeout_sec": 60,
 		  "instructions": ["a","b"],
-		  "cta_label": "Start Zigbee pairing"
+		  "cta_label": "Start Zigbee pairing",
+                  "flow": {"entry_modes": ["default"]}
 		},
 		"ts": 1
 	}`))
 	srv.adapters.upsertFromHello([]byte(`{
 		"schema":"hdp.v1",
 		"type":"hello",
-		"adapter_id":"thread",
-		"protocol":"thread",
+		"adapter_id":"mock",
+		"protocol":"mock",
 		"version":"test",
 		"features": {"supports_pairing": true, "supports_interview": false},
 		"pairing": {
-		  "label":"Thread",
+                  "schema_version": "1.0",
+		  "label":"Mock Adapter",
 		  "supported": false,
 		  "supports_interview": false,
 		  "default_timeout_sec": 30,
@@ -69,8 +72,14 @@ func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 	if _, ok := byProto["zigbee"]; !ok {
 		t.Fatalf("expected zigbee config present: %+v", got)
 	}
-	if _, ok := byProto["thread"]; !ok {
-		t.Fatalf("expected thread config present: %+v", got)
+	if _, ok := byProto["mock"]; !ok {
+		t.Fatalf("expected mock config present: %+v", got)
+	}
+	if byProto["zigbee"].SchemaVersion != "1.0" {
+		t.Fatalf("expected zigbee schema version 1.0, got %q", byProto["zigbee"].SchemaVersion)
+	}
+	if byProto["zigbee"].Flow == nil {
+		t.Fatalf("expected zigbee flow in pairing config")
 	}
 }
 
