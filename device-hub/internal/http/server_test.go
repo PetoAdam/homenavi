@@ -18,14 +18,14 @@ func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 		"version":"test",
 		"features": {"supports_pairing": true, "supports_interview": true},
 		"pairing": {
-                  "schema_version": "1.0",
+		  "schema_version": "1.0",
 		  "label":"Zigbee",
 		  "supported": true,
 		  "supports_interview": true,
 		  "default_timeout_sec": 60,
 		  "instructions": ["a","b"],
 		  "cta_label": "Start Zigbee pairing",
-                  "flow": {"entry_modes": ["default"]}
+		  "flow": {"entry_modes": ["default"]}
 		},
 		"ts": 1
 	}`))
@@ -37,7 +37,7 @@ func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 		"version":"test",
 		"features": {"supports_pairing": true, "supports_interview": false},
 		"pairing": {
-                  "schema_version": "1.0",
+		  "schema_version": "1.0",
 		  "label":"Mock Adapter",
 		  "supported": false,
 		  "supports_interview": false,
@@ -83,6 +83,35 @@ func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 	}
 }
 
+func TestHandlePairingConfigIgnoresLegacyFeatureOnlyAnnouncements(t *testing.T) {
+	srv := NewServer(nil, nil)
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"legacy-zigbee",
+		"protocol":"zigbee",
+		"version":"test",
+		"features": {"supports_pairing": true, "supports_interview": true},
+		"ts": 1
+	}`))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/hdp/pairing-config", nil)
+	rr := httptest.NewRecorder()
+	srv.handlePairingConfig(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("unexpected status: got %d want %d", status, http.StatusOK)
+	}
+
+	var got []PairingConfig
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response is not valid json: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty config for legacy feature-only announcement, got %d", len(got))
+	}
+}
+
 func TestHandlePairingConfigEmpty(t *testing.T) {
 	srv := NewServer(nil, nil)
 
@@ -102,6 +131,78 @@ func TestHandlePairingConfigEmpty(t *testing.T) {
 
 	if len(got) != 0 {
 		t.Fatalf("expected empty array, got %d items", len(got))
+	}
+}
+
+func TestHandlePairingConfigPreservesFullFlowAcrossStatusUpdates(t *testing.T) {
+	srv := NewServer(nil, nil)
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"matter-adapter-1",
+		"protocol":"matter",
+		"version":"test",
+		"features":{"supports_pairing":true,"supports_interview":true},
+		"pairing":{
+		  "schema_version":"1.0",
+		  "label":"Matter",
+		  "supported":true,
+		  "supports_interview":true,
+		  "default_timeout_sec":300,
+		  "instructions":["step one"],
+		  "cta_label":"Start Matter pairing",
+		  "flow":{
+		    "id":"matter-commissioning-v1",
+		    "entry_modes":["manual_code","qr_code"],
+		    "forms":[{"mode":"manual_code","fields":[{"id":"manual_code","component":"text","label":"Manual setup code"}]}],
+		    "steps":[{"id":"discovery","stage":"discovery","label":"Discovery"}]
+		  }
+		},
+		"ts":1
+	}`))
+	srv.adapters.upsertFromStatusTopic("homenavi/hdp/adapter/status/matter-adapter-1", []byte(`{
+		"schema":"hdp.v1",
+		"type":"status",
+		"adapter_id":"matter-adapter-1",
+		"protocol":"matter",
+		"status":"online",
+		"version":"test",
+		"pairing":{
+		  "schema_version":"1.0",
+		  "label":"Matter",
+		  "supported":true,
+		  "default_timeout_sec":300,
+		  "flow":{"id":"matter-commissioning-v1","entry_modes":["manual_code","qr_code"]}
+		},
+		"ts":2
+	}`))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/hdp/pairing-config", nil)
+	rr := httptest.NewRecorder()
+	srv.handlePairingConfig(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status: got %d want %d", rr.Code, http.StatusOK)
+	}
+
+	var got []PairingConfig
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response is not valid json: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 pairing config, got %d", len(got))
+	}
+	flow, ok := got[0].Flow.(map[string]any)
+	if !ok {
+		t.Fatalf("expected flow map, got %T", got[0].Flow)
+	}
+	forms, ok := flow["forms"].([]any)
+	if !ok || len(forms) == 0 {
+		t.Fatalf("expected forms preserved from hello after status update, got %#v", flow["forms"])
+	}
+	steps, ok := flow["steps"].([]any)
+	if !ok || len(steps) == 0 {
+		t.Fatalf("expected steps preserved from hello after status update, got %#v", flow["steps"])
 	}
 }
 

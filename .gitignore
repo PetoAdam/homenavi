@@ -21,7 +21,8 @@ zigbee2mqtt-data/configuration-pi.yaml
 /entity-registry-service/entity-registry-service
 /history-service/history-service
 /integration-proxy/integration-proxy
-/thread-adapter/thread-adapter
+/matter-adapter/matter-adapter
+/mock-adapter/mock-adapter
 /user-service/user-service
 /weather-service/weather-service
 /zigbee-adapter/zigbee-adapter

@@ -203,7 +203,8 @@ build_core_images() {
   build_and_push_image "homenavi-device-hub" "$HOMENAVI_ROOT/device-hub/Dockerfile" "$HOMENAVI_ROOT"
   build_and_push_image "homenavi-entity-registry-service" "$HOMENAVI_ROOT/entity-registry-service/Dockerfile" "$HOMENAVI_ROOT"
   build_and_push_image "homenavi-zigbee-adapter" "$HOMENAVI_ROOT/zigbee-adapter/Dockerfile" "$HOMENAVI_ROOT"
-  build_and_push_image "homenavi-thread-adapter" "$HOMENAVI_ROOT/thread-adapter/Dockerfile" "$HOMENAVI_ROOT"
+  build_and_push_image "homenavi-mock-adapter" "$HOMENAVI_ROOT/mock-adapter/Dockerfile" "$HOMENAVI_ROOT"
+  build_and_push_image "homenavi-matter-adapter" "$HOMENAVI_ROOT/matter-adapter/Dockerfile" "$HOMENAVI_ROOT"
   build_and_push_image "homenavi-history-service" "$HOMENAVI_ROOT/history-service/Dockerfile" "$HOMENAVI_ROOT"
   build_and_push_image "homenavi-automation-service" "$HOMENAVI_ROOT/automation-service/Dockerfile" "$HOMENAVI_ROOT"
   build_and_push_image "homenavi-weather-service" "$HOMENAVI_ROOT/weather-service/Dockerfile" "$HOMENAVI_ROOT"
@@ -306,9 +307,13 @@ services:
     image:
       repository: ${LOCAL_REGISTRY_PULL_HOST}/homenavi-zigbee-adapter
       tag: ${LOCAL_IMAGE_TAG}
-  thread-adapter:
+  mock-adapter:
     image:
-      repository: ${LOCAL_REGISTRY_PULL_HOST}/homenavi-thread-adapter
+      repository: ${LOCAL_REGISTRY_PULL_HOST}/homenavi-mock-adapter
+      tag: ${LOCAL_IMAGE_TAG}
+  matter-adapter:
+    image:
+      repository: ${LOCAL_REGISTRY_PULL_HOST}/homenavi-matter-adapter
       tag: ${LOCAL_IMAGE_TAG}
   history-service:
     image:

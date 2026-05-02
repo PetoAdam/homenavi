@@ -468,23 +468,93 @@ services:
     networks:
       - homenavi-network
 
-  thread-adapter:
-    image: ghcr.io/petoadam/homenavi-thread-adapter:${HN_VERSION:-latest}
+  mock-adapter:
+    image: ghcr.io/petoadam/homenavi-mock-adapter:${HN_VERSION:-latest}
     pull_policy: if_not_present
     build:
       context: .
-      dockerfile: ./thread-adapter/Dockerfile
+      dockerfile: ./mock-adapter/Dockerfile
     restart: unless-stopped
     depends_on:
       emqx:
         condition: service_healthy
     environment:
-      - THREAD_ADAPTER_PORT=${THREAD_ADAPTER_PORT}
+      - MOCK_ADAPTER_PORT=${MOCK_ADAPTER_PORT}
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
-      - THREAD_ADAPTER_ID=thread-adapter-1
-      - THREAD_ADAPTER_VERSION=dev
+      - MOCK_ADAPTER_ID=mock-adapter-1
+      - MOCK_ADAPTER_VERSION=dev
       - LOG_LEVEL=${LOG_LEVEL}
       - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+    networks:
+      - homenavi-network
+
+  matter-adapter:
+    image: ghcr.io/petoadam/homenavi-matter-adapter:${HN_VERSION:-latest}
+    pull_policy: if_not_present
+    build:
+      context: .
+      dockerfile: ./matter-adapter/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      emqx:
+        condition: service_healthy
+      matter-commissioner:
+        condition: service_started
+    environment:
+      - MATTER_ADAPTER_ENABLED=${MATTER_ADAPTER_ENABLED:-true}
+      - MATTER_ADAPTER_PORT=${MATTER_ADAPTER_PORT}
+      - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MATTER_ADAPTER_ID=matter-adapter-1
+      - MATTER_ADAPTER_VERSION=dev
+      - MATTER_DEFAULT_PAIRING_TIMEOUT_SEC=${MATTER_DEFAULT_PAIRING_TIMEOUT_SEC:-300}
+      - MATTER_DEFAULT_NETWORK_PATH=${MATTER_DEFAULT_NETWORK_PATH:-on_network}
+      - MATTER_ENABLE_ON_NETWORK=${MATTER_ENABLE_ON_NETWORK:-true}
+      - MATTER_ENABLE_BLE=${MATTER_ENABLE_BLE:-true}
+      - MATTER_ENABLE_THREAD=${MATTER_ENABLE_THREAD:-true}
+      - MATTER_COMMISSIONING_INTERFACE=${MATTER_COMMISSIONING_INTERFACE:-auto}
+      - MATTER_OTBR_BASE_URL=${MATTER_OTBR_BASE_URL:-http://192.168.64.144}
+      - MATTER_OTBR_EXPECTED_STATE=${MATTER_OTBR_EXPECTED_STATE:-leader}
+      - MATTER_THREAD_BORDER_ROUTER_HOST=${MATTER_THREAD_BORDER_ROUTER_HOST:-192.168.64.144}
+      - MATTER_THREAD_BORDER_ROUTER_PORT=${MATTER_THREAD_BORDER_ROUTER_PORT:-8080}
+      - MATTER_THREAD_DATASET_SOURCE=${MATTER_THREAD_DATASET_SOURCE:-otbr}
+      - MATTER_THREAD_OPERATIONAL_DATASET_HEX=${MATTER_THREAD_OPERATIONAL_DATASET_HEX:-}
+      - MATTER_COMMISSIONER_ENABLED=${MATTER_COMMISSIONER_ENABLED:-true}
+      - MATTER_COMMISSIONER_COMMAND=${MATTER_COMMISSIONER_COMMAND:-/app/bin/matter-commissioner-wrapper}
+      - MATTER_COMMISSIONER_ARGS=${MATTER_COMMISSIONER_ARGS:-}
+      - MATTER_COMMISSIONER_URL=${MATTER_COMMISSIONER_URL:-http://matter-commissioner:8098}
+      - MATTER_COMMISSIONER_TIMEOUT=${MATTER_COMMISSIONER_TIMEOUT:-2m}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+    networks:
+      - homenavi-network
+
+  matter-commissioner:
+    image: ghcr.io/petoadam/homenavi-matter-commissioner:${HN_VERSION:-latest}
+    pull_policy: if_not_present
+    restart: unless-stopped
+    environment:
+      - MATTER_COMMISSIONER_PORT=${MATTER_COMMISSIONER_PORT:-8098}
+      - MATTER_COMMISSIONER_BACKEND_COMMAND=${MATTER_COMMISSIONER_BACKEND_COMMAND:-/app/bin/chip-tool-wrapper}
+      - MATTER_COMMISSIONER_BACKEND_ARGS=${MATTER_COMMISSIONER_BACKEND_ARGS:-}
+      - MATTER_COMMISSIONER_BACKEND_TIMEOUT=${MATTER_COMMISSIONER_BACKEND_TIMEOUT:-2m}
+      - CHIP_TOOL_BINARY=${CHIP_TOOL_BINARY:-/usr/bin/chip-tool}
+      - CHIP_TOOL_STORAGE_DIR=${CHIP_TOOL_STORAGE_DIR:-/var/lib/matter-commissioner/chip-tool}
+      - CHIP_TOOL_COMMISSIONER_NAME=${CHIP_TOOL_COMMISSIONER_NAME:-alpha}
+      - CHIP_TOOL_COMMISSIONER_NODEID=${CHIP_TOOL_COMMISSIONER_NODEID:-}
+      - CHIP_TOOL_PAA_TRUST_STORE_PATH=${CHIP_TOOL_PAA_TRUST_STORE_PATH:-}
+      - CHIP_TOOL_CD_TRUST_STORE_PATH=${CHIP_TOOL_CD_TRUST_STORE_PATH:-}
+      - CHIP_TOOL_BYPASS_ATTESTATION_VERIFIER=${CHIP_TOOL_BYPASS_ATTESTATION_VERIFIER:-false}
+      - CHIP_TOOL_EXTRA_ARGS=${CHIP_TOOL_EXTRA_ARGS:-}
+      - LOG_LEVEL=${LOG_LEVEL}
+    volumes:
+      - matter_commissioner_data:/var/lib/matter-commissioner
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8098/healthz', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     networks:
       - homenavi-network
 
@@ -601,6 +671,7 @@ volumes:
   postgres_data:
   auth_postgres_data:
   minio_data:
+  matter_commissioner_data:
 
 networks:
   homenavi-network:

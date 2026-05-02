@@ -1,0 +1,46 @@
+name: Build Matter Adapter Docker Image
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./matter-adapter/go.mod
+          cache-dependency-path: ./matter-adapter/go.sum
+
+      - name: Run static analysis
+        working-directory: ./matter-adapter
+        run: go vet ./...
+
+      - name: Run unit tests
+        working-directory: ./matter-adapter
+        run: go test ./...
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./matter-adapter/Dockerfile
+          push: false
+          tags: homenavi-matter-adapter:latest
+
+      - name: Save Docker image to tarball
+        run: docker save homenavi-matter-adapter:latest | gzip > homenavi-matter-adapter-latest.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homenavi-matter-adapter-latest
+          path: homenavi-matter-adapter-latest.tar.gz

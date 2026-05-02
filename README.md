@@ -25,7 +25,8 @@
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml"><img alt="Build Echo Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml"><img alt="Build History Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml"><img alt="Build Zigbee Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml"><img alt="Build Thread Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/mock_adapter_docker_build.yaml"><img alt="Build Mock Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/mock_adapter_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/matter_adapter_docker_build.yaml"><img alt="Build Matter Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/matter_adapter_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml"><img alt="Build Automation Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml"><img alt="Build Entity Registry Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml"><img alt="Build Weather Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg" /></a>
@@ -91,7 +92,7 @@ Current Core:
 * Frontend (React + Vite + PWA): Auth flows, user management, device UI, dashboards.
 * Adapters:
 	* Zigbee Adapter (Go): Zigbee2MQTT bridge that emits HDP state/metadata/events and consumes HDP commands.
-	* Thread Adapter (Go): Placeholder implementation that emits HDP hello/status/pairing and acks commands.
+	* Mock Adapter (Go): Placeholder implementation that emits HDP hello/status/pairing and acks commands.
 * Infrastructure: PostgreSQL, Redis, Nginx, Prometheus, Jaeger, (Grafana ready).
 
 Key Design Principles:
@@ -103,7 +104,7 @@ Key Design Principles:
 
 Current Features (Implemented):
 * **Device abstraction via HDP v1:** adapters translate protocol payloads into a single internal contract consumed by core services. See `doc/hdp.md`.
-* **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Thread adapter placeholder using the same HDP surfaces.
+* **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Mock adapter placeholder using the same HDP surfaces; Matter adapter MVP commissioning skeleton.
 * **ERS + Device Hub boundary:** ERS owns names/rooms/tags/map metadata; device-hub owns realtime telemetry, pairing, commands. See `doc/ers_hdp_devicehub_overview.md`.
 * **Customizable UI dashboards:** widget-based Home dashboard with Edit mode + per-user persistence via Dashboard Service. See `doc/dashboard_ui_functional_spec.md`.
 * **Integration marketplace flow:** frontend queries the Marketplace API directly for catalog + stats, posts download increments on successful installs, and integration-proxy installs using runtime-resolved `deployment_artifacts` from marketplace metadata.
@@ -173,7 +174,8 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 | Profile Picture | `profile-picture-service/` | Avatar upload & processing | `homenavi-profile-picture-service:latest` |
 | Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `homenavi-echo-service:latest` |
 | Zigbee Adapter | `zigbee-adapter/` | Zigbee2MQTT adapter emitting/consuming HDP | `homenavi-zigbee-adapter:latest` |
-| Thread Adapter | `thread-adapter/` | Thread adapter placeholder (HDP hello/status/pairing) | `homenavi-thread-adapter:latest` |
+| Mock Adapter | `mock-adapter/` | Mock adapter placeholder (HDP hello/status/pairing) | `homenavi-mock-adapter:latest` |
+| Matter Adapter | `matter-adapter/` | Matter MVP adapter scaffold for commissioning/pairing flow | `homenavi-matter-adapter:latest` |
 | Frontend | `frontend/` | SPA & PWA client | `homenavi-frontend:latest` |
 
 Support:
