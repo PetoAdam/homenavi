@@ -753,12 +753,12 @@ services:
         port: 6379
     resources: {}
 
-  thread-adapter:
+  mock-adapter:
     enabled: true
     replicas: 1
     usesMQTT: true
     image:
-      repository: ghcr.io/petoadam/homenavi-thread-adapter
+      repository: ghcr.io/petoadam/homenavi-mock-adapter
       tag: ""
     containerPort: 8092
     service:
@@ -766,9 +766,9 @@ services:
       type: ClusterIP
       port: 8092
     env:
-      THREAD_ADAPTER_PORT: "8092"
-      THREAD_ADAPTER_ID: thread-adapter-1
-      THREAD_ADAPTER_VERSION: dev
+      MOCK_ADAPTER_PORT: "8092"
+      MOCK_ADAPTER_ID: mock-adapter-1
+      MOCK_ADAPTER_VERSION: dev
       LOG_LEVEL: info
     envFromSecrets: []
     resources: {}
