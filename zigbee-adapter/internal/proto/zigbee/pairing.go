@@ -115,8 +115,18 @@ func (z *ZigbeeAdapter) publishZigbee2MQTTRemove(target string, force bool) erro
 }
 
 func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external string, _ string) {
-	if stage == "" {
+	hdp := pairingProgressEnvelope(stage, status, external, z.hdpDeviceID(external), time.Now().UnixMilli())
+	if hdp == nil {
 		return
+	}
+	if b, err := json.Marshal(hdp); err == nil {
+		_ = z.client.Publish(hdpPairingProgressTopic, b)
+	}
+}
+
+func pairingProgressEnvelope(stage, status, external, deviceID string, ts int64) map[string]any {
+	if stage == "" {
+		return nil
 	}
 	hdp := map[string]any{
 		"schema":   hdpSchema,
@@ -124,16 +134,32 @@ func (z *ZigbeeAdapter) publishPairingProgress(stage, status, external string, _
 		"protocol": "zigbee",
 		"stage":    stage,
 		"status":   status,
-		"ts":       time.Now().UnixMilli(),
+		"ts":       ts,
 	}
 	if external != "" {
 		hdp["external_id"] = external
-		if deviceID := z.hdpDeviceID(external); deviceID != "" {
-			hdp["device_id"] = deviceID
-		}
 	}
-	if b, err := json.Marshal(hdp); err == nil {
-		_ = z.client.Publish(hdpPairingProgressTopic, b)
+	if deviceID != "" {
+		hdp["device_id"] = deviceID
+	}
+	return hdp
+}
+
+func pairingProgressFromBridgeEvent(eventType string, data map[string]any) (stage, status, external string, ok bool) {
+	if len(data) == 0 {
+		return "", "", "", false
+	}
+	external = canonicalExternalID(data)
+	switch eventType {
+	case "device_joined", "device_announce":
+		stage = bridgeLifecycleStage(eventType)
+		return stage, "", external, stage != ""
+	case "device_interview":
+		status = adapterutil.StringField(data, "status")
+		stage = interviewStageFromStatus(status)
+		return stage, status, external, stage != ""
+	default:
+		return "", "", external, false
 	}
 }
 

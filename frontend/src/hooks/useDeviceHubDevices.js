@@ -132,6 +132,49 @@ function mapPairingSession(raw) {
   };
 }
 
+function isTerminalPairingStatus(status) {
+  return ['completed', 'failed', 'timeout', 'stopped', 'error'].includes(`${status || ''}`.toLowerCase());
+}
+
+function normalizePairingRuntimeStatus(status, stage) {
+  const normalizedStatus = `${status || ''}`.trim().toLowerCase();
+  const normalizedStage = `${stage || ''}`.trim().toLowerCase();
+
+  if (isTerminalPairingStatus(normalizedStage)) {
+    return normalizedStage;
+  }
+  if (isTerminalPairingStatus(normalizedStatus)) {
+    return normalizedStatus;
+  }
+  return normalizedStatus || normalizedStage || 'in_progress';
+}
+
+export function buildPairingProgressSession(data, protocol, existing = null) {
+  const normalizedProtocol = `${protocol || ''}`.trim().toLowerCase();
+  if (!normalizedProtocol) return null;
+  const explicitId = typeof data?.id === 'string' ? data.id : '';
+  const stage = `${data?.stage || ''}`.trim().toLowerCase();
+  const status = normalizePairingRuntimeStatus(data?.status, stage);
+  const isTerminal = isTerminalPairingStatus(status) || isTerminalPairingStatus(stage);
+  const metadata = data?.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : null;
+
+  return {
+    id: explicitId || existing?.id || normalizedProtocol,
+    protocol: normalizedProtocol,
+    status,
+    active: typeof data?.active === 'boolean' ? data.active : !isTerminal,
+    metadata: metadata || existing?.metadata || {},
+    stage,
+    mode: data?.mode || existing?.mode || '',
+    flowId: data?.flow_id || data?.flowId || existing?.flowId || '',
+    message: data?.message || '',
+    errorCode: data?.error_code || data?.errorCode || '',
+    requiredInputs: Array.isArray(data?.required_inputs) ? data.required_inputs : (existing?.requiredInputs || []),
+    deviceId: data?.device_id || data?.deviceId || existing?.deviceId || '',
+    progress: data,
+  };
+}
+
 function sessionsArrayToMap(payload) {
   if (!Array.isArray(payload)) return {};
   const next = {};
@@ -602,32 +645,15 @@ export default function useDeviceHubDevices(options = {}) {
       }
       const protocol = (data.protocol || topic.slice(PAIRING_PREFIX.length) || '').toLowerCase();
       if (!protocol) return;
-      const status = data.status || data.stage || 'in_progress';
-      const sessionId = data.id || protocol;
-      const isTerminal = ['completed', 'failed', 'timeout', 'stopped', 'error'].includes(String(status).toLowerCase());
-      const isActive = !isTerminal;
-      const session = {
-        id: sessionId,
-        protocol,
-        status,
-        active: isActive,
-        metadata: data.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : {},
-        stage: data.stage || '',
-        mode: data.mode || '',
-        flowId: data.flow_id || data.flowId || '',
-        message: data.message || '',
-        errorCode: data.error_code || data.errorCode || '',
-        requiredInputs: Array.isArray(data.required_inputs) ? data.required_inputs : [],
-        progress: data,
-      };
       setPairingSessions(prev => {
         const existing = prev?.[protocol];
-        if (existing?.active && isTerminal && sessionId && existing.id && sessionId !== existing.id) {
+        const session = buildPairingProgressSession(data, protocol, existing);
+        if (!session) {
           return prev;
         }
-        const hasNewMetadata = session.metadata && Object.keys(session.metadata).length > 0;
-        if (existing && !hasNewMetadata && existing.metadata) {
-          session.metadata = existing.metadata;
+        const explicitSessionId = typeof data.id === 'string' ? data.id : '';
+        if (existing?.active && !session.active && explicitSessionId && existing.id && explicitSessionId !== existing.id) {
+          return prev;
         }
         return { ...prev, [protocol]: session };
       });

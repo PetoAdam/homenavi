@@ -328,13 +328,17 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 		return
 	}
 	envelope := map[string]any{
-		"schema":   hdpSchema,
-		"type":     "pairing_progress",
-		"protocol": session.Protocol,
-		"origin":   "device-hub",
-		"stage":    session.Stage,
-		"status":   session.Status,
-		"ts":       time.Now().UnixMilli(),
+		"id":         session.ID,
+		"schema":     hdpSchema,
+		"type":       "pairing_progress",
+		"protocol":   session.Protocol,
+		"origin":     "device-hub",
+		"stage":      session.Stage,
+		"status":     session.Status,
+		"active":     session.Active,
+		"started_at": session.StartedAt,
+		"expires_at": session.ExpiresAt,
+		"ts":         time.Now().UnixMilli(),
 	}
 	if session.Stage == "" {
 		envelope["stage"] = session.Status
@@ -429,6 +433,31 @@ func isTerminalPairingState(value string) bool {
 	}
 }
 
+func normalizePairingProgressStatus(stage, status string) string {
+	stage = strings.TrimSpace(strings.ToLower(stage))
+	status = strings.TrimSpace(strings.ToLower(status))
+
+	if isTerminalPairingState(stage) {
+		return stage
+	}
+
+	switch stage {
+	case "interview_succeeded", "interview_complete":
+		return "interview_complete"
+	case "interview_started", "interviewing":
+		return "interviewing"
+	case "device_joined", "device_announced":
+		if status == "" {
+			return "device_joined"
+		}
+	}
+
+	if status != "" {
+		return status
+	}
+	return stage
+}
+
 func (s *Server) processPairingProgress(protocol, stage, status, externalID string, update pairingProgressUpdate) {
 	proto := normalizeProtocol(protocol)
 	if proto == "" {
@@ -486,6 +515,10 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 				session.Status = "failed"
 			}
 		}
+	}
+
+	if normalized := normalizePairingProgressStatus(stage, session.Status); normalized != "" {
+		session.Status = normalized
 	}
 
 	if update.Message != "" {

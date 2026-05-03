@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { mergeMetadataRecord, mergeStateRecord, pairingConfigArrayToMap } from './useDeviceHubDevices.js';
+import {
+  buildPairingProgressSession,
+  mergeMetadataRecord,
+  mergeStateRecord,
+  pairingConfigArrayToMap,
+} from './useDeviceHubDevices.js';
 
 describe('pairingConfigArrayToMap', () => {
   it('returns empty object for non-array payloads', () => {
@@ -90,5 +95,29 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
 
     expect(merged._last_state).toEqual({ state: true, brightness: 120 });
     expect(merged.online).toBe(true);
+  });
+
+  it('normalizes completed pairing progress events and preserves the active session id when the event omits it', () => {
+    const session = buildPairingProgressSession({
+      origin: 'device-hub',
+      stage: 'completed',
+      status: 'successful',
+      active: false,
+    }, 'zigbee', {
+      id: 'pairing-session-1',
+      protocol: 'zigbee',
+      active: true,
+      status: 'interview_complete',
+      metadata: { type: 'light' },
+    });
+
+    expect(session).toMatchObject({
+      id: 'pairing-session-1',
+      protocol: 'zigbee',
+      status: 'completed',
+      stage: 'completed',
+      active: false,
+      metadata: { type: 'light' },
+    });
   });
 });

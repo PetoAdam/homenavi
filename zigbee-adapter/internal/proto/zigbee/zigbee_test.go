@@ -3,6 +3,7 @@ package zigbee
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -175,6 +176,138 @@ func TestNormalizeZigbeeStateCommandPayload_PowerAndOnBool(t *testing.T) {
 		payload := normalizeZigbeeStateCommandPayload(tc.input)
 		if got := payload["state"]; got != tc.want {
 			t.Fatalf("%s: expected %q, got %#v", tc.name, tc.want, got)
+		}
+	}
+}
+
+func TestPairingProgressFromBridgeEvent_RealisticZigbeePairingFlow(t *testing.T) {
+	cases := []struct {
+		name       string
+		payload    string
+		wantStage  string
+		wantStatus string
+		wantExt    string
+		wantOK     bool
+	}{
+		{
+			name:       "join event",
+			payload:    `{"type":"device_joined","data":{"friendly_name":"living-room-bulb","ieee_address":"0x00124b0024abcd01","manufacturer":"IKEA","model":"TRADFRI bulb E27"}}`,
+			wantStage:  "device_joined",
+			wantStatus: "",
+			wantExt:    "0x00124b0024abcd01",
+			wantOK:     true,
+		},
+		{
+			name:       "announce event",
+			payload:    `{"type":"device_announce","data":{"friendly_name":"living-room-bulb","ieee_address":"0x00124b0024abcd01"}}`,
+			wantStage:  "device_detected",
+			wantStatus: "",
+			wantExt:    "0x00124b0024abcd01",
+			wantOK:     true,
+		},
+		{
+			name:       "interview started",
+			payload:    `{"type":"device_interview","data":{"friendly_name":"living-room-bulb","ieee_address":"0x00124b0024abcd01","status":"started"}}`,
+			wantStage:  "interviewing",
+			wantStatus: "started",
+			wantExt:    "0x00124b0024abcd01",
+			wantOK:     true,
+		},
+		{
+			name:       "interview successful",
+			payload:    `{"type":"device_interview","data":{"friendly_name":"living-room-bulb","ieee_address":"0x00124b0024abcd01","status":"successful"}}`,
+			wantStage:  "interview_complete",
+			wantStatus: "successful",
+			wantExt:    "0x00124b0024abcd01",
+			wantOK:     true,
+		},
+		{
+			name:       "unsupported event",
+			payload:    `{"type":"device_leave","data":{"friendly_name":"living-room-bulb","ieee_address":"0x00124b0024abcd01"}}`,
+			wantStage:  "",
+			wantStatus: "",
+			wantExt:    "0x00124b0024abcd01",
+			wantOK:     false,
+		},
+	}
+
+	for _, tc := range cases {
+		var evt struct {
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(tc.payload), &evt); err != nil {
+			t.Fatalf("%s: unmarshal: %v", tc.name, err)
+		}
+		stage, status, ext, ok := pairingProgressFromBridgeEvent(evt.Type, evt.Data)
+		if ok != tc.wantOK || stage != tc.wantStage || status != tc.wantStatus || ext != tc.wantExt {
+			t.Fatalf("%s: got ok=%v stage=%q status=%q ext=%q", tc.name, ok, stage, status, ext)
+		}
+	}
+}
+
+func TestPairingProgressEnvelope_RealisticFlowMessages(t *testing.T) {
+	sequence := []struct {
+		name       string
+		stage      string
+		status     string
+		external   string
+		deviceID   string
+		wantFields map[string]any
+	}{
+		{
+			name:     "join envelope",
+			stage:    "device_joined",
+			status:   "",
+			external: "0x00124b0024abcd01",
+			deviceID: "zigbee/0x00124b0024abcd01",
+			wantFields: map[string]any{
+				"protocol":    "zigbee",
+				"stage":       "device_joined",
+				"status":      "",
+				"external_id": "0x00124b0024abcd01",
+				"device_id":   "zigbee/0x00124b0024abcd01",
+			},
+		},
+		{
+			name:     "interview started envelope",
+			stage:    "interviewing",
+			status:   "started",
+			external: "0x00124b0024abcd01",
+			deviceID: "zigbee/0x00124b0024abcd01",
+			wantFields: map[string]any{
+				"protocol":    "zigbee",
+				"stage":       "interviewing",
+				"status":      "started",
+				"external_id": "0x00124b0024abcd01",
+				"device_id":   "zigbee/0x00124b0024abcd01",
+			},
+		},
+		{
+			name:     "final completed envelope",
+			stage:    "completed",
+			status:   "successful",
+			external: "0x00124b0024abcd01",
+			deviceID: "zigbee/0x00124b0024abcd01",
+			wantFields: map[string]any{
+				"protocol":    "zigbee",
+				"stage":       "completed",
+				"status":      "successful",
+				"external_id": "0x00124b0024abcd01",
+				"device_id":   "zigbee/0x00124b0024abcd01",
+			},
+		},
+	}
+
+	for index, tc := range sequence {
+		envelope := pairingProgressEnvelope(tc.stage, tc.status, tc.external, tc.deviceID, int64(1000+index))
+		if envelope == nil {
+			t.Fatalf("%s: expected envelope", tc.name)
+		}
+		for key, want := range tc.wantFields {
+			if got := envelope[key]; !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s: field %s expected %#v, got %#v", tc.name, key, want, got)
+			}
 		}
 	}
 }
