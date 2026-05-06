@@ -962,6 +962,7 @@ export default function DeviceTile({
   const iconMenuRef = useRef(null);
   const actionMenuRef = useRef(null);
   const actionMenuButtonRef = useRef(null);
+  const previousDisplayNameRef = useRef(device.displayName || '');
   const canEditIcon = Boolean(isEditingName && onUpdateIcon);
   const showIconPicker = Boolean(canEditIcon && iconMenuOpen);
   const iconGlyph = (
@@ -1002,6 +1003,9 @@ export default function DeviceTile({
       });
       return merged;
     });
+  }, [device, stateVersion, metadataVersion, device.toggleState, normalizedInputs, pending]);
+
+  useEffect(() => {
     setColorDrafts({});
     setIsEditingName(false);
     setNameDraft(device.displayName || '');
@@ -1016,7 +1020,16 @@ export default function DeviceTile({
     setDeleteModalOpen(false);
     setForceDelete(false);
     setActionMenuOpen(false);
-  }, [device, device.id, stateVersion, metadataVersion, device.toggleState, normalizedInputs, pending]);
+    previousDisplayNameRef.current = device.displayName || '';
+  }, [device.id]);
+
+  useEffect(() => {
+    const nextDisplayName = device.displayName || '';
+    if (!isEditingName && nextDisplayName !== previousDisplayNameRef.current) {
+      setNameDraft(nextDisplayName);
+    }
+    previousDisplayNameRef.current = nextDisplayName;
+  }, [device.displayName, isEditingName]);
 
   useEffect(() => {
     if (!isEditingName) {
