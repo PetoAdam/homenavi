@@ -120,4 +120,52 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
       metadata: { type: 'light' },
     });
   });
+
+  it('keeps the most advanced non-terminal pairing step when later events arrive out of order', () => {
+    const interviewing = buildPairingProgressSession({
+      id: 'pairing-session-1',
+      origin: 'device-hub',
+      stage: 'interviewing',
+      status: 'started',
+      active: true,
+    }, 'zigbee', {
+      id: 'pairing-session-1',
+      protocol: 'zigbee',
+      active: true,
+      status: 'device_joined',
+      stage: 'device_joined',
+    });
+
+    const regressed = buildPairingProgressSession({
+      id: 'pairing-session-1',
+      origin: 'device-hub',
+      stage: 'device_detected',
+      status: '',
+      active: true,
+    }, 'zigbee', interviewing);
+
+    expect(regressed).toMatchObject({
+      id: 'pairing-session-1',
+      protocol: 'zigbee',
+      active: true,
+      stage: 'interviewing',
+      status: 'interviewing',
+    });
+  });
+
+  it('uses the stage as the canonical runtime status for interview milestones', () => {
+    const session = buildPairingProgressSession({
+      id: 'pairing-session-1',
+      origin: 'device-hub',
+      stage: 'interview_complete',
+      status: 'successful',
+      active: true,
+    }, 'zigbee');
+
+    expect(session).toMatchObject({
+      stage: 'interview_complete',
+      status: 'interview_complete',
+      active: true,
+    });
+  });
 });

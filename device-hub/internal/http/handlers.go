@@ -66,7 +66,6 @@ type pairingSession struct {
 	cancel              context.CancelFunc
 	knownDevices        map[string]struct{} `json:"-"`
 	candidateExternalID string              `json:"-"`
-	awaitingInterview   bool                `json:"-"`
 }
 
 func (p *pairingSession) clone() pairingSession {
@@ -86,7 +85,6 @@ func (p *pairingSession) clone() pairingSession {
 		clone.RequiredInputs = append([]string(nil), p.RequiredInputs...)
 	}
 	clone.candidateExternalID = ""
-	clone.awaitingInterview = false
 	return clone
 }
 

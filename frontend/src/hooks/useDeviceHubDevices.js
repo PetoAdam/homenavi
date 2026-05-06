@@ -112,12 +112,13 @@ function mapPairingSession(raw) {
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
   };
+  const stage = canonicalizePairingProgressValue(raw.stage || '');
   return {
     id: raw.id || `${protocol}-${raw.started_at || Date.now()}`,
     protocol,
-    status: raw.status || 'unknown',
+    status: normalizePairingRuntimeStatus(raw.status, stage),
     active: Boolean(raw.active),
-    stage: raw.stage || '',
+    stage,
     mode: raw.mode || '',
     flowId: raw.flow_id || raw.flowId || '',
     message: raw.message || '',
@@ -136,15 +137,56 @@ function isTerminalPairingStatus(status) {
   return ['completed', 'failed', 'timeout', 'stopped', 'error'].includes(`${status || ''}`.toLowerCase());
 }
 
+const PAIRING_PROGRESS_ALIASES = {
+  device_announce: 'device_detected',
+  device_announced: 'device_detected',
+  interview_started: 'interviewing',
+  interview_succeeded: 'interview_complete',
+};
+
+const PAIRING_PROGRESS_RANK = {
+  starting: 10,
+  active: 20,
+  in_progress: 20,
+  device_joined: 30,
+  device_detected: 30,
+  interviewing: 40,
+  interview_complete: 50,
+  needs_input: 60,
+  completed: 100,
+  failed: 100,
+  timeout: 100,
+  stopped: 100,
+  error: 100,
+};
+
+function canonicalizePairingProgressValue(value) {
+  const normalized = `${value || ''}`.trim().toLowerCase();
+  if (!normalized) return '';
+  return PAIRING_PROGRESS_ALIASES[normalized] || normalized;
+}
+
+function pairingProgressRank(stage, status) {
+  const normalizedStage = canonicalizePairingProgressValue(stage);
+  const normalizedStatus = canonicalizePairingProgressValue(status);
+  return Math.max(
+    PAIRING_PROGRESS_RANK[normalizedStage] || 0,
+    PAIRING_PROGRESS_RANK[normalizedStatus] || 0,
+  );
+}
+
 function normalizePairingRuntimeStatus(status, stage) {
-  const normalizedStatus = `${status || ''}`.trim().toLowerCase();
-  const normalizedStage = `${stage || ''}`.trim().toLowerCase();
+  const normalizedStatus = canonicalizePairingProgressValue(status);
+  const normalizedStage = canonicalizePairingProgressValue(stage);
 
   if (isTerminalPairingStatus(normalizedStage)) {
     return normalizedStage;
   }
   if (isTerminalPairingStatus(normalizedStatus)) {
     return normalizedStatus;
+  }
+  if (normalizedStage === 'interview_complete' || normalizedStage === 'interviewing' || normalizedStage === 'device_detected' || normalizedStage === 'device_joined') {
+    return normalizedStage;
   }
   return normalizedStatus || normalizedStage || 'in_progress';
 }
@@ -153,18 +195,28 @@ export function buildPairingProgressSession(data, protocol, existing = null) {
   const normalizedProtocol = `${protocol || ''}`.trim().toLowerCase();
   if (!normalizedProtocol) return null;
   const explicitId = typeof data?.id === 'string' ? data.id : '';
-  const stage = `${data?.stage || ''}`.trim().toLowerCase();
+  const stage = canonicalizePairingProgressValue(data?.stage || '');
   const status = normalizePairingRuntimeStatus(data?.status, stage);
   const isTerminal = isTerminalPairingStatus(status) || isTerminalPairingStatus(stage);
   const metadata = data?.metadata && typeof data.metadata === 'object' ? { ...data.metadata } : null;
+  const existingStage = canonicalizePairingProgressValue(existing?.stage || '');
+  const existingStatus = normalizePairingRuntimeStatus(existing?.status, existingStage);
+  const shouldPreserveProgress = Boolean(existing?.active)
+    && !isTerminal
+    && pairingProgressRank(stage, status) > 0
+    && pairingProgressRank(stage, status) < pairingProgressRank(existingStage, existingStatus);
+
+  const finalStage = shouldPreserveProgress ? existingStage || stage : stage;
+  const finalStatus = shouldPreserveProgress ? existingStatus || status : status;
+  const finalIsTerminal = isTerminalPairingStatus(finalStatus) || isTerminalPairingStatus(finalStage);
 
   return {
     id: explicitId || existing?.id || normalizedProtocol,
     protocol: normalizedProtocol,
-    status,
-    active: typeof data?.active === 'boolean' ? data.active : !isTerminal,
+    status: finalStatus,
+    active: typeof data?.active === 'boolean' ? (shouldPreserveProgress ? existing?.active : data.active) : !finalIsTerminal,
     metadata: metadata || existing?.metadata || {},
-    stage,
+    stage: finalStage,
     mode: data?.mode || existing?.mode || '',
     flowId: data?.flow_id || data?.flowId || existing?.flowId || '',
     message: data?.message || '',

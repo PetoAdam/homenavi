@@ -433,31 +433,6 @@ func isTerminalPairingState(value string) bool {
 	}
 }
 
-func normalizePairingProgressStatus(stage, status string) string {
-	stage = strings.TrimSpace(strings.ToLower(stage))
-	status = strings.TrimSpace(strings.ToLower(status))
-
-	if isTerminalPairingState(stage) {
-		return stage
-	}
-
-	switch stage {
-	case "interview_succeeded", "interview_complete":
-		return "interview_complete"
-	case "interview_started", "interviewing":
-		return "interviewing"
-	case "device_joined", "device_announced":
-		if status == "" {
-			return "device_joined"
-		}
-	}
-
-	if status != "" {
-		return status
-	}
-	return stage
-}
-
 func (s *Server) processPairingProgress(protocol, stage, status, externalID string, update pairingProgressUpdate) {
 	proto := normalizeProtocol(protocol)
 	if proto == "" {
@@ -487,38 +462,11 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	}
 	if status != "" {
 		session.Status = status
-	}
-	if session.Status == "" && stage != "" {
+	} else if stage != "" {
 		session.Status = stage
 	}
-
-	if s.supportsInterviewTracking(proto) {
-		switch stage {
-		case "device_joined", "device_announced":
-			session.awaitingInterview = true
-			if status == "" {
-				session.Status = "device_joined"
-			}
-		case "interview_started", "interviewing":
-			session.awaitingInterview = true
-			if status == "" {
-				session.Status = "interviewing"
-			}
-		case "interview_succeeded", "interview_complete":
-			session.awaitingInterview = false
-			if status == "" {
-				session.Status = "interview_complete"
-			}
-		case "interview_failed":
-			session.awaitingInterview = false
-			if status == "" {
-				session.Status = "failed"
-			}
-		}
-	}
-
-	if normalized := normalizePairingProgressStatus(stage, session.Status); normalized != "" {
-		session.Status = normalized
+	if isTerminalPairingState(stage) {
+		session.Status = stage
 	}
 
 	if update.Message != "" {
@@ -543,7 +491,6 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	if isTerminalPairingState(stage) || isTerminalPairingState(status) || isTerminalPairingState(session.Status) {
 		session.Active = false
 		session.ExpiresAt = time.Now().UTC()
-		session.awaitingInterview = false
 		if session.cancel != nil {
 			session.cancel()
 			session.cancel = nil
@@ -660,7 +607,6 @@ func (s *Server) handlePairingCandidate(dev *model.Device) {
 	session.DeviceID = deviceID
 	session.Status = "device_detected"
 	if supportsInterview {
-		session.awaitingInterview = true
 	} else {
 		session.Active = false
 	}

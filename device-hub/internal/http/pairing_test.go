@@ -357,14 +357,14 @@ func TestHandleHDPPairingProgressEvent_TracksRealisticZigbeePairingFlow(t *testi
 			name:       "interview started",
 			payload:    `{"schema":"hdp.v1","type":"pairing_progress","protocol":"zigbee","stage":"interviewing","status":"started","external_id":"0x00124b0024abcd01","origin":"zigbee-adapter-1"}`,
 			wantStage:  "interviewing",
-			wantStatus: "interviewing",
+			wantStatus: "started",
 			wantActive: true,
 		},
 		{
 			name:       "interview complete",
 			payload:    `{"schema":"hdp.v1","type":"pairing_progress","protocol":"zigbee","stage":"interview_complete","status":"successful","external_id":"0x00124b0024abcd01","origin":"zigbee-adapter-1"}`,
 			wantStage:  "interview_complete",
-			wantStatus: "interview_complete",
+			wantStatus: "successful",
 			wantActive: true,
 		},
 		{
