@@ -129,6 +129,8 @@ export default function WidgetSettingsModal({
 }) {
   const [settings, setSettings] = useState({});
   const [title, setTitle] = useState('');
+  const previousWidgetIdRef = useRef('');
+  const titleDirtyRef = useRef(false);
 
   // ERS inventory for device selection
   const { accessToken, user } = useAuth();
@@ -188,12 +190,38 @@ export default function WidgetSettingsModal({
 
   // Initialize from widgetItem
   useEffect(() => {
-    if (widgetItem) {
-      const widgetSettings = widgetItem.settings || {};
-      setSettings(widgetSettings);
-      setTitle(computeDefaultTitle(widgetItem.widget_type, widgetSettings));
-    }
-  }, [widgetItem, computeDefaultTitle]);
+    if (!open || !widgetItem) return;
+
+    const widgetId = widgetItem.instance_id || '';
+    const shouldResetDraft = widgetId !== previousWidgetIdRef.current || previousWidgetIdRef.current === '';
+    if (!shouldResetDraft) return;
+
+    const widgetSettings = widgetItem.settings || {};
+    setSettings(widgetSettings);
+    setTitle(computeDefaultTitle(widgetItem.widget_type, widgetSettings));
+    titleDirtyRef.current = false;
+    previousWidgetIdRef.current = widgetId;
+  }, [open, widgetItem?.instance_id, widgetItem?.widget_type, computeDefaultTitle]);
+
+  useEffect(() => {
+    if (!open || !widgetItem) return;
+    if (!widgetItem.instance_id || widgetItem.instance_id !== previousWidgetIdRef.current) return;
+    if (titleDirtyRef.current) return;
+
+    const widgetSettings = widgetItem.settings || {};
+    if (widgetSettings.title) return;
+
+    const nextTitle = computeDefaultTitle(widgetItem.widget_type, widgetSettings);
+    if (!nextTitle) return;
+
+    setTitle((prevTitle) => (prevTitle === nextTitle ? prevTitle : nextTitle));
+  }, [open, widgetItem, computeDefaultTitle]);
+
+  useEffect(() => {
+    if (open) return;
+    previousWidgetIdRef.current = '';
+    titleDirtyRef.current = false;
+  }, [open]);
 
   // Close on backdrop click
   const handleBackdropClick = (e) => {
@@ -312,7 +340,10 @@ export default function WidgetSettingsModal({
             type="text"
             className="widget-settings__input"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              titleDirtyRef.current = true;
+              setTitle(e.target.value);
+            }}
             placeholder={getWidgetDisplayName(widgetItem.widget_type)}
           />
         </div>

@@ -10,6 +10,7 @@ http {
     # Using variables in proxy_pass forces runtime re-resolution so container IP changes
     # (e.g. after `docker compose up --build`) don't leave nginx with stale upstream IPs.
     resolver 127.0.0.11 ipv6=off valid=10s;
+    resolver_timeout 2s;
 
     server {
         listen 80;

@@ -31,8 +31,9 @@ export function mergeRoomsFromErs(prevLayout, ersRooms) {
     prevById.delete(id);
   });
 
-  // Keep any purely-local rooms (should be rare).
-  prevById.forEach((r) => mergedRooms.push(r));
+  // ERS is the source of truth for persisted rooms.
+  // Do not keep orphaned local rooms here, otherwise stale geometry from an older
+  // layout snapshot can be rendered on top of the current map after refreshes.
 
   return { ...prev, rooms: mergedRooms };
 }

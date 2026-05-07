@@ -15,4 +15,7 @@ jobs:
       service: frontend
       context: ./frontend
       dockerfile: ./frontend/Dockerfile
+      build_args: |
+        HOMENAVI_APP_VERSION=${{ github.ref_name }}
+        GITHUB_SHA=${{ github.sha }}
     secrets: inherit

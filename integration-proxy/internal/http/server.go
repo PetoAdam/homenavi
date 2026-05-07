@@ -95,6 +95,7 @@ func LoadSchema(schemaPath string) (*jsonschema.Schema, error) {
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/integrations/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/integrations/registry.json", s.handleRegistry)
 	mux.HandleFunc("/registry.json", s.handleRegistry)
 	mux.HandleFunc("/integrations/marketplace.json", s.handleMarketplace)

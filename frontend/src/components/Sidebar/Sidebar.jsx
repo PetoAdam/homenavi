@@ -1,12 +1,14 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBolt, faHouse, faLightbulb, faMap, faPlug, faStar, faUsers, faMusic } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faHouse, faLightbulb, faMap, faPlug, faStar, faUsers, faMusic, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import './Sidebar.css';
 import { useAuth } from '../../context/AuthContext';
 
 import { getIntegrationRegistry } from '../../services/integrationService';
+
+const ABOUT_ITEM = { name: 'About', path: '/about', icon: <FontAwesomeIcon icon={faCircleInfo} /> };
 
 const FA_ICON_MAP = {
 	spotify: faSpotify,
@@ -141,6 +143,8 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 		return groups;
 	}, [integrations, isAdmin]);
 
+	const isAboutActive = location.pathname === ABOUT_ITEM.path || location.pathname.startsWith(`${ABOUT_ITEM.path}/`);
+
 	return (
 		<aside
 			key={isPermanentSidebar ? 'permanent' : 'overlay'}
@@ -202,6 +206,21 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 					</div>
 				))}
 			</nav>
+			{isResidentOrAdmin ? (
+				<div className="sidebar-footer">
+					<button
+						className={`menu-item sidebar-footer-item${isAboutActive ? ' active' : ''}`}
+						onClick={() => {
+							navigate(ABOUT_ITEM.path);
+							setMenuOpen(false);
+						}}
+						aria-current={isAboutActive ? 'page' : undefined}
+					>
+						<span className="menu-icon">{ABOUT_ITEM.icon}</span>
+						<span className="menu-label">{ABOUT_ITEM.name}</span>
+					</button>
+				</div>
+			) : null}
 		</aside>
 	);
 });

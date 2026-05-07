@@ -46,6 +46,10 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	r.Get("/api/gateway/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 
 	registerConfiguredRoutes(r, cfg, redisClient, pubKey)
 

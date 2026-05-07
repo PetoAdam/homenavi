@@ -1,4 +1,9 @@
 routes:
+  - path: /api/auth/health
+    upstream: http://auth-service:8000/health
+    methods: [GET]
+    access: auth
+    type: rest
   - path: /api/auth/signup
     upstream: http://auth-service:8000/api/auth/signup
     methods: [POST]

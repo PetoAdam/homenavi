@@ -90,6 +90,28 @@
 .sidebar-group {
   margin-bottom: 0.7rem;
 }
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 0.9rem 0.15rem 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.sidebar-footer-item {
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(57,170,121,0.10));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.sidebar-footer-item:hover,
+.sidebar-footer-item:focus {
+  border-color: rgba(57,170,121,0.22);
+}
+
+.sidebar-footer-item.active {
+  border-color: rgba(57,170,121,0.24);
+}
+
 .sidebar-group-header {
   font-size: 0.92rem;
   font-weight: 600;

@@ -11,6 +11,7 @@ import IntegrationsAdmin from './components/Admin/IntegrationsAdmin.jsx';
 import Users from './components/Users/Users.jsx';
 import Profile from './components/Profile/Profile.jsx';
 import Automation from './components/Automation/Automation.jsx';
+import About from './components/About/About.jsx';
 import ProfileButton from './components/common/ProfileButton/ProfileButton.jsx';
 import './App.css';
 import { isPermanentSidebarWidth } from './breakpoints.js';
@@ -125,6 +126,7 @@ export default function App() {
               <Route path="/apps/:integrationId/*" element={<IntegrationHost />} />
               <Route path="/admin/integrations" element={<IntegrationsAdmin />} />
               <Route path="/users" element={<Users />} />
+              <Route path="/about" element={<About />} />
               <Route path="/automation" element={<Automation />} />
               <Route path="/automation/:workflowId" element={<Automation />} />
               <Route path="*" element={<Navigate to="/" />} />

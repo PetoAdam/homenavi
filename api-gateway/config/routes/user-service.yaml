@@ -1,4 +1,9 @@
 routes:
+  - path: /api/users/health
+    upstream: http://user-service:8001/health
+    methods: [GET]
+    access: resident
+    type: rest
   # Public signup & credential validation remain direct for simplicity
   - path: /api/users
     upstream: http://user-service:8001/users

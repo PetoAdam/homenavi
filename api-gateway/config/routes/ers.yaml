@@ -1,4 +1,10 @@
 routes:
+  - path: /api/ers/health
+    upstream: http://entity-registry-service:8095/health
+    methods: [GET]
+    access: resident
+    type: rest
+
   - path: /api/ers/*
     upstream: http://entity-registry-service:8095/api/ers/*
     methods: [GET, POST, PUT, PATCH, DELETE]

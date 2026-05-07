@@ -1,4 +1,9 @@
 routes:
+  - path: /api/dashboard/health
+    upstream: http://dashboard-service:8097/health
+    methods: [GET]
+    access: resident
+    type: rest
   - path: /api/widgets/catalog
     upstream: http://dashboard-service:8097/api/widgets/catalog
     methods: [GET]

@@ -6,6 +6,12 @@ routes:
     access: auth
     type: websocket-mqtt
 
+  - path: /api/hdp/health
+    upstream: http://device-hub:8090/health
+    methods: [GET]
+    access: resident
+    type: rest
+
   - path: /api/hdp/devices
     upstream: http://device-hub:8090/api/hdp/devices
     methods: [GET, POST]

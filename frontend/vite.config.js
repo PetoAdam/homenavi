@@ -1,9 +1,49 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { execSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function readAppVersion() {
+  try {
+    const chartPath = path.resolve(__dirname, '../helm/homenavi/Chart.yaml');
+    const chart = fs.readFileSync(chartPath, 'utf8');
+    const match = chart.match(/^appVersion:\s*["']?([^\s"']+)["']?\s*$/m);
+    return match?.[1]?.trim() || 'dev';
+  } catch {
+    return 'dev';
+  }
+}
+
+function readGitCommit() {
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      cwd: path.resolve(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim();
+  } catch {
+    return '';
+  }
+}
+
+const chartVersion = String(process.env.HOMENAVI_APP_VERSION || readAppVersion()).replace(/^v(?=\d)/, '');
+const buildCommit = String(process.env.GITHUB_SHA || readGitCommit()).trim();
+const buildMeta = {
+  version: chartVersion,
+  releaseTag: chartVersion && chartVersion !== 'dev' ? `v${chartVersion}` : chartVersion,
+  commit: buildCommit,
+  builtAt: new Date().toISOString(),
+};
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __HOMENAVI_BUILD__: JSON.stringify(buildMeta),
+  },
   plugins: [
     react(),
     VitePWA({

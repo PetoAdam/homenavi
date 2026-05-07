@@ -12,6 +12,10 @@ on:
       dockerfile:
         required: true
         type: string
+      build_args:
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -50,6 +54,7 @@ jobs:
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
+          build-args: ${{ inputs.build_args }}
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |

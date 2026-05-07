@@ -27,7 +27,7 @@ func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 func RequireResident(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL != nil && r.URL.Path == "/healthz" {
+			if isHealthPath(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -61,7 +61,7 @@ func RequireResident(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 func RequireAdmin(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL != nil && r.URL.Path == "/healthz" {
+			if isHealthPath(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -78,6 +78,14 @@ func RequireAdmin(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isHealthPath(r *http.Request) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	path := strings.TrimSpace(r.URL.Path)
+	return path == "/healthz" || path == "/integrations/healthz"
 }
 
 func RoleFromRequest(pubKey *rsa.PublicKey, r *http.Request) (string, error) {

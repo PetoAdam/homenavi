@@ -25,7 +25,7 @@
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml"><img alt="Build Echo Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml"><img alt="Build History Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml"><img alt="Build Zigbee Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml"><img alt="Build Thread Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/thread_adapter_docker_build.yaml/badge.svg" /></a>
+	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/mock_adapter_docker_build.yaml"><img alt="Build Mock Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/mock_adapter_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml"><img alt="Build Automation Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml"><img alt="Build Entity Registry Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg" /></a>
 	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml"><img alt="Build Weather Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg" /></a>
@@ -103,9 +103,10 @@ Key Design Principles:
 
 Current Features (Implemented):
 * **Device abstraction via HDP v1:** adapters translate protocol payloads into a single internal contract consumed by core services. See `doc/hdp.md`.
-* **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Thread adapter placeholder using the same HDP surfaces.
+* **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Mock adapter placeholder using the same HDP surfaces.
 * **ERS + Device Hub boundary:** ERS owns names/rooms/tags/map metadata; device-hub owns realtime telemetry, pairing, commands. See `doc/ers_hdp_devicehub_overview.md`.
 * **Customizable UI dashboards:** widget-based Home dashboard with Edit mode + per-user persistence via Dashboard Service. See `doc/dashboard_ui_functional_spec.md`.
+* **Operational About page:** the frontend now exposes release tag, build time, session context, and integration inventory from the running deployment.
 * **Integration marketplace flow:** frontend queries the Marketplace API directly for catalog + stats, posts download increments on successful installs, and integration-proxy installs using runtime-resolved `deployment_artifacts` from marketplace metadata.
 * **Automation engine + scheduling:** rule/workflow engine with manual triggers and **cron schedule triggers**, plus run tracking and live run stream via websocket. (APIs documented in `doc/external_api_surface.md`.)
 
@@ -137,6 +138,13 @@ cp .env.example .env   # adjust secrets / paths
 docker compose up --build
 ```
 
+The default local UI endpoints are:
+
+* Frontend app (direct frontend container): http://localhost:5173
+* Full reverse-proxy entrypoint (Nginx): http://localhost
+
+By default, Docker Compose now uses the same release tag as the Helm chart `appVersion` (`v0.4.12`). Override `HN_VERSION` in `.env` only when you intentionally want a different image tag.
+
 If you have a physical Zigbee USB adapter connected and configured, include the optional hardware profile:
 
 ```sh
@@ -145,8 +153,15 @@ docker compose --profile zigbee-hardware up --build
 
 By default, the stack now uses **EMQX** as the main MQTT broker. If you need to connect Homenavi to an external MQTT deployment, load one or more bridge snippets from `emqx/bridge.d/*.hocon`. A fully commented starter lives at `emqx/bridge.d/homenavi-bridge.example.hocon`. See [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md).
 
+The placeholder mock adapter remains opt-in. The default local stack excludes it, and the profile uses the published container image rather than a local source build:
+
+```sh
+docker compose --profile mock-adapter up
+```
+
 Entry Points:
-* Frontend: http://localhost (served via Nginx)
+* Frontend (direct): http://localhost:5173
+* Frontend (via Nginx): http://localhost
 * API Gateway (REST): http://localhost/api
 * Prometheus: http://localhost:9090
 * Jaeger UI: http://localhost:16686
@@ -173,7 +188,7 @@ See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 | Profile Picture | `profile-picture-service/` | Avatar upload & processing | `homenavi-profile-picture-service:latest` |
 | Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `homenavi-echo-service:latest` |
 | Zigbee Adapter | `zigbee-adapter/` | Zigbee2MQTT adapter emitting/consuming HDP | `homenavi-zigbee-adapter:latest` |
-| Thread Adapter | `thread-adapter/` | Thread adapter placeholder (HDP hello/status/pairing) | `homenavi-thread-adapter:latest` |
+| Mock Adapter | `mock-adapter/` | Placeholder adapter for HDP hello/status/pairing; compose uses the published image via an opt-in profile | `homenavi-mock-adapter:latest` |
 | Frontend | `frontend/` | SPA & PWA client | `homenavi-frontend:latest` |
 
 Support:
@@ -392,6 +407,9 @@ Long Term:
 
 ## 11. ⚙️ Configuration & Environment
 Environment variables (selected):
+* Image / build metadata:
+	* `HN_VERSION` (compose image tag override; also used for frontend build metadata in Docker builds)
+	* `GITHUB_SHA` (optional commit SHA embedded into frontend build metadata for compose-built images)
 * `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`
 * Integrations / marketplace:
 	* `INTEGRATIONS_MARKETPLACE_API_BASE` (defaults to `https://marketplace.homenavi.org`)
@@ -405,6 +423,16 @@ Environment variables (selected):
 * Weather:
 	* `OPENWEATHER_API_KEY` (required for real weather data)
 	* `WEATHER_CACHE_TTL_MINUTES` (optional, defaults to 15)
+* Local entrypoints / transport:
+	* `FRONTEND_HOST_PORT` / `FRONTEND_CONTAINER_PORT`
+	* `NGINX_HOST_PORT` / `NGINX_PORT`
+	* `MQTT_BROKER_URL` / `MQTT_WEBSOCKET_UPSTREAM_URL`
+* Media storage:
+	* `PROFILE_PICTURE_STORAGE_TYPE`
+	* `PROFILE_PICTURE_STORAGE_S3_ENDPOINT`
+	* `PROFILE_PICTURE_STORAGE_S3_BUCKET`
+	* `PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY`
+	* `PROFILE_PICTURE_STORAGE_S3_SECRET_KEY`
 
 Example: `cp .env.example .env` then edit. In production avoid storing secrets directly in env files—use a secrets manager.
 
@@ -418,9 +446,9 @@ openssl rsa -pubout -in keys/jwt_private.pem -out keys/jwt_public.pem
 ---
 
 ## 12. 📦 CI/CD
-* GitHub Actions per-service Docker build pipelines.
-* Builds produce Docker images and upload them as artifacts (image tarballs) for download/testing.
-* Future: Add lint (golangci-lint), security scanning (gosec, trivy), frontend tests.
+* GitHub Actions build Docker images per service and publish release images to GHCR on tags.
+* The frontend image now embeds release/build metadata for the About page via Docker build args.
+* Integration repositories consume shared verify/release actions from this repo, including `go vet`, `gosec`, container builds, and vulnerability scanning before publish.
 
 ---
 

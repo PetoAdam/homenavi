@@ -119,6 +119,10 @@ func NewServer(repo *dbinfra.Repository, mqtt mqttinfra.ClientAPI) *Server {
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 	mux.HandleFunc("/api/hdp/devices", s.handleDeviceCollection)
 	mux.HandleFunc("/api/hdp/devices/", s.handleDeviceRequest)
 	mux.HandleFunc("/api/hdp/integrations", s.handleIntegrations)

@@ -25,6 +25,20 @@ func TestMainRouterHealth(t *testing.T) {
 	}
 }
 
+func TestMainRouterGatewayHealth(t *testing.T) {
+	router := NewMainRouter(gateway.Config{}, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/health", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if rr.Body.String() != "ok" {
+		t.Fatalf("expected ok body, got %q", rr.Body.String())
+	}
+}
+
 func TestMainRouterRoutesEndpoint(t *testing.T) {
 	cfg := gateway.Config{Routes: []gateway.RouteConfig{{Path: "/api/test", Upstream: "http://example.com", Methods: []string{http.MethodGet}, Access: "public"}}}
 	router := NewMainRouter(cfg, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")

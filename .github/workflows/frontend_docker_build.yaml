@@ -19,6 +19,9 @@ jobs:
         with:
           context: ./frontend  # Set the context to the frontend folder
           file: ./frontend/Dockerfile  # Specify the path to the Dockerfile
+          build-args: |
+            HOMENAVI_APP_VERSION=dev
+            GITHUB_SHA=${{ github.sha }}
           push: false
           tags: homenavi-frontend:latest
 
