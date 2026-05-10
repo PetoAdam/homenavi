@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeRoomsFromErs } from './mapHydrate';
+import { mergeDevicePlacementsFromErs, mergeRoomsFromErs } from './mapHydrate';
 
 describe('mergeRoomsFromErs', () => {
   it('replaces stale local-only rooms with ERS rooms to avoid duplicate map overlays', () => {
@@ -61,5 +61,72 @@ describe('mergeRoomsFromErs', () => {
     ];
 
     expect(mergeRoomsFromErs(prevLayout, ersRooms)).toEqual(prevLayout);
+  });
+});
+
+describe('mergeDevicePlacementsFromErs', () => {
+  it('drops orphaned local placements that no longer exist in ERS inventory', () => {
+    const prevLayout = {
+      devicePlacements: {
+        'old-long-hdp-id': { roomId: 'room-1', x: 10, y: 20 },
+      },
+    };
+
+    const devicesForPalette = [
+      { ersId: 'ers-device-1', hdpId: 'emodul/module-a/zone/1', hdpIds: ['emodul/module-a/zone/1'] },
+    ];
+
+    expect(mergeDevicePlacementsFromErs(prevLayout, devicesForPalette)).toEqual({
+      devicePlacements: {},
+    });
+  });
+
+  it('migrates legacy hdp-keyed placements onto the canonical ers device key', () => {
+    const prevLayout = {
+      devicePlacements: {
+        'emodul/module-a/zone/1': { roomId: 'room-1', x: 25, y: 35 },
+      },
+    };
+
+    const devicesForPalette = [
+      {
+        ersId: 'ers-device-1',
+        id: 'ers-device-1',
+        hdpId: 'emodul/module-a/zone/1',
+        hdpIds: ['emodul/module-a/zone/1'],
+        room_id: 'room-1',
+      },
+    ];
+
+    expect(mergeDevicePlacementsFromErs(prevLayout, devicesForPalette)).toEqual({
+      devicePlacements: {
+        'ers-device-1': { roomId: 'room-1', x: 25, y: 35 },
+      },
+    });
+  });
+
+  it('prefers ERS placement metadata over stale local coordinates', () => {
+    const prevLayout = {
+      devicePlacements: {
+        'ers-device-1': { roomId: 'room-1', x: 10, y: 20 },
+      },
+    };
+
+    const devicesForPalette = [
+      {
+        ersId: 'ers-device-1',
+        id: 'ers-device-1',
+        hdpId: 'emodul/module-a/zone/1',
+        hdpIds: ['emodul/module-a/zone/1'],
+        room_id: 'room-2',
+        meta: { map: { x: 50, y: 60 } },
+      },
+    ];
+
+    expect(mergeDevicePlacementsFromErs(prevLayout, devicesForPalette)).toEqual({
+      devicePlacements: {
+        'ers-device-1': { roomId: 'room-2', x: 50, y: 60 },
+      },
+    });
   });
 });

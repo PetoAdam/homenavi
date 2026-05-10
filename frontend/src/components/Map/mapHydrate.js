@@ -44,28 +44,65 @@ export function mergeDevicePlacementsFromErs(prevLayout, devicesForPalette, drag
 
   const prevPlacements = prev.devicePlacements && typeof prev.devicePlacements === 'object' ? prev.devicePlacements : {};
   let changed = false;
-  const nextPlacements = { ...prevPlacements };
+  const nextPlacements = {};
+
+  const readExistingPlacement = (aliases) => {
+    for (const alias of aliases) {
+      const key = safeString(alias);
+      if (!key) continue;
+      const placement = prevPlacements[key];
+      if (placement && typeof placement === 'object') {
+        return { key, placement };
+      }
+    }
+    return null;
+  };
 
   devicesForPalette.forEach((d) => {
     const key = safeString(d?.ersId || d?.id || d?.hdpId);
     if (!key) return;
 
     // Avoid fighting the pointer while dragging a device.
-    if (draggingDeviceKey && draggingDeviceKey === key) return;
+    const aliases = [key, d?.id, d?.hdpId, ...(Array.isArray(d?.hdpIds) ? d.hdpIds : [])];
+    const existingEntry = readExistingPlacement(aliases);
+    if (draggingDeviceKey && aliases.some((alias) => safeString(alias) === draggingDeviceKey)) {
+      if (existingEntry) {
+        nextPlacements[key] = existingEntry.placement;
+        if (existingEntry.key !== key) changed = true;
+      }
+      return;
+    }
 
-    const existing = nextPlacements[key];
+    const existing = existingEntry?.placement;
     const placement = readDevicePlacementFromErsMeta(d);
 
     const hasXY = existing && Number.isFinite(Number(existing.x)) && Number.isFinite(Number(existing.y));
-    if (!placement && hasXY) return;
-    if (!placement) return;
+    if (!placement && hasXY) {
+      nextPlacements[key] = existing;
+      if (existingEntry?.key !== key) changed = true;
+      return;
+    }
+    if (!placement) {
+      if (existingEntry) changed = true;
+      return;
+    }
 
     const roomId = safeString(d?.room_id) || safeString(existing?.roomId);
-    if (!existing || Number(existing.x) !== placement.x || Number(existing.y) !== placement.y || safeString(existing.roomId) !== roomId) {
-      nextPlacements[key] = { roomId, x: placement.x, y: placement.y };
+    const nextPlacement = { roomId, x: placement.x, y: placement.y };
+    if (!existing || Number(existing.x) !== placement.x || Number(existing.y) !== placement.y || safeString(existing.roomId) !== roomId || existingEntry?.key !== key) {
+      nextPlacements[key] = nextPlacement;
       changed = true;
+      return;
     }
+
+    nextPlacements[key] = existing;
   });
+
+  const prevKeys = Object.keys(prevPlacements);
+  const nextKeys = Object.keys(nextPlacements);
+  if (!changed && (prevKeys.length !== nextKeys.length || prevKeys.some((key) => !(key in nextPlacements)))) {
+    changed = true;
+  }
 
   return changed ? { ...prev, devicePlacements: nextPlacements } : prev;
 }
