@@ -47,7 +47,7 @@ services:
       - REDIS_ADDR=redis:${REDIS_PORT}
       - REDIS_MASTER_NAME=${REDIS_MASTER_NAME:-}
       - REDIS_SENTINEL_ADDRS=${REDIS_SENTINEL_ADDRS:-}
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
       - LOG_LEVEL=${LOG_LEVEL}
     volumes:
       - ./keys:/app/keys:ro
@@ -92,7 +92,7 @@ services:
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
       - GOOGLE_OAUTH_REDIRECT_URL=${GOOGLE_OAUTH_REDIRECT_URL}
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:
@@ -213,7 +213,7 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
@@ -241,6 +241,7 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
@@ -320,7 +321,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - FROM_EMAIL=${FROM_EMAIL:-noreply@homenavi.org}
       - FROM_NAME=${FROM_NAME:-Homenavi}
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     networks:
       - homenavi-network
   # DEV:
@@ -405,7 +406,7 @@ services:
       - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - DEVICE_HUB_ENABLE_THREAD=true
       - LOG_LEVEL=${LOG_LEVEL}
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     networks:
       - homenavi-network
     # No ports exposed; internal only
@@ -467,7 +468,7 @@ services:
       - REDIS_SENTINEL_ADDRS=${REDIS_SENTINEL_ADDRS:-}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - LOG_LEVEL=${LOG_LEVEL}
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     networks:
       - homenavi-network
 
@@ -485,7 +486,7 @@ services:
       - MOCK_ADAPTER_ID=mock-adapter-1
       - MOCK_ADAPTER_VERSION=dev
       - LOG_LEVEL=${LOG_LEVEL}
-      - JAEGER_ENDPOINT=http://jaeger:${JAEGER_COLLECTOR_PORT}/api/traces
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     networks:
       - homenavi-network
 

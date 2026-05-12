@@ -12,6 +12,7 @@ global:
   imageTag: ""
   imagePullPolicy: IfNotPresent
   logLevel: info
+  otelExporterOtlpTracesEndpoint: ""
   envFromSecrets: []
 
 storage:

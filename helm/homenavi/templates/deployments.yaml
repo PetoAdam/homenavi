@@ -52,6 +52,9 @@ spec:
       {{- $svcEnvValueFrom := default (dict) $svc.envValueFrom }}
       {{- $usesMQTT := default false $svc.usesMQTT }}
       {{- $injectMQTTWebsocketUpstream := default false $svc.injectMQTTWebsocketUpstream }}
+      {{- $otelTracesEndpoint := trim (default "" $.Values.global.otelExporterOtlpTracesEndpoint) }}
+      {{- $otelCapableServices := list "api-gateway" "auth-service" "user-service" "dashboard-service" "email-service" "device-hub" "zigbee-adapter" "mock-adapter" }}
+      {{- $injectOTLPTracesEndpoint := and (has $name $otelCapableServices) (ne $otelTracesEndpoint "") (not (hasKey $svcEnv "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) (not (hasKey $svcEnvValueFrom "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) }}
       {{- $serviceDependencies := default (list) $svc.dependsOn }}
       {{- $zigbee2mqttBootstrapEnabled := and $zigbee2mqttHasConfigSource (default true $svc.bootstrapConfiguration) }}
       {{- $zigbee2mqttOverwriteOnDeploy := and $zigbee2mqttBootstrapEnabled (default false $svc.overwriteConfigurationOnDeploy) }}
@@ -245,7 +248,7 @@ spec:
           livenessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or $usesMQTT $injectMQTTWebsocketUpstream $svc.env $svc.envValueFrom }}
+          {{- if or $usesMQTT $injectMQTTWebsocketUpstream $injectOTLPTracesEndpoint $svc.env $svc.envValueFrom }}
           env:
             {{- if $usesMQTT }}
             - name: MQTT_BROKER_URL
@@ -254,6 +257,10 @@ spec:
             {{- if $injectMQTTWebsocketUpstream }}
             - name: MQTT_WEBSOCKET_UPSTREAM_URL
               value: {{ include "homenavi.mqttWebsocketUpstreamURL" $ | quote }}
+            {{- end }}
+            {{- if $injectOTLPTracesEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: {{ $otelTracesEndpoint | quote }}
             {{- end }}
             {{- range $envKey, $envVal := $svc.env }}
             {{- $renderedVal := printf "%v" $envVal }}
