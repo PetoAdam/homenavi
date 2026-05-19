@@ -22,6 +22,20 @@ export default function PairingProgressPanel({
   stopPending,
   onResolveNeedsInput,
 }) {
+  const formatDeviceState = value => {
+    switch (`${value || ''}`.trim().toLowerCase()) {
+      case 'detected':
+        return 'Detected';
+      case 'finalizing':
+        return 'Finalizing';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed';
+      default:
+        return 'Waiting';
+    }
+  };
   const pairingProtocol = activePairing?.protocol || selectedProtocol;
   const pairingProfileForView = getPairingProfile(pairingProtocol, pairingConfig) || fallbackPairingProfile;
   const pairingFlowForView = normalizePairingFlow(pairingProfileForView?.flow);
@@ -42,11 +56,22 @@ export default function PairingProgressPanel({
     .replace(/\b\w/g, c => c.toUpperCase());
   const pairingMeta = activePairingSession?.metadata;
   const pairingMessage = activePairingSession?.message || activePairingSession?.progress?.message || '';
+  const allowMultipleDevices = Boolean(activePairingSession?.allowMultipleDevices);
+  const addedDevices = useMemo(() => {
+    const items = Array.isArray(activePairingSession?.addedDevices) ? activePairingSession.addedDevices : [];
+    return [...items].sort((left, right) => {
+      const leftTs = left?.addedAt instanceof Date ? left.addedAt.getTime() : 0;
+      const rightTs = right?.addedAt instanceof Date ? right.addedAt.getTime() : 0;
+      return leftTs - rightTs;
+    });
+  }, [activePairingSession?.addedDevices]);
   const requiredInputs = Array.isArray(activePairingSession?.requiredInputs)
     ? activePairingSession.requiredInputs
     : [];
   const pairingDeviceId = activePairingSession?.deviceId || activePairingSession?.device_id;
-  const fallbackPairingNotice = pairingProfileForView?.notes || 'Permit join active — reset the device and keep it near the coordinator.';
+  const fallbackPairingNotice = allowMultipleDevices
+    ? (pairingProfileForView?.notes || 'Permit join stays open so you can add several devices in one session. Stop pairing when the full set is added.')
+    : (pairingProfileForView?.notes || 'Permit join active — reset the device and keep it near the coordinator.');
 
   return (
     <div className="auth-modal-content-inner add-device-step add-device-pairing-step">
@@ -54,25 +79,59 @@ export default function PairingProgressPanel({
         <div className="add-device-pairing-runtime-header">
           <span className="add-device-pairing-step-kicker">Live pairing progress</span>
           <h5>{statusLabel}</h5>
-          <p>Keep the device powered and close to the coordinator while this flow completes.</p>
-          <div className="add-device-pairing-stage-breadcrumb" aria-label="Current pairing stage">
-            <span>Stage {Math.max((currentStep?.index ?? 0) + 1, 1)} of {currentStep?.total || pairingStages.length}</span>
-            <strong>{currentStep?.step?.label || 'Starting'}</strong>
-          </div>
+          <p>
+            {allowMultipleDevices
+              ? 'Each device will appear below as soon as it is detected, then move through finalizing and completed states.'
+              : 'Keep the device powered and close to the coordinator while this flow completes.'}
+          </p>
+          {!allowMultipleDevices ? (
+            <div className="add-device-pairing-stage-breadcrumb" aria-label="Current pairing stage">
+              <span>Stage {Math.max((currentStep?.index ?? 0) + 1, 1)} of {currentStep?.total || pairingStages.length}</span>
+              <strong>{currentStep?.step?.label || 'Starting'}</strong>
+            </div>
+          ) : null}
         </div>
 
         <div className="add-device-pairing-progress">
-          <div className="add-device-pairing-stages">
-            {pairingStages.map((phase, index) => (
-              <div key={phase.id} className={`add-device-pairing-stage-card ${phase.state}`}>
-                <span className="add-device-pairing-stage-index">{index + 1}</span>
-                <div className="add-device-pairing-stage-body">
-                  <span className="add-device-pairing-stage-label">{phase.label}</span>
-                  {phase.description ? <p>{phase.description}</p> : null}
+          {!allowMultipleDevices ? (
+            <div className="add-device-pairing-stages">
+              {pairingStages.map((phase, index) => (
+                <div key={phase.id} className={`add-device-pairing-stage-card ${phase.state}`}>
+                  <span className="add-device-pairing-stage-index">{index + 1}</span>
+                  <div className="add-device-pairing-stage-body">
+                    <span className="add-device-pairing-stage-label">{phase.label}</span>
+                    {phase.description ? <p>{phase.description}</p> : null}
+                  </div>
                 </div>
+              ))}
+            </div>
+          ) : (
+            <div className="add-device-pairing-stages add-device-pairing-stages-devices">
+              <div className="add-device-pairing-device-list-header">
+                <span className="add-device-pairing-label">New devices in this session</span>
+                <strong>{addedDevices.length}</strong>
               </div>
-            ))}
-          </div>
+              {addedDevices.length > 0 ? addedDevices.map((device, index) => {
+                const title = device.name || device.model || device.manufacturer || device.type || 'Zigbee device';
+                const subtitle = device.externalId || device.deviceId || '';
+                const state = `${device.state || ''}`.trim().toLowerCase();
+                return (
+                  <div key={device.deviceId || device.externalId || `${index}`} className="add-device-pairing-device-card">
+                    <div className="add-device-pairing-device-card-main">
+                      <strong>{title}</strong>
+                      {device.description ? <span>{device.description}</span> : null}
+                      {subtitle ? <small>{subtitle}</small> : null}
+                    </div>
+                    <span className={`add-device-pairing-device-state ${state || 'waiting'}`}>{formatDeviceState(state)}</span>
+                  </div>
+                );
+              }) : (
+                <div className="add-device-pairing-added-device-empty">
+                  No devices detected yet. The first one will appear here immediately.
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="add-device-pairing-timer">
             <div>

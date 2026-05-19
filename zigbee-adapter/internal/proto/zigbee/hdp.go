@@ -32,7 +32,7 @@ func (z *ZigbeeAdapter) publishHello() error {
 			"instructions": []string{
 				"Reset or power-cycle the device to enter pairing mode.",
 				"Keep it close to the coordinator while pairing runs.",
-				"We will auto-register it as soon as it is detected.",
+				"Devices default to their Zigbee identifier so you can rename them later.",
 			},
 			"cta_label": "Start Zigbee pairing",
 			"flow": map[string]any{
@@ -44,6 +44,7 @@ func (z *ZigbeeAdapter) publishHello() error {
 						"label": "Default",
 						"fields": []map[string]any{
 							{"id": "timeout", "component": "number", "label": "Permit join timeout (seconds)", "bind": "timeout", "min": 30, "max": 300, "default": 60},
+							{"id": "allow_multiple_devices", "component": "checkbox", "label": "Keep pairing open for multiple devices", "description": "Optional. Use this for lamps or devices you want to add together before stopping pairing.", "default": false},
 							{"id": "network_key_permit", "component": "checkbox", "label": "Allow network key exchange", "default": true},
 							{"id": "join_strategy", "component": "select", "label": "Join strategy", "options": []map[string]any{{"value": "auto", "label": "Auto"}, {"value": "router-first", "label": "Router first"}}, "default": "auto"},
 						},
@@ -94,6 +95,7 @@ func (z *ZigbeeAdapter) publishStatus(status, reason string) error {
 						"label": "Default",
 						"fields": []map[string]any{
 							{"id": "timeout", "component": "number", "label": "Permit join timeout (seconds)", "bind": "timeout", "min": 30, "max": 300, "default": 60},
+							{"id": "allow_multiple_devices", "component": "checkbox", "label": "Keep pairing open for multiple devices", "description": "Optional. Use this for lamps or devices you want to add together before stopping pairing.", "default": false},
 						},
 					},
 				},
@@ -142,6 +144,7 @@ func (z *ZigbeeAdapter) publishHDPMeta(dev *model.Device) {
 		"schema":       hdpSchema,
 		"type":         "metadata",
 		"device_id":    deviceID,
+		"name":         dev.Name,
 		"protocol":     "zigbee",
 		"manufacturer": dev.Manufacturer,
 		"model":        dev.Model,

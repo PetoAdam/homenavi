@@ -7,6 +7,7 @@ describe('pairingSchema zigbee flow', () => {
       'active',
       'device_joined',
       'device_detected',
+      'device_added',
       'interviewing',
       'interview_complete',
       'completed',
@@ -14,7 +15,7 @@ describe('pairingSchema zigbee flow', () => {
 
     const indexes = statuses.map(status => resolveCurrentPairingStep(status).index);
 
-    expect(indexes).toEqual([0, 1, 1, 2, 2, 3]);
+    expect(indexes).toEqual([0, 1, 1, 1, 2, 2, 3]);
     expect(indexes.every((index, position) => position === 0 || index >= indexes[position - 1])).toBe(true);
   });
 

@@ -103,6 +103,33 @@ function normalizeDeviceId(raw) {
   return { external: rest, hdpId: `${protocol}/${rest}`, protocol, adapter: '' };
 }
 
+function normalizePairingAddedDevices(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const addedAt = item.added_at || item.addedAt;
+      const normalizedAddedAt = addedAt ? new Date(addedAt) : null;
+      const updatedAt = item.updated_at || item.updatedAt;
+      const normalizedUpdatedAt = updatedAt ? new Date(updatedAt) : null;
+      return {
+        deviceId: item.device_id || item.deviceId || '',
+        protocol: item.protocol || '',
+        externalId: item.external_id || item.externalId || '',
+        name: item.name || '',
+        state: item.state || '',
+        type: item.type || '',
+        manufacturer: item.manufacturer || '',
+        model: item.model || '',
+        description: normalizeDescription(item.description),
+        icon: item.icon || '',
+        addedAt: normalizedAddedAt && !Number.isNaN(normalizedAddedAt.getTime()) ? normalizedAddedAt : null,
+        updatedAt: normalizedUpdatedAt && !Number.isNaN(normalizedUpdatedAt.getTime()) ? normalizedUpdatedAt : null,
+      };
+    })
+    .filter(item => item && (item.deviceId || item.externalId));
+}
+
 function mapPairingSession(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const protocol = typeof raw.protocol === 'string' ? raw.protocol.toLowerCase() : '';
@@ -128,6 +155,8 @@ function mapPairingSession(raw) {
     startedAt: normalizeDate(raw.started_at),
     expiresAt: normalizeDate(raw.expires_at),
     deviceId: raw.device_id || raw.deviceId || '',
+    allowMultipleDevices: Boolean(raw.allow_multiple_devices || raw.allowMultipleDevices),
+    addedDevices: normalizePairingAddedDevices(raw.added_devices || raw.addedDevices),
     metadata: raw.metadata && typeof raw.metadata === 'object' ? { ...raw.metadata } : {},
     progress: raw,
   };
@@ -215,6 +244,10 @@ export function buildPairingProgressSession(data, protocol, existing = null) {
     protocol: normalizedProtocol,
     status: finalStatus,
     active: typeof data?.active === 'boolean' ? (shouldPreserveProgress ? existing?.active : data.active) : !finalIsTerminal,
+    allowMultipleDevices: Boolean(data?.allow_multiple_devices || data?.allowMultipleDevices || existing?.allowMultipleDevices),
+    addedDevices: normalizePairingAddedDevices(data?.added_devices || data?.addedDevices).length > 0
+      ? normalizePairingAddedDevices(data?.added_devices || data?.addedDevices)
+      : (existing?.addedDevices || []),
     metadata: metadata || existing?.metadata || {},
     stage: finalStage,
     mode: data?.mode || existing?.mode || '',

@@ -661,6 +661,18 @@
   gap: 0.35rem;
 }
 
+.add-device-pairing-field.checkbox {
+  gap: 0.55rem;
+}
+
+.add-device-pairing-field.featured {
+  padding: 0.85rem 0.95rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(var(--color-success-rgb), 0.24);
+  background: linear-gradient(145deg, rgba(20, 43, 32, 0.82), rgba(16, 24, 42, 0.78));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
 .add-device-pairing-field-label {
   font-size: 0.85rem;
   font-weight: 600;
@@ -668,10 +680,37 @@
 }
 
 .add-device-pairing-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.75rem;
   font-size: 0.9rem;
+}
+
+.add-device-pairing-checkbox input {
+  margin-top: 0.2rem;
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.add-device-pairing-checkbox-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.add-device-pairing-checkbox-copy strong {
+  font-size: 0.96rem;
+  color: var(--color-white);
+}
+
+.add-device-pairing-checkbox-copy small {
+  color: rgba(var(--color-white-rgb), 0.72);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.add-device-pairing-checkbox.featured {
+  padding: 0.1rem 0;
 }
 
 .add-device-pairing-selector {
@@ -912,6 +951,166 @@
   padding: 0.35rem 0.55rem;
   border-radius: 0.75rem;
   background: var(--color-surface-panel-muted);
+}
+
+.add-device-pairing-added-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(var(--color-success-rgb), 0.18);
+  background: rgba(9, 30, 22, 0.38);
+}
+
+.add-device-pairing-device-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.add-device-pairing-device-list-header strong {
+  display: inline-flex;
+  min-width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(var(--color-success-rgb), 0.18);
+  color: var(--color-success-light);
+}
+
+.add-device-pairing-stages-devices {
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(var(--color-success-rgb), 0.18);
+  background: rgba(9, 30, 22, 0.38);
+}
+
+.add-device-pairing-device-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.add-device-pairing-device-card-main {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.add-device-pairing-device-card-main strong {
+  color: var(--color-white);
+  font-size: 0.94rem;
+}
+
+.add-device-pairing-device-card-main span {
+  color: rgba(var(--color-white-rgb), 0.75);
+  font-size: 0.8rem;
+}
+
+.add-device-pairing-device-card-main small {
+  color: rgba(var(--color-white-rgb), 0.58);
+  font-size: 0.75rem;
+}
+
+.add-device-pairing-device-state {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.78);
+}
+
+.add-device-pairing-device-state.detected {
+  border-color: rgba(96, 168, 255, 0.45);
+  background: rgba(36, 93, 156, 0.22);
+  color: rgba(202, 227, 255, 0.96);
+}
+
+.add-device-pairing-device-state.finalizing {
+  border-color: rgba(255, 193, 92, 0.45);
+  background: rgba(117, 77, 20, 0.26);
+  color: rgba(255, 229, 178, 0.98);
+}
+
+.add-device-pairing-device-state.completed {
+  border-color: rgba(var(--color-success-rgb), 0.5);
+  background: rgba(var(--color-success-rgb), 0.2);
+  color: rgba(209, 255, 223, 0.98);
+}
+
+.add-device-pairing-device-state.failed {
+  border-color: rgba(255, 112, 112, 0.48);
+  background: rgba(114, 25, 25, 0.26);
+  color: rgba(255, 210, 210, 0.98);
+}
+
+.add-device-pairing-added-devices-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.add-device-pairing-added-devices-header strong {
+  display: inline-flex;
+  min-width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(var(--color-success-rgb), 0.18);
+  color: var(--color-success-light);
+}
+
+.add-device-pairing-added-device-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.65rem;
+}
+
+.add-device-pairing-added-device-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.add-device-pairing-added-device-card strong {
+  color: var(--color-white);
+  font-size: 0.92rem;
+}
+
+.add-device-pairing-added-device-card span {
+  color: rgba(var(--color-white-rgb), 0.75);
+  font-size: 0.8rem;
+}
+
+.add-device-pairing-added-device-card small,
+.add-device-pairing-added-device-empty {
+  color: rgba(var(--color-white-rgb), 0.58);
+  font-size: 0.75rem;
+}
+
+.add-device-pairing-added-devices-success {
+  width: 100%;
+  max-width: 38rem;
+  text-align: left;
 }
 
 @media (min-width: 900px) {

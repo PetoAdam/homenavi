@@ -10,12 +10,17 @@ function normalizeValue(value, field) {
 }
 
 function FieldWrap({ field, children }) {
-  const isInput = !['text_block', 'loading'].includes(field.component);
+  const isInput = !['text_block', 'loading', 'checkbox'].includes(field.component);
+  const fieldClasses = [
+    'add-device-pairing-field',
+    field.component === 'checkbox' ? 'checkbox' : '',
+    field.id === 'allow_multiple_devices' ? 'featured' : '',
+  ].filter(Boolean).join(' ');
   return (
-    <div className="add-device-pairing-field">
+    <div className={fieldClasses}>
       {isInput ? <label className="add-device-pairing-field-label" htmlFor={`pairing-field-${field.id}`}>{field.label}</label> : null}
       {children}
-      {field.description ? <small className="add-device-modal-hint">{field.description}</small> : null}
+      {field.description && field.component !== 'checkbox' ? <small className="add-device-modal-hint">{field.description}</small> : null}
     </div>
   );
 }
@@ -58,14 +63,17 @@ function NumberField({ field, value, onChange }) {
 function CheckboxField({ field, value, onChange }) {
   return (
     <FieldWrap field={field}>
-      <label className="add-device-pairing-checkbox" htmlFor={`pairing-field-${field.id}`}>
+      <label className={`add-device-pairing-checkbox${field.id === 'allow_multiple_devices' ? ' featured' : ''}`} htmlFor={`pairing-field-${field.id}`}>
         <input
           id={`pairing-field-${field.id}`}
           type="checkbox"
           checked={Boolean(value)}
           onChange={event => onChange(field.id, event.target.checked)}
         />
-        <span>{field.placeholder || field.label}</span>
+        <span className="add-device-pairing-checkbox-copy">
+          <strong>{field.placeholder || field.label}</strong>
+          {field.description ? <small>{field.description}</small> : null}
+        </span>
       </label>
     </FieldWrap>
   );

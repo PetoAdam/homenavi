@@ -168,4 +168,64 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
       active: true,
     });
   });
+
+  it('normalizes multi-device pairing metadata from realtime events', () => {
+    const session = buildPairingProgressSession({
+      id: 'pairing-session-2',
+      origin: 'device-hub',
+      stage: 'device_added',
+      status: 'device_added',
+      active: true,
+      allow_multiple_devices: true,
+      added_devices: [
+        {
+          device_id: 'zigbee/0x00124b0024abcd01',
+          protocol: 'zigbee',
+          external_id: '0x00124b0024abcd01',
+          state: 'completed',
+          model: 'Hue White',
+          added_at: '2026-05-19T10:00:00Z',
+        },
+      ],
+    }, 'zigbee');
+
+    expect(session).toMatchObject({
+      allowMultipleDevices: true,
+      active: true,
+      status: 'device_added',
+      stage: 'device_added',
+    });
+    expect(session.addedDevices).toHaveLength(1);
+    expect(session.addedDevices[0]).toMatchObject({
+      deviceId: 'zigbee/0x00124b0024abcd01',
+      externalId: '0x00124b0024abcd01',
+      state: 'completed',
+      model: 'Hue White',
+    });
+  });
+
+  it('keeps placeholder multi-device entries before a canonical device id exists', () => {
+    const session = buildPairingProgressSession({
+      id: 'pairing-session-3',
+      origin: 'device-hub',
+      stage: 'device_detected',
+      status: 'device_detected',
+      active: true,
+      allow_multiple_devices: true,
+      added_devices: [
+        {
+          protocol: 'zigbee',
+          external_id: '0x00124b0024abcd02',
+          state: 'detected',
+        },
+      ],
+    }, 'zigbee');
+
+    expect(session.addedDevices).toHaveLength(1);
+    expect(session.addedDevices[0]).toMatchObject({
+      deviceId: '',
+      externalId: '0x00124b0024abcd02',
+      state: 'detected',
+    });
+  });
 });

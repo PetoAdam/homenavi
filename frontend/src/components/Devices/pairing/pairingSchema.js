@@ -9,7 +9,7 @@ const DEFAULT_PAIRING_FLOW_STEPS = [
     id: 'pairing_detected',
     label: 'Device Detected',
     description: 'A candidate device has been discovered.',
-    statuses: ['device_detected', 'device_joined'],
+    statuses: ['device_detected', 'device_joined', 'device_added'],
   },
   {
     id: 'pairing_finalize',

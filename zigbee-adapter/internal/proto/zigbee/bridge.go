@@ -26,8 +26,8 @@ func (z *ZigbeeAdapter) reconcileFriendlyDevice(ctx context.Context, friendly, e
 	friendlyDev, _ := z.repo.GetByExternal(ctx, "zigbee", friendly)
 	if canonicalDev == nil && friendlyDev != nil {
 		friendlyDev.ExternalID = external
-		if strings.TrimSpace(friendlyDev.Name) == "" || strings.EqualFold(friendlyDev.Name, friendlyDev.ExternalID) {
-			friendlyDev.Name = friendly
+		if strings.TrimSpace(friendlyDev.Name) == "" {
+			friendlyDev.Name = defaultZigbeeDeviceName(external)
 		}
 		if err := z.repo.UpsertDevice(ctx, friendlyDev); err == nil {
 			return
@@ -38,7 +38,7 @@ func (z *ZigbeeAdapter) reconcileFriendlyDevice(ctx context.Context, friendly, e
 			if nm := strings.TrimSpace(friendlyDev.Name); nm != "" {
 				canonicalDev.Name = nm
 			} else {
-				canonicalDev.Name = friendly
+				canonicalDev.Name = defaultZigbeeDeviceName(external)
 			}
 			_ = z.repo.UpsertDevice(ctx, canonicalDev)
 		}
@@ -100,8 +100,9 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 				// Otherwise a later permit_join timeout would overwrite a successful pairing.
 				z.pairingMu.Lock()
 				active := z.pairingActive
+				multi := z.pairingMulti
 				z.pairingMu.Unlock()
-				if active {
+				if active && !multi {
 					z.stopPairing()
 				}
 				// Frontend advances the pairing flow only once it sees a terminal "completed" stage.
@@ -190,10 +191,7 @@ func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, extern
 		}
 	}
 	if dev == nil {
-		name := friendly
-		if name == "" {
-			name = external
-		}
+		name := defaultZigbeeDeviceName(external)
 		dev = &model.Device{ID: uuid.New(), Protocol: "zigbee", ExternalID: external, Name: name}
 	} else if external != "" && !strings.EqualFold(dev.ExternalID, external) {
 		dev.ExternalID = external
@@ -206,8 +204,8 @@ func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, extern
 	if mo, ok := data["model"].(string); ok {
 		dev.Model = mo
 	}
-	if friendly != "" && (strings.TrimSpace(dev.Name) == "" || strings.EqualFold(dev.Name, dev.ExternalID)) {
-		dev.Name = friendly
+	if strings.TrimSpace(dev.Name) == "" {
+		dev.Name = defaultZigbeeDeviceName(external)
 	}
 	if err := z.repo.UpsertDevice(ctx, dev); err != nil {
 		slog.Warn("zigbee bridge device upsert failed", "external", external, "error", err)
@@ -371,17 +369,14 @@ func (z *ZigbeeAdapter) upsertBridgeDevice(ctx context.Context, raw map[string]a
 	}
 	isNew := dev == nil
 	if dev == nil {
-		name := friendly
-		if name == "" {
-			name = external
-		}
+		name := defaultZigbeeDeviceName(external)
 		dev = &model.Device{ID: uuid.New(), Protocol: "zigbee", ExternalID: external, Name: name}
 	} else {
 		if !strings.EqualFold(dev.ExternalID, external) {
 			dev.ExternalID = external
 		}
-		if friendly != "" && (strings.TrimSpace(dev.Name) == "" || strings.EqualFold(dev.Name, dev.ExternalID)) {
-			dev.Name = friendly
+		if strings.TrimSpace(dev.Name) == "" {
+			dev.Name = defaultZigbeeDeviceName(external)
 		}
 	}
 	if typ := adapterutil.StringField(raw, "type"); typ != "" {

@@ -96,8 +96,8 @@ func (z *ZigbeeAdapter) ingestState(ctx context.Context, friendly, canonical str
 		if canonical != "" && !strings.EqualFold(dev.ExternalID, canonical) {
 			dev.ExternalID = canonical
 		}
-		if friendly != "" && (strings.TrimSpace(dev.Name) == "" || strings.EqualFold(dev.Name, dev.ExternalID)) {
-			dev.Name = friendly
+		if strings.TrimSpace(dev.Name) == "" {
+			dev.Name = defaultZigbeeDeviceName(canonical)
 		}
 	}
 	if mf, ok := raw["manufacturer"].(string); ok {
@@ -152,9 +152,9 @@ func (z *ZigbeeAdapter) setCorrelation(deviceID, cid string) {
 	}
 	z.correlationMu.Lock()
 	z.correlationMap[deviceID] = pendingCorrelation{
-		cid:               cid,
+		cid:                cid,
 		remainingPublishes: correlationRetentionPublishes,
-		expiresAt:         time.Now().Add(correlationRetentionWindow),
+		expiresAt:          time.Now().Add(correlationRetentionWindow),
 	}
 	z.correlationMu.Unlock()
 }

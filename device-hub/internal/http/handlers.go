@@ -47,25 +47,42 @@ type pairingMetadata struct {
 	Model        string `json:"model,omitempty"`
 }
 
+type pairingAddedDevice struct {
+	DeviceID     string    `json:"device_id"`
+	Protocol     string    `json:"protocol,omitempty"`
+	ExternalID   string    `json:"external_id,omitempty"`
+	Name         string    `json:"name,omitempty"`
+	State        string    `json:"state,omitempty"`
+	Type         string    `json:"type,omitempty"`
+	Manufacturer string    `json:"manufacturer,omitempty"`
+	Model        string    `json:"model,omitempty"`
+	Description  string    `json:"description,omitempty"`
+	Icon         string    `json:"icon,omitempty"`
+	AddedAt      time.Time `json:"added_at"`
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+}
+
 type pairingSession struct {
-	ID                  string          `json:"id"`
-	Protocol            string          `json:"protocol"`
-	Mode                string          `json:"mode,omitempty"`
-	FlowID              string          `json:"flow_id,omitempty"`
-	Inputs              map[string]any  `json:"inputs,omitempty"`
-	Stage               string          `json:"stage,omitempty"`
-	Message             string          `json:"message,omitempty"`
-	ErrorCode           string          `json:"error_code,omitempty"`
-	RequiredInputs      []string        `json:"required_inputs,omitempty"`
-	Status              string          `json:"status"`
-	Active              bool            `json:"active"`
-	StartedAt           time.Time       `json:"started_at"`
-	ExpiresAt           time.Time       `json:"expires_at"`
-	DeviceID            string          `json:"device_id,omitempty"`
-	Metadata            pairingMetadata `json:"metadata,omitempty"`
-	cancel              context.CancelFunc
-	knownDevices        map[string]struct{} `json:"-"`
-	candidateExternalID string              `json:"-"`
+	ID                   string               `json:"id"`
+	Protocol             string               `json:"protocol"`
+	Mode                 string               `json:"mode,omitempty"`
+	FlowID               string               `json:"flow_id,omitempty"`
+	Inputs               map[string]any       `json:"inputs,omitempty"`
+	Stage                string               `json:"stage,omitempty"`
+	Message              string               `json:"message,omitempty"`
+	ErrorCode            string               `json:"error_code,omitempty"`
+	RequiredInputs       []string             `json:"required_inputs,omitempty"`
+	Status               string               `json:"status"`
+	Active               bool                 `json:"active"`
+	StartedAt            time.Time            `json:"started_at"`
+	ExpiresAt            time.Time            `json:"expires_at"`
+	DeviceID             string               `json:"device_id,omitempty"`
+	AllowMultipleDevices bool                 `json:"allow_multiple_devices,omitempty"`
+	AddedDevices         []pairingAddedDevice `json:"added_devices,omitempty"`
+	Metadata             pairingMetadata      `json:"metadata,omitempty"`
+	cancel               context.CancelFunc
+	knownDevices         map[string]struct{} `json:"-"`
+	candidateExternalID  string              `json:"-"`
 }
 
 func (p *pairingSession) clone() pairingSession {
@@ -83,6 +100,9 @@ func (p *pairingSession) clone() pairingSession {
 	}
 	if len(p.RequiredInputs) > 0 {
 		clone.RequiredInputs = append([]string(nil), p.RequiredInputs...)
+	}
+	if len(p.AddedDevices) > 0 {
+		clone.AddedDevices = append([]pairingAddedDevice(nil), p.AddedDevices...)
 	}
 	clone.candidateExternalID = ""
 	return clone

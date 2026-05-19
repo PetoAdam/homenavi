@@ -119,6 +119,7 @@ export default function AddDeviceModal({
   const [pairingSetupOverride, setPairingSetupOverride] = useState(false);
   const [pairingRecoveryDraft, setPairingRecoveryDraft] = useState(null);
   const [pairingTerminalContext, setPairingTerminalContext] = useState(null);
+  const [pairedDevicesSummary, setPairedDevicesSummary] = useState([]);
 
   const modalRef = useRef(null);
   const resumePairingRef = useRef(false);
@@ -135,6 +136,7 @@ export default function AddDeviceModal({
     setPairingSetupOverride(false);
     setPairingRecoveryDraft(null);
     setPairingTerminalContext(null);
+    setPairedDevicesSummary([]);
   }, []);
 
   const protocolOptions = useMemo(
@@ -188,6 +190,10 @@ export default function AddDeviceModal({
   // Stage is a finer-grained progress signal from the adapter.
   // Use it in addition to status so the step timeline can advance properly.
   const sessionStage = activePairingSession?.stage || '';
+  const sessionAddedDevices = useMemo(
+    () => (Array.isArray(activePairingSession?.addedDevices) ? activePairingSession.addedDevices : []),
+    [activePairingSession],
+  );
 
   const pairingCtaLabel = pairingProfile?.cta_label || pairingProfile?.ctaLabel || `Start ${pairingTitleLabel} pairing`;
   const canEnterPairingFlow = Boolean(selectedProtocol) && pairingSupported;
@@ -513,6 +519,7 @@ export default function AddDeviceModal({
   useEffect(() => {
     if (!activePairingSession) return;
     const { status } = activePairingSession;
+    const allowMultipleDevices = Boolean(activePairingSession?.allowMultipleDevices);
     if (status === 'device_joined') {
       setPairingNotice('Device joined the network. Interview starting…');
       setPairingError(null);
@@ -533,6 +540,15 @@ export default function AddDeviceModal({
       setPairingError(null);
       return;
     }
+    if (status === 'device_added') {
+      setPairingNotice(
+        sessionAddedDevices.length > 1
+          ? `${sessionAddedDevices.length} devices added. Keep pairing open for more devices or stop when you are done.`
+          : '1 device added. Keep pairing open for more devices or stop when you are done.',
+      );
+      setPairingError(null);
+      return;
+    }
     if (status === 'needs_input') {
       setPairingNotice(activePairingSession?.message || 'Additional pairing input is required.');
       setPairingError(null);
@@ -540,7 +556,20 @@ export default function AddDeviceModal({
       return;
     }
     if (status === 'completed') {
+      setPairedDevicesSummary(sessionAddedDevices);
       setPairingNotice('Device paired successfully.');
+      setPairingError(null);
+      setFlowStep('success');
+      setSecondsRemaining(null);
+      setActivePairing(null);
+      setPairingSetupOverride(false);
+      setPairingRecoveryDraft(null);
+      setPairingTerminalContext(null);
+      return;
+    }
+    if (status === 'stopped' && allowMultipleDevices && sessionAddedDevices.length > 0) {
+      setPairedDevicesSummary(sessionAddedDevices);
+      setPairingNotice('Pairing stopped after adding the selected devices.');
       setPairingError(null);
       setFlowStep('success');
       setSecondsRemaining(null);
@@ -590,7 +619,7 @@ export default function AddDeviceModal({
       });
       setSecondsRemaining(null);
     }
-  }, [activePairingSession, pairingProfile]);
+  }, [activePairingSession, pairingProfile, sessionAddedDevices]);
 
   const handleBackdropMouseDown = event => {
     if (event.target === event.currentTarget) {
@@ -601,8 +630,29 @@ export default function AddDeviceModal({
   const renderSuccessStep = () => (
     <div className="auth-modal-content-inner add-device-step add-device-success-step">
       <FontAwesomeIcon icon={faCircleCheck} className="add-device-success-icon" />
-      <h3>Device connected</h3>
-      <p>Your device is paired and syncing events automatically.</p>
+      <h3>{pairedDevicesSummary.length > 1 ? 'Devices connected' : 'Device connected'}</h3>
+      <p>
+        {pairedDevicesSummary.length > 1
+          ? `${pairedDevicesSummary.length} devices were added and are now syncing automatically.`
+          : 'Your device is paired and syncing events automatically.'}
+      </p>
+      {pairedDevicesSummary.length > 0 ? (
+        <div className="add-device-pairing-added-devices add-device-pairing-added-devices-success">
+          <div className="add-device-pairing-added-devices-header">
+            <span className="add-device-pairing-label">Added in this session</span>
+            <strong>{pairedDevicesSummary.length}</strong>
+          </div>
+          <div className="add-device-pairing-added-device-list">
+            {pairedDevicesSummary.map(device => (
+              <div key={device.deviceId} className="add-device-pairing-added-device-card">
+                <strong>{device.model || device.manufacturer || device.type || 'Zigbee device'}</strong>
+                {device.description ? <span>{device.description}</span> : null}
+                {(device.externalId || device.deviceId) ? <small>{device.externalId || device.deviceId}</small> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="add-device-success-actions">
         <button type="button" className="auth-modal-btn" onClick={handleSuccessDismiss}>
           Done

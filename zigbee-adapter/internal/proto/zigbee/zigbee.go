@@ -33,6 +33,7 @@ type ZigbeeAdapter struct {
 	pairingMu     sync.Mutex
 	pairingActive bool
 	pairingCancel context.CancelFunc
+	pairingMulti  bool
 
 	refreshOnStart bool
 	metaMu         sync.RWMutex
@@ -54,9 +55,9 @@ type pendingZigbeeState struct {
 }
 
 type pendingCorrelation struct {
-	cid               string
+	cid                string
 	remainingPublishes int
-	expiresAt         time.Time
+	expiresAt          time.Time
 }
 
 const (
@@ -161,6 +162,10 @@ func (z *ZigbeeAdapter) requestBridgeDevicesThrottled(reason string) {
 func isCanonicalZigbeeExternal(external string) bool {
 	ext := strings.ToLower(strings.TrimSpace(external))
 	return zigbeeIEEEExternal.MatchString(ext)
+}
+
+func defaultZigbeeDeviceName(external string) string {
+	return strings.TrimSpace(external)
 }
 
 func (z *ZigbeeAdapter) Stop() {

@@ -15,9 +15,10 @@ import (
 
 func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 	var cmd struct {
-		Action   string `json:"action"`
-		Timeout  int    `json:"timeout"`
-		Protocol string `json:"protocol"`
+		Action   string         `json:"action"`
+		Timeout  int            `json:"timeout"`
+		Protocol string         `json:"protocol"`
+		Inputs   map[string]any `json:"inputs"`
 	}
 	if err := json.Unmarshal(m.Payload(), &cmd); err != nil {
 		slog.Debug("adapter cmd decode failed", "error", err)
@@ -57,6 +58,7 @@ func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
 		ctx2, cancel := context.WithCancel(context.Background())
 		z.pairingActive = true
 		z.pairingCancel = cancel
+		z.pairingMulti = pairingAllowsMultipleDevices(cmd.Inputs)
 		z.pairingMu.Unlock()
 		_ = z.client.Publish("zigbee2mqtt/bridge/request/permit_join", []byte(fmt.Sprintf(`{"time":%d}`, cmd.Timeout)))
 		z.publishPairingProgress("active", "active", "", "")
@@ -90,6 +92,7 @@ func (z *ZigbeeAdapter) stopPairing() {
 	cancel := z.pairingCancel
 	z.pairingCancel = nil
 	z.pairingActive = false
+	z.pairingMulti = false
 	z.pairingMu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -143,6 +146,29 @@ func pairingProgressEnvelope(stage, status, external, deviceID string, ts int64)
 		hdp["device_id"] = deviceID
 	}
 	return hdp
+}
+
+func pairingAllowsMultipleDevices(inputs map[string]any) bool {
+	if len(inputs) == 0 {
+		return false
+	}
+	raw, ok := inputs["allow_multiple_devices"]
+	if !ok {
+		return false
+	}
+	switch value := raw.(type) {
+	case bool:
+		return value
+	case string:
+		normalized := strings.TrimSpace(strings.ToLower(value))
+		return normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on"
+	case float64:
+		return value != 0
+	case int:
+		return value != 0
+	default:
+		return false
+	}
 }
 
 func pairingProgressFromBridgeEvent(eventType string, data map[string]any) (stage, status, external string, ok bool) {

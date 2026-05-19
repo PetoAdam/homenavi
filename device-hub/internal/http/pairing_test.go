@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	paho "github.com/eclipse/paho.mqtt.golang"
@@ -425,5 +426,109 @@ func TestHandleHDPPairingProgressEvent_TracksRealisticZigbeePairingFlow(t *testi
 	}
 	if finalEnvelope["active"] != false {
 		t.Fatalf("expected final envelope active false, got %v", finalEnvelope["active"])
+	}
+}
+
+func TestStartPairingEnablesOptionalMultiDeviceMode(t *testing.T) {
+	mqtt := &pairingTestMQTTClient{}
+	srv := NewServer(nil, mqtt)
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"zigbee-adapter-1",
+		"protocol":"zigbee",
+		"version":"test",
+		"pairing":{
+			"schema_version":"1.0",
+			"label":"Zigbee Adapter",
+			"supported":true,
+			"supports_interview":true,
+			"default_timeout_sec":60
+		},
+		"ts":1
+	}`))
+
+	started, err := srv.startPairing("zigbee", 90, "default", "zigbee-flow", map[string]any{
+		"allow_multiple_devices": true,
+	}, pairingMetadata{Type: "light"})
+	if err != nil {
+		t.Fatalf("start pairing: %v", err)
+	}
+	if !started.AllowMultipleDevices {
+		t.Fatal("expected multi-device pairing mode to be enabled")
+	}
+	var command map[string]any
+	if err := json.Unmarshal(mqtt.published[0].payload, &command); err != nil {
+		t.Fatalf("decode command payload: %v", err)
+	}
+	inputs, ok := command["inputs"].(map[string]any)
+	if !ok || inputs["allow_multiple_devices"] != true {
+		t.Fatalf("expected allow_multiple_devices input in command payload, got %#v", command["inputs"])
+	}
+}
+
+func TestProcessPairingProgressKeepsMultiDeviceSessionOpenAfterCompletedEvent(t *testing.T) {
+	mqtt := &pairingTestMQTTClient{}
+	srv := NewServer(nil, mqtt)
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"zigbee-adapter-1",
+		"protocol":"zigbee",
+		"version":"test",
+		"pairing":{
+			"schema_version":"1.0",
+			"label":"Zigbee Adapter",
+			"supported":true,
+			"supports_interview":true,
+			"default_timeout_sec":60
+		},
+		"ts":1
+	}`))
+
+	if _, err := srv.startPairing("zigbee", 90, "default", "zigbee-flow", map[string]any{
+		"allow_multiple_devices": true,
+	}, pairingMetadata{Type: "light"}); err != nil {
+		t.Fatalf("start pairing: %v", err)
+	}
+
+	srv.pairingMu.Lock()
+	srv.pairings["zigbee"].AddedDevices = []pairingAddedDevice{{
+		DeviceID:   "zigbee/0x00124b0024abcd01",
+		Protocol:   "zigbee",
+		ExternalID: "0x00124b0024abcd01",
+		State:      "finalizing",
+		AddedAt:    time.Now().UTC(),
+	}}
+	srv.pairingMu.Unlock()
+
+	srv.processPairingProgress("zigbee", "completed", "successful", "0x00124b0024abcd01", pairingProgressUpdate{})
+
+	sessions := srv.snapshotPairings()
+	if len(sessions) != 1 {
+		t.Fatalf("expected one session, got %d", len(sessions))
+	}
+	session := sessions[0]
+	if !session.Active {
+		t.Fatal("expected multi-device session to remain active")
+	}
+	if session.Status != "device_added" || session.Stage != "device_added" {
+		t.Fatalf("expected device_added runtime state, got stage=%q status=%q", session.Stage, session.Status)
+	}
+	if len(session.AddedDevices) != 1 {
+		t.Fatalf("expected added device list to be preserved, got %#v", session.AddedDevices)
+	}
+	if session.AddedDevices[0].State != "completed" {
+		t.Fatalf("expected completed device state, got %#v", session.AddedDevices[0])
+	}
+	if session.Message == "" {
+		t.Fatal("expected user-facing multi-device notice")
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(mqtt.published[len(mqtt.published)-1].payload, &envelope); err != nil {
+		t.Fatalf("decode final payload: %v", err)
+	}
+	if envelope["status"] != "device_added" || envelope["active"] != true {
+		t.Fatalf("expected active device_added envelope, got %#v", envelope)
 	}
 }
