@@ -173,8 +173,8 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
     const session = buildPairingProgressSession({
       id: 'pairing-session-2',
       origin: 'device-hub',
-      stage: 'device_added',
-      status: 'device_added',
+      stage: 'active',
+      status: 'active',
       active: true,
       allow_multiple_devices: true,
       added_devices: [
@@ -192,8 +192,8 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
     expect(session).toMatchObject({
       allowMultipleDevices: true,
       active: true,
-      status: 'device_added',
-      stage: 'device_added',
+      status: 'active',
+      stage: 'active',
     });
     expect(session.addedDevices).toHaveLength(1);
     expect(session.addedDevices[0]).toMatchObject({
@@ -208,8 +208,8 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
     const session = buildPairingProgressSession({
       id: 'pairing-session-3',
       origin: 'device-hub',
-      stage: 'device_detected',
-      status: 'device_detected',
+      stage: 'active',
+      status: 'active',
       active: true,
       allow_multiple_devices: true,
       added_devices: [

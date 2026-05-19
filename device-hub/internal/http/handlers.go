@@ -82,6 +82,7 @@ type pairingSession struct {
 	Metadata             pairingMetadata      `json:"metadata,omitempty"`
 	cancel               context.CancelFunc
 	knownDevices         map[string]struct{} `json:"-"`
+	knownExternalIDs     map[string]struct{} `json:"-"`
 	candidateExternalID  string              `json:"-"`
 }
 
@@ -92,6 +93,7 @@ func (p *pairingSession) clone() pairingSession {
 	clone := *p
 	clone.cancel = nil
 	clone.knownDevices = nil
+	clone.knownExternalIDs = nil
 	if len(p.Inputs) > 0 {
 		clone.Inputs = make(map[string]any, len(p.Inputs))
 		for key, value := range p.Inputs {

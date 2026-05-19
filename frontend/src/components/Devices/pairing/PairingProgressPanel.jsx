@@ -72,13 +72,16 @@ export default function PairingProgressPanel({
   const fallbackPairingNotice = allowMultipleDevices
     ? (pairingProfileForView?.notes || 'Permit join stays open so you can add several devices in one session. Stop pairing when the full set is added.')
     : (pairingProfileForView?.notes || 'Permit join active — reset the device and keep it near the coordinator.');
+  const runtimeTitle = allowMultipleDevices && (activePairingSession?.active || sessionStatus === 'active')
+    ? 'Multi-device pairing active'
+    : statusLabel;
 
   return (
     <div className="auth-modal-content-inner add-device-step add-device-pairing-step">
       <div className="add-device-pairing-panel">
         <div className="add-device-pairing-runtime-header">
           <span className="add-device-pairing-step-kicker">Live pairing progress</span>
-          <h5>{statusLabel}</h5>
+          <h5>{runtimeTitle}</h5>
           <p>
             {allowMultipleDevices
               ? 'Each device will appear below as soon as it is detected, then move through finalizing and completed states.'

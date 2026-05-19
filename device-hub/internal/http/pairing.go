@@ -157,6 +157,7 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 		AllowMultipleDevices: pairingAllowsMultipleDevices(normalizedInputs),
 		Metadata:             meta,
 		knownDevices:         s.snapshotKnownDevices(),
+		knownExternalIDs:     s.snapshotKnownExternalIDs(protocol),
 	}
 	s.pairingMu.Lock()
 	if existing, ok := s.pairings[protocol]; ok && existing.Active {
@@ -501,6 +502,20 @@ func buildPairingAddedDevice(dev *model.Device, state string) pairingAddedDevice
 	}
 }
 
+func normalizePairingProgressExternalID(protocol, externalID string) string {
+	normalized := strings.TrimSpace(externalID)
+	if normalized == "" {
+		return ""
+	}
+	if eventProto, eventExt, ok := splitHDPDeviceID(normalized); ok && eventProto != "" {
+		normalized = eventExt
+	}
+	if normExt, err := normalizeExternalID(protocol, normalized); err == nil {
+		normalized = normExt
+	}
+	return strings.ToLower(strings.TrimSpace(normalized))
+}
+
 func multiDeviceItemState(stage, status string) string {
 	for _, value := range []string{stage, status} {
 		switch strings.TrimSpace(strings.ToLower(value)) {
@@ -631,24 +646,22 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 		s.pairingMu.Unlock()
 		return
 	}
-	if session.candidateExternalID == "" && externalID != "" {
-		normalized := strings.TrimSpace(externalID)
-		if eventProto, eventExt, ok := splitHDPDeviceID(normalized); ok && eventProto != "" {
-			normalized = eventExt
-		}
-		if normExt, err := normalizeExternalID(proto, normalized); err == nil {
-			normalized = normExt
-		}
-		session.candidateExternalID = strings.ToLower(normalized)
+	normalizedExternalID := normalizePairingProgressExternalID(proto, externalID)
+	if !session.AllowMultipleDevices && session.candidateExternalID == "" && normalizedExternalID != "" {
+		session.candidateExternalID = normalizedExternalID
 	}
 	if session.AllowMultipleDevices {
-		progressDevice := buildPairingProgressDevice(proto, session.candidateExternalID, stage, status)
-		session.AddedDevices = upsertPairingAddedDevice(session.AddedDevices, progressDevice)
-	}
-	if session.AllowMultipleDevices && session.Active && (stage == "completed" || status == "completed") && len(session.AddedDevices) > 0 {
-		session.Stage = "device_added"
-		session.Status = "device_added"
-		session.Message = multiDevicePairingNotice(len(session.AddedDevices))
+		if _, known := session.knownExternalIDs[normalizedExternalID]; normalizedExternalID != "" && !known {
+			progressDevice := buildPairingProgressDevice(proto, normalizedExternalID, stage, status)
+			session.AddedDevices = upsertPairingAddedDevice(session.AddedDevices, progressDevice)
+		}
+		if !shouldTerminatePairingSession(session, stage, status) {
+			session.Stage = "active"
+			session.Status = "active"
+			if len(session.AddedDevices) > 0 {
+				session.Message = multiDevicePairingNotice(len(session.AddedDevices))
+			}
+		}
 	} else {
 		if stage != "" {
 			session.Stage = stage
@@ -743,6 +756,36 @@ func (s *Server) snapshotKnownDevices() map[string]struct{} {
 	return known
 }
 
+func (s *Server) snapshotKnownExternalIDs(protocol string) map[string]struct{} {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	ctx := context.Background()
+	devices, err := s.repo.List(ctx)
+	if err != nil {
+		slog.Debug("pairing external snapshot failed", "error", err)
+		return nil
+	}
+	if len(devices) == 0 {
+		return nil
+	}
+	known := make(map[string]struct{}, len(devices))
+	for _, dev := range devices {
+		if !strings.EqualFold(normalizeProtocol(dev.Protocol), protocol) {
+			continue
+		}
+		normalized := normalizePairingProgressExternalID(protocol, dev.ExternalID)
+		if normalized == "" {
+			continue
+		}
+		known[normalized] = struct{}{}
+	}
+	if len(known) == 0 {
+		return nil
+	}
+	return known
+}
+
 func sanitizePairingMetadata(meta pairingMetadata) pairingMetadata {
 	trim := func(v string) string {
 		return strings.TrimSpace(v)
@@ -812,8 +855,8 @@ func (s *Server) handlePairingCandidate(dev *model.Device) {
 	}
 	session.knownDevices[dev.ID.String()] = struct{}{}
 	if session.AllowMultipleDevices {
-		session.Stage = "device_added"
-		session.Status = "device_added"
+		session.Stage = "active"
+		session.Status = "active"
 		session.Message = multiDevicePairingNotice(len(session.AddedDevices))
 	} else {
 		session.Status = "device_detected"
@@ -842,7 +885,7 @@ func (s *Server) handlePairingCandidate(dev *model.Device) {
 
 func (s *Server) applyPairingMetadata(deviceID string, meta pairingMetadata) {
 	trimmed := sanitizePairingMetadata(meta)
-	if deviceID == "" || trimmed == (pairingMetadata{}) {
+	if s == nil || s.repo == nil || deviceID == "" || trimmed == (pairingMetadata{}) {
 		return
 	}
 	ctx := context.Background()

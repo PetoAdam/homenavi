@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	paho "github.com/eclipse/paho.mqtt.golang"
+	"github.com/google/uuid"
 )
 
 type pairingTestMQTTClient struct {
@@ -512,8 +514,8 @@ func TestProcessPairingProgressKeepsMultiDeviceSessionOpenAfterCompletedEvent(t 
 	if !session.Active {
 		t.Fatal("expected multi-device session to remain active")
 	}
-	if session.Status != "device_added" || session.Stage != "device_added" {
-		t.Fatalf("expected device_added runtime state, got stage=%q status=%q", session.Stage, session.Status)
+	if session.Status != "active" || session.Stage != "active" {
+		t.Fatalf("expected stable active runtime state, got stage=%q status=%q", session.Stage, session.Status)
 	}
 	if len(session.AddedDevices) != 1 {
 		t.Fatalf("expected added device list to be preserved, got %#v", session.AddedDevices)
@@ -528,7 +530,91 @@ func TestProcessPairingProgressKeepsMultiDeviceSessionOpenAfterCompletedEvent(t 
 	if err := json.Unmarshal(mqtt.published[len(mqtt.published)-1].payload, &envelope); err != nil {
 		t.Fatalf("decode final payload: %v", err)
 	}
-	if envelope["status"] != "device_added" || envelope["active"] != true {
-		t.Fatalf("expected active device_added envelope, got %#v", envelope)
+	if envelope["status"] != "active" || envelope["active"] != true {
+		t.Fatalf("expected active multi-device envelope, got %#v", envelope)
+	}
+}
+
+func TestMultiDevicePairingTracksTwoNewDevicesAndIgnoresExistingOnes(t *testing.T) {
+	mqtt := &pairingTestMQTTClient{}
+	srv := NewServer(nil, mqtt)
+	srv.adapters.upsertFromHello([]byte(`{
+		"schema":"hdp.v1",
+		"type":"hello",
+		"adapter_id":"zigbee-adapter-1",
+		"protocol":"zigbee",
+		"version":"test",
+		"pairing":{
+			"schema_version":"1.0",
+			"label":"Zigbee Adapter",
+			"supported":true,
+			"supports_interview":true,
+			"default_timeout_sec":60
+		},
+		"ts":1
+	}`))
+
+	if _, err := srv.startPairing("zigbee", 90, "default", "zigbee-flow", map[string]any{
+		"allow_multiple_devices": true,
+	}, pairingMetadata{Type: "light"}); err != nil {
+		t.Fatalf("start pairing: %v", err)
+	}
+
+	srv.pairingMu.Lock()
+	srv.pairings["zigbee"].knownExternalIDs = map[string]struct{}{
+		"0xolddevice00000001": {},
+	}
+	srv.pairingMu.Unlock()
+
+	srv.processPairingProgress("zigbee", "device_detected", "device_detected", "0xolddevice00000001", pairingProgressUpdate{})
+	srv.processPairingProgress("zigbee", "device_detected", "device_detected", "0x00124b0024abcd01", pairingProgressUpdate{})
+	srv.processPairingProgress("zigbee", "interviewing", "started", "0x00124b0024abcd01", pairingProgressUpdate{})
+	srv.handlePairingCandidate(&model.Device{
+		ID:         uuid.New(),
+		Protocol:   "zigbee",
+		ExternalID: "0x00124b0024abcd01",
+		Name:       "Kitchen Left",
+		CreatedAt:  time.Now().UTC(),
+	})
+	srv.processPairingProgress("zigbee", "completed", "successful", "0x00124b0024abcd01", pairingProgressUpdate{})
+
+	srv.processPairingProgress("zigbee", "device_detected", "device_detected", "0x00124b0024abcd02", pairingProgressUpdate{})
+	srv.processPairingProgress("zigbee", "interviewing", "started", "0x00124b0024abcd02", pairingProgressUpdate{})
+	srv.handlePairingCandidate(&model.Device{
+		ID:         uuid.New(),
+		Protocol:   "zigbee",
+		ExternalID: "0x00124b0024abcd02",
+		Name:       "Kitchen Right",
+		CreatedAt:  time.Now().UTC(),
+	})
+	srv.processPairingProgress("zigbee", "completed", "successful", "0x00124b0024abcd02", pairingProgressUpdate{})
+
+	sessions := srv.snapshotPairings()
+	if len(sessions) != 1 {
+		t.Fatalf("expected one session, got %d", len(sessions))
+	}
+	session := sessions[0]
+	if !session.Active {
+		t.Fatal("expected multi-device session to remain active until the user stops it")
+	}
+	if session.Status != "active" || session.Stage != "active" {
+		t.Fatalf("expected stable active session state, got stage=%q status=%q", session.Stage, session.Status)
+	}
+	if len(session.AddedDevices) != 2 {
+		t.Fatalf("expected exactly two new devices, got %#v", session.AddedDevices)
+	}
+	if session.AddedDevices[0].ExternalID != "0x00124b0024abcd01" || session.AddedDevices[0].State != "completed" {
+		t.Fatalf("expected first new device to complete, got %#v", session.AddedDevices[0])
+	}
+	if session.AddedDevices[1].ExternalID != "0x00124b0024abcd02" || session.AddedDevices[1].State != "completed" {
+		t.Fatalf("expected second new device to complete, got %#v", session.AddedDevices[1])
+	}
+	for _, item := range session.AddedDevices {
+		if item.ExternalID == "0xolddevice00000001" {
+			t.Fatalf("expected pre-existing device to be ignored, got %#v", session.AddedDevices)
+		}
+	}
+	if !strings.Contains(session.Message, "2 devices added") {
+		t.Fatalf("expected summary message to mention two devices, got %q", session.Message)
 	}
 }
