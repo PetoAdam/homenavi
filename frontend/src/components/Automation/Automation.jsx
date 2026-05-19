@@ -34,6 +34,7 @@ import {
 import { listUsers } from '../../services/authService';
 import {
   buildDefinitionFromEditor,
+  canWorkflowRunNow,
   defaultNodeData,
   defaultWorkflowName,
   editorSnapshotForSave,
@@ -474,6 +475,42 @@ function Automation() {
     }
   };
 
+  const runWorkflowFromList = async (workflow) => {
+    const workflowId = String(workflow?.id || '').trim();
+    if (!accessToken || !workflowId) return;
+    if (loading || saving) return;
+    if (!canWorkflowRunNow(workflow)) return;
+
+    setSelectedId(workflowId);
+    setErr('');
+    clearLiveRunHighlights();
+    closeRunWs();
+    setToast('Running…');
+
+    const res = await runWorkflow(workflowId, accessToken);
+    if (res.success) {
+      const runId = String(res.data?.run_id || '').trim();
+      if (!runId) {
+        setToast('Run started');
+        fetchRuns(workflowId, 5);
+        return;
+      }
+
+      startRunStream({
+        runId,
+        accessToken,
+        workflowId,
+        refreshRuns: (id) => fetchRuns(id, 5),
+        getRun,
+      });
+      return;
+    }
+
+    clearLiveRunHighlights();
+    closeRunWs();
+    setErr(res.error || 'Failed to run workflow');
+  };
+
   const canExecuteFromNode = !!selectedWorkflow && !saving && !loading;
   const executeFromNodeTitle = !selectedWorkflow ? 'Create the workflow first' : 'Execute (Run)';
 
@@ -744,22 +781,40 @@ function Automation() {
               {Array.isArray(filteredWorkflows) && filteredWorkflows.length ? (
                 <div className="automation-workflow-list">
                   {filteredWorkflows.map((wf) => (
-                    <button
+                    <div
                       key={wf.id}
-                      type="button"
-                      className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
-                      onClick={() => {
-                        setSelectedId(wf.id);
-                        setViewMode('overview');
-                        setHasOverviewSelection(true);
-                      }}
+                      className={`automation-workflow-item-row${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
                     >
-                      <div className="name">{wf.name}</div>
-                      <div className="meta">
-                        <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
-                        <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
+                        onClick={() => {
+                          setSelectedId(wf.id);
+                          setViewMode('overview');
+                          setHasOverviewSelection(true);
+                        }}
+                      >
+                        <div className="name">{wf.name}</div>
+                        <div className="meta">
+                          <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
+                          <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
+                        </div>
+                      </button>
+                      {canWorkflowRunNow(wf) && (
+                        <button
+                          type="button"
+                          className="automation-workflow-run-btn"
+                          title={`Run ${wf.name}`}
+                          aria-label={`Run ${wf.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            runWorkflowFromList(wf);
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faPlay} />
+                        </button>
+                      )}
+                    </div>
                   ))}
                   <button
                     type="button"
@@ -840,7 +895,7 @@ function Automation() {
                       <span className="btn-icon"><FontAwesomeIcon icon={faPen} /></span>
                       <span className="btn-label">Edit</span>
                     </Button>
-                    {selectedWorkflow && (
+                    {canWorkflowRunNow(selectedWorkflow) && (
                       <Button
                         variant="secondary"
                         onClick={runNow}

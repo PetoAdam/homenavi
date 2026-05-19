@@ -124,7 +124,7 @@ type NotifyEmailRecipient struct {
 }
 
 type LogicSleep struct {
-	DurationSec int `json:"duration_sec"`
+	DurationSec float64 `json:"duration_sec"`
 }
 
 type LogicIf struct {

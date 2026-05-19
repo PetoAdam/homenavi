@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -15,6 +16,17 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 )
+
+func normalizeSleepDurationSeconds(seconds float64) float64 {
+	if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 {
+		return 0
+	}
+	return seconds
+}
+
+func sleepDuration(seconds float64) time.Duration {
+	return time.Duration(normalizeSleepDurationSeconds(seconds) * float64(time.Second))
+}
 
 func (e *Engine) StartWorkflowRun(ctx context.Context, wfID uuid.UUID, triggerNodeID string, triggerEvent map[string]any) (uuid.UUID, error) {
 	e.mu.RLock()
@@ -100,9 +112,7 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		if kind == "logic.sleep" {
 			var sl LogicSleep
 			if err := json.Unmarshal(n.Data, &sl); err == nil {
-				if sl.DurationSec < 0 {
-					sl.DurationSec = 0
-				}
+				sl.DurationSec = normalizeSleepDurationSeconds(sl.DurationSec)
 				startedEvt.Status = "sleeping"
 				startedEvt.SleepDurationSec = sl.DurationSec
 			}
@@ -208,10 +218,7 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 				finish("failed", "invalid node data")
 				return errors.New("invalid node data")
 			}
-			if s.DurationSec < 0 {
-				s.DurationSec = 0
-			}
-			time.Sleep(time.Duration(s.DurationSec) * time.Second)
+			time.Sleep(sleepDuration(s.DurationSec))
 			finish("success", "")
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {

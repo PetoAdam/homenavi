@@ -12,6 +12,16 @@ function safeJsonParse(value) {
   }
 }
 
+export function workflowHasManualTrigger(workflow) {
+  const raw = safeJsonParse(workflow?.definition) || {};
+  const nodes = Array.isArray(raw?.nodes) ? raw.nodes : [];
+  return nodes.some((node) => String(node?.kind || '').trim().toLowerCase() === 'trigger.manual');
+}
+
+export function canWorkflowRunNow(workflow) {
+  return !!workflow?.enabled && workflowHasManualTrigger(workflow);
+}
+
 export function defaultWorkflowName() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -236,6 +246,15 @@ export function buildDefinitionFromEditor(editor) {
         throw new Error('If node requires path');
       }
     }
+    if (kind === 'logic.sleep') {
+      const duration = Number(n?.data?.duration_sec ?? 0);
+      if (!Number.isFinite(duration)) {
+        throw new Error('Sleep node duration must be a valid number');
+      }
+      if (duration < 0) {
+        throw new Error('Sleep node duration must be >= 0');
+      }
+    }
   }
 
   // Ensure wait_for_result only on leaf nodes (matches backend rule).
@@ -340,6 +359,17 @@ export function buildDefinitionFromEditor(editor) {
       } else {
         data.value = null;
       }
+    }
+
+    if (String(n.kind).toLowerCase() === 'logic.sleep') {
+      const duration = Number(data?.duration_sec ?? 0);
+      if (!Number.isFinite(duration)) {
+        throw new Error('Sleep node duration must be a valid number');
+      }
+      if (duration < 0) {
+        throw new Error('Sleep node duration must be >= 0');
+      }
+      data.duration_sec = duration;
     }
 
     if (String(n.kind).toLowerCase() === 'trigger.device_state') {

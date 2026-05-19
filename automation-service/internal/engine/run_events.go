@@ -10,16 +10,16 @@ import (
 // RunEvent is streamed to the frontend during execution.
 // It is intentionally UI-friendly (node-based) rather than engine-internal.
 type RunEvent struct {
-	Type             string `json:"type"`
-	RunID            string `json:"run_id"`
-	WorkflowID       string `json:"workflow_id,omitempty"`
-	NodeID           string `json:"node_id,omitempty"`
-	StepID           string `json:"step_id,omitempty"`
-	NodeKind         string `json:"node_kind,omitempty"`
-	Status           string `json:"status,omitempty"`
-	Error            string `json:"error,omitempty"`
-	TSUnixMillis     int64  `json:"ts"`
-	SleepDurationSec int    `json:"sleep_duration_sec,omitempty"`
+	Type             string  `json:"type"`
+	RunID            string  `json:"run_id"`
+	WorkflowID       string  `json:"workflow_id,omitempty"`
+	NodeID           string  `json:"node_id,omitempty"`
+	StepID           string  `json:"step_id,omitempty"`
+	NodeKind         string  `json:"node_kind,omitempty"`
+	Status           string  `json:"status,omitempty"`
+	Error            string  `json:"error,omitempty"`
+	TSUnixMillis     int64   `json:"ts"`
+	SleepDurationSec float64 `json:"sleep_duration_sec,omitempty"`
 }
 
 // RunEventHub is an in-memory pub/sub keyed by run ID.

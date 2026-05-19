@@ -13,7 +13,8 @@ export default class LogicSleepEditor extends BaseNodeEditor {
           <input
             className="input"
             type="number"
-            min="1"
+            min="0"
+            step="0.1"
             value={Number(selectedNode.data?.duration_sec ?? 5)}
             onChange={(e) => {
               const v = Number(e.target.value);

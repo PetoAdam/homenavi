@@ -90,7 +90,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			{"name": "cron", "type": "string", "required": true, "help": "Cron with seconds: e.g. '0 */5 * * * *' (every 5 minutes)"},
 			{"name": "cooldown_sec", "type": "int", "required": false, "default": 1},
 		}},
-		{"kind": "logic.sleep", "label": "Sleep", "fields": []map[string]any{{"name": "duration_sec", "type": "int", "required": true, "default": 5}}},
+		{"kind": "logic.sleep", "label": "Sleep", "fields": []map[string]any{{"name": "duration_sec", "type": "number", "required": true, "default": 5, "help": "Delay in seconds. Decimals are allowed, for example 0.2."}}},
 		{"kind": "logic.if", "label": "If", "fields": []map[string]any{
 			{"name": "path", "type": "string", "required": true, "help": "Dot-path in trigger event, e.g. state.motion"},
 			{"name": "op", "type": "string", "required": false, "enum": []string{"exists", "eq", "neq", "gt", "gte", "lt", "lte"}},
