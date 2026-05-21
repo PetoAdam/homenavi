@@ -17,6 +17,7 @@ const REALTIME_SUBSCRIPTION_FILTERS = [
   PAIRING_PREFIX + '#',
   COMMAND_RESULT_PREFIX + '#',
 ];
+const DEVICE_LIST_CONNECT_REFRESH_FRESHNESS_MS = 3000;
 
 const CANONICAL_ZIGBEE_ID_RE = /^zigbee\/0x[0-9a-f]{16}$/i;
 
@@ -128,6 +129,87 @@ function normalizePairingAddedDevices(value) {
       };
     })
     .filter(item => item && (item.deviceId || item.externalId));
+}
+
+function pairingAddedDeviceStateRank(value) {
+  switch (`${value || ''}`.trim().toLowerCase()) {
+    case 'detected':
+      return 10;
+    case 'finalizing':
+      return 20;
+    case 'completed':
+      return 30;
+    case 'failed':
+      return 40;
+    default:
+      return 0;
+  }
+}
+
+function pairingAddedDeviceMatches(left, right) {
+  if (!left || !right) return false;
+  const leftDeviceId = `${left.deviceId || ''}`.trim().toLowerCase();
+  const rightDeviceId = `${right.deviceId || ''}`.trim().toLowerCase();
+  if (leftDeviceId && rightDeviceId && leftDeviceId === rightDeviceId) {
+    return true;
+  }
+  const leftExternalId = `${left.externalId || ''}`.trim().toLowerCase();
+  const rightExternalId = `${right.externalId || ''}`.trim().toLowerCase();
+  return Boolean(leftExternalId && rightExternalId && leftExternalId === rightExternalId);
+}
+
+function mergePairingAddedDevice(existing, incoming) {
+  const addedAtCandidates = [existing?.addedAt, incoming?.addedAt]
+    .filter(value => value instanceof Date && !Number.isNaN(value.getTime()));
+  const updatedAtCandidates = [existing?.updatedAt, incoming?.updatedAt]
+    .filter(value => value instanceof Date && !Number.isNaN(value.getTime()));
+  const existingStateRank = pairingAddedDeviceStateRank(existing?.state);
+  const incomingStateRank = pairingAddedDeviceStateRank(incoming?.state);
+  return {
+    ...existing,
+    ...incoming,
+    deviceId: incoming?.deviceId || existing?.deviceId || '',
+    protocol: incoming?.protocol || existing?.protocol || '',
+    externalId: incoming?.externalId || existing?.externalId || '',
+    name: incoming?.name || existing?.name || '',
+    state: incomingStateRank >= existingStateRank ? (incoming?.state || existing?.state || '') : (existing?.state || incoming?.state || ''),
+    type: incoming?.type || existing?.type || '',
+    manufacturer: incoming?.manufacturer || existing?.manufacturer || '',
+    model: incoming?.model || existing?.model || '',
+    description: incoming?.description || existing?.description || '',
+    icon: incoming?.icon || existing?.icon || '',
+    addedAt: addedAtCandidates.length > 0
+      ? new Date(Math.min(...addedAtCandidates.map(value => value.getTime())))
+      : null,
+    updatedAt: updatedAtCandidates.length > 0
+      ? new Date(Math.max(...updatedAtCandidates.map(value => value.getTime())))
+      : null,
+  };
+}
+
+export function mergePairingAddedDevices(existingValue, incomingValue) {
+  const existing = normalizePairingAddedDevices(existingValue);
+  const incoming = normalizePairingAddedDevices(incomingValue);
+  if (existing.length === 0) return incoming;
+  if (incoming.length === 0) return existing;
+
+  const merged = [...existing];
+  incoming.forEach(item => {
+    const index = merged.findIndex(candidate => pairingAddedDeviceMatches(candidate, item));
+    if (index >= 0) {
+      merged[index] = mergePairingAddedDevice(merged[index], item);
+      return;
+    }
+    merged.push(item);
+  });
+  return merged;
+}
+
+export function shouldSkipFreshDeviceListFetch(lastSuccessfulLoadAt, now = Date.now(), freshnessMs = DEVICE_LIST_CONNECT_REFRESH_FRESHNESS_MS) {
+  if (!Number.isFinite(lastSuccessfulLoadAt) || lastSuccessfulLoadAt <= 0) {
+    return false;
+  }
+  return (now - lastSuccessfulLoadAt) < freshnessMs;
 }
 
 function mapPairingSession(raw) {
@@ -245,9 +327,7 @@ export function buildPairingProgressSession(data, protocol, existing = null) {
     status: finalStatus,
     active: typeof data?.active === 'boolean' ? (shouldPreserveProgress ? existing?.active : data.active) : !finalIsTerminal,
     allowMultipleDevices: Boolean(data?.allow_multiple_devices || data?.allowMultipleDevices || existing?.allowMultipleDevices),
-    addedDevices: normalizePairingAddedDevices(data?.added_devices || data?.addedDevices).length > 0
-      ? normalizePairingAddedDevices(data?.added_devices || data?.addedDevices)
-      : (existing?.addedDevices || []),
+    addedDevices: mergePairingAddedDevices(existing?.addedDevices || [], data?.added_devices || data?.addedDevices),
     metadata: metadata || existing?.metadata || {},
     stage: finalStage,
     mode: data?.mode || existing?.mode || '',
@@ -516,6 +596,8 @@ export default function useDeviceHubDevices(options = {}) {
   const enabledRef = useRef(enabled);
   const realtimeInitStartedAtRef = useRef(0);
   const subscriptionAcksRef = useRef(new Set());
+  const deviceLoadPromiseRef = useRef(null);
+  const lastSuccessfulDeviceLoadAtRef = useRef(0);
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -641,7 +723,14 @@ export default function useDeviceHubDevices(options = {}) {
     refreshPairingConfig();
   }, [enabled, refreshPairings, refreshPairingConfig]);
 
-  const loadInitialDevices = useCallback(async ({ silent = false } = {}) => {
+  const loadInitialDevices = useCallback(async ({ silent = false, minFreshMs = 0 } = {}) => {
+    if (minFreshMs > 0 && shouldSkipFreshDeviceListFetch(lastSuccessfulDeviceLoadAtRef.current, Date.now(), minFreshMs)) {
+      return true;
+    }
+    if (deviceLoadPromiseRef.current) {
+      return deviceLoadPromiseRef.current;
+    }
+    const request = (async () => {
     try {
       const response = await fetch('/api/hdp/devices', buildFetchOptions());
       if (!response.ok) {
@@ -693,23 +782,33 @@ export default function useDeviceHubDevices(options = {}) {
       if (metadataMode === 'rest') {
         setMetadataStatus({ connected: true, source: 'rest' });
       }
+      lastSuccessfulDeviceLoadAtRef.current = Date.now();
       setError(prev => {
         if (!prev) return prev;
         if (prev.includes('device list') || prev.includes('device stream')) return null;
         return prev;
       });
       schedulePublish();
+      return true;
     } catch (err) {
       console.warn('Device list fetch failed', err);
       if (!mountedRef.current || !enabledRef.current) {
-        return;
+        return false;
       }
       if (!silent && metadataMode === 'rest') {
         setMetadataStatus({ connected: false, source: 'rest' });
         setError(prev => prev || 'Unable to load device list');
         setLoading(false);
       }
+      return false;
+    } finally {
+      if (deviceLoadPromiseRef.current === request) {
+        deviceLoadPromiseRef.current = null;
+      }
     }
+    })();
+    deviceLoadPromiseRef.current = request;
+    return request;
   }, [buildFetchOptions, metadataMode, schedulePublish]);
 
   const handleRealtimeMessage = useCallback(({ topic, payloadString, payloadBytes }) => {
@@ -839,6 +938,8 @@ export default function useDeviceHubDevices(options = {}) {
 
     if (!enabled) {
       mqttConnRef.current = null;
+      deviceLoadPromiseRef.current = null;
+      lastSuccessfulDeviceLoadAtRef.current = 0;
       setDevices([]);
       setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
       setMetadataStatus({ connected: false, source: metadataMode });
@@ -885,7 +986,7 @@ export default function useDeviceHubDevices(options = {}) {
       }
       if (connected) {
         setError(prev => (prev && prev.includes('device stream') ? null : prev));
-        void loadInitialDevices({ silent: true });
+        void loadInitialDevices({ silent: true, minFreshMs: DEVICE_LIST_CONNECT_REFRESH_FRESHNESS_MS });
       }
     });
 

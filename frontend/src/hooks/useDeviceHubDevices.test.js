@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildPairingProgressSession,
+  mergePairingAddedDevices,
   mergeMetadataRecord,
   mergeStateRecord,
   pairingConfigArrayToMap,
+  shouldSkipFreshDeviceListFetch,
 } from './useDeviceHubDevices.js';
 
 describe('pairingConfigArrayToMap', () => {
@@ -227,5 +229,80 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
       externalId: '0x00124b0024abcd02',
       state: 'detected',
     });
+  });
+
+  it('merges incremental multi-device updates instead of replacing prior devices', () => {
+    const merged = buildPairingProgressSession({
+      id: 'pairing-session-4',
+      origin: 'device-hub',
+      stage: 'active',
+      status: 'active',
+      active: true,
+      allow_multiple_devices: true,
+      added_devices: [
+        {
+          device_id: 'zigbee/0x00124b0024abcd02',
+          protocol: 'zigbee',
+          external_id: '0x00124b0024abcd02',
+          state: 'completed',
+        },
+      ],
+    }, 'zigbee', {
+      id: 'pairing-session-4',
+      protocol: 'zigbee',
+      active: true,
+      status: 'active',
+      stage: 'active',
+      allowMultipleDevices: true,
+      addedDevices: [
+        {
+          deviceId: 'zigbee/0x00124b0024abcd01',
+          protocol: 'zigbee',
+          externalId: '0x00124b0024abcd01',
+          state: 'completed',
+        },
+      ],
+    });
+
+    expect(merged.addedDevices).toHaveLength(2);
+    expect(merged.addedDevices.map(item => item.externalId)).toEqual([
+      '0x00124b0024abcd01',
+      '0x00124b0024abcd02',
+    ]);
+  });
+
+  it('upgrades placeholder multi-device entries when the canonical device id arrives', () => {
+    const merged = mergePairingAddedDevices([
+      {
+        protocol: 'zigbee',
+        externalId: '0x00124b0024abcd01',
+        state: 'detected',
+      },
+    ], [
+      {
+        device_id: 'zigbee/0x00124b0024abcd01',
+        protocol: 'zigbee',
+        external_id: '0x00124b0024abcd01',
+        state: 'completed',
+      },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      deviceId: 'zigbee/0x00124b0024abcd01',
+      externalId: '0x00124b0024abcd01',
+      state: 'completed',
+    });
+  });
+});
+
+describe('device list fetch freshness', () => {
+  it('skips immediate reconnect refresh after a successful bootstrap load', () => {
+    expect(shouldSkipFreshDeviceListFetch(1000, 2500, 3000)).toBe(true);
+  });
+
+  it('allows reconnect refresh after the freshness window expires', () => {
+    expect(shouldSkipFreshDeviceListFetch(1000, 4500, 3000)).toBe(false);
+    expect(shouldSkipFreshDeviceListFetch(0, 4500, 3000)).toBe(false);
   });
 });
