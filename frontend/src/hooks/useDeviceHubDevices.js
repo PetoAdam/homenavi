@@ -120,6 +120,39 @@ function normalizeDescription(value) {
   return '';
 }
 
+export function normalizeTimestampMs(value) {
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+    const parsed = Date.parse(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+export function resolveRestStateUpdatedAt(raw, prev = null) {
+  const explicit = normalizeTimestampMs(
+    raw?.state_updated_at
+    ?? raw?.stateUpdatedAt
+    ?? raw?.state_updated
+    ?? raw?.stateUpdated,
+  );
+  if (explicit) return explicit;
+  const previous = normalizeTimestampMs(prev?.stateUpdatedAt);
+  return previous || null;
+}
+
 function ensureStateObject(value) {
   if (!value) return {};
   if (typeof value === 'string') {
@@ -813,6 +846,9 @@ export default function useDeviceHubDevices(options = {}) {
 
         const stateObj = ensureStateObject(item.state);
         const prev = previousEntries.get(mapKey) || {};
+        const stateUpdatedAt = Object.keys(stateObj).length > 0
+          ? resolveRestStateUpdatedAt(item, prev)
+          : (prev.stateUpdatedAt ?? null);
         next.set(mapKey, {
           ...prev,
           ...item,
@@ -828,7 +864,7 @@ export default function useDeviceHubDevices(options = {}) {
           description: normalizeDescription(item.description),
           _last_state: Object.keys(stateObj).length > 0 ? stateObj : ensureStateObject(prev._last_state),
           metadataUpdatedAt: now,
-          stateUpdatedAt: Object.keys(stateObj).length > 0 ? now : (prev.stateUpdatedAt ?? null),
+          stateUpdatedAt,
           __hasMetadata: true,
         });
       });

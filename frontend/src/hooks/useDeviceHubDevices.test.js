@@ -5,7 +5,9 @@ import {
   mergeMetadataRecord,
   mergeStateRecord,
   normalizeDeviceConfiguration,
+  normalizeTimestampMs,
   pairingConfigArrayToMap,
+  resolveRestStateUpdatedAt,
   shouldSkipFreshDeviceListFetch,
 } from './useDeviceHubDevices.js';
 
@@ -115,6 +117,41 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
 
     expect(merged._last_state).toEqual({ state: true, brightness: 120 });
     expect(merged.online).toBe(true);
+  });
+
+  it('does not stamp REST snapshot state with local time when no explicit state timestamp exists', () => {
+    expect(resolveRestStateUpdatedAt({ state: { state: true } }, {})).toBeNull();
+  });
+
+  it('keeps a prior live state timestamp when a REST snapshot has state but no explicit timestamp', () => {
+    expect(resolveRestStateUpdatedAt({ state: { state: true } }, { stateUpdatedAt: 200 })).toBe(200);
+  });
+
+  it('uses an explicit REST state timestamp when provided', () => {
+    expect(resolveRestStateUpdatedAt({ state_updated_at: '2026-05-22T10:00:00Z' }, {})).toBe(Date.parse('2026-05-22T10:00:00Z'));
+    expect(resolveRestStateUpdatedAt({ stateUpdatedAt: 12345 }, {})).toBe(12345);
+  });
+
+  it('accepts a live state event after a REST snapshot without an explicit state timestamp', () => {
+    const restStateUpdatedAt = resolveRestStateUpdatedAt({
+      device_id: 'zigbee/0xa4c13867e32d96d4',
+      state: { state: true, brightness: 50 },
+    }, null);
+
+    expect(restStateUpdatedAt).toBeNull();
+
+    const merged = mergeStateRecord({
+      __hasMetadata: true,
+      _last_state: { state: true, brightness: 50 },
+      stateUpdatedAt: restStateUpdatedAt,
+    }, 'zigbee/0xa4c13867e32d96d4', {
+      device_id: 'zigbee/0xa4c13867e32d96d4',
+      ts: 100,
+      state: { state: false, brightness: 25 },
+    });
+
+    expect(merged._last_state).toEqual({ state: false, brightness: 25 });
+    expect(merged.stateUpdatedAt).toBe(100);
   });
 
   it('normalizes completed pairing progress events and preserves the active session id when the event omits it', () => {
@@ -322,5 +359,19 @@ describe('device list fetch freshness', () => {
   it('allows reconnect refresh after the freshness window expires', () => {
     expect(shouldSkipFreshDeviceListFetch(1000, 4500, 3000)).toBe(false);
     expect(shouldSkipFreshDeviceListFetch(0, 4500, 3000)).toBe(false);
+  });
+});
+
+describe('timestamp normalization helpers', () => {
+  it('normalizes numeric and ISO timestamps', () => {
+    expect(normalizeTimestampMs(123)).toBe(123);
+    expect(normalizeTimestampMs('456')).toBe(456);
+    expect(normalizeTimestampMs('2026-05-22T10:00:00Z')).toBe(Date.parse('2026-05-22T10:00:00Z'));
+  });
+
+  it('returns null for empty or invalid timestamps', () => {
+    expect(normalizeTimestampMs('')).toBeNull();
+    expect(normalizeTimestampMs('not-a-date')).toBeNull();
+    expect(normalizeTimestampMs(0)).toBeNull();
   });
 });
