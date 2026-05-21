@@ -187,25 +187,25 @@ func (s *Server) Handler() http.Handler {
 }
 
 type deviceListItem struct {
-	ID           uuid.UUID       `json:"id"`
-	DeviceID     string          `json:"device_id"`
-	Protocol     string          `json:"protocol"`
-	ExternalID   string          `json:"external_id"`
-	Type         string          `json:"type"`
-	Manufacturer string          `json:"manufacturer"`
-	Model        string          `json:"model"`
-	Description  string          `json:"description"`
-	Firmware     string          `json:"firmware"`
-	Icon         string          `json:"icon"`
-	Capabilities json.RawMessage `json:"capabilities,omitempty"`
-	Inputs       json.RawMessage `json:"inputs,omitempty"`
-	Configuration deviceConfigurationStatus `json:"configuration"`
-	ManagementActions []deviceManagementAction `json:"management_actions,omitempty"`
-	Online       bool            `json:"online"`
-	LastSeen     time.Time       `json:"last_seen"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	State        json.RawMessage `json:"state"`
+	ID                uuid.UUID                 `json:"id"`
+	DeviceID          string                    `json:"device_id"`
+	Protocol          string                    `json:"protocol"`
+	ExternalID        string                    `json:"external_id"`
+	Type              string                    `json:"type"`
+	Manufacturer      string                    `json:"manufacturer"`
+	Model             string                    `json:"model"`
+	Description       string                    `json:"description"`
+	Firmware          string                    `json:"firmware"`
+	Icon              string                    `json:"icon"`
+	Capabilities      json.RawMessage           `json:"capabilities,omitempty"`
+	Inputs            json.RawMessage           `json:"inputs,omitempty"`
+	Configuration     deviceConfigurationStatus `json:"configuration"`
+	ManagementActions []deviceManagementAction  `json:"management_actions,omitempty"`
+	Online            bool                      `json:"online"`
+	LastSeen          time.Time                 `json:"last_seen"`
+	CreatedAt         time.Time                 `json:"created_at"`
+	UpdatedAt         time.Time                 `json:"updated_at"`
+	State             json.RawMessage           `json:"state"`
 }
 
 type deviceConfigurationStatus struct {

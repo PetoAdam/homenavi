@@ -63,10 +63,10 @@ func (s *Server) beginCommandLifecycleWithTimeout(deviceID, corr string, expecte
 		timeout = s.commandTimeout
 	}
 	entry := &pendingCommand{
-		DeviceID: strings.TrimSpace(deviceID),
-		Corr:     strings.TrimSpace(corr),
-		Expected: cloneAnyMap(expected),
-		Baseline: cloneAnyMap(baseline),
+		DeviceID:  strings.TrimSpace(deviceID),
+		Corr:      strings.TrimSpace(corr),
+		Expected:  cloneAnyMap(expected),
+		Baseline:  cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
 	}
 	entry.Timer = time.AfterFunc(timeout, func() {
@@ -93,10 +93,10 @@ func (s *Server) beginExclusiveCommandLifecycle(deviceID, corr string, expected,
 		timeout = s.commandTimeout
 	}
 	entry := &pendingCommand{
-		DeviceID: strings.TrimSpace(deviceID),
-		Corr:     strings.TrimSpace(corr),
-		Expected: cloneAnyMap(expected),
-		Baseline: cloneAnyMap(baseline),
+		DeviceID:  strings.TrimSpace(deviceID),
+		Corr:      strings.TrimSpace(corr),
+		Expected:  cloneAnyMap(expected),
+		Baseline:  cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
 	}
 	entry.Timer = time.AfterFunc(timeout, func() {

@@ -35,8 +35,8 @@ func hasNonEmptyJSONArray(raw []byte) bool {
 func configurationStatusForDevice(d *model.Device) deviceConfigurationStatus {
 	if d == nil {
 		return deviceConfigurationStatus{
-			Ready:  false,
-			Status: "incomplete",
+			Ready:   false,
+			Status:  "incomplete",
 			Message: "Device metadata is missing.",
 		}
 	}
@@ -90,23 +90,23 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 			stateJSON = []byte(`{}`)
 		}
 		item := deviceListItem{
-			ID:           d.ID,
-			DeviceID:     canonicalHDPDeviceID(d.Protocol, d.ExternalID),
-			Protocol:     d.Protocol,
-			ExternalID:   d.ExternalID,
-			Type:         d.Type,
-			Manufacturer: d.Manufacturer,
-			Model:        d.Model,
-			Description:  d.Description,
-			Firmware:     d.Firmware,
-			Icon:         d.Icon,
-			Configuration: configurationStatusForDevice(&d),
+			ID:                d.ID,
+			DeviceID:          canonicalHDPDeviceID(d.Protocol, d.ExternalID),
+			Protocol:          d.Protocol,
+			ExternalID:        d.ExternalID,
+			Type:              d.Type,
+			Manufacturer:      d.Manufacturer,
+			Model:             d.Model,
+			Description:       d.Description,
+			Firmware:          d.Firmware,
+			Icon:              d.Icon,
+			Configuration:     configurationStatusForDevice(&d),
 			ManagementActions: s.managementActionsForProtocol(d.Protocol),
-			Online:       d.Online,
-			LastSeen:     d.LastSeen,
-			CreatedAt:    d.CreatedAt,
-			UpdatedAt:    d.UpdatedAt,
-			State:        json.RawMessage(append([]byte(nil), stateJSON...)),
+			Online:            d.Online,
+			LastSeen:          d.LastSeen,
+			CreatedAt:         d.CreatedAt,
+			UpdatedAt:         d.UpdatedAt,
+			State:             json.RawMessage(append([]byte(nil), stateJSON...)),
 		}
 		if len(d.Capabilities) > 0 {
 			item.Capabilities = json.RawMessage(append([]byte(nil), d.Capabilities...))
