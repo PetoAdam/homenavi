@@ -79,7 +79,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	catalog := []map[string]any{
 		{"kind": "trigger.manual", "label": "Manual", "fields": []map[string]any{}},
 		{"kind": "trigger.device_state", "label": "Device state", "fields": []map[string]any{
-			{"name": "targets", "type": "json", "required": true, "help": "Targets: {type:'device', ids:['zigbee/...']} or {type:'selector', selector:'tag:kitchen'}"},
+			{"name": "targets", "type": "json", "required": true, "help": "Targets: {type:'device', ids:['zigbee/...']} or {type:'selector', selector:'tag:kitchen'|'group:kitchen-spots'}"},
 			{"name": "key", "type": "string", "required": false, "help": "State key (e.g. motion, temperature). Empty matches any state frame."},
 			{"name": "op", "type": "string", "required": false, "enum": []string{"exists", "eq", "neq", "gt", "gte", "lt", "lte"}},
 			{"name": "value", "type": "json", "required": false},
@@ -98,7 +98,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		}},
 		{"kind": "logic.for", "label": "For loop", "fields": []map[string]any{{"name": "count", "type": "int", "required": true, "default": 3}}},
 		{"kind": "action.send_command", "label": "Send device command", "fields": []map[string]any{
-			{"name": "targets", "type": "json", "required": true, "help": "Targets: {type:'device', ids:['zigbee/...']} or {type:'selector', selector:'tag:kitchen'}"},
+			{"name": "targets", "type": "json", "required": true, "help": "Targets: {type:'device', ids:['zigbee/...']} or {type:'selector', selector:'tag:kitchen'|'group:kitchen-spots'}"},
 			{"name": "command", "type": "string", "required": true, "default": "set_state"},
 			{"name": "args", "type": "json", "required": false, "help": "Command args map. For set_state: {state:'ON', brightness:80}."},
 			{"name": "wait_for_result", "type": "bool", "required": false, "default": false},

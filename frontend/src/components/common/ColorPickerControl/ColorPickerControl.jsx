@@ -8,10 +8,12 @@ export default function ColorPickerControl({
   containerClassName,
   labelRowClassName,
   label,
+  annotation,
   icon,
   value,
   pending,
   dataKey,
+  mixed = false,
   onChange,
   onCommit,
 }) {
@@ -45,8 +47,11 @@ export default function ColorPickerControl({
     >
       <div className={labelRowClassName}>
         {icon && <FontAwesomeIcon icon={icon} />}
-        <span>{label}</span>
-        <span className="hn-color-value">{normalizedValue}</span>
+        <span className="hn-color-label-copy">
+          <span className="hn-color-label-text">{label}</span>
+          {annotation ? <span className="hn-color-annotation">{annotation}</span> : null}
+        </span>
+        {!mixed ? <span className="hn-color-value">{normalizedValue}</span> : null}
       </div>
 
       <div className="hn-color-summary">

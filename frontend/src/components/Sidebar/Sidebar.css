@@ -21,8 +21,9 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  z-index: 200;
+  z-index: 1100;
   overflow-x: hidden;
+  isolation: isolate;
 }
 
 @media (min-width: 1399px) {
@@ -32,7 +33,7 @@
   left: 1.5rem;
   width: 416px; /* Set your sidebar width */
   height: 100vh;
-  z-index: 200; /* ensure above main content but below overlays */
+  z-index: 1100; /* ensure above routed content and iframes, below app modals */
   /* Prevents double margin on top/bottom when fixed */
   margin-top: 0 !important;
   margin-bottom: 0 !important;
@@ -60,7 +61,7 @@
     width: 19.5rem;
     min-width: 19.5rem;
     max-width: 19.5rem;
-    z-index: 100;
+    z-index: 1100;
     margin: 0;
     transform: translateX(-100%);
     transition: transform 0.35s cubic-bezier(0.4, 0.2, 0.2, 1), opacity 0.25s;

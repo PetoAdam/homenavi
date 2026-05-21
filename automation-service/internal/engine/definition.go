@@ -103,6 +103,7 @@ type ActionIntegration struct {
 // v1 supports:
 // - {"type":"device","ids":["zigbee/0x...", ...]}
 // - {"type":"selector","selector":"tag:kitchen"}
+// - {"type":"selector","selector":"group:kitchen-spots"}
 type NodeTargets struct {
 	Type     string   `json:"type"`
 	IDs      []string `json:"ids,omitempty"`

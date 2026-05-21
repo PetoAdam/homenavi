@@ -30,6 +30,39 @@ export async function listErsTags(token) {
   return http.get(`${ERS_BASE}/tags`, { token });
 }
 
+export async function listErsGroups(token) {
+  return http.get(`${ERS_BASE}/groups`, { token });
+}
+
+export async function createErsGroup(payload, token) {
+  if (!payload || typeof payload !== 'object') return { success: false, error: 'Missing group payload' };
+  return http.post(`${ERS_BASE}/groups`, payload, { token });
+}
+
+export async function getErsGroup(groupId, token) {
+  if (!groupId) return { success: false, error: 'Missing group id' };
+  return http.get(`${ERS_BASE}/groups/${groupId}`, { token });
+}
+
+export async function patchErsGroup(groupId, patch, token) {
+  if (!groupId) return { success: false, error: 'Missing group id' };
+  if (!patch || typeof patch !== 'object') return { success: false, error: 'Missing patch payload' };
+  return http.patch(`${ERS_BASE}/groups/${groupId}`, patch, { token });
+}
+
+export async function setErsGroupMembers(groupId, deviceIds, token) {
+  if (!groupId) return { success: false, error: 'Missing group id' };
+  const ids = Array.isArray(deviceIds)
+    ? deviceIds.map(v => (typeof v === 'string' ? v.trim() : '')).filter(Boolean)
+    : [];
+  return http.put(`${ERS_BASE}/groups/${groupId}/members`, { device_ids: ids }, { token });
+}
+
+export async function deleteErsGroup(groupId, token) {
+  if (!groupId) return { success: false, error: 'Missing group id' };
+  return http.del(`${ERS_BASE}/groups/${groupId}`, { token });
+}
+
 export async function createErsTag(payload, token) {
   if (!payload || typeof payload !== 'object') return { success: false, error: 'Missing tag payload' };
   return http.post(`${ERS_BASE}/tags`, payload, { token });

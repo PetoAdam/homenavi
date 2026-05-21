@@ -191,6 +191,7 @@ function Automation() {
 
   const {
     devices: ersMergedDevices,
+    groups: ersGroups,
     loading: ersInventoryLoading,
     error: ersInventoryError,
     refresh: refreshErsInventory,
@@ -389,8 +390,9 @@ function Automation() {
   });
 
 
-  const { deviceOptions, deviceNameById, triggerKeyOptions } = useAutomationDeviceSelectors({
+  const { deviceOptions, groupOptions, deviceNameById, triggerKeyOptions } = useAutomationDeviceSelectors({
     devices: ersMergedDevices,
+    groups: ersGroups,
     selectedNode,
   });
 
@@ -732,6 +734,7 @@ function Automation() {
                 applyEditorUpdate={applyEditorUpdate}
                 applyEditorUpdateBatched={applyEditorUpdateBatched}
                 deviceOptions={deviceOptions}
+                groupOptions={groupOptions}
                 triggerKeyOptions={triggerKeyOptions}
                 userOptions={userOptions}
                 isAdmin={isAdmin}

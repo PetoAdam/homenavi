@@ -125,10 +125,25 @@
   flex-shrink: 0;
 }
 
-.dcr-control-label span {
+.dcr-control-label-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.dcr-control-label-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.dcr-control-annotation {
+  font-size: 0.74rem;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.66);
+  white-space: normal;
 }
 
 .dcr-control-value {
@@ -136,6 +151,15 @@
   opacity: 0.7;
   font-size: 0.82rem;
   flex-shrink: 0;
+}
+
+.dcr-control-mixed {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(255, 255, 255, 0.04) 100%);
+}
+
+.dcr-control-mixed .dcr-control-annotation {
+  color: rgba(253, 224, 71, 0.86);
 }
 
 /* ─────────────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ const WIDGET_ICONS = {
   'homenavi.device.graph': faChartLine,
   'homenavi.automation.manual_trigger': faBolt,
   'homenavi.device.multi': faLayerGroup,
+  'homenavi.group.controls': faLayerGroup,
 };
 
 const ICONS_BY_NAME = {

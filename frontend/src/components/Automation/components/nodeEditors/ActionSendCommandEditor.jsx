@@ -6,34 +6,97 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
     const selectedNode = this.selectedNode;
     if (!selectedNode) return null;
 
-    const { deviceOptions, applyEditorUpdate } = this.props;
+    const { deviceOptions, groupOptions, applyEditorUpdate } = this.props;
     const cmd = String(selectedNode.data?.command || '').trim() || 'set_state';
     const commandMode = String(selectedNode.data?.ui?.command_mode || (cmd === 'set_state' ? 'set_state' : 'custom'));
     const effectiveArgsMode = commandMode === 'custom' ? 'json' : (selectedNode.data?.ui?.args_mode || 'builder');
 
     const targetsType = String(selectedNode.data?.targets?.type || 'device').toLowerCase();
+    const selector = String(selectedNode.data?.targets?.selector || '').trim();
+    const isGroupSelector = targetsType === 'selector' && selector.toLowerCase().startsWith('group:');
+    const targetMode = targetsType === 'device' ? 'device' : (isGroupSelector ? 'group' : 'selector');
     const selectedDeviceId = targetsType === 'device' && Array.isArray(selectedNode.data?.targets?.ids)
       ? String(selectedNode.data?.targets?.ids?.[0] || '')
       : '';
+    const selectedGroupSelector = isGroupSelector ? selector : '';
 
     return (
       <div className="automation-props">
         <div className="field">
-          <label className="label">Device ID</label>
+          <label className="label">Target type</label>
           <select
             className="input"
-            value={selectedDeviceId}
+            value={targetMode}
             onChange={(e) => {
-              const v = e.target.value;
-              this.setSelectedNodeData({ targets: { type: 'device', ids: v ? [v] : [], selector: '' } });
+              const value = e.target.value;
+              if (value === 'device') {
+                this.setSelectedNodeData({ targets: { type: 'device', ids: [], selector: '' } });
+                return;
+              }
+              if (value === 'group') {
+                this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: '' } });
+                return;
+              }
+              this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector } });
             }}
           >
-            <option value="">Select a device…</option>
-            {deviceOptions.map((d) => (
-              <option key={d.id} value={d.id}>{d.label}</option>
-            ))}
+            <option value="device">Device</option>
+            <option value="group">Group</option>
+            <option value="selector">Advanced selector</option>
           </select>
         </div>
+
+        {targetMode === 'device' && (
+          <div className="field">
+            <label className="label">Device ID</label>
+            <select
+              className="input"
+              value={selectedDeviceId}
+              onChange={(e) => {
+                const v = e.target.value;
+                this.setSelectedNodeData({ targets: { type: 'device', ids: v ? [v] : [], selector: '' } });
+              }}
+            >
+              <option value="">Select a device…</option>
+              {deviceOptions.map((d) => (
+                <option key={d.id} value={d.id}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {targetMode === 'group' && (
+          <div className="field">
+            <label className="label">Group</label>
+            <select
+              className="input"
+              value={selectedGroupSelector}
+              onChange={(e) => {
+                const v = e.target.value;
+                this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: v } });
+              }}
+            >
+              <option value="">Select a group…</option>
+              {(Array.isArray(groupOptions) ? groupOptions : []).map((group) => (
+                <option key={group.id} value={group.selector}>{group.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {targetMode === 'selector' && (
+          <div className="field">
+            <label className="label">Selector</label>
+            <input
+              className="input"
+              value={selector}
+              onChange={(e) => {
+                this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: e.target.value } });
+              }}
+              placeholder="e.g. tag:kitchen or group:kitchen-spots"
+            />
+          </div>
+        )}
 
         <div className="field">
           <label className="label">Command</label>

@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar/Sidebar.jsx';
 import Home from './components/Home/Home.jsx';
 import Devices from './components/Devices/Devices.jsx';
 import DeviceDetail from './components/Devices/DeviceDetail.jsx';
+import Groups from './components/Groups/Groups.jsx';
 import Map from './components/Map/Map.jsx';
 import Spotify from './components/Spotify/Spotify.jsx';
 import IntegrationHost from './components/Integrations/IntegrationHost.jsx';
@@ -116,6 +117,8 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/devices" element={<Devices />} />
               <Route path="/devices/:deviceId" element={<DeviceDetail />} />
+              <Route path="/groups" element={<Groups />} />
+              <Route path="/groups/:groupId" element={<Groups />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/map" element={<Map />} />
               <Route path="/spotify" element={<Spotify />} />

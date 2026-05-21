@@ -178,6 +178,76 @@ func TestSelectorResolve_Room(t *testing.T) {
 	}
 }
 
+func TestGroupsCRUDAndSelectorResolve(t *testing.T) {
+	repo := newTestRepo(t)
+	ts := httptest.NewServer(NewRouter(NewServer(repo, nil)))
+	defer ts.Close()
+	c := ts.Client()
+
+	res, payload := doJSON(t, c, http.MethodPost, ts.URL+"/api/ers/devices/", map[string]any{"name": "Kitchen Spot 1"})
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create device 1 status=%d payload=%v", res.StatusCode, payload)
+	}
+	device1ID := uuid.MustParse(payload.(map[string]any)["id"].(string))
+
+	res, payload = doJSON(t, c, http.MethodPost, ts.URL+"/api/ers/devices/", map[string]any{"name": "Kitchen Spot 2"})
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create device 2 status=%d payload=%v", res.StatusCode, payload)
+	}
+	device2ID := uuid.MustParse(payload.(map[string]any)["id"].(string))
+
+	res, payload = doJSON(t, c, http.MethodPut, ts.URL+"/api/ers/devices/"+device1ID.String()+"/bindings/hdp", map[string]any{"hdp_external_id": "zigbee/0x101"})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("bind device 1 status=%d payload=%v", res.StatusCode, payload)
+	}
+	res, payload = doJSON(t, c, http.MethodPut, ts.URL+"/api/ers/devices/"+device2ID.String()+"/bindings/hdp", map[string]any{"hdp_external_id": "zigbee/0x102"})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("bind device 2 status=%d payload=%v", res.StatusCode, payload)
+	}
+
+	res, payload = doJSON(t, c, http.MethodPost, ts.URL+"/api/ers/groups/", map[string]any{
+		"name":       "Kitchen Spots",
+		"device_ids": []string{device1ID.String(), device2ID.String()},
+	})
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create group status=%d payload=%v", res.StatusCode, payload)
+	}
+	group := payload.(map[string]any)
+	groupID := uuid.MustParse(group["id"].(string))
+	if group["slug"].(string) != "kitchen-spots" {
+		t.Fatalf("unexpected group slug: %v", group["slug"])
+	}
+	devices, ok := group["devices"].([]any)
+	if !ok || len(devices) != 2 {
+		t.Fatalf("expected 2 group devices, got %T %v", group["devices"], group["devices"])
+	}
+
+	res, payload = doJSON(t, c, http.MethodPatch, ts.URL+"/api/ers/groups/"+groupID.String(), map[string]any{"name": "Kitchen Ceiling Spots"})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch group status=%d payload=%v", res.StatusCode, payload)
+	}
+	if payload.(map[string]any)["slug"].(string) != "kitchen-ceiling-spots" {
+		t.Fatalf("unexpected patched slug: %v", payload.(map[string]any)["slug"])
+	}
+
+	res, payload = doJSON(t, c, http.MethodPost, ts.URL+"/api/ers/selectors/resolve", map[string]any{"selector": "group:kitchen-ceiling-spots"})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("resolve group selector status=%d payload=%v", res.StatusCode, payload)
+	}
+	ids := payload.(map[string]any)["hdp_external_ids"].([]any)
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 resolved ids, got %v", ids)
+	}
+
+	res, payload = doJSON(t, c, http.MethodPut, ts.URL+"/api/ers/groups/"+groupID.String()+"/members", map[string]any{"device_ids": []string{device1ID.String()}})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("update group members status=%d payload=%v", res.StatusCode, payload)
+	}
+	if len(payload.(map[string]any)["devices"].([]any)) != 1 {
+		t.Fatalf("expected 1 group device after update, got %v", payload.(map[string]any)["devices"])
+	}
+}
+
 func TestDevicesSetTags(t *testing.T) {
 	repo := newTestRepo(t)
 	ts := httptest.NewServer(NewRouter(NewServer(repo, nil)))

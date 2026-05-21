@@ -45,6 +45,11 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("create table tags: %w", err)
 		}
 	}
+	if !m.HasTable(&Group{}) {
+		if err := m.CreateTable(&Group{}); err != nil {
+			return fmt.Errorf("create table groups: %w", err)
+		}
+	}
 	if !m.HasTable(&Device{}) {
 		if err := m.CreateTable(&Device{}); err != nil {
 			return fmt.Errorf("create table devices: %w", err)
@@ -53,6 +58,11 @@ func ensureSchema(database *gorm.DB) error {
 	if !m.HasTable(&DeviceTag{}) {
 		if err := m.CreateTable(&DeviceTag{}); err != nil {
 			return fmt.Errorf("create table device_tags: %w", err)
+		}
+	}
+	if !m.HasTable(&GroupMember{}) {
+		if err := m.CreateTable(&GroupMember{}); err != nil {
+			return fmt.Errorf("create table group_members: %w", err)
 		}
 	}
 	if !m.HasTable(&DeviceBinding{}) {
@@ -66,11 +76,20 @@ func ensureSchema(database *gorm.DB) error {
 	if !m.HasIndex(&Tag{}, "Slug") {
 		_ = m.CreateIndex(&Tag{}, "Slug")
 	}
+	if !m.HasIndex(&Group{}, "Slug") {
+		_ = m.CreateIndex(&Group{}, "Slug")
+	}
 	if !m.HasIndex(&DeviceTag{}, "DeviceID") {
 		_ = m.CreateIndex(&DeviceTag{}, "DeviceID")
 	}
 	if !m.HasIndex(&DeviceTag{}, "TagID") {
 		_ = m.CreateIndex(&DeviceTag{}, "TagID")
+	}
+	if !m.HasIndex(&GroupMember{}, "GroupID") {
+		_ = m.CreateIndex(&GroupMember{}, "GroupID")
+	}
+	if !m.HasIndex(&GroupMember{}, "DeviceID") {
+		_ = m.CreateIndex(&GroupMember{}, "DeviceID")
 	}
 	if !m.HasIndex(&DeviceBinding{}, "DeviceID") {
 		_ = m.CreateIndex(&DeviceBinding{}, "DeviceID")

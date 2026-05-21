@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { normalizeDeviceLabel } from '../automationUtils';
 
-export default function useAutomationDeviceSelectors({ devices, selectedNode }) {
+export default function useAutomationDeviceSelectors({ devices, groups, selectedNode }) {
   const deviceOptions = useMemo(() => {
     const items = Array.isArray(devices) ? devices : [];
     return items
@@ -14,6 +14,27 @@ export default function useAutomationDeviceSelectors({ devices, selectedNode }) 
       .filter(Boolean)
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [devices]);
+
+  const groupOptions = useMemo(() => {
+    const items = Array.isArray(groups) ? groups : [];
+    return items
+      .map((group) => {
+        const id = group?.id;
+        const slug = typeof group?.slug === 'string' ? group.slug.trim() : '';
+        if (!id || !slug) return null;
+        const count = Array.isArray(group?.devices) ? group.devices.length : 0;
+        const name = typeof group?.name === 'string' ? group.name.trim() : '';
+        return {
+          id: String(id),
+          slug,
+          selector: `group:${slug}`,
+          label: count > 0 ? `${name || slug} (${count})` : (name || slug),
+          raw: group,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [groups]);
 
   const deviceNameById = useMemo(() => {
     const items = Array.isArray(devices) ? devices : [];
@@ -46,6 +67,7 @@ export default function useAutomationDeviceSelectors({ devices, selectedNode }) 
 
   return {
     deviceOptions,
+    groupOptions,
     deviceNameById,
     deviceById,
     triggerKeyOptions,

@@ -101,6 +101,7 @@ const WIDGET_ICONS = {
   'homenavi.device.graph': faChartLine,
   'homenavi.automation.manual_trigger': faBolt,
   'homenavi.device.multi': faLayerGroup,
+  'homenavi.group.controls': faLayerGroup,
 };
 
 const WIDGET_NAMES = {
@@ -110,6 +111,7 @@ const WIDGET_NAMES = {
   'homenavi.device.graph': 'Device Graph',
   'homenavi.automation.manual_trigger': 'Automation',
   'homenavi.device.multi': 'Quick Controls',
+  'homenavi.group.controls': 'Group Controls',
 };
 
 function getWidgetIcon(widgetType) {
@@ -140,7 +142,7 @@ export default function WidgetSettingsModal({
     metadataMode: 'ws',
     accessToken,
   });
-  const { devices: ersDevices, loading: ersLoading } = useErsInventory({
+  const { devices: ersDevices, groups: ersGroups, loading: ersLoading } = useErsInventory({
     enabled: Boolean(isResidentOrAdmin && accessToken),
     accessToken,
     realtimeDevices,
@@ -180,6 +182,8 @@ export default function WidgetSettingsModal({
       }
       case 'homenavi.device.multi':
         return 'Quick Controls';
+      case 'homenavi.group.controls':
+        return 'Group Controls';
       case 'homenavi.automation.manual_trigger':
         // Will be set when workflow is selected
         return '';
@@ -288,8 +292,18 @@ export default function WidgetSettingsModal({
             settings={settings}
             updateSetting={updateSetting}
             ersDevices={ersDevices}
+            ersGroups={ersGroups}
             ersLoading={ersLoading}
             realtimeDevices={realtimeDevices}
+          />
+        );
+      case 'homenavi.group.controls':
+        return (
+          <GroupControlSettings
+            settings={settings}
+            updateSetting={updateSetting}
+            ersGroups={ersGroups}
+            ersLoading={ersLoading}
           />
         );
       case 'homenavi.map':
@@ -946,8 +960,9 @@ function DeviceSettings({ settings, updateSetting, ersDevices, ersLoading, realt
   );
 }
 
-function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersLoading, realtimeDevices }) {
+function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersGroups, ersLoading, realtimeDevices }) {
   const selectedIds = Array.isArray(settings.device_ids) ? settings.device_ids : [];
+  const selectedGroupIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
 
   const mergedDevices = useMemo(() => {
     const list = [...(Array.isArray(ersDevices) ? ersDevices : []), ...(Array.isArray(realtimeDevices) ? realtimeDevices : [])];
@@ -970,6 +985,13 @@ function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersLoading, 
       ? selectedIds.filter((item) => item !== id)
       : [...selectedIds, id];
     updateSetting('device_ids', next);
+  };
+
+  const toggleGroup = (id) => {
+    const next = selectedGroupIds.includes(id)
+      ? selectedGroupIds.filter((item) => item !== id)
+      : [...selectedGroupIds, id];
+    updateSetting('group_ids', next);
   };
 
   return (
@@ -1004,7 +1026,83 @@ function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersLoading, 
           Select devices with on/off controls. Read-only devices are hidden.
         </div>
       </div>
+      <div className="widget-settings__field">
+        <label className="widget-settings__label">Groups</label>
+        {ersLoading ? (
+          <div className="widget-settings__loading">
+            <FontAwesomeIcon icon={faSpinner} spin />
+            <span>Loading groups…</span>
+          </div>
+        ) : (
+          <div className="widget-settings__checkboxes">
+            {(Array.isArray(ersGroups) ? ersGroups : []).map((group) => {
+              const id = group?.id;
+              if (!id) return null;
+              const count = Array.isArray(group?.devices) ? group.devices.length : 0;
+              const label = group?.name || group?.slug || id;
+              return (
+                <label key={id} className="widget-settings__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedGroupIds.includes(id)}
+                    onChange={() => toggleGroup(id)}
+                  />
+                  <span>{count > 0 ? `${label} (${count})` : label}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div className="widget-settings__hint">
+          Selected groups expand into their member devices inside quick controls.
+        </div>
+      </div>
     </>
+  );
+}
+
+function GroupControlSettings({ settings, updateSetting, ersGroups, ersLoading }) {
+  const selectedIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
+
+  const toggleGroup = (id) => {
+    const next = selectedIds.includes(id)
+      ? selectedIds.filter((item) => item !== id)
+      : [...selectedIds, id];
+    updateSetting('group_ids', next);
+  };
+
+  return (
+    <div className="widget-settings__field">
+      <label className="widget-settings__label">Groups</label>
+      {ersLoading ? (
+        <div className="widget-settings__loading">
+          <FontAwesomeIcon icon={faSpinner} spin />
+          <span>Loading groups…</span>
+        </div>
+      ) : (
+        <div className="widget-settings__checkboxes">
+          {(Array.isArray(ersGroups) ? ersGroups : []).map((group) => {
+            const id = group?.id;
+            if (!id) return null;
+            const label = group?.name || group?.slug || id;
+            const count = Array.isArray(group?.devices) ? group.devices.length : 0;
+            return (
+              <label key={id} className="widget-settings__checkbox">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(id)}
+                  onChange={() => toggleGroup(id)}
+                />
+                <span>{count > 0 ? `${label} (${count})` : label}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+      <div className="widget-settings__hint">
+        Each selected group renders as one shared toggle tile.
+      </div>
+    </div>
   );
 }
 

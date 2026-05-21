@@ -43,6 +43,14 @@ func (s *Server) Handler() http.Handler {
 		r.Delete("/{tag_id}", s.handleTagsDelete)
 		r.Put("/{tag_id}/members", s.handleTagsSetMembers)
 	})
+	r.Route("/api/ers/groups", func(r chi.Router) {
+		r.Get("/", s.handleGroupsList)
+		r.Post("/", s.handleGroupsCreate)
+		r.Get("/{group_id}", s.handleGroupsGet)
+		r.Patch("/{group_id}", s.handleGroupsPatch)
+		r.Delete("/{group_id}", s.handleGroupsDelete)
+		r.Put("/{group_id}/members", s.handleGroupsSetMembers)
+	})
 	r.Route("/api/ers/devices", func(r chi.Router) {
 		r.Get("/", s.handleDevicesList)
 		r.Post("/", s.handleDevicesCreate)
@@ -150,6 +158,7 @@ func mergeMeta(existing datatypes.JSON, patch any) (datatypes.JSON, error) {
 type homeResponse struct {
 	Rooms   int `json:"rooms"`
 	Tags    int `json:"tags"`
+	Groups  int `json:"groups"`
 	Devices int `json:"devices"`
 }
 
@@ -169,12 +178,17 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load tags")
 		return
 	}
+	groups, err := s.repo.ListGroups(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load groups")
+		return
+	}
 	devs, err := s.repo.ListDevices(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load devices")
 		return
 	}
-	writeJSON(w, http.StatusOK, homeResponse{Rooms: len(rooms), Tags: len(tags), Devices: len(devs)})
+	writeJSON(w, http.StatusOK, homeResponse{Rooms: len(rooms), Tags: len(tags), Groups: len(groups), Devices: len(devs)})
 }
 
 func slugify(value string) string {

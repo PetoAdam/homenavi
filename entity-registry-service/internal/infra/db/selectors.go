@@ -59,6 +59,24 @@ func (r *Repository) ResolveSelectorToHDP(ctx context.Context, selector string) 
 				deviceIDs = append(deviceIDs, d.ID)
 			}
 		}
+	case "group":
+		var group Group
+		if id, err := uuid.Parse(arg); err == nil {
+			if err := r.db.WithContext(ctx).First(&group, "id = ?", id).Error; err != nil {
+				return []string{}, []uuid.UUID{}, nil
+			}
+		} else {
+			if err := r.db.WithContext(ctx).First(&group, "slug = ?", strings.ToLower(arg)).Error; err != nil {
+				return []string{}, []uuid.UUID{}, nil
+			}
+		}
+		var rows []GroupMember
+		if err := r.db.WithContext(ctx).Where("group_id = ?", group.ID).Find(&rows).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, row := range rows {
+			deviceIDs = append(deviceIDs, row.DeviceID)
+		}
 	default:
 		return nil, nil, errors.New("unsupported selector kind")
 	}

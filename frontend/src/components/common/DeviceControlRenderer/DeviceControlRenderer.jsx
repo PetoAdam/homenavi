@@ -43,33 +43,43 @@ function formatControlValue(input, value) {
   }
 }
 
+function ControlLabel({ icon, label, displayValue, annotation }) {
+  return (
+    <div className="dcr-control-label">
+      <FontAwesomeIcon icon={icon} />
+      <span className="dcr-control-label-copy">
+        <span className="dcr-control-label-text">{label}</span>
+        {annotation ? <span className="dcr-control-annotation">{annotation}</span> : null}
+      </span>
+      {displayValue ? <span className="dcr-control-value">{displayValue}</span> : null}
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Control Renderer Components
 // ────────────────────────────────────────────────────────────────────
 
-function ToggleControl({ input, value, pending, onChange }) {
+function ToggleControl({ input, value, pending, onChange, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.toggle;
   const label = resolveInputLabel(input);
-  const displayValue = formatControlValue(input, value);
+  const displayValue = mixed ? '' : formatControlValue(input, value);
 
   return (
-    <div className="dcr-control" data-key={key}>
-      <div className="dcr-control-label">
-        <FontAwesomeIcon icon={icon} />
-        <span>{label}</span>
-        {displayValue && <span className="dcr-control-value">{displayValue}</span>}
-      </div>
+    <div className={`dcr-control${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
+      <ControlLabel icon={icon} label={label} displayValue={displayValue} annotation={annotation} />
       <GlassSwitch
         checked={Boolean(value)}
         disabled={pending}
+        mixed={mixed}
         onChange={onChange}
       />
     </div>
   );
 }
 
-function SliderControl({ input, value, pending, onChange, onCommit }) {
+function SliderControl({ input, value, pending, onChange, onCommit, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.slider;
   const label = resolveInputLabel(input);
@@ -81,12 +91,13 @@ function SliderControl({ input, value, pending, onChange, onCommit }) {
   const fillPercent = min === max ? 0 : Math.max(0, Math.min(100, ((safeValue - min) / (max - min)) * 100));
 
   return (
-    <div className="dcr-control dcr-control-wide" data-key={key}>
-      <div className="dcr-control-label">
-        <FontAwesomeIcon icon={icon} />
-        <span>{label}</span>
-        <span className="dcr-control-value">{Math.round(value ?? min)}</span>
-      </div>
+    <div className={`dcr-control dcr-control-wide${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
+      <ControlLabel
+        icon={icon}
+        label={label}
+        displayValue={mixed ? '' : Math.round(value ?? min)}
+        annotation={annotation}
+      />
       <div className="dcr-control-slider">
         <input
           type="range"
@@ -112,7 +123,7 @@ function SliderControl({ input, value, pending, onChange, onCommit }) {
   );
 }
 
-function SelectControl({ input, value, pending, onChange }) {
+function SelectControl({ input, value, pending, onChange, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.select;
   const label = resolveInputLabel(input);
@@ -137,11 +148,8 @@ function SelectControl({ input, value, pending, onChange }) {
     : String(value);
 
   return (
-    <div className="dcr-control" data-key={key}>
-      <div className="dcr-control-label">
-        <FontAwesomeIcon icon={icon} />
-        <span>{label}</span>
-      </div>
+    <div className={`dcr-control${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
+      <ControlLabel icon={icon} label={label} annotation={annotation} />
       <GlassSelect
         className="dcr-control-select"
         value={selectedValue}
@@ -180,7 +188,7 @@ function getOnOffValues(input) {
   return { onValue, offValue };
 }
 
-function OnOffSelectControl({ input, value, pending, onChange }) {
+function OnOffSelectControl({ input, value, pending, onChange, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.toggle;
   const label = resolveInputLabel(input);
@@ -188,22 +196,19 @@ function OnOffSelectControl({ input, value, pending, onChange }) {
   const checked = toControlBoolean(value);
 
   return (
-    <div className="dcr-control" data-key={key}>
-      <div className="dcr-control-label">
-        <FontAwesomeIcon icon={icon} />
-        <span>{label}</span>
-        <span className="dcr-control-value">{checked ? 'On' : 'Off'}</span>
-      </div>
+    <div className={`dcr-control${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
+      <ControlLabel icon={icon} label={label} displayValue={mixed ? '' : (checked ? 'On' : 'Off')} annotation={annotation} />
       <GlassSwitch
         checked={checked}
         disabled={pending}
+        mixed={mixed}
         onChange={(next) => onChange(next ? onValue : offValue)}
       />
     </div>
   );
 }
 
-function NumberControl({ input, value, pending, onChange, onCommit }) {
+function NumberControl({ input, value, pending, onChange, onCommit, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.number;
   const label = resolveInputLabel(input);
@@ -213,11 +218,8 @@ function NumberControl({ input, value, pending, onChange, onCommit }) {
   const step = typeof range?.step === 'number' ? range.step : 1;
 
   return (
-    <div className="dcr-control" data-key={key}>
-      <div className="dcr-control-label">
-        <FontAwesomeIcon icon={icon} />
-        <span>{label}</span>
-      </div>
+    <div className={`dcr-control${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
+      <ControlLabel icon={icon} label={label} annotation={annotation} />
       <input
         type="number"
         className="dcr-control-number"
@@ -244,19 +246,21 @@ function NumberControl({ input, value, pending, onChange, onCommit }) {
   );
 }
 
-function ColorControl({ input, value, pending, onChange, onCommit }) {
+function ColorControl({ input, value, pending, onChange, onCommit, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.color;
   const label = resolveInputLabel(input);
   return (
     <ColorPickerControl
-      containerClassName="dcr-control dcr-control-wide"
+      containerClassName={`dcr-control dcr-control-wide${mixed ? ' dcr-control-mixed' : ''}`}
       labelRowClassName="dcr-control-label"
       label={label}
+      annotation={annotation}
       icon={icon}
       value={value}
       pending={pending}
       dataKey={key}
+      mixed={mixed}
       onChange={onChange}
       onCommit={onCommit}
     />
@@ -279,6 +283,9 @@ function ColorControl({ input, value, pending, onChange, onCommit }) {
 export function DeviceControlRenderer({ input, value, pending, onChange, onCommit }) {
   if (!input) return null;
 
+  const annotation = input.annotation || '';
+  const mixed = input.mixed === true;
+
   switch (input.type) {
   case 'toggle':
     return (
@@ -286,6 +293,8 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
         input={input}
         value={toControlBoolean(value)}
         pending={pending}
+        annotation={annotation}
+        mixed={mixed}
         onChange={next => {
           onChange(toControlBoolean(next));
           onCommit(toControlBoolean(next));
@@ -298,6 +307,8 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
         input={input}
         value={value}
         pending={pending}
+        annotation={annotation}
+        mixed={mixed}
         onChange={onChange}
         onCommit={onCommit}
       />
@@ -309,6 +320,8 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
           input={input}
           value={value}
           pending={pending}
+          annotation={annotation}
+          mixed={mixed}
           onChange={(next) => {
             onChange(next);
             onCommit(next);
@@ -321,6 +334,8 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
         input={input}
         value={value}
         pending={pending}
+        annotation={annotation}
+        mixed={mixed}
         onChange={val => {
           onChange(val);
           onCommit(val);
@@ -333,6 +348,8 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
         input={input}
         value={value}
         pending={pending}
+        annotation={annotation}
+        mixed={mixed}
         onChange={onChange}
         onCommit={val => {
           if (val !== '' && val !== null && val !== undefined) {
@@ -348,6 +365,8 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
         input={input}
         value={value}
         pending={pending}
+        annotation={annotation}
+        mixed={mixed}
         onChange={onChange}
         onCommit={onCommit}
       />

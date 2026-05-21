@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { listErsDevices, listErsRooms, listErsTags } from '../services/entityRegistryService';
+import { listErsDevices, listErsGroups, listErsRooms, listErsTags } from '../services/entityRegistryService';
 import { getSharedWebSocket, wsUrlForPath } from '../services/realtime/sharedWebSocket';
 
 function normalizeArray(value) {
@@ -19,8 +19,35 @@ function parseProtocolFromHdpId(hdpId) {
   return raw.slice(0, idx).toLowerCase();
 }
 
+function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
+  const ersId = safeString(device?.id);
+  const hdpIds = normalizeArray(device?.hdp_external_ids || device?.hdpIds).map(safeString).filter(Boolean);
+  const hdpId = hdpIds.find((id) => realtimeByHdpId.has(id)) || hdpIds[0] || '';
+  const rt = hdpId ? realtimeByHdpId.get(hdpId) : null;
+  const protocol = parseProtocolFromHdpId(hdpId);
+  const roomId = device?.room_id ? safeString(device.room_id) : '';
+  const room = roomId ? roomById.get(roomId) : null;
+  const name = safeString(device?.name) || hdpId || ersId;
+
+  return {
+    ...rt,
+    ...device,
+    ersId,
+    hdpIds,
+    hdpId: safeString(hdpId),
+    id: safeString(hdpId) || ersId,
+    protocol: protocol || safeString(rt?.protocol),
+    displayName: name,
+    name,
+    room,
+    roomName: safeString(room?.name),
+    tags: normalizeArray(device?.tags),
+  };
+}
+
 export default function useErsInventory({ enabled, accessToken, realtimeDevices }) {
   const [ersDevices, setErsDevices] = useState([]);
+  const [ersGroups, setErsGroups] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,8 +60,9 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     if (showLoading) setLoading(true);
     setError('');
 
-    const [devRes, roomRes, tagRes] = await Promise.all([
+    const [devRes, groupRes, roomRes, tagRes] = await Promise.all([
       listErsDevices(accessToken),
+      listErsGroups(accessToken),
       listErsRooms(accessToken),
       listErsTags(accessToken),
     ]);
@@ -42,6 +70,7 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     if (!devRes.success) {
       setError(devRes.error || 'Failed to load ERS devices');
       setErsDevices([]);
+      setErsGroups([]);
       setRooms([]);
       setTags([]);
       if (showLoading) setLoading(false);
@@ -49,6 +78,7 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     }
 
     setErsDevices(normalizeArray(devRes.data));
+  setErsGroups(groupRes.success ? normalizeArray(groupRes.data) : []);
     setRooms(roomRes.success ? normalizeArray(roomRes.data) : []);
     setTags(tagRes.success ? normalizeArray(tagRes.data) : []);
     if (showLoading) setLoading(false);
@@ -57,6 +87,7 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
   useEffect(() => {
     if (!enabled) {
       setErsDevices([]);
+      setErsGroups([]);
       setRooms([]);
       setTags([]);
       setLoading(false);
@@ -146,38 +177,32 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
 
   const devices = useMemo(() => {
     const items = normalizeArray(ersDevices);
-    return items.map((d) => {
-      const ersId = safeString(d?.id);
-      const hdpIds = normalizeArray(d?.hdp_external_ids).map(safeString).filter(Boolean);
-      // Prefer a binding that actually has realtime data, so multi-bound devices still show state.
-      const hdpId = hdpIds.find((id) => realtimeByHdpId.has(id)) || hdpIds[0] || '';
-      const rt = hdpId ? realtimeByHdpId.get(hdpId) : null;
-      const protocol = parseProtocolFromHdpId(hdpId);
-      const roomId = d?.room_id ? safeString(d.room_id) : '';
-      const room = roomId ? roomById.get(roomId) : null;
+    return items.map((d) => mergeErsDeviceWithRealtime(d, realtimeByHdpId, roomById));
+  }, [ersDevices, realtimeByHdpId, roomById]);
 
-      const name = safeString(d?.name) || hdpId || ersId;
-
+  const groups = useMemo(() => {
+    return normalizeArray(ersGroups).map((group) => {
+      const members = normalizeArray(group?.devices).map((device) => mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById));
+      const hdpIds = normalizeArray(group?.hdp_external_ids).map(safeString).filter(Boolean);
+      const deviceIds = normalizeArray(group?.device_ids).map(safeString).filter(Boolean);
       return {
-        ...rt,
-        ...d,
-        ersId,
+        ...group,
+        id: safeString(group?.id),
+        slug: safeString(group?.slug),
+        name: safeString(group?.name) || safeString(group?.slug) || safeString(group?.id),
+        description: safeString(group?.description),
+        deviceIds,
         hdpIds,
-        hdpId: safeString(hdpId),
-        id: safeString(hdpId) || ersId,
-        protocol: protocol || safeString(rt?.protocol),
-        displayName: name,
-        name,
-        room,
-        roomName: safeString(room?.name),
-        tags: normalizeArray(d?.tags),
+        devices: members,
       };
     });
-  }, [ersDevices, realtimeByHdpId, roomById]);
+  }, [ersGroups, realtimeByHdpId, roomById]);
 
   return {
     devices,
     ersDevices,
+    groups,
+    ersGroups,
     rooms,
     tags,
     loading,

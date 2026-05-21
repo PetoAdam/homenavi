@@ -146,3 +146,24 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+
+.hn-color-label-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.hn-color-label-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hn-color-annotation {
+  font-size: 0.74rem;
+  line-height: 1.25;
+  color: rgba(253, 224, 71, 0.86);
+  white-space: normal;
+}

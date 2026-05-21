@@ -197,7 +197,7 @@ export default function MultiDeviceWidget({
     authReady: Boolean(accessToken) && !bootstrapping,
   });
 
-  const { devices: ersDevices, loading: ersLoading } = useErsInventory({
+  const { devices: ersDevices, groups: ersGroups, loading: ersLoading } = useErsInventory({
     enabled: Boolean(isResidentOrAdmin && accessToken),
     accessToken,
     realtimeDevices,
@@ -205,13 +205,19 @@ export default function MultiDeviceWidget({
 
   const loading = hdpLoading || ersLoading;
   const selectedIds = Array.isArray(settings.device_ids) ? settings.device_ids : [];
+  const selectedGroupIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
 
   const devices = useMemo(() => {
-    if (!selectedIds.length) return [];
+    if (!selectedIds.length && !selectedGroupIds.length) return [];
     const ersMap = new Map();
     (Array.isArray(ersDevices) ? ersDevices : []).forEach((device) => {
       const key = device?.id || device?.ersId || device?.hdpId;
       if (key) ersMap.set(key, device);
+    });
+    const groupMap = new Map();
+    (Array.isArray(ersGroups) ? ersGroups : []).forEach((group) => {
+      const key = group?.id;
+      if (key) groupMap.set(key, group);
     });
     const rtMap = new Map();
     (Array.isArray(realtimeDevices) ? realtimeDevices : []).forEach((device) => {
@@ -219,8 +225,22 @@ export default function MultiDeviceWidget({
       if (key) rtMap.set(key, device);
     });
 
-    return selectedIds
+    const requestedIds = [...selectedIds];
+    selectedGroupIds.forEach((groupId) => {
+      const group = groupMap.get(groupId);
+      if (!group) return;
+      const members = Array.isArray(group.devices) ? group.devices : [];
+      members.forEach((device) => {
+        const key = device?.ersId || device?.id || device?.hdpId;
+        if (key) requestedIds.push(key);
+      });
+    });
+    const seenRequested = new Set();
+
+    return requestedIds
       .map((id) => {
+        if (seenRequested.has(id)) return null;
+        seenRequested.add(id);
         const ers = ersMap.get(id) || null;
         const ersHdpId = ers?.hdpId || (Array.isArray(ers?.hdpIds) ? ers.hdpIds[0] : null);
         const rt = rtMap.get(id) || (ersHdpId ? rtMap.get(ersHdpId) : null) || null;
@@ -241,7 +261,7 @@ export default function MultiDeviceWidget({
         if (!commandId) return false;
         return canToggleDevice(device);
       });
-  }, [selectedIds, ersDevices, realtimeDevices]);
+  }, [selectedGroupIds, selectedIds, ersDevices, ersGroups, realtimeDevices]);
 
   useEffect(() => {
     if (!devices.length) return;
@@ -320,7 +340,7 @@ export default function MultiDeviceWidget({
       .finally(() => {});
   }, [accessToken, commandLockReason, commandsReady]);
 
-  if (!selectedIds.length) {
+  if (!selectedIds.length && !selectedGroupIds.length) {
     return (
       <WidgetShell
         title={settings.title || 'Quick Controls'}

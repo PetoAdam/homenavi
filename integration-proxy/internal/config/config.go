@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -29,37 +31,71 @@ type IntegrationConfig struct {
 	HelmValuesFile   string `yaml:"helm_values_file,omitempty"`
 }
 
+func resolveConfigFilePath(path string) (string, bool, error) {
+	if path == "" {
+		return "", false, fmt.Errorf("missing config path")
+	}
+	info, err := os.Stat(path)
+	if err == nil {
+		if info.IsDir() {
+			return filepath.Join(path, "installed.yaml"), true, nil
+		}
+		return path, false, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return path, false, nil
+	}
+	return "", false, err
+}
+
 func Load(path string) (Config, error) {
-	b, err := os.ReadFile(path)
+	resolvedPath, fromDir, err := resolveConfigFilePath(path)
 	if err != nil {
+		return Config{}, err
+	}
+	b, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		if fromDir && errors.Is(err, os.ErrNotExist) {
+			return Config{Integrations: []IntegrationConfig{}}, nil
+		}
 		return Config{}, err
 	}
 	var cfg Config
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return Config{}, err
 	}
+	if cfg.Integrations == nil {
+		cfg.Integrations = []IntegrationConfig{}
+	}
 	return cfg, nil
 }
 
 func Save(path string, cfg Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	resolvedPath, _, err := resolveConfigFilePath(path)
+	if err != nil {
 		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(resolvedPath), 0o755); err != nil {
+		return err
+	}
+	if cfg.Integrations == nil {
+		cfg.Integrations = []IntegrationConfig{}
 	}
 	b, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
+	if info, err := os.Stat(resolvedPath); err == nil {
 		mode = info.Mode().Perm()
 	}
-	tmp := path + ".tmp"
+	tmp := resolvedPath + ".tmp"
 	if err := os.WriteFile(tmp, b, mode); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := os.Rename(tmp, resolvedPath); err != nil {
 		_ = os.Remove(tmp)
-		return os.WriteFile(path, b, mode)
+		return os.WriteFile(resolvedPath, b, mode)
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBolt, faHouse, faLightbulb, faMap, faPlug, faStar, faUsers, faMusic, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faHouse, faLightbulb, faLayerGroup, faMap, faPlug, faStar, faUsers, faMusic, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import './Sidebar.css';
 import { useAuth } from '../../context/AuthContext';
@@ -66,6 +66,7 @@ const MAIN_GROUP = {
 	items: [
 		{ name: 'Home', path: '/', icon: <FontAwesomeIcon icon={faHouse} /> },
 		{ name: 'Devices', path: '/devices', icon: <FontAwesomeIcon icon={faLightbulb} /> },
+		{ name: 'Groups', path: '/groups', icon: <FontAwesomeIcon icon={faLayerGroup} /> },
 		{ name: 'Automation', path: '/automation', icon: <FontAwesomeIcon icon={faBolt} /> },
 		{ name: 'Map', path: '/map', icon: <FontAwesomeIcon icon={faMap} /> },
 	],
@@ -170,7 +171,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 						<div className="sidebar-group-header">{group.header}</div>
 						<ul className="sidebar-group-list">
 							{group.items
-								.filter(item => (item.name !== 'Devices' && item.name !== 'Automation' && item.name !== 'Map') || isResidentOrAdmin)
+								.filter(item => (item.name !== 'Devices' && item.name !== 'Groups' && item.name !== 'Automation' && item.name !== 'Map') || isResidentOrAdmin)
 								.map(item => {
 									const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 									return (

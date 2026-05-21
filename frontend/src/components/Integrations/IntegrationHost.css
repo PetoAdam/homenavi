@@ -14,6 +14,9 @@
 .integration-frame {
   flex: 1;
   min-height: 0;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
 }
 
 .integration-page iframe {
@@ -21,6 +24,8 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  position: relative;
+  z-index: 0;
 }
 
 @media (max-width: 768px) {

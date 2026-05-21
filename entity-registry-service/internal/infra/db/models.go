@@ -29,6 +29,18 @@ type Tag struct {
 
 func (Tag) TableName() string { return "ers_tags" }
 
+type Group struct {
+	ID          uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
+	Slug        string         `json:"slug" gorm:"uniqueIndex;not null"`
+	Name        string         `json:"name" gorm:"not null"`
+	Description string         `json:"description"`
+	Meta        datatypes.JSON `json:"meta" gorm:"type:jsonb"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+func (Group) TableName() string { return "ers_groups" }
+
 type Device struct {
 	ID          uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	Name        string         `json:"name" gorm:"not null"`
@@ -48,6 +60,13 @@ type DeviceTag struct {
 }
 
 func (DeviceTag) TableName() string { return "ers_device_tags" }
+
+type GroupMember struct {
+	GroupID  uuid.UUID `gorm:"type:uuid;primaryKey;index;not null"`
+	DeviceID uuid.UUID `gorm:"type:uuid;primaryKey;index;not null"`
+}
+
+func (GroupMember) TableName() string { return "ers_group_members" }
 
 type DeviceBinding struct {
 	ID         uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`

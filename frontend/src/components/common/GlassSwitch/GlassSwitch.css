@@ -37,6 +37,18 @@
   background: linear-gradient(90deg, var(--active-color) 60%, #b6f7c1 100%);
   border-color: var(--active-color);
 }
+.glass-switch.mixed .glass-switch-track {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.14) 100%),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18) 0,
+      rgba(255, 255, 255, 0.18) 8px,
+      rgba(255, 255, 255, 0.04) 8px,
+      rgba(255, 255, 255, 0.04) 16px
+    );
+  border-color: rgba(255, 255, 255, 0.42);
+}
 .glass-switch-thumb {
   width: var(--thumb-size);
   height: var(--thumb-size);
@@ -52,4 +64,8 @@
 .glass-switch.checked .glass-switch-thumb {
   background: #fff;
   transform: translateY(-50%) translateX(calc(var(--switch-width) - var(--thumb-size) - 4px));
+}
+.glass-switch.mixed .glass-switch-thumb {
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateY(-50%) translateX(calc((var(--switch-width) - var(--thumb-size)) / 2 - 2px));
 }
