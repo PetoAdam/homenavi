@@ -14,6 +14,7 @@ import (
 )
 
 const defaultCommandLifecycleTimeout = 45 * time.Second
+const reconfigureCommandLifecycleTimeout = 3 * time.Minute
 
 const (
 	commandStatusAccepted   = "accepted"
@@ -51,8 +52,15 @@ func (s *Server) loadBaselineState(ctx context.Context, deviceUUID string) map[s
 }
 
 func (s *Server) beginCommandLifecycle(deviceID, corr string, expected, baseline map[string]any) {
+	s.beginCommandLifecycleWithTimeout(deviceID, corr, expected, baseline, s.commandTimeout)
+}
+
+func (s *Server) beginCommandLifecycleWithTimeout(deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) {
 	if s == nil || strings.TrimSpace(deviceID) == "" || strings.TrimSpace(corr) == "" {
 		return
+	}
+	if timeout <= 0 {
+		timeout = s.commandTimeout
 	}
 	entry := &pendingCommand{
 		DeviceID: strings.TrimSpace(deviceID),
@@ -61,7 +69,7 @@ func (s *Server) beginCommandLifecycle(deviceID, corr string, expected, baseline
 		Baseline: cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
 	}
-	entry.Timer = time.AfterFunc(s.commandTimeout, func() {
+	entry.Timer = time.AfterFunc(timeout, func() {
 		s.handleCommandTimeout(entry.DeviceID, entry.Corr)
 	})
 
@@ -75,6 +83,37 @@ func (s *Server) beginCommandLifecycle(deviceID, corr string, expected, baseline
 	}
 	s.commandsByDevice[entry.DeviceID] = entry
 	s.commandsByCorr[entry.Corr] = entry
+}
+
+func (s *Server) beginExclusiveCommandLifecycle(deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) bool {
+	if s == nil || strings.TrimSpace(deviceID) == "" || strings.TrimSpace(corr) == "" {
+		return false
+	}
+	if timeout <= 0 {
+		timeout = s.commandTimeout
+	}
+	entry := &pendingCommand{
+		DeviceID: strings.TrimSpace(deviceID),
+		Corr:     strings.TrimSpace(corr),
+		Expected: cloneAnyMap(expected),
+		Baseline: cloneAnyMap(baseline),
+		StartedAt: time.Now().UnixMilli(),
+	}
+	entry.Timer = time.AfterFunc(timeout, func() {
+		s.handleCommandTimeout(entry.DeviceID, entry.Corr)
+	})
+
+	s.commandMu.Lock()
+	defer s.commandMu.Unlock()
+	if prev := s.commandsByDevice[entry.DeviceID]; prev != nil {
+		if entry.Timer != nil {
+			entry.Timer.Stop()
+		}
+		return false
+	}
+	s.commandsByDevice[entry.DeviceID] = entry
+	s.commandsByCorr[entry.Corr] = entry
+	return true
 }
 
 func (s *Server) handleCommandTimeout(deviceID, corr string) {

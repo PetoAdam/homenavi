@@ -44,6 +44,19 @@ type refreshRequest struct {
 	Properties []string `json:"properties"`
 }
 
+type reconfigureRequest struct {
+	Mode string         `json:"mode"`
+	Args map[string]any `json:"args,omitempty"`
+}
+
+type deviceActionResponse struct {
+	Status        string `json:"status"`
+	DeviceID      string `json:"device_id"`
+	Command       string `json:"command"`
+	Mode          string `json:"mode,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+}
+
 type pairingStartRequest struct {
 	Protocol string          `json:"protocol"`
 	Timeout  int             `json:"timeout"`

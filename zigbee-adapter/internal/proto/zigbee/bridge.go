@@ -92,6 +92,18 @@ func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
 		z.setFriendlyMapping(friendly, external)
 		z.reconcileFriendlyDevice(ctx, friendly, external)
 		status := adapterutil.StringField(evt.Data, "status")
+		if pending, ok := z.pendingReconfigureForExternal(external, "interview"); ok {
+			switch interviewStageFromStatus(status) {
+			case "interviewing":
+				z.publishHDPCommandResult(&model.Device{ExternalID: external}, pending.corr, true, "in_progress", "")
+			case "interview_complete":
+				z.publishHDPCommandResult(&model.Device{ExternalID: external}, pending.corr, true, "applied", "")
+				z.clearPendingReconfigure(external)
+			case "failed":
+				z.publishHDPCommandResult(&model.Device{ExternalID: external}, pending.corr, false, "failed", "adapter reported interview failure")
+				z.clearPendingReconfigure(external)
+			}
+		}
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
 			stage := interviewStageFromStatus(status)
 			z.publishPairingProgress(stage, status, external, friendly)

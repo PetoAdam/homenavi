@@ -47,6 +47,8 @@ type ZigbeeAdapter struct {
 	lastDevicesReq time.Time
 	correlationMu  sync.Mutex
 	correlationMap map[string]pendingCorrelation
+	reconfigureMu  sync.Mutex
+	reinterviews   map[string]pendingReconfigure
 }
 
 type pendingZigbeeState struct {
@@ -58,6 +60,12 @@ type pendingCorrelation struct {
 	cid                string
 	remainingPublishes int
 	expiresAt          time.Time
+}
+
+type pendingReconfigure struct {
+	corr      string
+	startedAt time.Time
+	mode      string
 }
 
 const (
@@ -92,6 +100,7 @@ func New(client *mqttinfra.Client, repo *dbinfra.Repository, cache *redisinfra.S
 		friendlyTopic:  map[string]string{},
 		pendingState:   map[string]pendingZigbeeState{},
 		correlationMap: map[string]pendingCorrelation{},
+		reinterviews:   map[string]pendingReconfigure{},
 	}
 }
 

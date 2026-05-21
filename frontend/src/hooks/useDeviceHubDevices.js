@@ -64,6 +64,52 @@ function ensureArray(value) {
   return [];
 }
 
+function normalizeManagementActions(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const id = `${item.id || ''}`.trim();
+      const command = `${item.command || ''}`.trim().toLowerCase();
+      const mode = `${item.mode || ''}`.trim().toLowerCase();
+      const label = `${item.label || ''}`.trim();
+      if (!id || !command || !label) return null;
+      return {
+        id,
+        command,
+        mode,
+        label,
+        description: normalizeDescription(item.description),
+      };
+    })
+    .filter(Boolean);
+}
+
+export function normalizeDeviceConfiguration(value, capabilitiesValue = [], inputsValue = [], protocolValue = '') {
+  const capabilities = ensureArray(capabilitiesValue);
+  const inputs = ensureArray(inputsValue);
+  const protocol = `${protocolValue || ''}`.trim().toLowerCase();
+  const fallbackReady = capabilities.length > 0 || inputs.length > 0;
+  const fallback = fallbackReady
+    ? { ready: true, status: 'configured', message: '' }
+    : {
+        ready: false,
+        status: 'incomplete',
+        message: protocol === 'zigbee'
+          ? 'Device metadata is incomplete. Refresh or reinterview the device to load capabilities and controls.'
+          : 'Device metadata is incomplete. The adapter has not reported capabilities or controls yet.',
+      };
+
+  if (!value || typeof value !== 'object') {
+    return fallback;
+  }
+
+  const ready = typeof value.ready === 'boolean' ? value.ready : fallback.ready;
+  const status = `${value.status || (ready ? 'configured' : 'incomplete')}`.trim().toLowerCase() || (ready ? 'configured' : 'incomplete');
+  const message = normalizeDescription(value.message) || (ready ? '' : fallback.message);
+  return { ready, status, message };
+}
+
 function normalizeDescription(value) {
   if (typeof value === 'string') {
     return value.replace(/\s+/g, ' ').trim();
@@ -413,6 +459,7 @@ function transformEntry(key, raw) {
   const externalId = raw.device_id || raw.deviceId || raw.external_id || raw.externalId || raw.externalID || raw.external || key;
   const hdpId = raw.hdpId || raw.device_id || raw.deviceId || externalId || key;
   const icon = typeof raw.icon === 'string' ? raw.icon : (raw.metadata?.icon || '');
+  const configuration = normalizeDeviceConfiguration(raw.configuration, capabilities, inputs, raw.protocol || '');
   return {
     key,
     mapKey: key,
@@ -428,6 +475,8 @@ function transformEntry(key, raw) {
     icon,
     capabilities,
     inputs,
+    configuration,
+    managementActions: normalizeManagementActions(raw.management_actions || raw.managementActions),
     online: Boolean(raw.online),
     lastSeen,
     createdAt,
@@ -468,6 +517,13 @@ export function mergeMetadataRecord(prev, data, mapKey, protocolHint = '') {
     icon: data?.icon ?? prev?.icon,
     capabilities: ensureArray(data?.capabilities ?? prev?.capabilities),
     inputs: ensureArray(data?.inputs ?? prev?.inputs),
+    configuration: normalizeDeviceConfiguration(
+      data?.configuration ?? prev?.configuration,
+      data?.capabilities ?? prev?.capabilities,
+      data?.inputs ?? prev?.inputs,
+      data?.protocol ?? prev?.protocol ?? protocolHint,
+    ),
+    managementActions: normalizeManagementActions(data?.management_actions ?? data?.managementActions ?? prev?.managementActions),
     online: typeof online === 'boolean' ? online : Boolean(prev?.online),
     last_seen: lastSeen,
     _last_state: mergedState,
@@ -768,6 +824,7 @@ export default function useDeviceHubDevices(options = {}) {
           icon: typeof item.icon === 'string' ? item.icon : (item.metadata?.icon || ''),
           capabilities: ensureArray(item.capabilities),
           inputs: ensureArray(item.inputs),
+          configuration: normalizeDeviceConfiguration(item.configuration, item.capabilities, item.inputs, item.protocol),
           description: normalizeDescription(item.description),
           _last_state: Object.keys(stateObj).length > 0 ? stateObj : ensureStateObject(prev._last_state),
           metadataUpdatedAt: now,

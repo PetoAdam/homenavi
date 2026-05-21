@@ -62,6 +62,16 @@ export async function refreshDevice(deviceId, options = {}, token) {
   return await http.post(`${DEVICE_HUB_BASE}/devices/${deviceId}/refresh`, options, { token });
 }
 
+export async function reconfigureDevice(deviceId, payload = {}, token) {
+  if (!deviceId) {
+    return { success: false, error: 'Missing device id' };
+  }
+  if (!payload || typeof payload !== 'object') {
+    return { success: false, error: 'Missing reconfigure payload' };
+  }
+  return await http.post(`${DEVICE_HUB_BASE}/devices/${deviceId}/reconfigure`, payload, { token });
+}
+
 export async function createDevice(payload, token) {
   return await http.post(`${DEVICE_HUB_BASE}/devices`, payload, { token });
 }
@@ -116,6 +126,7 @@ export default {
   setDeviceIcon,
   sendDeviceCommand,
   refreshDevice,
+  reconfigureDevice,
   createDevice,
   deleteDevice,
   listDevices,

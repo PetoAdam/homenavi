@@ -16,6 +16,7 @@ import {
   faTag,
   faThermometerHalf,
   faTicket,
+  faTriangleExclamation,
   faWaveSquare,
   faPen,
   faCheck,
@@ -1515,8 +1516,18 @@ export default function DeviceTile({
         <div className="device-pill-row">
           <GlassPill icon={faMicrochip} text={formatProtocolLabel(protocolLabel, device.protocol)} />
           <GlassPill icon={faTicket} text={`${capabilities.length} capabilities`} />
+          {device.configuration?.ready === false ? (
+            <GlassPill icon={faTriangleExclamation} text="Needs configuration" tone="warning" />
+          ) : null}
           {device.firmware ? <GlassPill text={`FW ${device.firmware}`} tone="default" /> : null}
         </div>
+
+        {device.configuration?.ready === false && device.configuration?.message ? (
+          <div className="device-configuration-warning" role="status">
+            <FontAwesomeIcon icon={faTriangleExclamation} />
+            <span>{device.configuration.message}</span>
+          </div>
+        ) : null}
 
         <div className="device-grouping-pill-row" aria-label="Room and tags">
           <GlassPill

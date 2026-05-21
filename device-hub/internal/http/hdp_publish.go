@@ -155,6 +155,8 @@ func (s *Server) buildDeviceItem(ctx context.Context, d *model.Device) (deviceLi
 		Description:  d.Description,
 		Firmware:     d.Firmware,
 		Icon:         d.Icon,
+		Configuration: configurationStatusForDevice(d),
+		ManagementActions: s.managementActionsForProtocol(d.Protocol),
 		Online:       d.Online,
 		LastSeen:     d.LastSeen,
 		CreatedAt:    d.CreatedAt,

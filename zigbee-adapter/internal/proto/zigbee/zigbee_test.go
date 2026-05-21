@@ -180,6 +180,45 @@ func TestNormalizeZigbeeStateCommandPayload_PowerAndOnBool(t *testing.T) {
 	}
 }
 
+func TestZigbeeReconfigureRequestInterview(t *testing.T) {
+	topic, payload, err := zigbeeReconfigureRequest("interview", "living-room-bulb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if topic != "zigbee2mqtt/bridge/request/device/interview" {
+		t.Fatalf("unexpected topic %q", topic)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(payload, &body); err != nil {
+		t.Fatalf("payload unmarshal: %v", err)
+	}
+	if body["id"] != "living-room-bulb" {
+		t.Fatalf("expected target id to be preserved, got %#v", body)
+	}
+}
+
+func TestZigbeeReconfigureRequestRejectsUnsupportedMode(t *testing.T) {
+	if _, _, err := zigbeeReconfigureRequest("factory_reset", "living-room-bulb"); err == nil {
+		t.Fatal("expected unsupported mode error")
+	}
+}
+
+func TestPendingReconfigureLifecycle(t *testing.T) {
+	z := &ZigbeeAdapter{reinterviews: map[string]pendingReconfigure{}}
+	z.rememberPendingReconfigure("0x00124b0024abcd01", "interview", "corr-1")
+	entry, ok := z.pendingReconfigureForExternal("0x00124b0024abcd01", "interview")
+	if !ok {
+		t.Fatal("expected pending reconfigure entry")
+	}
+	if entry.corr != "corr-1" {
+		t.Fatalf("expected corr-1, got %q", entry.corr)
+	}
+	z.clearPendingReconfigure("0x00124b0024abcd01")
+	if _, ok := z.pendingReconfigureForExternal("0x00124b0024abcd01", "interview"); ok {
+		t.Fatal("expected entry to be cleared")
+	}
+}
+
 func TestPairingProgressFromBridgeEvent_RealisticZigbeePairingFlow(t *testing.T) {
 	cases := []struct {
 		name       string

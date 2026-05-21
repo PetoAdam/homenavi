@@ -3,6 +3,7 @@ package zigbee
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -151,6 +152,73 @@ func (z *ZigbeeAdapter) forwardStateCommand(dev *model.Device, state map[string]
 	return true
 }
 
+func zigbeeReconfigureRequest(mode, target string) (string, []byte, error) {
+	normalizedMode := strings.ToLower(strings.TrimSpace(mode))
+	normalizedTarget := strings.TrimSpace(target)
+	if normalizedTarget == "" {
+		return "", nil, fmt.Errorf("reconfigure target is required")
+	}
+	switch normalizedMode {
+	case "interview", "reinterview":
+		payload, err := json.Marshal(map[string]string{"id": normalizedTarget})
+		if err != nil {
+			return "", nil, err
+		}
+		return "zigbee2mqtt/bridge/request/device/interview", payload, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported zigbee reconfigure mode %q", normalizedMode)
+	}
+}
+
+func normalizePendingReconfigureKey(external string) string {
+	return strings.ToLower(strings.TrimSpace(external))
+}
+
+func (z *ZigbeeAdapter) rememberPendingReconfigure(external, mode, corr string) {
+	key := normalizePendingReconfigureKey(external)
+	if key == "" || strings.TrimSpace(corr) == "" {
+		return
+	}
+	z.reconfigureMu.Lock()
+	defer z.reconfigureMu.Unlock()
+	z.reinterviews[key] = pendingReconfigure{
+		corr:      strings.TrimSpace(corr),
+		startedAt: time.Now().UTC(),
+		mode:      strings.ToLower(strings.TrimSpace(mode)),
+	}
+}
+
+func (z *ZigbeeAdapter) pendingReconfigureForExternal(external, mode string) (pendingReconfigure, bool) {
+	key := normalizePendingReconfigureKey(external)
+	if key == "" {
+		return pendingReconfigure{}, false
+	}
+	z.reconfigureMu.Lock()
+	defer z.reconfigureMu.Unlock()
+	entry, ok := z.reinterviews[key]
+	if !ok {
+		return pendingReconfigure{}, false
+	}
+	if mode != "" && entry.mode != "" && entry.mode != strings.ToLower(strings.TrimSpace(mode)) {
+		return pendingReconfigure{}, false
+	}
+	if time.Since(entry.startedAt) > 3*time.Minute {
+		delete(z.reinterviews, key)
+		return pendingReconfigure{}, false
+	}
+	return entry, true
+}
+
+func (z *ZigbeeAdapter) clearPendingReconfigure(external string) {
+	key := normalizePendingReconfigureKey(external)
+	if key == "" {
+		return
+	}
+	z.reconfigureMu.Lock()
+	delete(z.reinterviews, key)
+	z.reconfigureMu.Unlock()
+}
+
 func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 	var envelope map[string]any
 	if err := json.Unmarshal(m.Payload(), &envelope); err != nil {
@@ -276,6 +344,33 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
 		if refreshState {
 			z.requestStateSnapshotForDevice(target, props)
 		}
+		if corr != "" {
+			z.publishHDPCommandResult(dev, corr, true, "queued", "")
+		}
+	case "reconfigure":
+		target := external
+		if friendly := z.resolveFriendlyName(external); friendly != "" {
+			target = friendly
+		} else if name := strings.TrimSpace(dev.Name); name != "" && !strings.EqualFold(name, dev.ExternalID) {
+			target = name
+		}
+		mode := adapterutil.StringField(envelope, "mode")
+		topic, payload, err := zigbeeReconfigureRequest(mode, target)
+		if err != nil {
+			if corr != "" {
+				z.publishHDPCommandResult(dev, corr, false, "rejected", err.Error())
+			}
+			slog.Warn("zigbee reconfigure rejected", "device", dev.ExternalID, "mode", mode, "error", err)
+			return
+		}
+		if err := z.client.Publish(topic, payload); err != nil {
+			if corr != "" {
+				z.publishHDPCommandResult(dev, corr, false, "failed", err.Error())
+			}
+			slog.Warn("zigbee reconfigure publish failed", "device", dev.ExternalID, "mode", mode, "error", err)
+			return
+		}
+		z.rememberPendingReconfigure(external, mode, corr)
 		if corr != "" {
 			z.publishHDPCommandResult(dev, corr, true, "queued", "")
 		}

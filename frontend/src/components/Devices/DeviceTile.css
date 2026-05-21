@@ -362,6 +362,24 @@
   gap: 0.5rem;
 }
 
+.device-configuration-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  background: rgba(120, 53, 15, 0.24);
+  color: #fde68a;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.device-configuration-warning svg {
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
+}
+
 .device-grouping-pill-row {
   display: flex;
   flex-wrap: wrap;

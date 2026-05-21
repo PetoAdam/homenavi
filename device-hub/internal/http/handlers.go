@@ -199,11 +199,27 @@ type deviceListItem struct {
 	Icon         string          `json:"icon"`
 	Capabilities json.RawMessage `json:"capabilities,omitempty"`
 	Inputs       json.RawMessage `json:"inputs,omitempty"`
+	Configuration deviceConfigurationStatus `json:"configuration"`
+	ManagementActions []deviceManagementAction `json:"management_actions,omitempty"`
 	Online       bool            `json:"online"`
 	LastSeen     time.Time       `json:"last_seen"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 	State        json.RawMessage `json:"state"`
+}
+
+type deviceConfigurationStatus struct {
+	Ready   bool   `json:"ready"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+type deviceManagementAction struct {
+	ID          string `json:"id"`
+	Command     string `json:"command"`
+	Mode        string `json:"mode,omitempty"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 const (

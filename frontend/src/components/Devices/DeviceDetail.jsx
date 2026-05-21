@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChartLine, faCheck, faHouse, faPen, faPlus, faStar, faTag, faTags, faTrash, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faArrowsRotate, faChartLine, faCheck, faHouse, faPen, faPlus, faStar, faTag, faTags, faTrash, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassPill from '../common/GlassPill/GlassPill';
 import PageHeader from '../common/PageHeader/PageHeader';
@@ -12,7 +12,7 @@ import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../hooks/useErsInventory';
 import { useAuth } from '../../context/AuthContext';
 import DeviceTile from './DeviceTile';
-import { deleteDevice, sendDeviceCommand, setDeviceIcon } from '../../services/deviceHubService';
+import { deleteDevice, reconfigureDevice, sendDeviceCommand, setDeviceIcon } from '../../services/deviceHubService';
 import { createErsTag, deleteErsTag, patchErsDevice, setErsDeviceTags } from '../../services/entityRegistryService';
 import { listStatePoints } from '../../services/historyService';
 import HistoryChart from '../History/HistoryChart';
@@ -300,6 +300,41 @@ function collectFavoriteFieldOptionsFromDevice(device) {
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
+function describeManagementLifecycle(result, action) {
+  const status = `${result?.status || ''}`.trim().toLowerCase();
+  const label = action?.label || 'Maintenance action';
+  switch (status) {
+    case 'accepted':
+    case 'queued':
+      return {
+        tone: 'info',
+        message: `${label} queued. Waiting for the adapter to start.`,
+      };
+    case 'in_progress':
+      return {
+        tone: 'info',
+        message: `${label} in progress. The adapter is currently reinterviewing the device.`,
+      };
+    case 'applied':
+      return {
+        tone: 'success',
+        message: `${label} completed successfully. Updated metadata and capabilities should now be reflected on the device.`,
+      };
+    case 'failed':
+    case 'rejected':
+    case 'timeout':
+      return {
+        tone: 'error',
+        message: result?.error || `${label} failed.`,
+      };
+    default:
+      return {
+        tone: 'info',
+        message: `${label} queued.`,
+      };
+  }
+}
+
 export default function DeviceDetail() {
   const navigate = useNavigate();
   const params = useParams();
@@ -350,6 +385,16 @@ export default function DeviceDetail() {
   const [pendingCommand, setPendingCommand] = useState(null);
   const [commandError, setCommandError] = useState('');
   const displayDevice = useMemo(() => applyPendingStateToDevice(resolvedDevice, pendingCommand), [resolvedDevice, pendingCommand]);
+  const managementSourceDevice = useMemo(() => device || resolvedDevice || null, [device, resolvedDevice]);
+  const configuration = useMemo(() => (
+    displayDevice?.configuration || managementSourceDevice?.configuration || null
+  ), [displayDevice?.configuration, managementSourceDevice?.configuration]);
+  const managementActions = useMemo(() => (
+    Array.isArray(managementSourceDevice?.managementActions) ? managementSourceDevice.managementActions : []
+  ), [managementSourceDevice]);
+  const [managementActionPending, setManagementActionPending] = useState('');
+  const [managementActionState, setManagementActionState] = useState(null);
+  const [managementActionError, setManagementActionError] = useState('');
 
   const [ersMetaSaving, setErsMetaSaving] = useState(false);
   const [ersMetaError, setErsMetaError] = useState('');
@@ -414,6 +459,39 @@ export default function DeviceDetail() {
       return null;
     });
   }, [deviceId]);
+
+  useEffect(() => {
+    setManagementActionPending('');
+    setManagementActionState(null);
+    setManagementActionError('');
+  }, [deviceId]);
+
+  useEffect(() => {
+    const current = managementSourceDevice?.lastCommandResult;
+    if (!current || !managementActionState?.corr) {
+      return;
+    }
+    if (current.corr !== managementActionState.corr) {
+      return;
+    }
+    const next = describeManagementLifecycle(current, managementActionState.action);
+    setManagementActionState(prev => {
+      if (!prev || prev.corr !== managementActionState.corr) {
+        return prev;
+      }
+      return {
+        ...prev,
+        status: `${current.status || ''}`.trim().toLowerCase(),
+        terminal: ['applied', 'failed', 'rejected', 'timeout'].includes(`${current.status || ''}`.trim().toLowerCase()),
+        tone: next.tone,
+        message: next.message,
+        error: current.error || '',
+      };
+    });
+    if (['applied', 'failed', 'rejected', 'timeout'].includes(`${current.status || ''}`.trim().toLowerCase())) {
+      setManagementActionPending('');
+    }
+  }, [managementActionState, managementSourceDevice?.lastCommandResult]);
 
   useEffect(() => {
     setFavoriteFields(readFavoriteFieldsFromErsMeta(ersDevice));
@@ -547,6 +625,46 @@ export default function DeviceDetail() {
     await refreshErs?.();
     navigate('/devices');
   }, [accessToken, navigate, refreshErs]);
+
+  const handleManagementAction = useCallback(async (action) => {
+    if (!managementSourceDevice?.id) {
+      setManagementActionError('Device not ready for maintenance actions.');
+      return;
+    }
+    if (!accessToken) {
+      setManagementActionError('Authentication required');
+      return;
+    }
+    const command = `${action?.command || ''}`.trim().toLowerCase();
+    setManagementActionState(null);
+    setManagementActionError('');
+    setManagementActionPending(action?.id || command);
+    try {
+      if (command !== 'reconfigure') {
+        throw new Error('Unsupported management action');
+      }
+      const res = await reconfigureDevice(managementSourceDevice.id, {
+        mode: action?.mode || '',
+      }, accessToken);
+      if (!res.success) {
+        throw new Error(res.error || 'Unable to queue maintenance action');
+      }
+      const response = res.data || {};
+      const snapshot = describeManagementLifecycle({ status: response.status || 'queued' }, action);
+      setManagementActionState({
+        action,
+        corr: response.correlation_id || response.correlationId || '',
+        status: `${response.status || 'queued'}`.trim().toLowerCase(),
+        terminal: false,
+        tone: snapshot.tone,
+        message: snapshot.message,
+        error: '',
+      });
+    } catch (err) {
+      setManagementActionError(err?.message || 'Unable to queue maintenance action');
+      setManagementActionPending('');
+    }
+  }, [accessToken, managementSourceDevice]);
 
   const saveGrouping = useCallback(async () => {
     if (!accessToken) {
@@ -919,6 +1037,18 @@ export default function DeviceDetail() {
         </GlassCard>
       ) : null}
 
+      {!error && configuration?.ready === false ? (
+        <GlassCard className="device-configuration-card" interactive={false}>
+          <div className="device-configuration-copy">
+            <span className="device-configuration-icon"><FontAwesomeIcon icon={faTriangleExclamation} /></span>
+            <div>
+              <strong>Device not fully configured</strong>
+              <p>{configuration.message || 'This device is missing capabilities or controls from its adapter metadata.'}</p>
+            </div>
+          </div>
+        </GlassCard>
+      ) : null}
+
       {loading && !resolvedDevice ? (
         <GlassCard className="device-detail-loading" interactive={false}>
           <div className="device-detail-loading-text">Loading device…</div>
@@ -949,6 +1079,66 @@ export default function DeviceDetail() {
         </div>
 
         <div className="device-detail-grid-right">
+          {configuration ? (
+            <GlassCard className="device-management-card" interactive={false}>
+              <div className="device-history-header">
+                <div className="device-history-title">
+                  <span className="device-history-icon">
+                    <FontAwesomeIcon icon={configuration.ready ? faCheck : faTriangleExclamation} />
+                  </span>
+                  <span>Configuration</span>
+                </div>
+              </div>
+              <div className={`device-management-status ${configuration.ready ? 'success' : 'error'}`}>
+                {configuration.ready
+                  ? 'The adapter has reported capabilities or controls for this device.'
+                  : (configuration.message || 'Device metadata is incomplete.')}
+              </div>
+            </GlassCard>
+          ) : null}
+
+          {managementActions.length > 0 ? (
+            <GlassCard className="device-management-card" interactive={false}>
+              <div className="device-history-header">
+                <div className="device-history-title">
+                  <span className="device-history-icon">
+                    <FontAwesomeIcon icon={faArrowsRotate} />
+                  </span>
+                  <span>Maintenance</span>
+                </div>
+              </div>
+
+              <div className="device-management-list">
+                {managementActions.map(action => {
+                  const pending = managementActionPending === action.id;
+                  return (
+                    <div key={action.id} className="device-management-item">
+                      <div className="device-management-copy">
+                        <strong>{action.label}</strong>
+                        {action.description ? <span>{action.description}</span> : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="device-management-action-button"
+                        onClick={() => handleManagementAction(action)}
+                        disabled={pending || Boolean(managementActionPending)}
+                      >
+                        {pending ? 'Starting…' : action.label}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {managementActionState?.message ? (
+                <div className={`device-management-status ${managementActionState.tone || 'info'}`}>{managementActionState.message}</div>
+              ) : null}
+              {managementActionError ? (
+                <div className="device-history-error">{managementActionError}</div>
+              ) : null}
+            </GlassCard>
+          ) : null}
+
           <GlassCard className="device-ers-meta-card" interactive={false}>
             <div className="device-history-header">
               <div className="device-history-title">

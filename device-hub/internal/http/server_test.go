@@ -6,6 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
+	"gorm.io/datatypes"
 )
 
 func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
@@ -206,6 +210,80 @@ func TestParseHDPDeviceRequestPath_WithSlashDeviceIDRefresh(t *testing.T) {
 	}
 	if deviceID != "zigbee/0xa4c13867e32d96d4" {
 		t.Fatalf("expected device id %q got %q", "zigbee/0xa4c13867e32d96d4", deviceID)
+	}
+}
+
+func TestParseHDPDeviceRequestPath_WithSlashDeviceIDReconfigure(t *testing.T) {
+	deviceID, action, ok := parseHDPDeviceRequestPath("/api/hdp/devices/zigbee/0xa4c13867e32d96d4/reconfigure")
+	if !ok {
+		t.Fatalf("expected ok")
+	}
+	if action != "reconfigure" {
+		t.Fatalf("expected action reconfigure, got %q", action)
+	}
+	if deviceID != "zigbee/0xa4c13867e32d96d4" {
+		t.Fatalf("expected device id %q got %q", "zigbee/0xa4c13867e32d96d4", deviceID)
+	}
+}
+
+func TestHandleDeviceReconfigureInvalidJSON(t *testing.T) {
+	srv := NewServer(nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices/abc/reconfigure", strings.NewReader(`{bad`))
+	rr := httptest.NewRecorder()
+
+	srv.handleDeviceReconfigure(rr, req, "abc")
+
+	if rr.Code != http.StatusInternalServerError && rr.Code != http.StatusBadRequest && rr.Code != http.StatusNotFound {
+		t.Fatalf("unexpected status: got %d", rr.Code)
+	}
+}
+
+func TestManagementActionsForProtocol_UsesInterviewSupport(t *testing.T) {
+	srv := NewServer(nil, nil)
+	srv.adapters.byID["zigbee"] = adapterStatus{
+		AdapterID: "zigbee",
+		Protocol:  "zigbee",
+		Status:    "online",
+		LastSeen:  time.Now().UTC(),
+		Pairing: &PairingConfig{
+			Protocol:          "zigbee",
+			Supported:         true,
+			SupportsInterview: true,
+		},
+	}
+
+	actions := srv.managementActionsForProtocol("zigbee")
+	if len(actions) != 1 {
+		t.Fatalf("expected one management action, got %#v", actions)
+	}
+	if actions[0].Command != "reconfigure" || actions[0].Mode != "interview" {
+		t.Fatalf("expected reconfigure interview action, got %#v", actions[0])
+	}
+}
+
+func TestConfigurationStatusForDevice_ReadyWhenCapabilitiesPresent(t *testing.T) {
+	status := configurationStatusForDevice(&model.Device{
+		Protocol:     "zigbee",
+		Capabilities: datatypes.JSON([]byte(`[{"id":"state"}]`)),
+	})
+	if !status.Ready || status.Status != "configured" {
+		t.Fatalf("expected configured status, got %#v", status)
+	}
+	if status.Message != "" {
+		t.Fatalf("expected empty configured message, got %q", status.Message)
+	}
+}
+
+func TestConfigurationStatusForDevice_IncompleteWhenMetadataMissing(t *testing.T) {
+	status := configurationStatusForDevice(&model.Device{Protocol: "zigbee"})
+	if status.Ready {
+		t.Fatalf("expected incomplete status, got %#v", status)
+	}
+	if status.Status != "incomplete" {
+		t.Fatalf("expected incomplete status string, got %#v", status)
+	}
+	if !strings.Contains(strings.ToLower(status.Message), "reinterview") {
+		t.Fatalf("expected zigbee guidance message, got %q", status.Message)
 	}
 }
 

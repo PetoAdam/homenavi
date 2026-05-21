@@ -13,6 +13,52 @@ import (
 	"gorm.io/datatypes"
 )
 
+func hasNonEmptyJSONArray(raw []byte) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
+		return false
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return false
+	}
+	switch value := decoded.(type) {
+	case []any:
+		return len(value) > 0
+	case map[string]any:
+		return len(value) > 0
+	default:
+		return false
+	}
+}
+
+func configurationStatusForDevice(d *model.Device) deviceConfigurationStatus {
+	if d == nil {
+		return deviceConfigurationStatus{
+			Ready:  false,
+			Status: "incomplete",
+			Message: "Device metadata is missing.",
+		}
+	}
+	hasCapabilities := hasNonEmptyJSONArray(d.Capabilities)
+	hasInputs := hasNonEmptyJSONArray(d.Inputs)
+	if hasCapabilities || hasInputs {
+		return deviceConfigurationStatus{
+			Ready:  true,
+			Status: "configured",
+		}
+	}
+	message := "Device metadata is incomplete. Refresh or reinterview the device to load capabilities and controls."
+	if !strings.EqualFold(strings.TrimSpace(d.Protocol), "zigbee") {
+		message = "Device metadata is incomplete. The adapter has not reported capabilities or controls yet."
+	}
+	return deviceConfigurationStatus{
+		Ready:   false,
+		Status:  "incomplete",
+		Message: message,
+	}
+}
+
 func (s *Server) handleDeviceCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -54,6 +100,8 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 			Description:  d.Description,
 			Firmware:     d.Firmware,
 			Icon:         d.Icon,
+			Configuration: configurationStatusForDevice(&d),
+			ManagementActions: s.managementActionsForProtocol(d.Protocol),
 			Online:       d.Online,
 			LastSeen:     d.LastSeen,
 			CreatedAt:    d.CreatedAt,
@@ -159,6 +207,8 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request) {
 		s.handleDeviceCommand(w, r, deviceID)
 	case "refresh":
 		s.handleDeviceRefresh(w, r, deviceID)
+	case "reconfigure":
+		s.handleDeviceReconfigure(w, r, deviceID)
 	default:
 		http.NotFound(w, r)
 	}
@@ -182,7 +232,7 @@ func parseHDPDeviceRequestPath(path string) (deviceID string, action string, ok 
 		return "", "", true
 	}
 	last := parts[len(parts)-1]
-	if last == "commands" || last == "refresh" {
+	if last == "commands" || last == "refresh" || last == "reconfigure" {
 		id := strings.Join(parts[:len(parts)-1], "/")
 		if strings.TrimSpace(id) == "" {
 			return "", "", false
@@ -326,6 +376,41 @@ func queryBool(raw string) bool {
 	}
 }
 
+func normalizeReconfigureMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "interview", "reinterview":
+		return "interview"
+	default:
+		return ""
+	}
+}
+
+func (s *Server) managementActionsForProtocol(protocol string) []deviceManagementAction {
+	proto := normalizeProtocol(protocol)
+	if proto == "" || s == nil || s.adapters == nil {
+		return nil
+	}
+	if s.adapters.supportsInterview(proto) {
+		return []deviceManagementAction{{
+			ID:          "reinterview",
+			Command:     "reconfigure",
+			Mode:        "interview",
+			Label:       "Reinterview device",
+			Description: "Ask the adapter to rerun device interview and refresh capabilities or metadata.",
+		}}
+	}
+	return nil
+}
+
+func (s *Server) supportsReconfigureMode(protocol, mode string) bool {
+	switch normalizeReconfigureMode(mode) {
+	case "interview":
+		return s != nil && s.adapters != nil && s.adapters.supportsInterview(protocol)
+	default:
+		return false
+	}
+}
+
 func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, deviceID string) {
 	if r.Method != http.MethodPost && r.Method != http.MethodPatch {
 		w.Header().Set("Allow", "POST, PATCH")
@@ -412,6 +497,11 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 }
 
 func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, deviceID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	dev, hdpID, err := s.resolveDevice(r.Context(), deviceID)
 	if err != nil {
 		slog.Error("device refresh lookup failed", "device_id", deviceID, "error", err)
@@ -463,4 +553,78 @@ func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, dev
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "device_id": hdpID})
+}
+
+func (s *Server) handleDeviceReconfigure(w http.ResponseWriter, r *http.Request, deviceID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dev, hdpID, err := s.resolveDevice(r.Context(), deviceID)
+	if err != nil {
+		slog.Error("device reconfigure lookup failed", "device_id", deviceID, "error", err)
+		http.Error(w, "could not load device", http.StatusInternalServerError)
+		return
+	}
+	if dev == nil {
+		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	if hdpID == "" {
+		hdpID = canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
+	}
+
+	var req reconfigureRequest
+	if r.Body != nil {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 16*1024))
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &req); err != nil {
+				http.Error(w, "invalid json", http.StatusBadRequest)
+				return
+			}
+		}
+		defer r.Body.Close()
+	}
+	mode := normalizeReconfigureMode(req.Mode)
+	if mode == "" {
+		http.Error(w, "reconfigure mode is required", http.StatusBadRequest)
+		return
+	}
+	if !s.supportsReconfigureMode(dev.Protocol, mode) {
+		http.Error(w, "protocol does not support the requested reconfigure mode", http.StatusBadRequest)
+		return
+	}
+	corr := uuid.NewString()
+	if !s.beginExclusiveCommandLifecycle(hdpID, corr, nil, nil, reconfigureCommandLifecycleTimeout) {
+		http.Error(w, "another device action is already in progress", http.StatusConflict)
+		return
+	}
+	s.publishCommandLifecycle(hdpID, corr, commandStatusAccepted, "", map[string]any{"command": "reconfigure", "mode": mode})
+	cmd := map[string]any{
+		"schema":    hdpSchema,
+		"type":      "command",
+		"device_id": hdpID,
+		"command":   "reconfigure",
+		"mode":      mode,
+		"ts":        time.Now().UnixMilli(),
+		"corr":      corr,
+	}
+	if len(req.Args) > 0 {
+		cmd["args"] = req.Args
+	}
+	if err := s.publishHDPCommand(hdpID, cmd); err != nil {
+		s.removePendingCommand(hdpID, corr)
+		s.publishCommandLifecycle(hdpID, corr, commandStatusFailed, err.Error(), map[string]any{"command": "reconfigure", "mode": mode})
+		http.Error(w, "could not queue reconfigure request", http.StatusBadGateway)
+		return
+	}
+	s.publishCommandLifecycle(hdpID, corr, commandStatusQueued, "", map[string]any{"command": "reconfigure", "mode": mode})
+	writeJSON(w, http.StatusAccepted, deviceActionResponse{
+		Status:        "queued",
+		DeviceID:      hdpID,
+		Command:       "reconfigure",
+		Mode:          mode,
+		CorrelationID: corr,
+	})
 }

@@ -4,9 +4,27 @@ import {
   mergePairingAddedDevices,
   mergeMetadataRecord,
   mergeStateRecord,
+  normalizeDeviceConfiguration,
   pairingConfigArrayToMap,
   shouldSkipFreshDeviceListFetch,
 } from './useDeviceHubDevices.js';
+
+describe('normalizeDeviceConfiguration', () => {
+  it('marks devices as configured when capabilities are present', () => {
+    expect(normalizeDeviceConfiguration(null, [{ id: 'state' }], [], 'zigbee')).toEqual({
+      ready: true,
+      status: 'configured',
+      message: '',
+    });
+  });
+
+  it('keeps an incomplete zigbee warning when metadata is missing', () => {
+    const result = normalizeDeviceConfiguration(null, [], [], 'zigbee');
+    expect(result.ready).toBe(false);
+    expect(result.status).toBe('incomplete');
+    expect(result.message.toLowerCase()).toContain('reinterview');
+  });
+});
 
 describe('pairingConfigArrayToMap', () => {
   it('returns empty object for non-array payloads', () => {

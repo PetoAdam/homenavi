@@ -508,6 +508,116 @@ body.overlay-open {
   margin-bottom: 0.35rem;
 }
 
+.device-management-card {
+  padding: 0.65rem 0.7rem 0.8rem;
+}
+
+.device-management-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.55rem 0.95rem 0.2rem;
+}
+
+.device-management-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 21, 32, 0.44);
+}
+
+.device-management-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.device-management-copy strong {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.device-management-copy span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.device-management-action-button {
+  flex: 0 0 auto;
+  min-width: 170px;
+  height: 40px;
+  padding: 0 0.95rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.device-management-action-button:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.device-management-action-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.device-management-status {
+  padding: 0.55rem 0.95rem 0.1rem;
+  font-size: 0.84rem;
+}
+
+.device-management-status.info {
+  color: rgba(197, 227, 255, 0.92);
+}
+
+.device-management-status.success {
+  color: rgba(198, 255, 214, 0.92);
+}
+
+.device-management-status.error {
+  color: rgba(255, 190, 190, 0.95);
+}
+
+.device-configuration-card {
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  background: rgba(120, 53, 15, 0.18);
+}
+
+.device-configuration-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.device-configuration-icon {
+  color: #fbbf24;
+  font-size: 1rem;
+  margin-top: 0.1rem;
+}
+
+.device-configuration-copy strong {
+  display: block;
+  color: rgba(255, 248, 220, 0.96);
+  margin-bottom: 0.35rem;
+}
+
+.device-configuration-copy p {
+  margin: 0;
+  color: rgba(255, 235, 190, 0.88);
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 640px) {
   .device-detail-page {
     padding: 0 1rem 2.5rem;
@@ -515,6 +625,16 @@ body.overlay-open {
 
   .device-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .device-management-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .device-management-action-button {
+    width: 100%;
+    min-width: 0;
   }
 
 }
