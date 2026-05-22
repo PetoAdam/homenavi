@@ -10,6 +10,7 @@ import (
 	httptransport "github.com/PetoAdam/homenavi/device-hub/internal/http"
 	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
@@ -17,6 +18,7 @@ import (
 type App struct {
 	server      *http.Server
 	mqtt        *mqttinfra.Client
+	cache       *cachex.JSONStore
 	shutdownObs func()
 	logger      *slog.Logger
 }
@@ -38,18 +40,31 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promHandler)
-	handler := httptransport.NewServer(repo, mqttClient)
+	var cacheStore *cachex.JSONStore
+	if cfg.ListCacheTTL > 0 {
+		cacheStore, err = cachex.NewJSONStore(context.Background(), cfg.Redis)
+		if err != nil {
+			logger.Warn("device-hub cache disabled", "error", err)
+		}
+	}
+	handler := httptransport.NewServer(repo, mqttClient, httptransport.WithCache(cacheStore, cfg.ListCacheTTL))
 	mux.Handle("/", httptransport.NewRouter(handler))
 
 	return &App{
 		server:      &http.Server{Addr: ":" + cfg.Port, Handler: sharedobs.WrapHandler(tracer, "device-hub", mux), ReadHeaderTimeout: 5 * time.Second},
 		mqtt:        mqttClient,
+		cache:       cacheStore,
 		shutdownObs: shutdownObs,
 		logger:      logger,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
+	defer func() {
+		if a.cache != nil {
+			_ = a.cache.Close()
+		}
+	}()
 	defer a.mqtt.Close()
 	defer a.shutdownObs()
 

@@ -65,6 +65,7 @@ func (s *Server) handleHDPEvent(_ paho.Client, msg mqttinfra.Message) {
 		}
 		if dev != nil {
 			_ = s.repo.DeleteDeviceAndState(ctx, dev.ID.String())
+			s.invalidateDeviceListCache(ctx)
 		}
 	}
 }
@@ -137,6 +138,7 @@ func (s *Server) upsertMetadataFromHDP(deviceID string, payload map[string]any) 
 		slog.Warn("hdp metadata upsert failed", "device_id", deviceID, "error", err)
 		return
 	}
+	s.invalidateDeviceListCache(ctx)
 }
 
 func (s *Server) handleHDPStateEvent(_ paho.Client, msg mqttinfra.Message) {
@@ -189,6 +191,7 @@ func (s *Server) consumeState(deviceTopicID string, state map[string]any, corr s
 				slog.Warn("state persist failed", "device_id", deviceUUID, "error", err)
 			}
 		}
+		s.invalidateDeviceListCache(ctx)
 	}
 	slog.Info("state persisted", "device_id", deviceUUID, "external_id", externalID, "corr", corr, "ts", ts, "keys", len(state))
 	s.processCommandStateLifecycle(externalID, state, corr, ts)

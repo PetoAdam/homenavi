@@ -12,12 +12,14 @@ import (
 	httptransport "github.com/PetoAdam/homenavi/dashboard-service/internal/http"
 	clientsinfra "github.com/PetoAdam/homenavi/dashboard-service/internal/infra/clients"
 	dbinfra "github.com/PetoAdam/homenavi/dashboard-service/internal/infra/db"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // App is the composed dashboard-service application.
 type App struct {
 	server      *http.Server
+	cache       *cachex.JSONStore
 	shutdownObs func()
 	logger      *slog.Logger
 }
@@ -42,17 +44,30 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	catalogSource := clientsinfra.NewRegistryClient(cfg.IntegrationProxyURL, nil)
 	service := dashboard.NewService(repo, catalogSource)
-	handler := httptransport.NewHandler(service)
+	var cacheStore *cachex.JSONStore
+	if cfg.ReadCacheTTL > 0 {
+		cacheStore, err = cachex.NewJSONStore(context.Background(), cfg.Redis)
+		if err != nil {
+			logger.Warn("dashboard-service cache disabled", "error", err)
+		}
+	}
+	handler := httptransport.NewHandler(service, httptransport.WithCache(cacheStore, cfg.ReadCacheTTL))
 	router := httptransport.NewRouter(handler, promHandler, tracer, pubKey)
 
 	return &App{
 		server:      &http.Server{Addr: ":" + cfg.Port, Handler: router},
+		cache:       cacheStore,
 		shutdownObs: shutdownObs,
 		logger:      logger,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
+	defer func() {
+		if a.cache != nil {
+			_ = a.cache.Close()
+		}
+	}()
 	defer a.shutdownObs()
 
 	errCh := make(chan error, 1)

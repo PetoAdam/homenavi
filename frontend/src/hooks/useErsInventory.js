@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { listErsDevices, listErsGroups, listErsRooms, listErsTags } from '../services/entityRegistryService';
 import { getSharedWebSocket, wsUrlForPath } from '../services/realtime/sharedWebSocket';
+import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
+
+const ERS_INVENTORY_CACHE_TTL_MS = 30 * 1000;
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -52,6 +55,10 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const cacheKey = useMemo(() => {
+    if (!accessToken) return '';
+    return `homenavi:ers:inventory:${accessToken.slice(-16)}`;
+  }, [accessToken]);
 
   const refresh = useCallback(async (opts = {}) => {
     if (!enabled) return;
@@ -78,11 +85,17 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     }
 
     setErsDevices(normalizeArray(devRes.data));
-  setErsGroups(groupRes.success ? normalizeArray(groupRes.data) : []);
+    setErsGroups(groupRes.success ? normalizeArray(groupRes.data) : []);
     setRooms(roomRes.success ? normalizeArray(roomRes.data) : []);
     setTags(tagRes.success ? normalizeArray(tagRes.data) : []);
+    writeStaleResourceCache(cacheKey, {
+      devices: normalizeArray(devRes.data),
+      groups: groupRes.success ? normalizeArray(groupRes.data) : [],
+      rooms: roomRes.success ? normalizeArray(roomRes.data) : [],
+      tags: tagRes.success ? normalizeArray(tagRes.data) : [],
+    });
     if (showLoading) setLoading(false);
-  }, [accessToken, enabled]);
+  }, [accessToken, cacheKey, enabled]);
 
   useEffect(() => {
     if (!enabled) {
@@ -92,10 +105,22 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
       setTags([]);
       setLoading(false);
       setError('');
+      clearStaleResourceCache(cacheKey);
+      return;
+    }
+    const cached = readStaleResourceCache(cacheKey, ERS_INVENTORY_CACHE_TTL_MS);
+    if (cached) {
+      setErsDevices(normalizeArray(cached.devices));
+      setErsGroups(normalizeArray(cached.groups));
+      setRooms(normalizeArray(cached.rooms));
+      setTags(normalizeArray(cached.tags));
+      setLoading(false);
+      setError('');
+      refresh({ showLoading: false });
       return;
     }
     refresh();
-  }, [enabled, refresh]);
+  }, [cacheKey, enabled, refresh]);
 
   useEffect(() => {
     if (!enabled) return undefined;

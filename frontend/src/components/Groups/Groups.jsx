@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -46,6 +46,8 @@ import '../Devices/DeviceDetail.css';
 import '../Devices/AddDeviceModal.css';
 import '../Auth/AuthModal/AuthModal.css';
 import './Groups.css';
+
+const GROUP_SHARED_MIXED_GRACE_MS = 2800;
 
 function arrayOrEmpty(value) {
   return Array.isArray(value) ? value : [];
@@ -527,6 +529,188 @@ function buildGroupStats(group) {
   };
 }
 
+function useGroupSharedControls(members, { accessToken, enabled }) {
+  const [sharedValues, setSharedValues] = useState({});
+  const [sharedError, setSharedError] = useState('');
+  const [pendingCount, setPendingCount] = useState(0);
+  const graceRef = useRef(new Map());
+  const graceTimersRef = useRef(new Map());
+  const [graceVersion, setGraceVersion] = useState(0);
+
+  const sharedControls = useMemo(() => intersectSharedInputs(members), [members]);
+  const sharedInputIds = useMemo(
+    () => sharedControls.inputs.map((input) => sanitizeInputKey(input)).filter(Boolean).join('|'),
+    [sharedControls.inputs],
+  );
+
+  const clearGrace = useCallback((key) => {
+    const timer = graceTimersRef.current.get(key);
+    if (timer) {
+      window.clearTimeout(timer);
+      graceTimersRef.current.delete(key);
+    }
+    if (graceRef.current.delete(key)) {
+      setGraceVersion((value) => value + 1);
+    }
+  }, []);
+
+  const applyGrace = useCallback((key, value) => {
+    if (!key) return;
+    clearGrace(key);
+    graceRef.current.set(key, {
+      value,
+      expiresAt: Date.now() + GROUP_SHARED_MIXED_GRACE_MS,
+    });
+    const timer = window.setTimeout(() => {
+      graceTimersRef.current.delete(key);
+      if (graceRef.current.delete(key)) {
+        setGraceVersion((current) => current + 1);
+      }
+    }, GROUP_SHARED_MIXED_GRACE_MS + 25);
+    graceTimersRef.current.set(key, timer);
+    setGraceVersion((current) => current + 1);
+  }, [clearGrace]);
+
+  useEffect(() => {
+    setSharedValues(() => {
+      const next = { ...sharedControls.values };
+      graceRef.current.forEach((entry, key) => {
+        if (entry?.expiresAt > Date.now()) {
+          next[key] = entry.value;
+        }
+      });
+      return next;
+    });
+  }, [sharedControls.values, sharedInputIds]);
+
+  useEffect(() => () => {
+    graceTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    graceTimersRef.current.clear();
+    graceRef.current.clear();
+  }, []);
+
+  const resolvedControls = useMemo(() => {
+    const nextValues = { ...sharedControls.values };
+    const nextInputs = sharedControls.inputs.map((input) => {
+      const key = sanitizeInputKey(input);
+      const grace = graceRef.current.get(key);
+      if (!grace || grace.expiresAt <= Date.now()) {
+        return input;
+      }
+      nextValues[key] = grace.value;
+      return {
+        ...input,
+        mixed: false,
+        annotation: pendingCount > 0 ? 'Syncing member state...' : '',
+      };
+    });
+    const mixedKeys = sharedControls.mixedKeys.filter((key) => {
+      const grace = graceRef.current.get(key);
+      return !grace || grace.expiresAt <= Date.now();
+    });
+    return {
+      inputs: nextInputs,
+      values: nextValues,
+      mixedKeys,
+    };
+  }, [graceVersion, pendingCount, sharedControls]);
+
+  const handleSharedValueChange = useCallback((key, nextValue) => {
+    setSharedValues((prev) => ({ ...prev, [key]: nextValue }));
+  }, []);
+
+  const handleSharedCommand = useCallback(async (input, nextValue) => {
+    if (!enabled || !accessToken) {
+      setSharedError('Authentication required');
+      return;
+    }
+    const payload = buildPayloadForInput(input, nextValue);
+    const inputKey = sanitizeInputKey(input);
+    if (!payload || !inputKey) return;
+    setSharedError('');
+    setSharedValues((prev) => ({ ...prev, [inputKey]: nextValue }));
+    applyGrace(inputKey, nextValue);
+    setPendingCount((current) => current + 1);
+    try {
+      const results = await Promise.allSettled(members.map((device) => {
+        const deviceId = getCommandDeviceId(device);
+        if (!deviceId) return Promise.resolve({ success: false });
+        return sendDeviceCommand(deviceId, payload, accessToken);
+      }));
+      const failed = results.filter((result) => result.status === 'rejected' || !result.value?.success).length;
+      if (failed > 0) {
+        clearGrace(inputKey);
+        throw new Error(`${failed} device command${failed === 1 ? '' : 's'} failed`);
+      }
+      applyGrace(inputKey, nextValue);
+    } catch (err) {
+      setSharedError(err?.message || 'Unable to update shared group controls');
+    } finally {
+      setPendingCount((current) => Math.max(0, current - 1));
+    }
+  }, [accessToken, applyGrace, clearGrace, enabled, members]);
+
+  return {
+    sharedControls: resolvedControls,
+    sharedValues,
+    sharedPending: pendingCount > 0,
+    sharedError,
+    handleSharedValueChange,
+    handleSharedCommand,
+  };
+}
+
+function GroupSharedControlsPanel({ members, accessToken, enabled, compact = false, bootstrapping = false }) {
+  const {
+    sharedControls,
+    sharedValues,
+    sharedPending,
+    sharedError,
+    handleSharedValueChange,
+    handleSharedCommand,
+  } = useGroupSharedControls(members, { accessToken, enabled });
+
+  return (
+    <div className={`groups-shared-controls-panel${compact ? ' compact' : ''}`}>
+      <div className="groups-shared-controls-head">
+        <div>
+          {compact ? <h4>Shared controls</h4> : <h3>Shared controls</h3>}
+          <p>
+            {compact
+              ? 'Common actions stay available directly on the list card.'
+              : 'Only capabilities available on every member are shown here. Changing a control fans the same command out to all devices.'}
+          </p>
+        </div>
+        {sharedControls.inputs.length ? (
+          <GlassPill icon={faBolt} text={`${sharedControls.inputs.length} common`} />
+        ) : null}
+      </div>
+
+      {sharedError ? <div className="groups-shared-controls-error">{sharedError}</div> : null}
+      {sharedControls.mixedKeys.length ? (
+        <div className="groups-shared-controls-note">
+          {sharedControls.mixedKeys.length} shared control{sharedControls.mixedKeys.length === 1 ? '' : 's'} currently show mixed member state.
+        </div>
+      ) : null}
+      {sharedControls.inputs.length ? (
+        <DeviceControlList
+          inputs={sharedControls.inputs}
+          values={sharedValues}
+          pending={sharedPending || bootstrapping}
+          onValueChange={handleSharedValueChange}
+          onCommand={handleSharedCommand}
+          layout={compact ? 'list' : 'cards'}
+          collapseAfter={compact ? 3 : 8}
+        />
+      ) : (
+        <div className="groups-shared-controls-empty">
+          No common writable controls are available across all members yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GroupEditorModal({ open, onClose, onSubmit, devices, initialGroup, pending, error }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -744,8 +928,17 @@ function GroupDeleteModal({ open, onClose, onConfirm, group, pending, error }) {
   );
 }
 
-function GroupTile({ group, onOpen, onEdit, onDelete }) {
+function GroupTile({ group, onOpen, onEdit, onDelete, accessToken, canControl, bootstrapping }) {
   const stats = buildGroupStats(group);
+  const members = arrayOrEmpty(group?.devices);
+  const {
+    sharedControls,
+    sharedValues,
+    sharedPending,
+    sharedError,
+    handleSharedValueChange,
+    handleSharedCommand,
+  } = useGroupSharedControls(members, { accessToken, enabled: canControl });
 
   const handleClick = useCallback((event) => {
     if (event.defaultPrevented) return;
@@ -765,61 +958,81 @@ function GroupTile({ group, onOpen, onEdit, onDelete }) {
 
   return (
     <GlassCard
-      className="device-tile-card group-tile-card device-tile-clickable"
+      className="group-tile-card device-tile-card device-tile-clickable"
       interactive={false}
       role="button"
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
-      <div className="device-tile group-tile">
-        <div className="device-tile-header">
+      <div className="device-tile group-tile-surface">
+        <div className="device-tile-header group-tile-header">
           <div className="device-title-container">
-            <div className="device-title-row">
-              <span className="device-title-leading group-title-leading">
-                <span className="device-title-icon">
-                  <FontAwesomeIcon icon={faLayerGroup} />
-                </span>
+            <div className="device-title-row group-tile-title-row">
+              <span className="device-title-icon group-tile-icon" aria-hidden="true">
+                <FontAwesomeIcon icon={faLayerGroup} />
               </span>
               <span className="device-title">{group.name}</span>
-              <div className="device-title-actions">
-                <button
-                  type="button"
-                  className="device-title-action device-title-edit"
-                  onClick={() => onEdit(group)}
-                  aria-label="Edit group"
-                  title="Edit group"
-                >
-                  <FontAwesomeIcon icon={faPen} />
-                </button>
-                <button
-                  type="button"
-                  className="device-title-action device-title-delete"
-                  onClick={() => onDelete(group)}
-                  aria-label="Delete group"
-                  title="Delete group"
-                >
-                  <FontAwesomeIcon icon={faTrash} />
-                </button>
+              <div className="device-title-actions group-tile-actions">
+              <button
+                type="button"
+                className="device-title-action device-title-edit"
+                onClick={() => onEdit(group)}
+                aria-label="Edit group"
+                title="Edit group"
+              >
+                <FontAwesomeIcon icon={faPen} />
+              </button>
+              <button
+                type="button"
+                className="device-title-action device-title-delete"
+                onClick={() => onDelete(group)}
+                aria-label="Delete group"
+                title="Delete group"
+              >
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
               </div>
             </div>
-            <div className="device-meta">
-              {group.slug || 'No slug'}
-              {group.description ? <span className="device-meta-dot">•</span> : null}
-              {group.description || 'Open the detail view to inspect members and controls.'}
+            <div className="device-meta group-tile-meta">
+              <span>ERS group</span>
+              <span className="device-meta-dot">•</span>
+              <span>Updated {relativeTime(group.updatedAt)}</span>
             </div>
           </div>
         </div>
 
-        <div className="device-pill-row">
+        <p className="device-description group-tile-description">
+          {group.description || 'Shared devices, reusable automation targets, and one control surface for the whole collection.'}
+        </p>
+
+        <div className="device-pill-row group-tile-pill-row">
           <GlassPill icon={faUsers} text={`${stats.memberCount} member${stats.memberCount === 1 ? '' : 's'}`} />
           <GlassPill icon={faTag} text={group.slug || 'No slug'} />
           {stats.roomNames.length ? <GlassPill icon={faLayerGroup} text={`${stats.roomNames.length} room${stats.roomNames.length === 1 ? '' : 's'}`} /> : null}
         </div>
 
-        <div className="device-footer">
-          <span className="device-last-seen">Updated {relativeTime(group.updatedAt)}</span>
-        </div>
+        {sharedError ? <div className="groups-shared-controls-error group-tile-controls-feedback">{sharedError}</div> : null}
+        {sharedControls.mixedKeys.length ? (
+          <div className="groups-shared-controls-note group-tile-controls-feedback">
+            {sharedControls.mixedKeys.length} shared control{sharedControls.mixedKeys.length === 1 ? '' : 's'} currently show mixed member state.
+          </div>
+        ) : null}
+        {sharedControls.inputs.length ? (
+          <DeviceControlList
+            inputs={sharedControls.inputs}
+            values={sharedValues}
+            pending={sharedPending || bootstrapping}
+            onValueChange={handleSharedValueChange}
+            onCommand={handleSharedCommand}
+            layout="cards"
+            collapseAfter={4}
+          />
+        ) : (
+          <div className="groups-shared-controls-empty group-tile-controls-feedback">
+            No common writable controls are available across all members yet.
+          </div>
+        )}
       </div>
     </GlassCard>
   );
@@ -830,50 +1043,6 @@ function GroupDetailView({ group, onBack, onEdit, onDelete, onOpenDevice }) {
   const members = arrayOrEmpty(group?.devices);
   const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
-  const [sharedValues, setSharedValues] = useState({});
-  const [sharedPending, setSharedPending] = useState(false);
-  const [sharedError, setSharedError] = useState('');
-
-  const sharedControls = useMemo(() => intersectSharedInputs(members), [members]);
-  const sharedInputIds = useMemo(
-    () => sharedControls.inputs.map((input) => sanitizeInputKey(input)).filter(Boolean).join('|'),
-    [sharedControls.inputs],
-  );
-
-  useEffect(() => {
-    setSharedValues(sharedControls.values);
-  }, [sharedControls.values, sharedInputIds]);
-
-  const handleSharedValueChange = useCallback((key, nextValue) => {
-    setSharedValues((prev) => ({ ...prev, [key]: nextValue }));
-  }, []);
-
-  const handleSharedCommand = useCallback(async (input, nextValue) => {
-    if (!isResidentOrAdmin || !accessToken) {
-      setSharedError('Authentication required');
-      return;
-    }
-    const payload = buildPayloadForInput(input, nextValue);
-    if (!payload) return;
-    setSharedPending(true);
-    setSharedError('');
-    try {
-      const results = await Promise.allSettled(members.map((device) => {
-        const deviceId = getCommandDeviceId(device);
-        if (!deviceId) return Promise.resolve({ success: false });
-        return sendDeviceCommand(deviceId, payload, accessToken);
-      }));
-      const failed = results.filter((result) => result.status === 'rejected' || !result.value?.success).length;
-      if (failed > 0) {
-        throw new Error(`${failed} device command${failed === 1 ? '' : 's'} failed`);
-      }
-      setSharedValues((prev) => ({ ...prev, [sanitizeInputKey(input)]: nextValue }));
-    } catch (err) {
-      setSharedError(err?.message || 'Unable to update shared group controls');
-    } finally {
-      setSharedPending(false);
-    }
-  }, [accessToken, isResidentOrAdmin, members]);
 
   return (
     <div className="device-detail-page groups-detail-page">
@@ -899,7 +1068,6 @@ function GroupDetailView({ group, onBack, onEdit, onDelete, onOpenDevice }) {
                 <FontAwesomeIcon icon={faLayerGroup} />
               </div>
               <div>
-                <div className="group-detail-summary-label">ERS group</div>
                 <h2>{group.name}</h2>
                 <p>{group.description || 'No description provided yet.'}</p>
               </div>
@@ -916,10 +1084,6 @@ function GroupDetailView({ group, onBack, onEdit, onDelete, onOpenDevice }) {
                 <strong>{stats.roomNames.length ? stats.roomNames.join(', ') : 'Unassigned'}</strong>
               </div>
               <div className="group-detail-meta-item">
-                <span>Protocols</span>
-                <strong>Hidden from list, available per member device</strong>
-              </div>
-              <div className="group-detail-meta-item">
                 <span>Last updated</span>
                 <strong>{relativeTime(group.updatedAt)}</strong>
               </div>
@@ -934,36 +1098,12 @@ function GroupDetailView({ group, onBack, onEdit, onDelete, onOpenDevice }) {
 
         <div className="device-detail-grid-right groups-detail-sections">
           <GlassCard className="groups-detail-section groups-shared-controls-section" interactive={false}>
-            <div className="groups-detail-section-head">
-              <div>
-                <h3>Shared controls</h3>
-                <p>
-                  Only capabilities available on every member are shown here. Changing a control fans the same command out to all devices.
-                </p>
-              </div>
-            </div>
-
-            {sharedError ? <div className="groups-shared-controls-error">{sharedError}</div> : null}
-            {sharedControls.mixedKeys.length ? (
-              <div className="groups-shared-controls-note">
-                {sharedControls.mixedKeys.length} shared control{sharedControls.mixedKeys.length === 1 ? '' : 's'} currently show mixed member state. Each affected control is labeled directly below.
-              </div>
-            ) : null}
-            {sharedControls.inputs.length ? (
-              <DeviceControlList
-                inputs={sharedControls.inputs}
-                values={sharedValues}
-                pending={sharedPending || bootstrapping}
-                onValueChange={handleSharedValueChange}
-                onCommand={handleSharedCommand}
-                layout="cards"
-                collapseAfter={8}
-              />
-            ) : (
-              <div className="groups-shared-controls-empty">
-                No common writable controls are available across all members yet.
-              </div>
-            )}
+            <GroupSharedControlsPanel
+              members={members}
+              accessToken={accessToken}
+              enabled={Boolean(isResidentOrAdmin && accessToken)}
+              bootstrapping={bootstrapping}
+            />
           </GlassCard>
 
           <GlassCard className="groups-detail-section" interactive={false}>
@@ -1235,7 +1375,16 @@ export default function Groups() {
 
       <section className="devices-grid groups-grid">
         {filteredGroups.map((group) => (
-          <GroupTile key={group.id} group={group} onOpen={openGroupDetail} onEdit={openEdit} onDelete={openDelete} />
+          <GroupTile
+            key={group.id}
+            group={group}
+            onOpen={openGroupDetail}
+            onEdit={openEdit}
+            onDelete={openDelete}
+            accessToken={accessToken}
+            canControl={Boolean(isResidentOrAdmin && accessToken)}
+            bootstrapping={bootstrapping}
+          />
         ))}
 
         <GlassCard className="device-add-card" interactive={false}>

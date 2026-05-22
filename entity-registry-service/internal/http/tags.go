@@ -15,11 +15,17 @@ type tagCreateRequest struct {
 }
 
 func (s *Server) handleTagsList(w http.ResponseWriter, r *http.Request) {
+	var cached []dbinfra.Tag
+	if s.cacheRead(r.Context(), ersTagsCacheKey, &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	rows, err := s.repo.ListTags(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load tags")
 		return
 	}
+	s.cacheWrite(r.Context(), ersTagsCacheKey, rows)
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -39,6 +45,7 @@ func (s *Server) handleTagsCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.tag.created", "tag", tag.ID)
 	writeJSON(w, http.StatusCreated, tag)
 }
@@ -53,6 +60,7 @@ func (s *Server) handleTagsDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete tag")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.tag.deleted", "tag", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
@@ -84,6 +92,7 @@ func (s *Server) handleTagsSetMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update membership")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.tag.members_updated", "tag", id)
 	writeJSON(w, http.StatusOK, map[string]any{"updated": true})
 }

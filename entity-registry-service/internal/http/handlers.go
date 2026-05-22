@@ -1,14 +1,17 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -16,12 +19,65 @@ import (
 )
 
 type Server struct {
-	repo *dbinfra.Repository
-	hub  *realtime.Hub
+	repo         *dbinfra.Repository
+	hub          *realtime.Hub
+	cache        *cachex.JSONStore
+	listCacheTTL time.Duration
 }
 
-func NewServer(repo *dbinfra.Repository, hub *realtime.Hub) *Server {
-	return &Server{repo: repo, hub: hub}
+type ServerOption func(*Server)
+
+func WithCache(store *cachex.JSONStore, ttl time.Duration) ServerOption {
+	return func(s *Server) {
+		s.cache = store
+		s.listCacheTTL = ttl
+	}
+}
+
+func NewServer(repo *dbinfra.Repository, hub *realtime.Hub, opts ...ServerOption) *Server {
+	server := &Server{repo: repo, hub: hub}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(server)
+		}
+	}
+	return server
+}
+
+const (
+	ersRoomsCacheKey   = "ers:list:rooms"
+	ersTagsCacheKey    = "ers:list:tags"
+	ersGroupsCacheKey  = "ers:list:groups"
+	ersDevicesCacheKey = "ers:list:devices"
+	ersHomeCacheKey    = "ers:list:home"
+)
+
+func (s *Server) cacheRead(ctx context.Context, key string, dst any) bool {
+	if s.cache == nil || s.listCacheTTL <= 0 || key == "" {
+		return false
+	}
+	if err := s.cache.Get(ctx, key, dst); err != nil {
+		return false
+	}
+	return true
+}
+
+func (s *Server) cacheWrite(ctx context.Context, key string, value any) {
+	if s.cache == nil || s.listCacheTTL <= 0 || key == "" {
+		return
+	}
+	_ = s.cache.Set(ctx, key, value, s.listCacheTTL)
+}
+
+func (s *Server) invalidateListCaches(ctx context.Context, keys ...string) {
+	if s.cache == nil || len(keys) == 0 {
+		return
+	}
+	_ = s.cache.Delete(ctx, keys...)
+}
+
+func (s *Server) invalidateInventoryCaches(ctx context.Context) {
+	s.invalidateListCaches(ctx, ersRoomsCacheKey, ersTagsCacheKey, ersGroupsCacheKey, ersDevicesCacheKey, ersHomeCacheKey)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -168,6 +224,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if s.cache != nil && s.listCacheTTL > 0 {
+		var cached homeResponse
+		if err := s.cache.Get(ctx, ersHomeCacheKey, &cached); err == nil {
+			writeJSON(w, http.StatusOK, cached)
+			return
+		}
+	}
 	rooms, err := s.repo.ListRooms(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load rooms")
@@ -188,7 +251,9 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load devices")
 		return
 	}
-	writeJSON(w, http.StatusOK, homeResponse{Rooms: len(rooms), Tags: len(tags), Groups: len(groups), Devices: len(devs)})
+	response := homeResponse{Rooms: len(rooms), Tags: len(tags), Groups: len(groups), Devices: len(devs)}
+	s.cacheWrite(ctx, ersHomeCacheKey, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func slugify(value string) string {

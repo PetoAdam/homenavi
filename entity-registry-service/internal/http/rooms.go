@@ -15,11 +15,17 @@ type roomCreateRequest struct {
 }
 
 func (s *Server) handleRoomsList(w http.ResponseWriter, r *http.Request) {
+	var cached []dbinfra.Room
+	if s.cacheRead(r.Context(), ersRoomsCacheKey, &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	rows, err := s.repo.ListRooms(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load rooms")
 		return
 	}
+	s.cacheWrite(r.Context(), ersRoomsCacheKey, rows)
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -47,6 +53,7 @@ func (s *Server) handleRoomsCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.room.created", "room", room.ID)
 	writeJSON(w, http.StatusCreated, room)
 }
@@ -99,6 +106,7 @@ func (s *Server) handleRoomsPatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update room")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.room.updated", "room", id)
 	writeJSON(w, http.StatusOK, row)
 }
@@ -113,6 +121,7 @@ func (s *Server) handleRoomsDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete room")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.room.deleted", "room", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }

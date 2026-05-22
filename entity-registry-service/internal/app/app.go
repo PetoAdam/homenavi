@@ -13,6 +13,7 @@ import (
 	httptransport "github.com/PetoAdam/homenavi/entity-registry-service/internal/http"
 	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 )
 
 // App is the composed entity-registry-service application.
@@ -21,6 +22,7 @@ type App struct {
 	repo   *dbinfra.Repository
 	hub    *realtime.Hub
 	db     *sql.DB
+	cache  *cachex.JSONStore
 	cfg    Config
 	logger *slog.Logger
 }
@@ -39,12 +41,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("resolve sql database: %w", err)
 	}
 	hub := realtime.NewHub()
-	handler := httptransport.NewServer(repo, hub)
+	var cacheStore *cachex.JSONStore
+	if cfg.ListCacheTTL > 0 {
+		cacheStore, err = cachex.NewJSONStore(context.Background(), cfg.Redis)
+		if err != nil {
+			logger.Warn("entity-registry-service cache disabled", "error", err)
+		}
+	}
+	handler := httptransport.NewServer(repo, hub, httptransport.WithCache(cacheStore, cfg.ListCacheTTL))
 	return &App{
 		server: &http.Server{Addr: ":" + cfg.Port, Handler: httptransport.NewRouter(handler), ReadHeaderTimeout: 5 * time.Second},
 		repo:   repo,
 		hub:    hub,
 		db:     underlyingDB,
+		cache:  cacheStore,
 		cfg:    cfg,
 		logger: logger,
 	}, nil
@@ -54,6 +64,9 @@ func (a *App) Run(ctx context.Context) error {
 	defer func() {
 		if a.db != nil {
 			_ = a.db.Close()
+		}
+		if a.cache != nil {
+			_ = a.cache.Close()
 		}
 	}()
 

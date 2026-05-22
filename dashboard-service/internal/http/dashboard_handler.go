@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/PetoAdam/homenavi/dashboard-service/internal/auth"
 	"github.com/PetoAdam/homenavi/dashboard-service/internal/dashboard"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 	"github.com/google/uuid"
 )
 
@@ -23,10 +25,56 @@ type DashboardService interface {
 
 type Handler struct {
 	service DashboardService
+	cache   *cachex.JSONStore
+	ttl     time.Duration
 }
 
-func NewHandler(service DashboardService) *Handler {
-	return &Handler{service: service}
+type HandlerOption func(*Handler)
+
+func WithCache(store *cachex.JSONStore, ttl time.Duration) HandlerOption {
+	return func(h *Handler) {
+		h.cache = store
+		h.ttl = ttl
+	}
+}
+
+func NewHandler(service DashboardService, opts ...HandlerOption) *Handler {
+	handler := &Handler{service: service}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(handler)
+		}
+	}
+	return handler
+}
+
+func (h *Handler) cacheKeyForUserDashboard(userID uuid.UUID) string {
+	return "dashboard:user:" + userID.String()
+}
+
+func (h *Handler) cacheKeyForDefaultDashboard() string {
+	return "dashboard:default"
+}
+
+func (h *Handler) cacheRead(ctx context.Context, key string, dst any) bool {
+	if h.cache == nil || h.ttl <= 0 || key == "" {
+		return false
+	}
+	return h.cache.Get(ctx, key, dst) == nil
+}
+
+func (h *Handler) cacheWrite(ctx context.Context, key string, value any) {
+	if h.cache == nil || h.ttl <= 0 || key == "" {
+		return
+	}
+	_ = h.cache.Set(ctx, key, value, h.ttl)
+}
+
+func (h *Handler) cacheDelete(ctx context.Context, keys ...string) {
+	if h.cache == nil || len(keys) == 0 {
+		return
+	}
+	_ = h.cache.Delete(ctx, keys...)
 }
 
 func (h *Handler) HandleCatalog(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +95,17 @@ func (h *Handler) HandleGetMyDashboard(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	var cached dashboard.Dashboard
+	if h.cacheRead(r.Context(), h.cacheKeyForUserDashboard(userID), &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	result, err := h.service.GetMyDashboard(r.Context(), userID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to load dashboard")
 		return
 	}
+	h.cacheWrite(r.Context(), h.cacheKeyForUserDashboard(userID), result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -86,15 +140,22 @@ func (h *Handler) HandlePutMyDashboard(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "failed to save dashboard")
 		return
 	}
+	h.cacheDelete(r.Context(), h.cacheKeyForUserDashboard(userID))
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) HandleGetDefaultDashboard(w http.ResponseWriter, r *http.Request) {
+	var cached dashboard.Dashboard
+	if h.cacheRead(r.Context(), h.cacheKeyForDefaultDashboard(), &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	result, err := h.service.GetDefaultDashboard(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to load default dashboard")
 		return
 	}
+	h.cacheWrite(r.Context(), h.cacheKeyForDefaultDashboard(), result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -116,6 +177,7 @@ func (h *Handler) HandlePutDefaultDashboard(w http.ResponseWriter, r *http.Reque
 		writeJSONError(w, http.StatusBadRequest, "invalid doc")
 		return
 	}
+	h.cacheDelete(r.Context(), h.cacheKeyForDefaultDashboard())
 	writeJSON(w, http.StatusOK, result)
 }
 

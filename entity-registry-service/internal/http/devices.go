@@ -18,11 +18,17 @@ type deviceCreateRequest struct {
 }
 
 func (s *Server) handleDevicesList(w http.ResponseWriter, r *http.Request) {
+	var cached []dbinfra.DeviceView
+	if s.cacheRead(r.Context(), ersDevicesCacheKey, &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	rows, err := s.repo.ListDevices(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load devices")
 		return
 	}
+	s.cacheWrite(r.Context(), ersDevicesCacheKey, rows)
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -65,6 +71,7 @@ func (s *Server) handleDevicesCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.repo.SetDeviceTags(r.Context(), dev.ID, ids)
 	}
+	s.invalidateInventoryCaches(r.Context())
 
 	view, err := s.repo.GetDeviceView(r.Context(), dev.ID)
 	if err != nil {
@@ -146,6 +153,7 @@ func (s *Server) handleDevicesPatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update device")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	view, err := s.repo.GetDeviceView(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load device")
@@ -165,6 +173,7 @@ func (s *Server) handleDevicesDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete device")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.device.deleted", "device", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
@@ -196,6 +205,7 @@ func (s *Server) handleDevicesSetTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update tags")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	view, err := s.repo.GetDeviceView(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load device")
@@ -242,6 +252,7 @@ func (s *Server) handleDevicesSetHDPBindings(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "failed to set bindings")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	view, err := s.repo.GetDeviceView(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load device")

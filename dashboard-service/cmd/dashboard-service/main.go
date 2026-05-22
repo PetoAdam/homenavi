@@ -12,13 +12,17 @@ import (
 )
 
 func main() {
-	cfg := app.LoadConfig()
+	cfg, err := app.LoadConfig()
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
 	if envx.String("LOG_FORMAT", "") == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, nil)
 	}
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
+	if err != nil {
+		slog.Error("dashboard-service config invalid", "error", err)
+		os.Exit(1)
+	}
 
 	application, err := app.New(cfg, logger)
 	if err != nil {

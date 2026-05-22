@@ -73,6 +73,11 @@ func (s *Server) handleDeviceCollection(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	var cached []deviceListItem
+	if s.cacheRead(ctx, deviceListCacheKey, &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	devices, err := s.repo.List(ctx)
 	if err != nil {
 		slog.Error("device list query failed", "error", err)
@@ -116,6 +121,7 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
+	s.cacheWrite(ctx, deviceListCacheKey, items)
 	writeJSON(w, http.StatusOK, items)
 }
 
@@ -181,6 +187,7 @@ func (s *Server) handleDeviceCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not create device", http.StatusInternalServerError)
 		return
 	}
+	s.invalidateDeviceListCache(r.Context())
 	s.publishDeviceMetadata(dev)
 	item, err := s.buildDeviceItem(r.Context(), dev)
 	if err != nil {
@@ -306,6 +313,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		http.Error(w, "could not update device", http.StatusInternalServerError)
 		return
 	}
+	s.invalidateDeviceListCache(r.Context())
 	s.publishDeviceMetadata(dev)
 	if hdpID == "" {
 		hdpID = canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
@@ -359,6 +367,7 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 		http.Error(w, "could not delete device", http.StatusInternalServerError)
 		return
 	}
+	s.invalidateDeviceListCache(r.Context())
 	reason := "api-delete"
 	if force {
 		reason = "api-delete-force"

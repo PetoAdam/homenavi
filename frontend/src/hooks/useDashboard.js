@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getDashboard, updateDashboard, getWidgetCatalog } from '../services/dashboardService';
 import { getWidgetDefaultHeight, listLocalWidgetCatalog } from '../components/Home/Dashboard/widgetRegistry';
+import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
 
 /**
  * useDashboard - Custom hook for dashboard state management
@@ -13,6 +14,7 @@ import { getWidgetDefaultHeight, listLocalWidgetCatalog } from '../components/Ho
  */
 
 const SAVE_DEBOUNCE_MS = 800;
+const DASHBOARD_CACHE_TTL_MS = 30 * 1000;
 
 export default function useDashboard({ enabled, accessToken }) {
   const [dashboard, setDashboard] = useState(null);
@@ -24,6 +26,7 @@ export default function useDashboard({ enabled, accessToken }) {
   const isMountedRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const pendingDocRef = useRef(null);
+  const cacheKey = accessToken ? `homenavi:dashboard:${accessToken.slice(-16)}` : '';
   
   // Parse doc from dashboard
   const parseDoc = useCallback((d) => {
@@ -48,7 +51,7 @@ export default function useDashboard({ enabled, accessToken }) {
   // Get current doc
   const doc = parseDoc(dashboard);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ showLoading = true } = {}) => {
     if (!enabled || !accessToken) {
       if (isMountedRef.current) {
         setLoading(false);
@@ -56,7 +59,9 @@ export default function useDashboard({ enabled, accessToken }) {
       return;
     }
 
-    setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+    }
     setError('');
 
     try {
@@ -80,9 +85,22 @@ export default function useDashboard({ enabled, accessToken }) {
         const knownIds = new Set(base.map((item) => item?.id).filter(Boolean));
         const merged = [...base, ...local.filter((item) => item?.id && !knownIds.has(item.id))];
         setCatalog(merged);
+        if (dashRes.success) {
+          writeStaleResourceCache(cacheKey, {
+            dashboard: dashRes.data,
+            catalog: merged,
+          });
+        }
       } else {
         // Temporary fallback until backend catalog is always available.
-        setCatalog(listLocalWidgetCatalog());
+        const fallbackCatalog = listLocalWidgetCatalog();
+        setCatalog(fallbackCatalog);
+        if (dashRes.success) {
+          writeStaleResourceCache(cacheKey, {
+            dashboard: dashRes.data,
+            catalog: fallbackCatalog,
+          });
+        }
       }
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -93,11 +111,25 @@ export default function useDashboard({ enabled, accessToken }) {
         setLoading(false);
       }
     }
-  }, [enabled, accessToken]);
+  }, [accessToken, cacheKey, enabled]);
 
   useEffect(() => {
     isMountedRef.current = true;
-    load();
+    if (!enabled || !accessToken) {
+      clearStaleResourceCache(cacheKey);
+      load();
+    } else {
+      const cached = readStaleResourceCache(cacheKey, DASHBOARD_CACHE_TTL_MS);
+      if (cached) {
+        setDashboard(cached.dashboard || null);
+        setCatalog(Array.isArray(cached.catalog) ? cached.catalog : listLocalWidgetCatalog());
+        setLoading(false);
+        setError('');
+        load({ showLoading: false });
+      } else {
+        load();
+      }
+    }
     return () => {
       isMountedRef.current = false;
       if (saveTimeoutRef.current) {
@@ -105,7 +137,7 @@ export default function useDashboard({ enabled, accessToken }) {
         saveTimeoutRef.current = null;
       }
     };
-  }, [load]);
+  }, [accessToken, cacheKey, enabled, load]);
   
   // Internal save function
   const doSave = useCallback(async (newDoc, currentVersion) => {
@@ -120,6 +152,10 @@ export default function useDashboard({ enabled, accessToken }) {
       
       if (res.success) {
         setDashboard(res.data);
+        writeStaleResourceCache(cacheKey, {
+          dashboard: res.data,
+          catalog,
+        });
         pendingDocRef.current = null;
       } else if (res.status === 409) {
         // Version conflict - reload
@@ -136,7 +172,7 @@ export default function useDashboard({ enabled, accessToken }) {
         setSaving(false);
       }
     }
-  }, [accessToken, dashboard, load]);
+  }, [accessToken, cacheKey, catalog, dashboard, load]);
   
   // Public save function with debounce
   const saveDoc = useCallback((newDoc, options = {}) => {

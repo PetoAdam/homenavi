@@ -11,6 +11,7 @@ import (
 
 	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 	"github.com/PetoAdam/homenavi/shared/hdp"
 	"github.com/google/uuid"
 )
@@ -120,16 +121,27 @@ type Server struct {
 	commandsByCorr   map[string]*pendingCommand
 	commandsByDevice map[string]*pendingCommand
 	commandTimeout   time.Duration
+	cache            *cachex.JSONStore
+	listCacheTTL     time.Duration
 }
 
-func NewServer(repo *dbinfra.Repository, mqtt mqttinfra.ClientAPI) *Server {
+type ServerOption func(*Server)
+
+func WithCache(store *cachex.JSONStore, ttl time.Duration) ServerOption {
+	return func(s *Server) {
+		s.cache = store
+		s.listCacheTTL = ttl
+	}
+}
+
+func NewServer(repo *dbinfra.Repository, mqtt mqttinfra.ClientAPI, opts ...ServerOption) *Server {
 	if repo == nil {
 		slog.Warn("NewServer initialized without repository; persistence operations will be unavailable")
 	}
 	if mqtt == nil {
 		slog.Warn("NewServer initialized without mqtt client; publish/subscribe will be disabled")
 	}
-	return &Server{
+	server := &Server{
 		repo:             repo,
 		mqtt:             mqtt,
 		adapters:         newAdapterRegistry(0),
@@ -138,6 +150,35 @@ func NewServer(repo *dbinfra.Repository, mqtt mqttinfra.ClientAPI) *Server {
 		commandsByDevice: make(map[string]*pendingCommand),
 		commandTimeout:   defaultCommandLifecycleTimeout,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(server)
+		}
+	}
+	return server
+}
+
+const deviceListCacheKey = "device-hub:list:devices"
+
+func (s *Server) cacheRead(ctx context.Context, key string, dst any) bool {
+	if s.cache == nil || s.listCacheTTL <= 0 || key == "" {
+		return false
+	}
+	return s.cache.Get(ctx, key, dst) == nil
+}
+
+func (s *Server) cacheWrite(ctx context.Context, key string, value any) {
+	if s.cache == nil || s.listCacheTTL <= 0 || key == "" {
+		return
+	}
+	_ = s.cache.Set(ctx, key, value, s.listCacheTTL)
+}
+
+func (s *Server) invalidateDeviceListCache(ctx context.Context) {
+	if s.cache == nil {
+		return
+	}
+	_ = s.cache.Delete(ctx, deviceListCacheKey)
 }
 
 func (s *Server) Register(mux *http.ServeMux) {

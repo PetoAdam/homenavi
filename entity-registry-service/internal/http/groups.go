@@ -22,11 +22,17 @@ type setGroupMembersRequest struct {
 }
 
 func (s *Server) handleGroupsList(w http.ResponseWriter, r *http.Request) {
+	var cached []dbinfra.GroupView
+	if s.cacheRead(r.Context(), ersGroupsCacheKey, &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	rows, err := s.repo.ListGroups(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load groups")
 		return
 	}
+	s.cacheWrite(r.Context(), ersGroupsCacheKey, rows)
 	writeJSON(w, http.StatusOK, rows)
 }
 
@@ -58,6 +64,7 @@ func (s *Server) handleGroupsCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to set group members")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	view, err := s.repo.GetGroupView(r.Context(), group.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load group")
@@ -128,6 +135,7 @@ func (s *Server) handleGroupsPatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update group")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	view, err := s.repo.GetGroupView(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load group")
@@ -147,6 +155,7 @@ func (s *Server) handleGroupsDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete group")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	s.emit("ers.group.deleted", "group", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
@@ -166,6 +175,7 @@ func (s *Server) handleGroupsSetMembers(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to update members")
 		return
 	}
+	s.invalidateInventoryCaches(r.Context())
 	view, err := s.repo.GetGroupView(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load group")

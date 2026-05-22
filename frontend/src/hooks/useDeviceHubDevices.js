@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSharedMqttConnection } from '../services/realtime/sharedMqtt';
+import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
 
 const HDP_SCHEMA = 'hdp.v1';
 const HDP_ROOT = 'homenavi/hdp/';
@@ -18,6 +19,7 @@ const REALTIME_SUBSCRIPTION_FILTERS = [
   COMMAND_RESULT_PREFIX + '#',
 ];
 const DEVICE_LIST_CONNECT_REFRESH_FRESHNESS_MS = 3000;
+const DEVICE_LIST_CACHE_TTL_MS = 20 * 1000;
 
 const CANONICAL_ZIGBEE_ID_RE = /^zigbee\/0x[0-9a-f]{16}$/i;
 
@@ -677,6 +679,7 @@ export default function useDeviceHubDevices(options = {}) {
   const [realtimeMetrics, setRealtimeMetrics] = useState(createRealtimeInitMetrics);
   const [pairingSessions, setPairingSessions] = useState({});
   const [pairingConfig, setPairingConfig] = useState({});
+  const deviceListCacheKey = accessToken ? `homenavi:device-hub:list:${accessToken.slice(-16)}` : 'homenavi:device-hub:list:anon';
 
   const devicesRef = useRef(new Map());
   const mqttConnRef = useRef(null);
@@ -812,6 +815,59 @@ export default function useDeviceHubDevices(options = {}) {
     refreshPairingConfig();
   }, [enabled, refreshPairings, refreshPairingConfig]);
 
+  const hydrateDeviceList = useCallback((payload, { markFresh = false } = {}) => {
+    if (!Array.isArray(payload)) {
+      return false;
+    }
+    const now = Date.now();
+    const next = new Map();
+    const previousEntries = devicesRef.current;
+    payload.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const idFromApi = item.device_id || item.external_id || item.id;
+      const norm = normalizeDeviceId(idFromApi);
+      const mapKey = norm.hdpId || idFromApi;
+      if (!mapKey) return;
+
+      if (String(mapKey).startsWith('zigbee/') && !isCanonicalZigbeeId(mapKey)) {
+        return;
+      }
+
+      const stateObj = ensureStateObject(item.state);
+      const prev = previousEntries.get(mapKey) || {};
+      const stateUpdatedAt = Object.keys(stateObj).length > 0
+        ? resolveRestStateUpdatedAt(item, prev)
+        : (prev.stateUpdatedAt ?? null);
+      next.set(mapKey, {
+        ...prev,
+        ...item,
+        id: mapKey,
+        mapKey,
+        device_id: mapKey,
+        externalId: mapKey,
+        hdpId: mapKey,
+        icon: typeof item.icon === 'string' ? item.icon : (item.metadata?.icon || ''),
+        capabilities: ensureArray(item.capabilities),
+        inputs: ensureArray(item.inputs),
+        configuration: normalizeDeviceConfiguration(item.configuration, item.capabilities, item.inputs, item.protocol),
+        description: normalizeDescription(item.description),
+        _last_state: Object.keys(stateObj).length > 0 ? stateObj : ensureStateObject(prev._last_state),
+        metadataUpdatedAt: now,
+        stateUpdatedAt,
+        __hasMetadata: true,
+      });
+    });
+    if (!mountedRef.current || !enabledRef.current) {
+      return false;
+    }
+    devicesRef.current = next;
+    if (markFresh) {
+      lastSuccessfulDeviceLoadAtRef.current = Date.now();
+    }
+    schedulePublish();
+    return true;
+  }, [schedulePublish]);
+
   const loadInitialDevices = useCallback(async ({ silent = false, minFreshMs = 0 } = {}) => {
     if (minFreshMs > 0 && shouldSkipFreshDeviceListFetch(lastSuccessfulDeviceLoadAtRef.current, Date.now(), minFreshMs)) {
       return true;
@@ -829,53 +885,13 @@ export default function useDeviceHubDevices(options = {}) {
       if (!Array.isArray(payload)) {
         throw new Error('invalid device list payload');
       }
-      const now = Date.now();
-      const next = new Map();
-      const previousEntries = devicesRef.current;
-      payload.forEach(item => {
-        if (!item || typeof item !== 'object') return;
-        const idFromApi = item.device_id || item.external_id || item.id;
-        const norm = normalizeDeviceId(idFromApi);
-        const mapKey = norm.hdpId || idFromApi;
-        if (!mapKey) return;
-
-        // Defense-in-depth: never surface non-canonical zigbee ids.
-        if (String(mapKey).startsWith('zigbee/') && !isCanonicalZigbeeId(mapKey)) {
-          return;
-        }
-
-        const stateObj = ensureStateObject(item.state);
-        const prev = previousEntries.get(mapKey) || {};
-        const stateUpdatedAt = Object.keys(stateObj).length > 0
-          ? resolveRestStateUpdatedAt(item, prev)
-          : (prev.stateUpdatedAt ?? null);
-        next.set(mapKey, {
-          ...prev,
-          ...item,
-          id: mapKey,
-          mapKey,
-          device_id: mapKey,
-          externalId: mapKey,
-          hdpId: mapKey,
-          icon: typeof item.icon === 'string' ? item.icon : (item.metadata?.icon || ''),
-          capabilities: ensureArray(item.capabilities),
-          inputs: ensureArray(item.inputs),
-          configuration: normalizeDeviceConfiguration(item.configuration, item.capabilities, item.inputs, item.protocol),
-          description: normalizeDescription(item.description),
-          _last_state: Object.keys(stateObj).length > 0 ? stateObj : ensureStateObject(prev._last_state),
-          metadataUpdatedAt: now,
-          stateUpdatedAt,
-          __hasMetadata: true,
-        });
-      });
-      if (!mountedRef.current || !enabledRef.current) {
-        return;
+      if (!hydrateDeviceList(payload, { markFresh: true })) {
+        return false;
       }
-      devicesRef.current = next;
       if (metadataMode === 'rest') {
         setMetadataStatus({ connected: true, source: 'rest' });
       }
-      lastSuccessfulDeviceLoadAtRef.current = Date.now();
+      writeStaleResourceCache(deviceListCacheKey, payload);
       setError(prev => {
         if (!prev) return prev;
         if (prev.includes('device list') || prev.includes('device stream')) return null;
@@ -902,7 +918,7 @@ export default function useDeviceHubDevices(options = {}) {
     })();
     deviceLoadPromiseRef.current = request;
     return request;
-  }, [buildFetchOptions, metadataMode, schedulePublish]);
+  }, [buildFetchOptions, deviceListCacheKey, hydrateDeviceList, metadataMode]);
 
   const handleRealtimeMessage = useCallback(({ topic, payloadString, payloadBytes }) => {
     if (!enabledRef.current || !topic) return;
@@ -1033,6 +1049,7 @@ export default function useDeviceHubDevices(options = {}) {
       mqttConnRef.current = null;
       deviceLoadPromiseRef.current = null;
       lastSuccessfulDeviceLoadAtRef.current = 0;
+      clearStaleResourceCache(deviceListCacheKey);
       setDevices([]);
       setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
       setMetadataStatus({ connected: false, source: metadataMode });
@@ -1052,6 +1069,11 @@ export default function useDeviceHubDevices(options = {}) {
     setMetadataStatus({ connected: false, source: metadataMode });
     setError(null);
     setLoading(true);
+
+    const cachedDevices = readStaleResourceCache(deviceListCacheKey, DEVICE_LIST_CACHE_TTL_MS);
+    if (hydrateDeviceList(cachedDevices)) {
+      setLoading(false);
+    }
 
     loadInitialDevices();
 
@@ -1108,7 +1130,7 @@ export default function useDeviceHubDevices(options = {}) {
       unsubStatus();
       mqttConnRef.current = null;
     };
-  }, [authReady, enabled, loadInitialDevices, markRealtimeMetric, metadataMode, handleRealtimeMessage, resetRealtimeInitMetrics]);
+  }, [authReady, deviceListCacheKey, enabled, handleRealtimeMessage, hydrateDeviceList, loadInitialDevices, markRealtimeMetric, metadataMode, resetRealtimeInitMetrics]);
 
   const sendDeviceCommand = useCallback((deviceId, statePatch) => new Promise((resolve, reject) => {
     const conn = mqttConnRef.current;
