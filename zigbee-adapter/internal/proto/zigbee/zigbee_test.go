@@ -25,6 +25,14 @@ func TestCanonicalExternalID(t *testing.T) {
 	}
 }
 
+func TestResolveExternalIDAcceptsCanonicalTopicID(t *testing.T) {
+	z := &ZigbeeAdapter{friendlyIndex: map[string]string{}}
+	got := z.resolveExternalID(" 0X0020A716FF01963C ")
+	if got != "0x0020a716ff01963c" {
+		t.Fatalf("expected canonical external id from topic, got %q", got)
+	}
+}
+
 func TestBridgeLifecycleStage(t *testing.T) {
 	if got := bridgeLifecycleStage("device_joined"); got != "device_joined" {
 		t.Fatalf("unexpected stage %q", got)

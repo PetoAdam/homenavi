@@ -18,6 +18,9 @@ func (z *ZigbeeAdapter) resolveExternalID(friendly string) string {
 		return ""
 	}
 	friendly = strings.TrimSpace(friendly)
+	if isCanonicalZigbeeExternal(friendly) {
+		return strings.ToLower(friendly)
+	}
 	z.metaMu.RLock()
 	defer z.metaMu.RUnlock()
 	if external, ok := z.friendlyIndex[friendly]; ok {
