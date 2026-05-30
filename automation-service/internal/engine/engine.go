@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
@@ -40,7 +41,8 @@ type Engine struct {
 	cronEntries map[string]cron.EntryID
 	cronSpecs   map[string]string
 
-	reloadEvery time.Duration
+	reloadEvery     time.Duration
+	mqttConnectedAt atomic.Int64
 }
 
 type cachedSelector struct {
@@ -61,7 +63,7 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Engine{
+	eng := &Engine{
 		repo:                repo,
 		mq:                  mq,
 		events:              NewRunEventHub(),
@@ -79,6 +81,20 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 		selectorCache:       map[string]cachedSelector{},
 		reloadEvery:         10 * time.Second,
 	}
+	eng.noteMQTTConnected(time.Now())
+	if mq != nil {
+		mq.AddOnConnectHandler(func() {
+			eng.noteMQTTConnected(time.Now())
+		})
+	}
+	return eng
+}
+
+func (e *Engine) noteMQTTConnected(at time.Time) {
+	if e == nil {
+		return
+	}
+	e.mqttConnectedAt.Store(at.UTC().UnixMilli())
 }
 
 func (e *Engine) SubscribeRunEvents(runID uuid.UUID) (<-chan RunEvent, func()) {

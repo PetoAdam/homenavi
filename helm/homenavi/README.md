@@ -53,6 +53,8 @@ helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
 - Default values are intentionally conservative and intended as a baseline scaffold.
 - The default bundled MQTT provider is EMQX. Keep EMQX as the primary broker and prefer direct bridges into it when integrating external MQTT deployments.
 - The default bundled PostgreSQL provider is CloudNativePG.
+- CloudNativePG storage is persistent by default via `postgres.cnpg.storage`.
+- Bundled standalone PostgreSQL uses the `persistentVolumeClaims.postgres-data` claim, which is enabled by default; disabling it now fails chart rendering instead of silently falling back to `emptyDir`.
 - The default bundled Redis mode is Sentinel.
 - The default profile-picture backend is MinIO-backed S3 storage.
 - Bundled dependency startup in Kubernetes is handled with readiness/startup probes plus narrow init-container dependency waits, rather than strict global startup ordering.

@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestMatchStateTrigger_EmptyKeyMatchesAny(t *testing.T) {
@@ -60,5 +61,33 @@ func TestMatchStateTrigger_Neq(t *testing.T) {
 	}
 	if matchStateTrigger(tr, map[string]any{"state": "ON"}) {
 		t.Fatalf("expected neq to not match when values equal")
+	}
+}
+
+func TestShouldIgnoreRetainedState_DropsOldRetainedSnapshot(t *testing.T) {
+	e := New(nil, nil, Options{})
+	connectedAt := time.Now().UTC()
+	e.noteMQTTConnected(connectedAt)
+	stateTS := connectedAt.Add(-30 * time.Second).UnixMilli()
+	if !e.shouldIgnoreRetainedState(true, stateTS) {
+		t.Fatalf("expected old retained snapshot to be ignored")
+	}
+}
+
+func TestShouldIgnoreRetainedState_AllowsFreshRetainedLiveUpdate(t *testing.T) {
+	e := New(nil, nil, Options{})
+	connectedAt := time.Now().UTC()
+	e.noteMQTTConnected(connectedAt)
+	stateTS := connectedAt.Add(2 * time.Second).UnixMilli()
+	if e.shouldIgnoreRetainedState(true, stateTS) {
+		t.Fatalf("expected fresh retained live update to be processed")
+	}
+}
+
+func TestShouldIgnoreRetainedState_IgnoresUnknownTimestamp(t *testing.T) {
+	e := New(nil, nil, Options{})
+	e.noteMQTTConnected(time.Now().UTC())
+	if !e.shouldIgnoreRetainedState(true, 0) {
+		t.Fatalf("expected retained message with missing timestamp to be ignored")
 	}
 }

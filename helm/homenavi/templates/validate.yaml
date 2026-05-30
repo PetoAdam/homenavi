@@ -1,0 +1,5 @@
+{{- $postgresStandalone := and (eq (include "homenavi.postgresProvider" .) "bundled") (eq (include "homenavi.postgresMode" .) "standalone") -}}
+{{- $postgresDataPVC := index .Values.persistentVolumeClaims "postgres-data" -}}
+{{- if and $postgresStandalone (not (and $postgresDataPVC $postgresDataPVC.enabled)) -}}
+{{- fail "persistentVolumeClaims.postgres-data.enabled must be true when using bundled standalone Postgres; otherwise the chart falls back to emptyDir and Postgres data is lost on pod reschedule or node restart" -}}
+{{- end -}}

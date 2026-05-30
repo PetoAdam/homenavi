@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/google/uuid"
 )
+
+const retainedStateSkewAllowance = 5 * time.Second
 
 func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	payload := m.Payload()
@@ -50,12 +53,16 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 			if err := json.Unmarshal(n.Data, &t); err != nil {
 				continue
 			}
-			if t.IgnoreRetained && m.Retained() {
+			if t.IgnoreRetained && e.shouldIgnoreRetainedState(m.Retained(), st.TS) {
 				continue
 			}
 			// Match device_id against runtime targets (device list or selector).
 			ok, err := e.targetMatchesDevice(ctx, t.Targets, st.DeviceID)
-			if err != nil || !ok {
+			if err != nil {
+				slog.Warn("automation state trigger target match failed", "workflow_id", id, "trigger_node_id", n.ID, "device_id", st.DeviceID, "targets_type", t.Targets.Type, "selector", t.Targets.Selector, "error", err)
+				continue
+			}
+			if !ok {
 				continue
 			}
 			candidates = append(candidates, match{wfID: id, triggerNodeID: n.ID, trigger: t})
@@ -73,6 +80,20 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 		}
 		_, _ = e.StartWorkflowRun(ctx, c.wfID, c.triggerNodeID, map[string]any{"type": "state", "trigger_node_id": c.triggerNodeID, "device_id": st.DeviceID, "state": st.State, "ts": st.TS, "retained": m.Retained()})
 	}
+}
+
+func (e *Engine) shouldIgnoreRetainedState(retained bool, stateTS int64) bool {
+	if !retained {
+		return false
+	}
+	if stateTS <= 0 {
+		return true
+	}
+	connectedAt := e.mqttConnectedAt.Load()
+	if connectedAt <= 0 {
+		return true
+	}
+	return stateTS < connectedAt-retainedStateSkewAllowance.Milliseconds()
 }
 
 func (e *Engine) targetMatchesDevice(ctx context.Context, targets NodeTargets, deviceID string) (bool, error) {

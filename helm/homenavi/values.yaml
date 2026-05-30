@@ -135,7 +135,7 @@ ingress:
 
 persistentVolumeClaims:
   postgres-data:
-    enabled: false
+    enabled: true
     storageClassName: ""
     accessModes:
       - ReadWriteOnce
