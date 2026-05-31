@@ -24,6 +24,7 @@ import {
   shouldClearPendingFromDevice,
 } from '../../../Devices/commandPending';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
+import { resolveCommandDeviceId } from '../../../../utils/deviceIdentity';
 import './MultiDeviceWidget.css';
 
 const FALLBACK_ICON = faMicrochip;
@@ -114,8 +115,7 @@ function isOnOffSelectInput(input) {
 }
 
 function getDeviceCommandId(device) {
-  const hdpIds = Array.isArray(device?.hdpIds) ? device.hdpIds : [];
-  return device?.id || device?.hdpId || hdpIds[0] || device?.device_id || device?.externalId || '';
+  return resolveCommandDeviceId(device);
 }
 
 function getDeviceDisplayName(device) {

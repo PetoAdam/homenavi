@@ -47,10 +47,36 @@
 }
 
 .group-controls-widget__tile-status,
-.group-controls-widget__tile-meta,
 .group-controls-widget__error {
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.92rem;
+}
+
+.group-controls-widget__tile .dcr-control-list,
+.group-controls-widget__tile .dmr-container {
+  margin-top: 0;
+}
+
+.group-controls-widget__tile .dcr-layout-list {
+  gap: 0.5rem;
+}
+
+.group-controls-widget__tile .dcr-layout-cards {
+  grid-template-columns: 1fr;
+}
+
+.group-controls-widget__tile .dcr-control {
+  min-height: 74px;
+}
+
+.group-controls-widget__tile .dmr-numeric-metrics.dmr-layout-list {
+  grid-template-columns: 1fr;
+}
+
+.group-controls-widget__empty-state {
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .group-controls-widget__empty {

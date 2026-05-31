@@ -34,6 +34,7 @@ import { searchLocations, reverseGeocode } from '../../../services/dashboardServ
 import './WidgetSettingsModal.css';
 import GlassSelect from '../../common/GlassSelect/GlassSelect';
 import { collectDeviceStateFieldKeys } from '../../../utils/deviceFields';
+import { collectCommonFieldKeys, intersectSharedInputs } from '../../../utils/groupControls';
 import { DEVICE_ICON_MAP } from '../../Devices/deviceIconChoices';
 
 function getCapabilityKeyParts(cap) {
@@ -1063,6 +1064,7 @@ function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersGroups, e
 
 function GroupControlSettings({ settings, updateSetting, ersGroups, ersLoading }) {
   const selectedIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
+  const groupConfigs = settings.group_configs && typeof settings.group_configs === 'object' ? settings.group_configs : {};
 
   const toggleGroup = (id) => {
     const next = selectedIds.includes(id)
@@ -1071,38 +1073,205 @@ function GroupControlSettings({ settings, updateSetting, ersGroups, ersLoading }
     updateSetting('group_ids', next);
   };
 
+  const selectedGroups = useMemo(() => {
+    const map = new Map((Array.isArray(ersGroups) ? ersGroups : []).map((group) => [group?.id, group]));
+    return selectedIds.map((id) => map.get(id)).filter(Boolean);
+  }, [ersGroups, selectedIds]);
+
+  const updateGroupConfig = (groupId, patch) => {
+    const current = groupConfigs[groupId] && typeof groupConfigs[groupId] === 'object' ? groupConfigs[groupId] : {};
+    const nextGroup = { ...current, ...patch };
+    if (!Array.isArray(nextGroup.controls)) delete nextGroup.controls;
+    if (!Array.isArray(nextGroup.fields)) delete nextGroup.fields;
+
+    const nextConfigs = { ...groupConfigs };
+    if (!Object.keys(nextGroup).length) {
+      delete nextConfigs[groupId];
+    } else {
+      nextConfigs[groupId] = nextGroup;
+    }
+    updateSetting('group_configs', nextConfigs);
+  };
+
+  const getInputIcon = (type) => {
+    switch ((type || '').toLowerCase()) {
+      case 'toggle': return faToggleOn;
+      case 'slider': return faSliders;
+      case 'color': return faPalette;
+      case 'number': return faGaugeHigh;
+      default: return faSliders;
+    }
+  };
+
+  const getFieldIcon = (key) => {
+    const lower = (key || '').toLowerCase();
+    if (lower.includes('temp')) return faThermometerHalf;
+    if (lower.includes('humid')) return faDroplet;
+    if (lower.includes('power') || lower.includes('voltage')) return faBolt;
+    return faGaugeHigh;
+  };
+
   return (
-    <div className="widget-settings__field">
-      <label className="widget-settings__label">Groups</label>
-      {ersLoading ? (
-        <div className="widget-settings__loading">
-          <FontAwesomeIcon icon={faSpinner} spin />
-          <span>Loading groups…</span>
+    <>
+      <div className="widget-settings__field">
+        <label className="widget-settings__label">Groups</label>
+        {ersLoading ? (
+          <div className="widget-settings__loading">
+            <FontAwesomeIcon icon={faSpinner} spin />
+            <span>Loading groups…</span>
+          </div>
+        ) : (
+          <div className="widget-settings__checkboxes">
+            {(Array.isArray(ersGroups) ? ersGroups : []).map((group) => {
+              const id = group?.id;
+              if (!id) return null;
+              const label = group?.name || group?.slug || id;
+              const count = Array.isArray(group?.devices) ? group.devices.length : 0;
+              return (
+                <label key={id} className="widget-settings__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(id)}
+                    onChange={() => toggleGroup(id)}
+                  />
+                  <span>{count > 0 ? `${label} (${count})` : label}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div className="widget-settings__hint">
+          Each selected group renders as one shared control card.
         </div>
-      ) : (
-        <div className="widget-settings__checkboxes">
-          {(Array.isArray(ersGroups) ? ersGroups : []).map((group) => {
-            const id = group?.id;
-            if (!id) return null;
-            const label = group?.name || group?.slug || id;
-            const count = Array.isArray(group?.devices) ? group.devices.length : 0;
-            return (
-              <label key={id} className="widget-settings__checkbox">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(id)}
-                  onChange={() => toggleGroup(id)}
-                />
-                <span>{count > 0 ? `${label} (${count})` : label}</span>
-              </label>
-            );
-          })}
-        </div>
-      )}
-      <div className="widget-settings__hint">
-        Each selected group renders as one shared toggle tile.
       </div>
-    </div>
+      {selectedGroups.map((group) => {
+        const sharedControls = intersectSharedInputs(Array.isArray(group?.devices) ? group.devices : []);
+        const commonFields = collectCommonFieldKeys(Array.isArray(group?.devices) ? group.devices : []);
+        const config = groupConfigs[group.id] && typeof groupConfigs[group.id] === 'object' ? groupConfigs[group.id] : {};
+        const allControlKeys = sharedControls.inputs
+          .map((input) => String(input?.id || input?.property || '').trim())
+          .filter(Boolean);
+        const availableControlMap = new Map(sharedControls.inputs.map((input) => [String(input?.id || input?.property || '').trim(), input]));
+        const selectedControls = Array.isArray(config.controls)
+          ? config.controls.map((key) => String(key || '').trim()).filter((key) => availableControlMap.has(key))
+          : allControlKeys;
+        const controlOptionsToAdd = sharedControls.inputs.filter((input) => {
+          const key = String(input?.id || input?.property || '').trim();
+          return key && !selectedControls.includes(key);
+        });
+        const selectedFields = Array.isArray(config.fields)
+          ? config.fields.map((field) => String(field || '').trim()).filter((field) => commonFields.includes(field))
+          : [];
+        const fieldOptionsToAdd = commonFields.filter((field) => !selectedFields.includes(field));
+
+        return (
+          <div key={group.id} className="widget-settings__section">
+            <h3 className="widget-settings__section-title">
+              <FontAwesomeIcon icon={faLayerGroup} />
+              {group?.name || group?.slug || group.id}
+            </h3>
+
+            <div className="widget-settings__field">
+              <label className="widget-settings__label">Visible Controls</label>
+              <div className="widget-settings__picker-list">
+                {selectedControls.length === 0 ? (
+                  <div className="widget-settings__picker-empty">
+                    No shared controls will be shown for this group.
+                  </div>
+                ) : selectedControls.map((key) => {
+                  const input = availableControlMap.get(key);
+                  return (
+                    <div key={key} className="widget-settings__picker-item">
+                      <FontAwesomeIcon icon={getInputIcon(input?.type)} className="widget-settings__picker-item-icon" />
+                      <span className="widget-settings__picker-item-name">{input?.label || input?.property || key}</span>
+                      <button
+                        type="button"
+                        className="widget-settings__picker-item-remove"
+                        onClick={() => updateGroupConfig(group.id, { controls: selectedControls.filter((item) => item !== key) })}
+                        title="Remove"
+                      >
+                        <FontAwesomeIcon icon={faXmark} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {controlOptionsToAdd.length > 0 ? (
+                <div className="widget-settings__picker-add">
+                  <GlassSelect
+                    value={''}
+                    options={controlOptionsToAdd.map((input) => {
+                      const key = String(input?.id || input?.property || '').trim();
+                      return { value: key, label: `${input?.label || input?.property || key} (${input?.type})` };
+                    })}
+                    placeholder="+ Add shared control…"
+                    ariaLabel={`Add control for ${group?.name || group?.slug || group.id}`}
+                    onChange={(next) => {
+                      if (!next) return;
+                      updateGroupConfig(group.id, { controls: [...selectedControls, next] });
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              {Array.isArray(config.controls) ? (
+                <div className="widget-settings__hint">
+                  Shared controls are filtered to the selected list above.
+                </div>
+              ) : (
+                <div className="widget-settings__hint">
+                  All shared controls are shown by default. Remove any you do not want visible.
+                </div>
+              )}
+            </div>
+
+            <div className="widget-settings__field">
+              <label className="widget-settings__label">State Fields to Display</label>
+              <div className="widget-settings__picker-list">
+                {selectedFields.length === 0 ? (
+                  <div className="widget-settings__picker-empty">
+                    No shared state fields selected.
+                  </div>
+                ) : selectedFields.map((field) => (
+                  <div key={field} className="widget-settings__picker-item">
+                    <FontAwesomeIcon icon={getFieldIcon(field)} className="widget-settings__picker-item-icon" />
+                    <span className="widget-settings__picker-item-name">{field}</span>
+                    <button
+                      type="button"
+                      className="widget-settings__picker-item-remove"
+                      onClick={() => updateGroupConfig(group.id, { fields: selectedFields.filter((item) => item !== field) })}
+                      title="Remove"
+                    >
+                      <FontAwesomeIcon icon={faXmark} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {fieldOptionsToAdd.length > 0 ? (
+                <div className="widget-settings__picker-add">
+                  <GlassSelect
+                    value={''}
+                    options={fieldOptionsToAdd.map((field) => ({ value: field, label: field }))}
+                    placeholder="+ Add state field…"
+                    ariaLabel={`Add field for ${group?.name || group?.slug || group.id}`}
+                    onChange={(next) => {
+                      if (!next) return;
+                      updateGroupConfig(group.id, { fields: [...selectedFields, next] });
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              <div className="widget-settings__hint">
+                Only fields present on every member of the group can be displayed.
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 

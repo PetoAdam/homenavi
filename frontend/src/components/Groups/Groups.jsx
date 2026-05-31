@@ -39,6 +39,7 @@ import {
   patchErsGroup,
   setErsGroupMembers,
 } from '../../services/entityRegistryService';
+import { resolveCommandDeviceId } from '../../utils/deviceIdentity';
 import { normalizeColorHex } from '../../utils/colorHex';
 import '../Devices/Devices.css';
 import '../Devices/DeviceTile.css';
@@ -500,8 +501,7 @@ function intersectSharedInputs(devices) {
 }
 
 function getCommandDeviceId(device) {
-  const hdpIds = Array.isArray(device?.hdpIds) ? device.hdpIds : [];
-  return device?.id || device?.hdpId || hdpIds[0] || '';
+  return resolveCommandDeviceId(device);
 }
 
 function normalizeGroup(group) {

@@ -7,6 +7,7 @@ import useDashboard from '../../../hooks/useDashboard';
 import UnauthorizedView from '../../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../../common/LoadingView/LoadingView';
 import WidgetRenderer from './WidgetRenderer';
+import { normalizeLayoutHeights, pickSourceBreakpoint } from './layoutUtils';
 import { getWidgetDefaultHeight } from './widgetRegistry';
 import AddWidgetModal from './AddWidgetModal';
 import WidgetSettingsModal from './WidgetSettingsModal';
@@ -51,15 +52,6 @@ function pxToRows(px) {
   // Solving for rows: rows = (totalPx + margin) / (ROW_HEIGHT + margin)
   const marginY = MARGIN[1];
   return Math.max(1, Math.ceil((px + marginY) / (ROW_HEIGHT + marginY)));
-}
-
-function pickSourceBreakpoint(layoutsByBp) {
-  const candidates = ['lg', 'md', 'sm', 'xxs'];
-  for (const bp of candidates) {
-    const items = layoutsByBp?.[bp];
-    if (Array.isArray(items) && items.length > 0) return bp;
-  }
-  return 'lg';
 }
 
 function reflowToCols({ sourceLayout, instanceIds, cols }) {
@@ -223,8 +215,8 @@ export default function Dashboard() {
   // Handle layout changes
   const handleLayoutChange = useCallback((currentLayout, allLayouts) => {
     if (!editMode) return;
-    updateLayouts(allLayouts);
-  }, [editMode, updateLayouts]);
+    updateLayouts(normalizeLayoutHeights(allLayouts, { preferredBreakpoint: currentBreakpoint }));
+  }, [currentBreakpoint, editMode, updateLayouts]);
 
   // Handle breakpoint change
   const handleBreakpointChange = useCallback((newBreakpoint) => {
@@ -316,12 +308,16 @@ export default function Dashboard() {
       }));
     });
 
+    const normalizedResult = normalizeLayoutHeights(result, {
+      preferredBreakpoint: pickSourceBreakpoint(result),
+    });
+
     // In view mode, enforce deterministic 2-col/1-col ordering based on the widest layout.
     // This keeps the top-row widgets first when collapsing the dashboard.
     if (!editMode) {
       const instanceIds = (doc.items || []).map((it) => it?.instance_id).filter(Boolean);
-      const sourceBp = pickSourceBreakpoint(result);
-      const source = Array.isArray(result[sourceBp]) ? result[sourceBp] : [];
+      const sourceBp = pickSourceBreakpoint(normalizedResult);
+      const source = Array.isArray(normalizedResult[sourceBp]) ? normalizedResult[sourceBp] : [];
 
       // Always normalize the collapsed layouts.
       // Additionally, if a saved layout for a wider breakpoint only uses a single column
@@ -330,18 +326,18 @@ export default function Dashboard() {
         const cols = COLS[bp];
         if (!Number.isFinite(cols) || cols <= 0) return;
 
-        const existing = result[bp];
+        const existing = normalizedResult[bp];
         const maxRight = getMaxRight(existing);
         const isCollapsedBp = bp === 'sm' || bp === 'xxs';
         const isSingleColumn = maxRight <= 1;
 
         if (isCollapsedBp || (cols > 1 && isSingleColumn && instanceIds.length > 1)) {
-          result[bp] = reflowToCols({ sourceLayout: source, instanceIds, cols });
+          normalizedResult[bp] = reflowToCols({ sourceLayout: source, instanceIds, cols });
         }
       });
     }
 
-    return result;
+    return normalizedResult;
   }, [catalog, desiredRowsByInstanceId, doc.items, doc.layouts, editMode, widgetTypeByInstanceId]);
 
   // Get widget items
@@ -385,7 +381,7 @@ export default function Dashboard() {
     const bp = currentBreakpoint;
     const existing = Array.isArray(doc.layouts?.[bp]) ? doc.layouts[bp] : [];
     const nextBp = existing.map((it) => (it.i === instanceId ? { ...it, h: desiredRows } : it));
-    const nextLayouts = { ...doc.layouts, [bp]: nextBp };
+    const nextLayouts = normalizeLayoutHeights({ ...doc.layouts, [bp]: nextBp }, { preferredBreakpoint: bp });
     updateLayouts(nextLayouts);
   }, [catalog, currentBreakpoint, doc.layouts, editMode, updateLayouts, widgetTypeByInstanceId]);
 
