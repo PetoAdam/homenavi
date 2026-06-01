@@ -313,6 +313,19 @@ function buildNormalizedInputs(device) {
   return normalized;
 }
 
+export function findToggleInput(device) {
+  const normalizedInputs = buildNormalizedInputs(device);
+  return normalizedInputs.find((input) => {
+    if (input?.type !== 'toggle') return false;
+    const key = sanitizeInputKey(input).toLowerCase();
+    return key === 'on' || key === 'state' || key === 'power';
+  }) || normalizedInputs.find((input) => input?.type === 'toggle') || null;
+}
+
+export function canToggleDevice(device) {
+  return Boolean(findToggleInput(device));
+}
+
 function valuesEqualByType(type, left, right) {
   if (type === 'color') return extractStateColorHex(left) === extractStateColorHex(right);
   if (type === 'toggle') return toControlBoolean(left) === toControlBoolean(right);

@@ -16,7 +16,7 @@ import useDeviceHubDevices from '../../../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../../../hooks/useErsInventory';
 import { sendDeviceCommand } from '../../../../services/deviceHubService';
 import WidgetShell from '../../../common/WidgetShell/WidgetShell';
-import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
+import { toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
 import {
   applyPendingStateToDevice,
   clearPendingTimeout,
@@ -25,6 +25,7 @@ import {
 } from '../../../Devices/commandPending';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
 import { resolveCommandDeviceId } from '../../../../utils/deviceIdentity';
+import { buildPayloadForInput, canToggleDevice, findToggleInput } from '../../../../utils/groupControls';
 import './MultiDeviceWidget.css';
 
 const FALLBACK_ICON = faMicrochip;
@@ -96,24 +97,6 @@ function resolveToggleState(device) {
   return false;
 }
 
-function normalizeToggleProperty(property) {
-  const key = (property ?? '').toString().trim();
-  const lower = key.toLowerCase();
-  if (lower === 'state' || lower === 'power' || lower === 'on') return 'on';
-  return key;
-}
-
-function isOnOffSelectInput(input) {
-  const type = (input?.type || input?.kind || '').toString().toLowerCase();
-  if (type !== 'select') return false;
-  const property = (input?.property || input?.id || '').toString().toLowerCase();
-  if (property !== 'power') return false;
-  const options = Array.isArray(input?.options) ? input.options : [];
-  const hasOn = options.some((opt) => String(opt?.value ?? '').trim().toLowerCase() === 'on');
-  const hasOff = options.some((opt) => String(opt?.value ?? '').trim().toLowerCase() === 'off');
-  return hasOn && hasOff;
-}
-
 function getDeviceCommandId(device) {
   return resolveCommandDeviceId(device);
 }
@@ -122,49 +105,10 @@ function getDeviceDisplayName(device) {
   return device?.displayName || device?.name || device?.hdpId || device?.ersId || device?.id || 'Device';
 }
 
-function getToggleInput(device) {
-  const inputs = Array.isArray(device?.inputs) ? device.inputs : [];
-  return inputs.find((input) => {
-    const type = (input?.type || input?.kind || '').toString().toLowerCase();
-    const valueType = (input?.value_type || input?.valueType || '').toString().toLowerCase();
-    return type === 'toggle' || type === 'binary' || valueType === 'boolean' || isOnOffSelectInput(input);
-  }) || null;
-}
-
-function isToggleWritable(input) {
-  if (!input || typeof input !== 'object') return true;
-  const access = input.access || input.metadata?.access || {};
-  if (access.readOnly === true) return false;
-  const negativeFlags = [access.write, access.set, access.command, access.toggle].filter((flag) => flag === false);
-  if (negativeFlags.length > 0) return false;
-  return true;
-}
-
-function getToggleProperty(device) {
-  const input = getToggleInput(device);
-  const inputKey = sanitizeInputKey(input);
-  if (inputKey) return inputKey;
-  const state = device?.state || {};
-  if ('on' in state) return 'on';
-  if ('state' in state) return 'state';
-  if ('power' in state) return 'power';
-  return '';
-}
-
-function canToggleDevice(device) {
-  if (!device) return false;
-  const input = getToggleInput(device);
-  if (input && !isToggleWritable(input)) return false;
-  return Boolean(getToggleProperty(device));
-}
-
 function buildTogglePayload(device, value) {
-  const property = getToggleProperty(device);
-  if (!property) return null;
-  if (property.toLowerCase() === 'power') {
-    return { state: { power: toControlBoolean(value) ? 'on' : 'off' } };
-  }
-  return { state: { [normalizeToggleProperty(property)]: toControlBoolean(value) } };
+  const input = findToggleInput(device);
+  if (!input) return null;
+  return buildPayloadForInput(input, toControlBoolean(value));
 }
 
 export default function MultiDeviceWidget({

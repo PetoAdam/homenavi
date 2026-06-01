@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPayloadForInput,
   buildSharedFieldState,
+  canToggleDevice,
   collectCommonFieldKeys,
+  findToggleInput,
   intersectSharedInputs,
 } from './groupControls';
 
@@ -59,5 +61,19 @@ describe('buildPayloadForInput', () => {
     expect(buildPayloadForInput({ id: 'power', type: 'toggle', property: 'power' }, true)).toEqual({
       state: { power: 'on' },
     });
+  });
+});
+
+describe('toggle helpers', () => {
+  it('finds a fallback toggle input from writable capabilities', () => {
+    const device = {
+      state: { on: true },
+      capabilities: [
+        { id: 'on', property: 'on', kind: 'binary', value_type: 'boolean', access: { write: true } },
+      ],
+    };
+
+    expect(findToggleInput(device)).toMatchObject({ id: 'on', type: 'toggle', property: 'on' });
+    expect(canToggleDevice(device)).toBe(true);
   });
 });
