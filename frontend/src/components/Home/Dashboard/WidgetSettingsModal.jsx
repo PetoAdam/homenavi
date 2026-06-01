@@ -35,6 +35,7 @@ import './WidgetSettingsModal.css';
 import GlassSelect from '../../common/GlassSelect/GlassSelect';
 import { collectDeviceStateFieldKeys } from '../../../utils/deviceFields';
 import { canToggleDevice, collectCommonFieldKeys, intersectSharedInputs } from '../../../utils/groupControls';
+import { canToggleGroup } from '../../../utils/quickControls';
 import { DEVICE_ICON_MAP } from '../../Devices/deviceIconChoices';
 
 function getCapabilityKeyParts(cap) {
@@ -1040,6 +1041,7 @@ function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersGroups, e
             {(Array.isArray(ersGroups) ? ersGroups : []).map((group) => {
               const id = group?.id;
               if (!id) return null;
+              if (!canToggleGroup(group)) return null;
               const count = Array.isArray(group?.devices) ? group.devices.length : 0;
               const label = group?.name || group?.slug || id;
               return (
@@ -1056,7 +1058,7 @@ function MultiDeviceSettings({ settings, updateSetting, ersDevices, ersGroups, e
           </div>
         )}
         <div className="widget-settings__hint">
-          Selected groups expand into their member devices inside quick controls.
+          Selected groups appear as single quick-control tiles with shared on/off state.
         </div>
       </div>
     </>

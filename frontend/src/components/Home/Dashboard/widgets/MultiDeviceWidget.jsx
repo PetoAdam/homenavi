@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faBolt,
   faBatteryThreeQuarters,
+  faBolt,
   faDoorOpen,
   faDroplet,
+  faLayerGroup,
   faLightbulb,
   faMicrochip,
   faPlug,
@@ -16,7 +17,7 @@ import useDeviceHubDevices from '../../../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../../../hooks/useErsInventory';
 import { sendDeviceCommand } from '../../../../services/deviceHubService';
 import WidgetShell from '../../../common/WidgetShell/WidgetShell';
-import { toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
+import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
 import {
   applyPendingStateToDevice,
   clearPendingTimeout,
@@ -25,11 +26,12 @@ import {
 } from '../../../Devices/commandPending';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
 import { buildPayloadForInput, canToggleDevice, findToggleInput } from '../../../../utils/groupControls';
-import { resolveQuickControlDevices } from '../../../../utils/quickControls';
+import { resolveQuickControlItems } from '../../../../utils/quickControls';
 import { resolveCommandDeviceId } from '../../../../utils/deviceIdentity';
 import './MultiDeviceWidget.css';
 
 const FALLBACK_ICON = faMicrochip;
+const GROUP_SHARED_MIXED_GRACE_MS = 2800;
 
 function getCapabilityKeyParts(cap) {
   if (!cap || typeof cap !== 'object') return [];
@@ -69,10 +71,7 @@ function resolveDeviceIcon(device, capabilities = []) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  const hasCapability = (key) => capabilities.some((cap) => {
-    const parts = getCapabilityKeyParts(cap);
-    return parts.includes(key);
-  });
+  const hasCapability = (key) => capabilities.some((cap) => getCapabilityKeyParts(cap).includes(key));
   if (hasCapability('contact') || keywords.includes('door')) return faDoorOpen;
   if (hasCapability('brightness') || hasCapability('color') || keywords.includes('light') || keywords.includes('lamp')) {
     return faLightbulb;
@@ -112,18 +111,17 @@ function buildTogglePayload(device, value) {
   return buildPayloadForInput(input, toControlBoolean(value));
 }
 
-export default function MultiDeviceWidget({
-  settings = {},
-  editMode,
-  onSettings,
-  onRemove,
-}) {
+export default function MultiDeviceWidget({ settings = {}, editMode, onSettings, onRemove }) {
   const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 
   const [commandError, setCommandError] = useState('');
   const [pendingMap, setPendingMap] = useState({});
+  const [pendingGroupCounts, setPendingGroupCounts] = useState({});
   const pendingRef = useRef({});
+  const graceRef = useRef(new Map());
+  const graceTimersRef = useRef(new Map());
+  const [graceVersion, setGraceVersion] = useState(0);
 
   useEffect(() => {
     pendingRef.current = pendingMap;
@@ -133,6 +131,9 @@ export default function MultiDeviceWidget({
     Object.values(pendingRef.current || {}).forEach((entry) => {
       if (entry?.timeoutId) clearTimeout(entry.timeoutId);
     });
+    graceTimersRef.current.forEach((timer) => clearTimeout(timer));
+    graceTimersRef.current.clear();
+    graceRef.current.clear();
   }, []);
 
   const { devices: realtimeDevices, loading: hdpLoading, connectionInfo } = useDeviceHubDevices({
@@ -152,17 +153,48 @@ export default function MultiDeviceWidget({
   const selectedIds = Array.isArray(settings.device_ids) ? settings.device_ids : [];
   const selectedGroupIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
 
-  const devices = useMemo(() => {
-    return resolveQuickControlDevices({
-      selectedIds,
-      selectedGroupIds,
-      ersDevices,
-      ersGroups,
-      realtimeDevices,
+  const items = useMemo(() => resolveQuickControlItems({
+    selectedIds,
+    selectedGroupIds,
+    ersDevices,
+    ersGroups,
+    realtimeDevices,
+  }), [selectedGroupIds, selectedIds, ersDevices, ersGroups, realtimeDevices]);
+
+  const buildGraceKey = useCallback((groupId, inputKey) => `${groupId}::${inputKey}`, []);
+
+  const clearGrace = useCallback((groupId, inputKey) => {
+    const graceKey = buildGraceKey(groupId, inputKey);
+    const timer = graceTimersRef.current.get(graceKey);
+    if (timer) {
+      clearTimeout(timer);
+      graceTimersRef.current.delete(graceKey);
+    }
+    if (graceRef.current.delete(graceKey)) {
+      setGraceVersion((value) => value + 1);
+    }
+  }, [buildGraceKey]);
+
+  const applyGrace = useCallback((groupId, inputKey, value) => {
+    if (!groupId || !inputKey) return;
+    const graceKey = buildGraceKey(groupId, inputKey);
+    clearGrace(groupId, inputKey);
+    graceRef.current.set(graceKey, {
+      value,
+      expiresAt: Date.now() + GROUP_SHARED_MIXED_GRACE_MS,
     });
-  }, [selectedGroupIds, selectedIds, ersDevices, ersGroups, realtimeDevices]);
+    const timer = window.setTimeout(() => {
+      graceTimersRef.current.delete(graceKey);
+      if (graceRef.current.delete(graceKey)) {
+        setGraceVersion((current) => current + 1);
+      }
+    }, GROUP_SHARED_MIXED_GRACE_MS + 25);
+    graceTimersRef.current.set(graceKey, timer);
+    setGraceVersion((current) => current + 1);
+  }, [buildGraceKey, clearGrace]);
 
   useEffect(() => {
+    const devices = items.filter((item) => item.kind === 'device').map((item) => item.device);
     if (!devices.length) return;
     setPendingMap((prev) => {
       let changed = false;
@@ -179,12 +211,12 @@ export default function MultiDeviceWidget({
       });
       return changed ? next : prev;
     });
-  }, [devices]);
+  }, [items]);
 
   const commandsReady = Boolean(connectionInfo?.commandsReady);
   const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
 
-  const handleToggle = useCallback((device) => {
+  const handleDeviceToggle = useCallback((device) => {
     const deviceId = getDeviceCommandId(device);
     if (!deviceId) return;
     if (!canToggleDevice(device)) return;
@@ -235,9 +267,64 @@ export default function MultiDeviceWidget({
           delete next[deviceId];
           return next;
         });
-      })
-      .finally(() => {});
+      });
   }, [accessToken, commandLockReason, commandsReady]);
+
+  const handleGroupToggle = useCallback((item, displayState) => {
+    if (!item?.group?.id || !item?.toggleInput) return;
+    if (!commandsReady) {
+      setCommandError(commandLockReason);
+      return;
+    }
+    if (!accessToken) {
+      setCommandError('Authentication required');
+      return;
+    }
+
+    const nextValue = !displayState;
+    const payload = buildPayloadForInput(item.toggleInput, nextValue);
+    if (!payload || !item.group.devices.length) return;
+
+    const inputKey = sanitizeInputKey(item.toggleInput);
+    if (!inputKey) return;
+
+    setCommandError('');
+    applyGrace(item.group.id, inputKey, nextValue);
+    setPendingGroupCounts((prev) => ({
+      ...prev,
+      [item.group.id]: (prev[item.group.id] || 0) + 1,
+    }));
+
+    Promise.allSettled(item.group.devices.map((device) => {
+      const deviceId = getDeviceCommandId(device);
+      if (!deviceId) return Promise.resolve({ success: false });
+      return sendDeviceCommand(deviceId, payload, accessToken);
+    }))
+      .then((results) => {
+        const failed = results.filter((result) => result.status === 'rejected' || !result.value?.success).length;
+        if (failed > 0) {
+          clearGrace(item.group.id, inputKey);
+          throw new Error(`${failed} device command${failed === 1 ? '' : 's'} failed`);
+        }
+        applyGrace(item.group.id, inputKey, nextValue);
+      })
+      .catch((err) => {
+        setCommandError(err?.message || 'Unable to send group command');
+      })
+      .finally(() => {
+        setPendingGroupCounts((prev) => {
+          const nextCount = Math.max(0, (prev[item.group.id] || 0) - 1);
+          if (nextCount === 0) {
+            const { [item.group.id]: _unused, ...rest } = prev;
+            return rest;
+          }
+          return {
+            ...prev,
+            [item.group.id]: nextCount,
+          };
+        });
+      });
+  }, [accessToken, applyGrace, clearGrace, commandLockReason, commandsReady]);
 
   if (!selectedIds.length && !selectedGroupIds.length) {
     return (
@@ -251,17 +338,17 @@ export default function MultiDeviceWidget({
       >
         <div className="multi-device-widget__empty">
           <FontAwesomeIcon icon={faQuestionCircle} className="multi-device-widget__empty-icon" />
-          <span>Configure this widget to select devices</span>
+          <span>Configure this widget to select devices or groups</span>
         </div>
       </WidgetShell>
     );
   }
 
-  if (!loading && devices.length === 0) {
+  if (!loading && items.length === 0) {
     return (
       <WidgetShell
         title={settings.title || 'Quick Controls'}
-        subtitle="No toggle devices"
+        subtitle="No toggle targets"
         editMode={editMode}
         onSettings={onSettings}
         onRemove={onRemove}
@@ -269,7 +356,7 @@ export default function MultiDeviceWidget({
       >
         <div className="multi-device-widget__empty">
           <FontAwesomeIcon icon={faQuestionCircle} className="multi-device-widget__empty-icon" />
-          <span>Select devices with on/off controls</span>
+          <span>Select devices or groups with shared on/off controls</span>
         </div>
       </WidgetShell>
     );
@@ -290,8 +377,41 @@ export default function MultiDeviceWidget({
         {commandError && <div className="multi-device-widget__error">{commandError}</div>}
         {!commandError && !commandsReady ? <div className="multi-device-widget__error">{commandLockReason}</div> : null}
         <div className="multi-device-widget__grid">
-          {devices.map((device) => {
-            const commandId = getDeviceCommandId(device);
+          {items.map((item) => {
+            if (item.kind === 'group') {
+              const grace = graceRef.current.get(buildGraceKey(item.id, item.toggleKey));
+              const graceActive = Boolean(grace && grace.expiresAt > Date.now());
+              const pending = (pendingGroupCounts[item.id] || 0) > 0;
+              const isOn = graceActive ? toControlBoolean(grace.value) : toControlBoolean(item.toggleValue);
+              const isMixed = graceActive ? false : Boolean(item.mixed);
+              const status = pending ? 'Syncing' : isMixed ? 'Mixed' : isOn ? 'On' : 'Off';
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`multi-device-widget__tile multi-device-widget__tile--group${isOn ? ' on' : ''}${isMixed ? ' mixed' : ''}`}
+                  onClick={() => handleGroupToggle(item, isOn)}
+                  disabled={pending || !commandsReady}
+                  title={item.annotation || undefined}
+                >
+                  <div className="multi-device-widget__tile-header">
+                    <div className="multi-device-widget__tile-icon">
+                      <FontAwesomeIcon icon={faLayerGroup} />
+                    </div>
+                    <div className="multi-device-widget__tile-info">
+                      <div className="multi-device-widget__tile-name">
+                        {item.group?.name || item.group?.slug || item.id || 'Group'}
+                      </div>
+                      <div className="multi-device-widget__tile-status">{status}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            }
+
+            const { device } = item;
+            const commandId = item.commandId;
             const pending = Boolean(commandId && pendingMap[commandId]);
             const displayDevice = applyPendingStateToDevice(device, commandId ? pendingMap[commandId] : null);
             const isOn = resolveToggleState(displayDevice);
@@ -303,10 +423,10 @@ export default function MultiDeviceWidget({
 
             return (
               <button
-                key={device.id || device.hdpId || device.ersId}
+                key={item.key}
                 type="button"
                 className={`multi-device-widget__tile${isOn ? ' on' : ''}`}
-                onClick={() => handleToggle(device)}
+                onClick={() => handleDeviceToggle(device)}
                 disabled={pending || !canToggle || !commandsReady}
               >
                 <div className="multi-device-widget__tile-header">

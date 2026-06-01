@@ -1,4 +1,5 @@
-import { canToggleDevice } from './groupControls';
+import { sanitizeInputKey, toControlBoolean } from '../components/common/DeviceControlRenderer/deviceControlUtils';
+import { canToggleDevice, intersectSharedInputs } from './groupControls';
 import { resolveCommandDeviceId } from './deviceIdentity';
 
 function arrayOrEmpty(value) {
@@ -46,18 +47,99 @@ function mergeInventoryDevice(ersDevice, realtimeDevice) {
   };
 }
 
-export function resolveQuickControlDevices({
+function findPrimaryToggleInput(inputs) {
+  const list = arrayOrEmpty(inputs);
+  return list.find((input) => {
+    if (input?.type !== 'toggle') return false;
+    const key = sanitizeInputKey(input).toLowerCase();
+    return key === 'on' || key === 'state' || key === 'power';
+  }) || list.find((input) => input?.type === 'toggle') || null;
+}
+
+function buildDeviceLookups(ersDevices, realtimeDevices) {
+  const ersLookup = new Map();
+  arrayOrEmpty(ersDevices).forEach((device) => indexDevice(ersLookup, device));
+
+  const realtimeLookup = new Map();
+  arrayOrEmpty(realtimeDevices).forEach((device) => indexDevice(realtimeLookup, device));
+
+  return { ersLookup, realtimeLookup };
+}
+
+function resolveInventoryDevice(ref, ersLookup, realtimeLookup) {
+  const ersDevice = ersLookup.get(ref) || null;
+  const realtimeDevice = realtimeLookup.get(ref)
+    || (safeString(ersDevice?.hdpId) ? realtimeLookup.get(safeString(ersDevice.hdpId)) : null)
+    || null;
+  return mergeInventoryDevice(ersDevice, realtimeDevice);
+}
+
+function resolveGroupDevices(group, ersLookup, realtimeLookup) {
+  const devices = [];
+  const seenCommandIds = new Set();
+
+  collectGroupMemberRefs(group).forEach((ref) => {
+    const merged = resolveInventoryDevice(ref, ersLookup, realtimeLookup);
+    if (!merged) return;
+    const commandId = resolveCommandDeviceId(merged);
+    if (!commandId || seenCommandIds.has(commandId)) return;
+    seenCommandIds.add(commandId);
+    devices.push(merged);
+  });
+
+  if (devices.length > 0) return devices;
+
+  arrayOrEmpty(group?.devices).forEach((device) => {
+    const commandId = resolveCommandDeviceId(device);
+    if (!commandId || seenCommandIds.has(commandId)) return;
+    seenCommandIds.add(commandId);
+    devices.push(device);
+  });
+
+  return devices;
+}
+
+export function resolveQuickControlGroup(group, ersLookup = new Map(), realtimeLookup = new Map()) {
+  if (!group || typeof group !== 'object') return null;
+
+  const devices = resolveGroupDevices(group, ersLookup, realtimeLookup);
+  if (!devices.length) return null;
+
+  const sharedControls = intersectSharedInputs(devices);
+  const toggleInput = findPrimaryToggleInput(sharedControls.inputs);
+  if (!toggleInput) return null;
+
+  const toggleKey = sanitizeInputKey(toggleInput);
+  if (!toggleKey) return null;
+
+  return {
+    kind: 'group',
+    key: `group:${safeString(group.id) || safeString(group.slug) || safeString(group.name)}`,
+    id: safeString(group.id),
+    group: {
+      ...group,
+      devices,
+    },
+    toggleInput,
+    toggleKey,
+    toggleValue: toControlBoolean(sharedControls.values[toggleKey]),
+    mixed: sharedControls.mixedKeys.includes(toggleKey),
+    annotation: sharedControls.mixedAnnotations[toggleKey] || '',
+  };
+}
+
+export function canToggleGroup(group, ersLookup = new Map(), realtimeLookup = new Map()) {
+  return Boolean(resolveQuickControlGroup(group, ersLookup, realtimeLookup));
+}
+
+export function resolveQuickControlItems({
   selectedIds,
   selectedGroupIds,
   ersDevices,
   ersGroups,
   realtimeDevices,
 }) {
-  const ersLookup = new Map();
-  arrayOrEmpty(ersDevices).forEach((device) => indexDevice(ersLookup, device));
-
-  const realtimeLookup = new Map();
-  arrayOrEmpty(realtimeDevices).forEach((device) => indexDevice(realtimeLookup, device));
+  const { ersLookup, realtimeLookup } = buildDeviceLookups(ersDevices, realtimeDevices);
 
   const groupLookup = new Map();
   arrayOrEmpty(ersGroups).forEach((group) => {
@@ -65,31 +147,30 @@ export function resolveQuickControlDevices({
     if (id) groupLookup.set(id, group);
   });
 
-  const requestedRefs = arrayOrEmpty(selectedIds).map(safeString).filter(Boolean);
-  arrayOrEmpty(selectedGroupIds).forEach((groupId) => {
-    const group = groupLookup.get(safeString(groupId));
-    if (!group) return;
-    requestedRefs.push(...collectGroupMemberRefs(group));
-  });
+  const resolvedItems = [];
 
-  const seenRefs = new Set();
-  const resolvedDevices = [];
-  requestedRefs.forEach((ref) => {
-    if (!ref || seenRefs.has(ref)) return;
-    seenRefs.add(ref);
-
-    const ersDevice = ersLookup.get(ref) || null;
-    const realtimeDevice = realtimeLookup.get(ref)
-      || (safeString(ersDevice?.hdpId) ? realtimeLookup.get(safeString(ersDevice.hdpId)) : null)
-      || null;
-
-    const merged = mergeInventoryDevice(ersDevice, realtimeDevice);
+  arrayOrEmpty(selectedIds).map(safeString).filter(Boolean).forEach((ref) => {
+    const merged = resolveInventoryDevice(ref, ersLookup, realtimeLookup);
     if (!merged) return;
     const commandId = resolveCommandDeviceId(merged);
     if (!commandId || !canToggleDevice(merged)) return;
-    if (resolvedDevices.some((device) => resolveCommandDeviceId(device) === commandId)) return;
-    resolvedDevices.push(merged);
+    if (resolvedItems.some((item) => item.kind === 'device' && item.commandId === commandId)) return;
+    resolvedItems.push({
+      kind: 'device',
+      key: `device:${commandId}`,
+      commandId,
+      device: merged,
+    });
   });
 
-  return resolvedDevices;
+  arrayOrEmpty(selectedGroupIds).map(safeString).filter(Boolean).forEach((groupId) => {
+    const group = groupLookup.get(groupId);
+    if (!group) return;
+    const resolvedGroup = resolveQuickControlGroup(group, ersLookup, realtimeLookup);
+    if (!resolvedGroup) return;
+    if (resolvedItems.some((item) => item.kind === 'group' && item.id === resolvedGroup.id)) return;
+    resolvedItems.push(resolvedGroup);
+  });
+
+  return resolvedItems;
 }
