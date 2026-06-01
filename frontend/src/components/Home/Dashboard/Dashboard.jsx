@@ -7,7 +7,7 @@ import useDashboard from '../../../hooks/useDashboard';
 import UnauthorizedView from '../../common/UnauthorizedView/UnauthorizedView';
 import LoadingView from '../../common/LoadingView/LoadingView';
 import WidgetRenderer from './WidgetRenderer';
-import { normalizeLayoutHeights, pickSourceBreakpoint } from './layoutUtils';
+import { normalizeLayoutHeights, pickCollapsedLayoutSourceBreakpoint, pickSourceBreakpoint } from './layoutUtils';
 import { getWidgetDefaultHeight } from './widgetRegistry';
 import AddWidgetModal from './AddWidgetModal';
 import WidgetSettingsModal from './WidgetSettingsModal';
@@ -316,7 +316,7 @@ export default function Dashboard() {
     // This keeps the top-row widgets first when collapsing the dashboard.
     if (!editMode) {
       const instanceIds = (doc.items || []).map((it) => it?.instance_id).filter(Boolean);
-      const sourceBp = pickSourceBreakpoint(normalizedResult);
+      const sourceBp = pickCollapsedLayoutSourceBreakpoint(normalizedResult, currentBreakpoint);
       const source = Array.isArray(normalizedResult[sourceBp]) ? normalizedResult[sourceBp] : [];
 
       // Always normalize the collapsed layouts.
@@ -338,7 +338,7 @@ export default function Dashboard() {
     }
 
     return normalizedResult;
-  }, [catalog, desiredRowsByInstanceId, doc.items, doc.layouts, editMode, widgetTypeByInstanceId]);
+  }, [catalog, currentBreakpoint, desiredRowsByInstanceId, doc.items, doc.layouts, editMode, widgetTypeByInstanceId]);
 
   // Get widget items
   const widgetItems = useMemo(() => doc.items || [], [doc.items]);

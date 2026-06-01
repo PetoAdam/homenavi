@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeLayoutHeights, pickSourceBreakpoint } from './layoutUtils';
+import { normalizeLayoutHeights, pickCollapsedLayoutSourceBreakpoint, pickSourceBreakpoint } from './layoutUtils';
 
 describe('pickSourceBreakpoint', () => {
   it('prefers the widest populated breakpoint', () => {
     expect(pickSourceBreakpoint({ sm: [{ i: 'a' }], xl: [{ i: 'a' }] })).toBe('xl');
+  });
+});
+
+describe('pickCollapsedLayoutSourceBreakpoint', () => {
+  it('prefers the active xxs layout when it exists', () => {
+    expect(pickCollapsedLayoutSourceBreakpoint({
+      lg: [{ i: 'a' }],
+      xxs: [{ i: 'a' }],
+    }, 'xxs')).toBe('xxs');
+  });
+
+  it('falls back to the widest populated layout outside mobile breakpoints', () => {
+    expect(pickCollapsedLayoutSourceBreakpoint({
+      lg: [{ i: 'a' }],
+      xxs: [{ i: 'a' }],
+    }, 'lg')).toBe('lg');
   });
 });
 

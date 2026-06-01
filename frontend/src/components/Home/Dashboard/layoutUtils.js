@@ -16,6 +16,15 @@ export function pickSourceBreakpoint(layoutsByBp) {
   return 'lg';
 }
 
+export function pickCollapsedLayoutSourceBreakpoint(layoutsByBp, currentBreakpoint) {
+  if ((currentBreakpoint === 'sm' || currentBreakpoint === 'xxs')
+    && Array.isArray(layoutsByBp?.[currentBreakpoint])
+    && layoutsByBp[currentBreakpoint].length > 0) {
+    return currentBreakpoint;
+  }
+  return pickSourceBreakpoint(layoutsByBp);
+}
+
 export function normalizeLayoutHeights(layoutsByBp, { preferredBreakpoint } = {}) {
   const source = layoutsByBp && typeof layoutsByBp === 'object' ? layoutsByBp : {};
   const order = uniqueBreakpointOrder(preferredBreakpoint, source);
