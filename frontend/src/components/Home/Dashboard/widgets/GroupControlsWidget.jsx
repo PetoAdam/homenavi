@@ -23,12 +23,6 @@ function getCommandDeviceId(device) {
   return resolveCommandDeviceId(device);
 }
 
-function normalizeConfiguredKeys(value) {
-  return Array.isArray(value)
-    ? value.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
-    : null;
-}
-
 export default function GroupControlsWidget({ settings = {}, editMode, onSettings, onRemove }) {
   const { accessToken, user, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
@@ -52,8 +46,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
     realtimeDevices,
   });
 
-  const selectedGroupIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
-  const groupConfigs = settings.group_configs && typeof settings.group_configs === 'object' ? settings.group_configs : {};
+  const selectedGroupId = settings.group_id || (Array.isArray(settings.group_ids) ? settings.group_ids[0] : '');
   const commandsReady = Boolean(connectionInfo?.commandsReady);
   const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
   const loading = hdpLoading || ersLoading;
@@ -90,73 +83,70 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
     setGraceVersion((current) => current + 1);
   }, [buildGraceKey, clearGrace]);
 
-  const groups = useMemo(() => {
+  const group = useMemo(() => {
     const groupMap = new Map();
     (Array.isArray(ersGroups) ? ersGroups : []).forEach((group) => {
       if (group?.id) groupMap.set(group.id, group);
     });
-    return selectedGroupIds
-      .map((groupId) => groupMap.get(groupId) || null)
-      .filter(Boolean)
-      .map((group) => {
-        const devices = Array.isArray(group.devices) ? group.devices : [];
-        const sharedControls = intersectSharedInputs(devices);
-        const commonFieldState = buildSharedFieldState(devices);
-        const config = groupConfigs[group.id] && typeof groupConfigs[group.id] === 'object' ? groupConfigs[group.id] : {};
-        const configuredControls = normalizeConfiguredKeys(config.controls);
-        const configuredFields = Array.isArray(config.fields)
-          ? config.fields.map((field) => String(field || '').trim()).filter(Boolean)
-          : [];
-        const visibleInputs = configuredControls
-          ? sharedControls.inputs.filter((input) => configuredControls.includes(String(input?.id || input?.property || '').trim().toLowerCase()))
-          : sharedControls.inputs;
-        const visibleValues = visibleInputs.reduce((acc, input) => {
-          const key = sanitizeInputKey(input);
-          if (!key) return acc;
-          if (Object.prototype.hasOwnProperty.call(sharedControls.values, key)) {
-            acc[key] = sharedControls.values[key];
-          }
-          return acc;
-        }, {});
-        const visibleFieldState = Object.fromEntries(
-          configuredFields
-            .filter((field) => Object.prototype.hasOwnProperty.call(commonFieldState, field))
-            .map((field) => [field, commonFieldState[field]]),
-        );
-        const primaryToggle = visibleInputs.find((input) => {
-          const key = String(input?.id || input?.property || '').trim().toLowerCase();
-          return input?.type === 'toggle' && (key === 'on' || key === 'state' || key === 'power');
-        }) || visibleInputs.find((input) => input?.type === 'toggle') || null;
-        return {
-          ...group,
-          devices,
-          sharedControls,
-          visibleInputs,
-          visibleValues,
-          visibleFieldState,
-          visibleFields: Object.keys(visibleFieldState),
-          primaryToggle,
-        };
-      });
-  }, [ersGroups, groupConfigs, selectedGroupIds]);
+    const selectedGroup = groupMap.get(selectedGroupId) || null;
+    if (!selectedGroup) return null;
+    const devices = Array.isArray(selectedGroup.devices) ? selectedGroup.devices : [];
+    const sharedControls = intersectSharedInputs(devices);
+    const commonFieldState = buildSharedFieldState(devices);
+    const configuredControls = Array.isArray(settings.controls)
+      ? settings.controls.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+      : null;
+    const configuredFields = Array.isArray(settings.fields)
+      ? settings.fields.map((field) => String(field || '').trim()).filter(Boolean)
+      : [];
+    const visibleInputs = configuredControls
+      ? sharedControls.inputs.filter((input) => configuredControls.includes(String(input?.id || input?.property || '').trim().toLowerCase()))
+      : sharedControls.inputs;
+    const visibleValues = visibleInputs.reduce((acc, input) => {
+      const key = sanitizeInputKey(input);
+      if (!key) return acc;
+      if (Object.prototype.hasOwnProperty.call(sharedControls.values, key)) {
+        acc[key] = sharedControls.values[key];
+      }
+      return acc;
+    }, {});
+    const visibleFieldState = Object.fromEntries(
+      configuredFields
+        .filter((field) => Object.prototype.hasOwnProperty.call(commonFieldState, field))
+        .map((field) => [field, commonFieldState[field]]),
+    );
+    const primaryToggle = visibleInputs.find((input) => {
+      const key = String(input?.id || input?.property || '').trim().toLowerCase();
+      return input?.type === 'toggle' && (key === 'on' || key === 'state' || key === 'power');
+    }) || visibleInputs.find((input) => input?.type === 'toggle') || null;
+    return {
+      ...selectedGroup,
+      devices,
+      sharedControls,
+      visibleInputs,
+      visibleValues,
+      visibleFieldState,
+      visibleFields: Object.keys(visibleFieldState),
+      primaryToggle,
+    };
+  }, [ersGroups, selectedGroupId, settings.controls, settings.fields]);
 
   useEffect(() => {
     setGroupValues((prev) => {
       const next = {};
-      groups.forEach((group) => {
-        const baseValues = { ...(group.visibleValues || {}) };
-        group.visibleInputs.forEach((input) => {
-          const inputKey = sanitizeInputKey(input);
-          const grace = graceRef.current.get(buildGraceKey(group.id, inputKey));
-          if (grace && grace.expiresAt > Date.now()) {
-            baseValues[inputKey] = grace.value;
-          }
-        });
-        next[group.id] = baseValues;
+      if (!group) return prev;
+      const baseValues = { ...(group.visibleValues || {}) };
+      group.visibleInputs.forEach((input) => {
+        const inputKey = sanitizeInputKey(input);
+        const grace = graceRef.current.get(buildGraceKey(group.id, inputKey));
+        if (grace && grace.expiresAt > Date.now()) {
+          baseValues[inputKey] = grace.value;
+        }
       });
+      next[group.id] = baseValues;
       return next;
     });
-  }, [buildGraceKey, graceVersion, groups]);
+  }, [buildGraceKey, graceVersion, group]);
 
   useEffect(() => () => {
     graceTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -164,30 +154,29 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
     graceRef.current.clear();
   }, []);
 
-  const resolvedGroups = useMemo(() => {
-    return groups.map((group) => {
-      const nextValues = { ...(group.visibleValues || {}) };
-      const nextInputs = group.visibleInputs.map((input) => {
-        const inputKey = sanitizeInputKey(input);
-        const grace = graceRef.current.get(buildGraceKey(group.id, inputKey));
-        if (!grace || grace.expiresAt <= Date.now()) {
-          return input;
-        }
-        nextValues[inputKey] = grace.value;
-        return {
-          ...input,
-          mixed: false,
-          annotation: (pendingGroupCounts[group.id] || 0) > 0 ? 'Syncing member state...' : '',
-        };
-      });
+  const resolvedGroup = useMemo(() => {
+    if (!group) return null;
+    const nextValues = { ...(group.visibleValues || {}) };
+    const nextInputs = group.visibleInputs.map((input) => {
+      const inputKey = sanitizeInputKey(input);
+      const grace = graceRef.current.get(buildGraceKey(group.id, inputKey));
+      if (!grace || grace.expiresAt <= Date.now()) {
+        return input;
+      }
+      nextValues[inputKey] = grace.value;
       return {
-        ...group,
-        visibleInputs: nextInputs,
-        visibleValues: nextValues,
-        pending: (pendingGroupCounts[group.id] || 0) > 0,
+        ...input,
+        mixed: false,
+        annotation: (pendingGroupCounts[group.id] || 0) > 0 ? 'Syncing member state...' : '',
       };
     });
-  }, [buildGraceKey, graceVersion, groups, pendingGroupCounts]);
+    return {
+      ...group,
+      visibleInputs: nextInputs,
+      visibleValues: nextValues,
+      pending: (pendingGroupCounts[group.id] || 0) > 0,
+    };
+  }, [buildGraceKey, graceVersion, group, pendingGroupCounts]);
 
   const handleGroupValueChange = useCallback((groupId, key, nextValue) => {
     setGroupValues((prev) => ({
@@ -257,11 +246,11 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
     }
   }, [accessToken, applyGrace, clearGrace, commandLockReason, commandsReady]);
 
-  if (!selectedGroupIds.length) {
+  if (!selectedGroupId || !group) {
     return (
       <WidgetShell
         title={settings.title || 'Group Controls'}
-        subtitle="No groups selected"
+        subtitle={selectedGroupId ? 'Selected group unavailable' : 'No group selected'}
         editMode={editMode}
         onSettings={onSettings}
         onRemove={onRemove}
@@ -269,7 +258,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
       >
         <div className="group-controls-widget__empty">
           <FontAwesomeIcon icon={faQuestionCircle} className="group-controls-widget__empty-icon" />
-          <span>Configure this widget to select groups</span>
+          <span>{selectedGroupId ? 'Re-select a group in widget settings' : 'Configure this widget to select a group'}</span>
         </div>
       </WidgetShell>
     );
@@ -277,9 +266,6 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
 
   return (
     <WidgetShell
-      title={settings.title || 'Group Controls'}
-      subtitle={settings.subtitle}
-      icon={faLayerGroup}
       editMode={editMode}
       onSettings={onSettings}
       onRemove={onRemove}
@@ -289,60 +275,46 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
       <div className="group-controls-widget__content">
         {commandError ? <div className="group-controls-widget__error">{commandError}</div> : null}
         {!commandError && !commandsReady ? <div className="group-controls-widget__error">{commandLockReason}</div> : null}
-        <div className="group-controls-widget__grid">
-          {resolvedGroups.map((group) => {
-            const pending = group.pending;
-            const values = groupValues[group.id] || group.visibleValues || {};
-            const primaryToggleKey = group.primaryToggle
-              ? sanitizeInputKey(group.primaryToggle)
-              : null;
-            const statusLabel = pending
-              ? 'Sending…'
-              : primaryToggleKey && values[primaryToggleKey] !== undefined
-                ? (values[primaryToggleKey] ? 'On' : 'Off')
-                : null;
-            return (
-              <div
-                key={group.id}
-                className={`group-controls-widget__tile${statusLabel === 'On' ? ' on' : ''}`}
-              >
-                <div className="group-controls-widget__tile-header">
-                  <div className="group-controls-widget__tile-icon"><FontAwesomeIcon icon={faLayerGroup} /></div>
-                  <div>
-                    <div className="group-controls-widget__tile-name">{group.name || group.slug || group.id}</div>
-                    {statusLabel ? <div className="group-controls-widget__tile-status">{statusLabel}</div> : null}
-                  </div>
-                </div>
+        <div className="group-controls-widget__header">
+          <div className="group-controls-widget__title-group">
+            <FontAwesomeIcon icon={faLayerGroup} className="group-controls-widget__icon" />
+            <div className="group-controls-widget__title-info">
+              <span className="group-controls-widget__name">{group.name || group.slug || settings.title || 'Group'}</span>
+              <span className="group-controls-widget__status">
+                {group.devices.length} member{group.devices.length === 1 ? '' : 's'}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="group-controls-widget__controls-area">
+        {resolvedGroup ? (() => {
+          const pending = resolvedGroup.pending;
+          const values = groupValues[resolvedGroup.id] || resolvedGroup.visibleValues || {};
+          return (
+            <>
+              {resolvedGroup.visibleInputs.length ? (
+                <DeviceControlList
+                  inputs={resolvedGroup.visibleInputs}
+                  values={values}
+                  pending={pending || bootstrapping}
+                  onValueChange={(key, nextValue) => handleGroupValueChange(resolvedGroup.id, key, nextValue)}
+                  onCommand={(input, nextValue) => handleGroupCommand(resolvedGroup, input, nextValue)}
+                  layout="cards"
+                  collapseAfter={4}
+                />
+              ) : null}
 
-                {group.visibleInputs.length ? (
-                  <DeviceControlList
-                    inputs={group.visibleInputs}
-                    values={values}
-                    pending={pending || bootstrapping}
-                    onValueChange={(key, nextValue) => handleGroupValueChange(group.id, key, nextValue)}
-                    onCommand={(input, nextValue) => handleGroupCommand(group, input, nextValue)}
-                    layout="list"
-                    collapseAfter={4}
-                  />
-                ) : null}
-
-                {group.visibleFields.length ? (
-                  <DeviceMetricsRenderer
-                    device={{ state: group.visibleFieldState }}
-                    selectedFields={group.visibleFields}
-                    layout="list"
-                    collapseAfter={4}
-                  />
-                ) : null}
-
-                {!group.visibleInputs.length && !group.visibleFields.length ? (
-                  <div className="group-controls-widget__empty-state">
-                    Configure controls or state fields for this group in widget settings.
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+              {resolvedGroup.visibleFields.length ? (
+                <DeviceMetricsRenderer
+                  device={{ state: resolvedGroup.visibleFieldState }}
+                  selectedFields={resolvedGroup.visibleFields}
+                  layout="cards"
+                  collapseAfter={5}
+                />
+              ) : null}
+            </>
+          );
+        })() : null}
         </div>
       </div>
     </WidgetShell>

@@ -24,8 +24,9 @@ import {
   shouldClearPendingFromDevice,
 } from '../../../Devices/commandPending';
 import { DEVICE_ICON_MAP } from '../../../Devices/deviceIconChoices';
-import { resolveCommandDeviceId } from '../../../../utils/deviceIdentity';
 import { buildPayloadForInput, canToggleDevice, findToggleInput } from '../../../../utils/groupControls';
+import { resolveQuickControlDevices } from '../../../../utils/quickControls';
+import { resolveCommandDeviceId } from '../../../../utils/deviceIdentity';
 import './MultiDeviceWidget.css';
 
 const FALLBACK_ICON = faMicrochip;
@@ -152,59 +153,13 @@ export default function MultiDeviceWidget({
   const selectedGroupIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
 
   const devices = useMemo(() => {
-    if (!selectedIds.length && !selectedGroupIds.length) return [];
-    const ersMap = new Map();
-    (Array.isArray(ersDevices) ? ersDevices : []).forEach((device) => {
-      const key = device?.id || device?.ersId || device?.hdpId;
-      if (key) ersMap.set(key, device);
+    return resolveQuickControlDevices({
+      selectedIds,
+      selectedGroupIds,
+      ersDevices,
+      ersGroups,
+      realtimeDevices,
     });
-    const groupMap = new Map();
-    (Array.isArray(ersGroups) ? ersGroups : []).forEach((group) => {
-      const key = group?.id;
-      if (key) groupMap.set(key, group);
-    });
-    const rtMap = new Map();
-    (Array.isArray(realtimeDevices) ? realtimeDevices : []).forEach((device) => {
-      const key = device?.id || device?.hdpId;
-      if (key) rtMap.set(key, device);
-    });
-
-    const requestedIds = [...selectedIds];
-    selectedGroupIds.forEach((groupId) => {
-      const group = groupMap.get(groupId);
-      if (!group) return;
-      const members = Array.isArray(group.devices) ? group.devices : [];
-      members.forEach((device) => {
-        const key = device?.ersId || device?.id || device?.hdpId;
-        if (key) requestedIds.push(key);
-      });
-    });
-    const seenRequested = new Set();
-
-    return requestedIds
-      .map((id) => {
-        if (seenRequested.has(id)) return null;
-        seenRequested.add(id);
-        const ers = ersMap.get(id) || null;
-        const ersHdpId = ers?.hdpId || (Array.isArray(ers?.hdpIds) ? ers.hdpIds[0] : null);
-        const rt = rtMap.get(id) || (ersHdpId ? rtMap.get(ersHdpId) : null) || null;
-        if (!ers && !rt) return null;
-        if (!ers) return rt;
-        if (!rt) return ers;
-        return {
-          ...rt,
-          ...ers,
-          state: rt.state || ers.state,
-          inputs: rt.inputs || ers.inputs,
-          capabilities: rt.capabilities || ers.capabilities,
-        };
-      })
-      .filter((device) => {
-        if (!device) return false;
-        const commandId = getDeviceCommandId(device);
-        if (!commandId) return false;
-        return canToggleDevice(device);
-      });
   }, [selectedGroupIds, selectedIds, ersDevices, ersGroups, realtimeDevices]);
 
   useEffect(() => {
