@@ -1,8 +1,13 @@
 {{- if and (eq (include "homenavi.redisProvider" .) "bundled") (eq (include "homenavi.redisMode" .) "sentinel") }}
+{{- $redisHeadlessServiceName := include "homenavi.redisHeadlessServiceName" . }}
+{{- $redisStatefulSetName := include "homenavi.redisStatefulSetName" . }}
+{{- $redisSentinelPort := include "homenavi.redisSentinelPort" . }}
+{{- $redisSentinelAddrs := include "homenavi.redisSentinelAddrs" . }}
+{{- $redisMasterName := include "homenavi.redisMasterName" . }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "homenavi.redisHeadlessServiceName" . }}
+  name: {{ $redisHeadlessServiceName }}
   labels:
     {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
 spec:
@@ -15,8 +20,8 @@ spec:
       port: 6379
       targetPort: 6379
     - name: sentinel
-      port: {{ include "homenavi.redisSentinelPort" . }}
-      targetPort: {{ include "homenavi.redisSentinelPort" . }}
+      port: {{ $redisSentinelPort }}
+      targetPort: {{ $redisSentinelPort }}
 ---
 apiVersion: v1
 kind: Service
@@ -31,8 +36,8 @@ spec:
     app.kubernetes.io/component: redis
   ports:
     - name: sentinel
-      port: {{ include "homenavi.redisSentinelPort" . }}
-      targetPort: {{ include "homenavi.redisSentinelPort" . }}
+      port: {{ $redisSentinelPort }}
+      targetPort: {{ $redisSentinelPort }}
 ---
 {{- if and (default true .Values.redis.sentinel.podDisruptionBudget.enabled) (gt (int (default 3 .Values.redis.sentinel.replicas)) 1) }}
 apiVersion: policy/v1
@@ -52,11 +57,11 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "homenavi.redisStatefulSetName" . }}
+  name: {{ $redisStatefulSetName }}
   labels:
     {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
 spec:
-  serviceName: {{ include "homenavi.redisHeadlessServiceName" . }}
+  serviceName: {{ $redisHeadlessServiceName }}
   replicas: {{ default 3 .Values.redis.sentinel.replicas }}
   podManagementPolicy: {{ default "Parallel" .Values.redis.sentinel.podManagementPolicy }}
   updateStrategy:
@@ -117,12 +122,12 @@ spec:
             - -ec
             - |
               ORDINAL="${HOSTNAME##*-}"
-              SELF_HOST="${HOSTNAME}.{{ include "homenavi.redisHeadlessServiceName" . }}"
+              SELF_HOST="${HOSTNAME}.{{ $redisHeadlessServiceName }}"
               SELF_FQDN="${SELF_HOST}.{{ .Release.Namespace }}.svc.cluster.local"
-              DEFAULT_MASTER="{{ include "homenavi.redisStatefulSetName" . }}-0.{{ include "homenavi.redisHeadlessServiceName" . }}"
-              SENTINEL_PORT="{{ include "homenavi.redisSentinelPort" . }}"
-              SENTINEL_ADDRS="{{ include "homenavi.redisSentinelAddrs" . }}"
-              MASTER_NAME="{{ include "homenavi.redisMasterName" . }}"
+              DEFAULT_MASTER="{{ $redisStatefulSetName }}-0.{{ $redisHeadlessServiceName }}"
+              SENTINEL_PORT="{{ $redisSentinelPort }}"
+              SENTINEL_ADDRS="{{ $redisSentinelAddrs }}"
+              MASTER_NAME="{{ $redisMasterName }}"
               SENTINEL_STATE_DIR="/data/sentinel"
               SENTINEL_STATE_FILE="${SENTINEL_STATE_DIR}/sentinel.conf"
               MASTER_HOST=""
@@ -171,7 +176,7 @@ spec:
                   IS_SELF_MASTER="true"
                   ;;
               esac
-              set -- redis-server --appendonly yes --protected-mode no --port 6379 --dir /data
+              set -- redis-server --appendonly yes --protected-mode no --port 6379 --dir /data --replica-announce-ip "$SELF_HOST" --replica-announce-port 6379
               if [ -n "${REDIS_PASSWORD:-}" ]; then
                 set -- "$@" --requirepass "$REDIS_PASSWORD"
                 if [ "$IS_SELF_MASTER" != "true" ]; then
@@ -232,9 +237,10 @@ spec:
             - |
               SENTINEL_STATE_DIR="/data/sentinel"
               SENTINEL_STATE_FILE="${SENTINEL_STATE_DIR}/sentinel.conf"
-              MASTER="{{ include "homenavi.redisStatefulSetName" . }}-0.{{ include "homenavi.redisHeadlessServiceName" . }}"
-              SENTINEL_ADDRS="{{ include "homenavi.redisSentinelAddrs" . }}"
-              MASTER_NAME="{{ include "homenavi.redisMasterName" . }}"
+              SELF_HOST="${HOSTNAME}.{{ $redisHeadlessServiceName }}"
+              MASTER="{{ $redisStatefulSetName }}-0.{{ $redisHeadlessServiceName }}"
+              SENTINEL_ADDRS="{{ $redisSentinelAddrs }}"
+              MASTER_NAME="{{ $redisMasterName }}"
               MASTER_PORT="6379"
               mkdir -p "$SENTINEL_STATE_DIR"
               if [ -s "$SENTINEL_STATE_FILE" ]; then
@@ -271,10 +277,12 @@ spec:
                 done
               fi
               cat >"$SENTINEL_STATE_FILE" <<EOF
-              port {{ include "homenavi.redisSentinelPort" . }}
+              port {{ $redisSentinelPort }}
               dir ${SENTINEL_STATE_DIR}
               sentinel resolve-hostnames yes
               sentinel announce-hostnames yes
+              sentinel announce-ip ${SELF_HOST}
+              sentinel announce-port {{ $redisSentinelPort }}
               sentinel monitor ${MASTER_NAME} ${MASTER} ${MASTER_PORT} {{ default 2 .Values.redis.sentinel.quorum }}
               sentinel down-after-milliseconds ${MASTER_NAME} {{ default 5000 .Values.redis.sentinel.downAfterMilliseconds }}
               sentinel failover-timeout ${MASTER_NAME} {{ default 60000 .Values.redis.sentinel.failoverTimeoutMilliseconds }}
@@ -296,7 +304,7 @@ spec:
               {{- end }}
           ports:
             - name: sentinel
-              containerPort: {{ include "homenavi.redisSentinelPort" . }}
+              containerPort: {{ $redisSentinelPort }}
               protocol: TCP
           startupProbe:
             tcpSocket:
