@@ -49,7 +49,7 @@ postgres:
   mode: cnpgManaged
   host: ""
   port: "5432"
-  database: users
+  database: homenavi
   username: user
   password: password
   sslMode: disable
@@ -287,7 +287,7 @@ services:
       USER_SERVICE_PORT: "8001"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_SSLMODE: disable
@@ -322,7 +322,7 @@ services:
       INTEGRATION_PROXY_URL: http://integration-proxy:8099
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
@@ -436,7 +436,7 @@ services:
       type: ClusterIP
       port: 5432
     env:
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     envFromSecrets: []
@@ -689,7 +689,7 @@ services:
       DEVICE_HUB_PORT: "8090"
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
@@ -718,7 +718,7 @@ services:
       DEVICE_HUB_URL: http://device-hub:8090
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
@@ -746,7 +746,7 @@ services:
       ZIGBEE_ADAPTER_VERSION: dev
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
@@ -801,7 +801,7 @@ services:
       HISTORY_HDP_STATE_PREFIX: homenavi/hdp/device/state/
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
@@ -828,7 +828,7 @@ services:
       AUTOMATION_SERVICE_PORT: "8094"
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: users
+      POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable

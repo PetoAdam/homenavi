@@ -230,7 +230,7 @@ postgres
 {{- end -}}
 
 {{- define "homenavi.postgresDatabase" -}}
-{{- default "users" .Values.postgres.database -}}
+{{- default "homenavi" .Values.postgres.database -}}
 {{- end -}}
 
 {{- define "homenavi.postgresUser" -}}

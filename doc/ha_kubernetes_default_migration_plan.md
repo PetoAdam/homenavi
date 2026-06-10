@@ -273,7 +273,7 @@ postgres:
 	mode: external # external | cnpgManaged
 	host: homenavi-postgres-rw
 	port: 5432
-	database: users
+	database: homenavi
 	username: user
 	passwordSecretRef: homenavi-postgres
 	sslMode: disable
