@@ -34,6 +34,21 @@ spec:
       port: {{ include "homenavi.redisSentinelPort" . }}
       targetPort: {{ include "homenavi.redisSentinelPort" . }}
 ---
+{{- if and (default true .Values.redis.sentinel.podDisruptionBudget.enabled) (gt (int (default 3 .Values.redis.sentinel.replicas)) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "homenavi.redisStatefulSetName" . }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "homenavi.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  minAvailable: {{ default 2 .Values.redis.sentinel.podDisruptionBudget.minAvailable }}
+{{- end }}
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -43,6 +58,9 @@ metadata:
 spec:
   serviceName: {{ include "homenavi.redisHeadlessServiceName" . }}
   replicas: {{ default 3 .Values.redis.sentinel.replicas }}
+  podManagementPolicy: {{ default "Parallel" .Values.redis.sentinel.podManagementPolicy }}
+  updateStrategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       {{- include "homenavi.selectorLabels" . | nindent 6 }}
@@ -53,6 +71,43 @@ spec:
         {{- include "homenavi.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: redis
     spec:
+      {{- with .Values.redis.sentinel.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.redis.sentinel.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.redis.sentinel.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "homenavi.selectorLabels" . | nindent 20 }}
+                    app.kubernetes.io/component: redis
+      {{- end }}
+      {{- with .Values.redis.sentinel.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- else }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "homenavi.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: redis
+      {{- end }}
+      terminationGracePeriodSeconds: {{ default 30 .Values.redis.sentinel.terminationGracePeriodSeconds }}
       containers:
         - name: redis
           image: {{ printf "%s:%s" (default "redis" (index (index .Values.services "redis").image "repository")) (default "7.2-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
@@ -65,15 +120,44 @@ spec:
               SELF_HOST="${HOSTNAME}.{{ include "homenavi.redisHeadlessServiceName" . }}"
               SELF_FQDN="${SELF_HOST}.{{ .Release.Namespace }}.svc.cluster.local"
               DEFAULT_MASTER="{{ include "homenavi.redisStatefulSetName" . }}-0.{{ include "homenavi.redisHeadlessServiceName" . }}"
-              SENTINEL_HOST="{{ include "homenavi.redisSentinelServiceName" . }}"
               SENTINEL_PORT="{{ include "homenavi.redisSentinelPort" . }}"
+              SENTINEL_ADDRS="{{ include "homenavi.redisSentinelAddrs" . }}"
               MASTER_NAME="{{ include "homenavi.redisMasterName" . }}"
+              SENTINEL_STATE_DIR="/data/sentinel"
+              SENTINEL_STATE_FILE="${SENTINEL_STATE_DIR}/sentinel.conf"
               MASTER_HOST=""
               MASTER_PORT="6379"
-              if redis-cli -h "$SENTINEL_HOST" -p "$SENTINEL_PORT" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
-                MASTER_HOST="$(sed -n '1p' /tmp/master.addr | tr -d '\r')"
-                MASTER_PORT="$(sed -n '2p' /tmp/master.addr | tr -d '\r')"
-              fi
+              mkdir -p "$SENTINEL_STATE_DIR"
+              query_sentinel_master() {
+                OLDIFS="$IFS"
+                IFS=','
+                set -- $SENTINEL_ADDRS
+                IFS="$OLDIFS"
+                for hostport in "$@"; do
+                  host="${hostport%:*}"
+                  port="${hostport##*:}"
+                  if [ -z "$host" ] || [ -z "$port" ]; then
+                    continue
+                  fi
+                  if redis-cli -h "$host" -p "$port" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
+                    MASTER_HOST="$(sed -n '1p' /tmp/master.addr | tr -d '\r')"
+                    MASTER_PORT="$(sed -n '2p' /tmp/master.addr | tr -d '\r')"
+                    if [ -n "$MASTER_HOST" ]; then
+                      return 0
+                    fi
+                  fi
+                done
+                return 1
+              }
+              query_persisted_master() {
+                if [ ! -s "$SENTINEL_STATE_FILE" ]; then
+                  return 1
+                fi
+                MASTER_HOST="$(awk '$1 == "sentinel" && $2 == "monitor" && $3 == name { print $4; exit }' name="$MASTER_NAME" "$SENTINEL_STATE_FILE")"
+                MASTER_PORT="$(awk '$1 == "sentinel" && $2 == "monitor" && $3 == name { print $5; exit }' name="$MASTER_NAME" "$SENTINEL_STATE_FILE")"
+                [ -n "$MASTER_HOST" ]
+              }
+              query_sentinel_master || query_persisted_master || true
               if [ -z "$MASTER_HOST" ]; then
                 MASTER_HOST="$DEFAULT_MASTER"
                 MASTER_PORT="6379"
@@ -146,21 +230,60 @@ spec:
             - /bin/sh
             - -ec
             - |
+              SENTINEL_STATE_DIR="/data/sentinel"
+              SENTINEL_STATE_FILE="${SENTINEL_STATE_DIR}/sentinel.conf"
               MASTER="{{ include "homenavi.redisStatefulSetName" . }}-0.{{ include "homenavi.redisHeadlessServiceName" . }}"
-              cat >/tmp/sentinel.conf <<EOF
+              SENTINEL_ADDRS="{{ include "homenavi.redisSentinelAddrs" . }}"
+              MASTER_NAME="{{ include "homenavi.redisMasterName" . }}"
+              MASTER_PORT="6379"
+              mkdir -p "$SENTINEL_STATE_DIR"
+              if [ -s "$SENTINEL_STATE_FILE" ]; then
+                CURRENT_MASTER="$(awk '$1 == "sentinel" && $2 == "monitor" && $3 == name { print $4; exit }' name="$MASTER_NAME" "$SENTINEL_STATE_FILE")"
+                CURRENT_PORT="$(awk '$1 == "sentinel" && $2 == "monitor" && $3 == name { print $5; exit }' name="$MASTER_NAME" "$SENTINEL_STATE_FILE")"
+                if [ -n "$CURRENT_MASTER" ]; then
+                  MASTER="$CURRENT_MASTER"
+                fi
+                if [ -n "$CURRENT_PORT" ]; then
+                  MASTER_PORT="$CURRENT_PORT"
+                fi
+              else
+                OLDIFS="$IFS"
+                IFS=','
+                set -- $SENTINEL_ADDRS
+                IFS="$OLDIFS"
+                for hostport in "$@"; do
+                  host="${hostport%:*}"
+                  port="${hostport##*:}"
+                  if [ -z "$host" ] || [ -z "$port" ]; then
+                    continue
+                  fi
+                  if redis-cli -h "$host" -p "$port" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
+                    CURRENT_MASTER="$(sed -n '1p' /tmp/master.addr | tr -d '\r')"
+                    CURRENT_PORT="$(sed -n '2p' /tmp/master.addr | tr -d '\r')"
+                    if [ -n "$CURRENT_MASTER" ]; then
+                      MASTER="$CURRENT_MASTER"
+                    fi
+                    if [ -n "$CURRENT_PORT" ]; then
+                      MASTER_PORT="$CURRENT_PORT"
+                    fi
+                    break
+                  fi
+                done
+              fi
+              cat >"$SENTINEL_STATE_FILE" <<EOF
               port {{ include "homenavi.redisSentinelPort" . }}
-              dir /tmp
+              dir ${SENTINEL_STATE_DIR}
               sentinel resolve-hostnames yes
               sentinel announce-hostnames yes
-              sentinel monitor {{ include "homenavi.redisMasterName" . }} ${MASTER} 6379 {{ default 2 .Values.redis.sentinel.quorum }}
-              sentinel down-after-milliseconds {{ include "homenavi.redisMasterName" . }} {{ default 5000 .Values.redis.sentinel.downAfterMilliseconds }}
-              sentinel failover-timeout {{ include "homenavi.redisMasterName" . }} {{ default 60000 .Values.redis.sentinel.failoverTimeoutMilliseconds }}
-              sentinel parallel-syncs {{ include "homenavi.redisMasterName" . }} {{ default 1 .Values.redis.sentinel.parallelSyncs }}
+              sentinel monitor ${MASTER_NAME} ${MASTER} ${MASTER_PORT} {{ default 2 .Values.redis.sentinel.quorum }}
+              sentinel down-after-milliseconds ${MASTER_NAME} {{ default 5000 .Values.redis.sentinel.downAfterMilliseconds }}
+              sentinel failover-timeout ${MASTER_NAME} {{ default 60000 .Values.redis.sentinel.failoverTimeoutMilliseconds }}
+              sentinel parallel-syncs ${MASTER_NAME} {{ default 1 .Values.redis.sentinel.parallelSyncs }}
               EOF
               if [ -n "${REDIS_PASSWORD:-}" ]; then
-                printf 'sentinel auth-pass %s %s\n' '{{ include "homenavi.redisMasterName" . }}' "$REDIS_PASSWORD" >>/tmp/sentinel.conf
+                printf 'sentinel auth-pass %s %s\n' "$MASTER_NAME" "$REDIS_PASSWORD" >>"$SENTINEL_STATE_FILE"
               fi
-              exec redis-sentinel /tmp/sentinel.conf
+              exec redis-sentinel "$SENTINEL_STATE_FILE"
           env:
             - name: REDIS_PASSWORD
               {{- if ne (trim (include "homenavi.redisAuthSecretName" .)) "" }}
@@ -193,6 +316,9 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
   volumeClaimTemplates:
     - metadata:
         name: redis-data
