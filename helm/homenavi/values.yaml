@@ -85,6 +85,15 @@ redis:
     downAfterMilliseconds: 5000
     failoverTimeoutMilliseconds: 60000
     parallelSyncs: 1
+    podManagementPolicy: Parallel
+    terminationGracePeriodSeconds: 30
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+    affinity: {}
+    topologySpreadConstraints: []
+    nodeSelector: {}
+    tolerations: []
     storage:
       size: 2Gi
       storageClassName: ""
