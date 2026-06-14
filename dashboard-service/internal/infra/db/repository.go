@@ -46,26 +46,21 @@ func New(cfg Config, logger *slog.Logger) (*Repository, error) {
 }
 
 func ensureSchema(db *gorm.DB) error {
-	if err := db.Exec(`
-CREATE TABLE IF NOT EXISTS dashboards (
-  id uuid PRIMARY KEY,
-  scope varchar(16) NOT NULL,
-  owner_user_id uuid NULL,
-  title varchar(128) NOT NULL,
-  layout_engine varchar(32) NOT NULL,
-  layout_version integer NOT NULL DEFAULT 1,
-  doc jsonb NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-`).Error; err != nil {
-		return err
+	m := db.Migrator()
+	if !m.HasTable(&dashboardRecord{}) {
+		if err := m.CreateTable(&dashboardRecord{}); err != nil {
+			return err
+		}
 	}
-	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_dashboards_scope ON dashboards(scope);`).Error; err != nil {
-		return err
+	if !m.HasIndex(&dashboardRecord{}, "Scope") {
+		if err := m.CreateIndex(&dashboardRecord{}, "Scope"); err != nil {
+			return err
+		}
 	}
-	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_dashboards_owner_user_id ON dashboards(owner_user_id);`).Error; err != nil {
-		return err
+	if !m.HasIndex(&dashboardRecord{}, "OwnerUserID") {
+		if err := m.CreateIndex(&dashboardRecord{}, "OwnerUserID"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -136,10 +131,10 @@ func (r *Repository) UpsertDefaultDashboard(ctx context.Context, title string, d
 
 type dashboardRecord struct {
 	ID            uuid.UUID      `gorm:"type:uuid;primaryKey"`
-	Scope         string         `gorm:"type:varchar(16);index"`
+	Scope         string         `gorm:"type:varchar(16);not null;index"`
 	OwnerUserID   *uuid.UUID     `gorm:"type:uuid;index"`
-	Title         string         `gorm:"type:varchar(128)"`
-	LayoutEngine  string         `gorm:"type:varchar(32)"`
+	Title         string         `gorm:"type:varchar(128);not null"`
+	LayoutEngine  string         `gorm:"type:varchar(32);not null"`
 	LayoutVersion int            `gorm:"not null;default:1"`
 	Doc           datatypes.JSON `gorm:"type:jsonb"`
 	CreatedAt     time.Time

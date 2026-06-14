@@ -78,12 +78,16 @@ func (r *Repository) ListDevices(ctx context.Context) ([]DeviceView, error) {
 		return nil, err
 	}
 	deviceBindingsByDeviceID := map[uuid.UUID][]string{}
-	for _, b := range bindings {
-		x := strings.TrimSpace(b.ExternalID)
+	for _, binding := range bindings {
+		x, err := r.resolveBindingExternalID(ctx, binding)
+		if err != nil {
+			return nil, err
+		}
+		x = strings.TrimSpace(x)
 		if x == "" {
 			continue
 		}
-		deviceBindingsByDeviceID[b.DeviceID] = append(deviceBindingsByDeviceID[b.DeviceID], x)
+		deviceBindingsByDeviceID[binding.DeviceID] = append(deviceBindingsByDeviceID[binding.DeviceID], x)
 	}
 	for did := range deviceBindingsByDeviceID {
 		rows := deviceBindingsByDeviceID[did]
@@ -149,11 +153,15 @@ func (r *Repository) GetDeviceView(ctx context.Context, id uuid.UUID) (*DeviceVi
 		return nil, err
 	}
 	ids := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		if strings.TrimSpace(b.ExternalID) == "" {
+	for _, binding := range bindings {
+		externalID, err := r.resolveBindingExternalID(ctx, binding)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(externalID) == "" {
 			continue
 		}
-		ids = append(ids, b.ExternalID)
+		ids = append(ids, externalID)
 	}
 	sort.Strings(ids)
 	uniq := ids[:0]

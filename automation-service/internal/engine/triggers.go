@@ -111,12 +111,12 @@ func (e *Engine) targetMatchesDevice(ctx context.Context, targets NodeTargets, d
 		}
 		return false, nil
 	case "selector":
-		ids, err := e.resolveSelector(ctx, targets.Selector)
+		resolved, err := e.resolveSelectorTargets(ctx, targets.Selector)
 		if err != nil {
 			return false, err
 		}
-		for _, id := range ids {
-			if id == deviceID {
+		for _, target := range resolved {
+			if target.ExternalID == deviceID {
 				return true, nil
 			}
 		}
@@ -126,11 +126,11 @@ func (e *Engine) targetMatchesDevice(ctx context.Context, targets NodeTargets, d
 	}
 }
 
-func (e *Engine) resolveTargets(ctx context.Context, targets NodeTargets) ([]string, error) {
+func (e *Engine) resolveTargets(ctx context.Context, targets NodeTargets) ([]resolvedTarget, error) {
 	typ := strings.ToLower(strings.TrimSpace(targets.Type))
 	switch typ {
 	case "device":
-		out := make([]string, 0, len(targets.IDs))
+		out := make([]resolvedTarget, 0, len(targets.IDs))
 		seen := map[string]struct{}{}
 		for _, raw := range targets.IDs {
 			id := strings.TrimSpace(raw)
@@ -141,20 +141,36 @@ func (e *Engine) resolveTargets(ctx context.Context, targets NodeTargets) ([]str
 				continue
 			}
 			seen[id] = struct{}{}
-			out = append(out, id)
+			hdpDeviceID := e.resolveHDPDeviceID(ctx, id)
+			out = append(out, resolvedTarget{ExternalID: id, HDPDeviceID: hdpDeviceID})
 		}
 		return out, nil
 	case "selector":
-		return e.resolveSelector(ctx, targets.Selector)
+		return e.resolveSelectorTargets(ctx, targets.Selector)
 	default:
 		return nil, errors.New("unsupported targets")
 	}
 }
 
 func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string, error) {
+	targets, err := e.resolveSelectorTargets(ctx, selector)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if strings.TrimSpace(target.ExternalID) == "" {
+			continue
+		}
+		ids = append(ids, target.ExternalID)
+	}
+	return ids, nil
+}
+
+func (e *Engine) resolveSelectorTargets(ctx context.Context, selector string) ([]resolvedTarget, error) {
 	sel := strings.TrimSpace(selector)
 	if sel == "" {
-		return []string{}, nil
+		return []resolvedTarget{}, nil
 	}
 	if e.ersServiceURL == "" {
 		return nil, errors.New("ERS service url not configured")
@@ -164,7 +180,7 @@ func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string
 	e.selMu.Lock()
 	if cached, ok := e.selectorCache[sel]; ok {
 		if time.Since(cached.FetchedAt) < e.selectorTTL {
-			out := append([]string(nil), cached.IDs...)
+			out := append([]resolvedTarget(nil), cached.Targets...)
 			e.selMu.Unlock()
 			return out, nil
 		}
@@ -185,6 +201,7 @@ func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string
 	defer resp.Body.Close()
 	var out struct {
 		HDPExternalIDs []string `json:"hdp_external_ids"`
+		HDPDeviceIDs   []string `json:"hdp_device_ids"`
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("selector resolve failed: %s", resp.Status)
@@ -193,9 +210,9 @@ func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string
 		return nil, errors.New("invalid selector response")
 	}
 
-	ids := make([]string, 0, len(out.HDPExternalIDs))
+	ids := make([]resolvedTarget, 0, len(out.HDPExternalIDs))
 	seen := map[string]struct{}{}
-	for _, raw := range out.HDPExternalIDs {
+	for idx, raw := range out.HDPExternalIDs {
 		id := strings.TrimSpace(raw)
 		if id == "" {
 			continue
@@ -204,14 +221,31 @@ func (e *Engine) resolveSelector(ctx context.Context, selector string) ([]string
 			continue
 		}
 		seen[id] = struct{}{}
-		ids = append(ids, id)
+		var hdpDeviceID *uuid.UUID
+		if idx < len(out.HDPDeviceIDs) {
+			if parsed, err := uuid.Parse(strings.TrimSpace(out.HDPDeviceIDs[idx])); err == nil {
+				hdpDeviceID = &parsed
+			}
+		}
+		ids = append(ids, resolvedTarget{ExternalID: id, HDPDeviceID: hdpDeviceID})
 	}
 
 	e.selMu.Lock()
-	e.selectorCache[sel] = cachedSelector{FetchedAt: time.Now(), IDs: ids}
+	e.selectorCache[sel] = cachedSelector{FetchedAt: time.Now(), Targets: ids}
 	e.selMu.Unlock()
 
 	return ids, nil
+}
+
+func (e *Engine) resolveHDPDeviceID(ctx context.Context, externalRef string) *uuid.UUID {
+	if e == nil || e.repo == nil {
+		return nil
+	}
+	id, ok, err := e.repo.ResolveHDPDeviceIDByExternalRef(ctx, externalRef)
+	if err != nil || !ok {
+		return nil
+	}
+	return &id
 }
 
 func (e *Engine) handleCommandResult(ctx context.Context, m mqttinfra.Message) {

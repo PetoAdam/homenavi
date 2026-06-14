@@ -56,7 +56,11 @@ func (r *Repository) EnsureDeviceForHDP(ctx context.Context, externalID, name, d
 		if err := tx.Create(dev).Error; err != nil {
 			return err
 		}
-		b := &DeviceBinding{ID: uuid.New(), DeviceID: dev.ID, Kind: "hdp", ExternalID: x}
+		hdpDeviceID, err := resolveHDPDeviceID(tx, x)
+		if err != nil {
+			return err
+		}
+		b := &DeviceBinding{ID: uuid.New(), DeviceID: dev.ID, HDPDeviceID: hdpDeviceID, Kind: "hdp", ExternalID: x}
 		if err := tx.Create(b).Error; err != nil {
 			return err
 		}
@@ -89,7 +93,11 @@ func (r *Repository) SetDeviceHDPBindings(ctx context.Context, deviceID uuid.UUI
 				continue
 			}
 			seen[x] = struct{}{}
-			rows = append(rows, DeviceBinding{ID: uuid.New(), DeviceID: deviceID, Kind: "hdp", ExternalID: x})
+			hdpDeviceID, err := resolveHDPDeviceID(tx, x)
+			if err != nil {
+				return err
+			}
+			rows = append(rows, DeviceBinding{ID: uuid.New(), DeviceID: deviceID, HDPDeviceID: hdpDeviceID, Kind: "hdp", ExternalID: x})
 		}
 		if len(rows) == 0 {
 			return nil

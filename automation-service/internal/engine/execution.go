@@ -131,12 +131,12 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 				finish("failed", "invalid node data")
 				return errors.New("invalid node data")
 			}
-			deviceIDs, err := e.resolveTargets(ctx, a.Targets)
+			targets, err := e.resolveTargets(ctx, a.Targets)
 			if err != nil {
 				finish("failed", err.Error())
 				return err
 			}
-			if len(deviceIDs) == 0 {
+			if len(targets) == 0 {
 				finish("success", "")
 				return nil
 			}
@@ -147,7 +147,8 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 
 			// Publish to each target.
 			baseTS := time.Now().UTC().UnixMilli()
-			for _, deviceID := range deviceIDs {
+			for _, target := range targets {
+				deviceID := target.ExternalID
 				corr := fmt.Sprintf("auto-%s-%s-%s-%d", wfID.String(), n.ID, deviceID, baseTS)
 				cmd := HDPCommand{Envelope: hdp.Envelope{Schema: hdp.SchemaV1, Type: "command", DeviceID: deviceID, Corr: corr, TS: baseTS}, Command: cmdName, Args: a.Args}
 				b, _ := json.Marshal(cmd)
@@ -163,7 +164,7 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 						timeout = 15
 					}
 					exp := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
-					_ = e.repo.UpsertPendingCorr(ctx, &dbinfra.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
+					_ = e.repo.UpsertPendingCorr(ctx, &dbinfra.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, HDPDeviceID: target.HDPDeviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
 					finish("success", "")
 					return errWaitForResult
 				}

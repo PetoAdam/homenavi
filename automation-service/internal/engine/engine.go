@@ -47,7 +47,12 @@ type Engine struct {
 
 type cachedSelector struct {
 	FetchedAt time.Time
-	IDs       []string
+	Targets   []resolvedTarget
+}
+
+type resolvedTarget struct {
+	ExternalID  string
+	HDPDeviceID *uuid.UUID
 }
 
 type Options struct {

@@ -19,6 +19,13 @@ type workflowPayload struct {
 	Name       string          `json:"name"`
 	Enabled    *bool           `json:"enabled,omitempty"`
 	Definition json.RawMessage `json:"definition"`
+	Source     *workflowSource `json:"source,omitempty"`
+}
+
+type workflowSource struct {
+	Kind   string `json:"kind,omitempty"`
+	Format string `json:"format,omitempty"`
+	Code   string `json:"code,omitempty"`
 }
 
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +78,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		createdBy = claims.Sub
 	}
 	wf := &dbinfra.Workflow{Name: name, Enabled: false, Definition: datatypes.JSON(def), CreatedBy: createdBy}
+	applyWorkflowSourcePayload(wf, p.Source)
 	if err := s.repo.CreateWorkflow(r.Context(), wf); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create workflow")
 		return
@@ -115,6 +123,7 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 		wf.Definition = datatypes.JSON(def)
 	}
+	applyWorkflowSourcePayload(wf, p.Source)
 	if err := s.repo.UpdateWorkflow(r.Context(), wf); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update workflow")
 		return
@@ -205,4 +214,22 @@ func validateDefinition(raw json.RawMessage, claims *auth.Claims) ([]byte, error
 	}
 	b, _ := json.Marshal(d)
 	return b, nil
+}
+
+func applyWorkflowSourcePayload(workflow *dbinfra.Workflow, source *workflowSource) {
+	if workflow == nil || source == nil {
+		return
+	}
+	if strings.TrimSpace(source.Kind) != "" {
+		workflow.SourceKind = strings.TrimSpace(source.Kind)
+	}
+	if strings.TrimSpace(source.Format) != "" {
+		workflow.SourceFormat = strings.TrimSpace(source.Format)
+	}
+	if source.Code != "" || workflow.SourceKind == "graph" {
+		workflow.SourceCode = source.Code
+	}
+	if workflow.SourceRevision <= 0 {
+		workflow.SourceRevision = 1
+	}
 }

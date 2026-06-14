@@ -27,10 +27,11 @@ type RedisStore struct {
 }
 
 func NewRedisStore(cfg redisx.Config) (*RedisStore, error) {
-	if err := cfg.Validate(); err != nil {
+	client, err := redisx.Connect(context.Background(), cfg)
+	if err != nil {
 		return nil, err
 	}
-	return &RedisStore{client: redis.NewUniversalClient(cfg.UniversalOptions())}, nil
+	return &RedisStore{client: client}, nil
 }
 
 func (s *RedisStore) Set(ctx context.Context, key string, value string, ttl time.Duration) error {

@@ -12,6 +12,7 @@ import (
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	"github.com/PetoAdam/homenavi/shared/dbx"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -27,9 +28,11 @@ type Repository struct {
 
 type DeviceState struct {
 	DeviceID  string          `gorm:"primaryKey;type:uuid"`
-	State     json.RawMessage `gorm:"type:jsonb"`
+	State     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'"`
 	UpdatedAt time.Time
 }
+
+func (DeviceState) TableName() string { return "hdp_device_states" }
 
 func Open(cfg Config) (*Repository, error) {
 	dsn := dbx.BuildPostgresDSN(cfg)
@@ -41,10 +44,26 @@ func Open(cfg Config) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.AutoMigrate(&model.Device{}, &DeviceState{}); err != nil {
+	if err := ensureSchema(db); err != nil {
 		return nil, err
 	}
 	return &Repository{db: db}, nil
+}
+
+func ensureSchema(database *gorm.DB) error {
+	if err := database.AutoMigrate(&model.Device{}, &DeviceState{}); err != nil {
+		return err
+	}
+	if err := database.Model(&model.Device{}).Where("capabilities IS NULL").Update("capabilities", datatypes.JSON([]byte("[]"))).Error; err != nil {
+		return err
+	}
+	if err := database.Model(&model.Device{}).Where("inputs IS NULL").Update("inputs", datatypes.JSON([]byte("[]"))).Error; err != nil {
+		return err
+	}
+	if err := database.Model(&DeviceState{}).Where("state IS NULL").Update("state", json.RawMessage(`{}`)).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) UpsertDevice(ctx context.Context, d *model.Device) error {
@@ -68,7 +87,7 @@ func (r *Repository) GetByExternal(ctx context.Context, protocol, externalID str
 
 func (r *Repository) List(ctx context.Context) ([]model.Device, error) {
 	var devices []model.Device
-	if err := r.db.WithContext(ctx).Find(&devices).Error; err != nil {
+	if err := r.db.WithContext(ctx).Order("created_at desc").Find(&devices).Error; err != nil {
 		return nil, err
 	}
 	return devices, nil

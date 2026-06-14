@@ -260,7 +260,11 @@ func (r *Repository) deviceViewsByIDs(ctx context.Context, deviceIDs []uuid.UUID
 	}
 	bindingsByDeviceID := map[uuid.UUID][]string{}
 	for _, binding := range bindings {
-		externalID := strings.TrimSpace(binding.ExternalID)
+		externalID, err := r.resolveBindingExternalID(ctx, binding)
+		if err != nil {
+			return nil, err
+		}
+		externalID = strings.TrimSpace(externalID)
 		if externalID == "" {
 			continue
 		}

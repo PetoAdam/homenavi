@@ -137,7 +137,6 @@ For now, recovery validation should at least include:
 ```bash
 kubectl -n homenavi describe cluster <cluster-name>
 kubectl -n homenavi get pods
-kubectl -n homenavi logs job/<release>-schema-bootstrap
 ```
 
 ## 3. Redis Sentinel failover checks

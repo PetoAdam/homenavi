@@ -35,6 +35,7 @@ func TestResolveSelector_DedupAndCache(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"hdp_external_ids": []string{"dev-1", "dev-2", "dev-1", ""},
+			"hdp_device_ids":   []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111", ""},
 		})
 	}))
 	defer ts.Close()
@@ -63,6 +64,27 @@ func TestResolveSelector_DedupAndCache(t *testing.T) {
 	}
 }
 
+func TestResolveSelectorTargets_TypedIDs(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"hdp_external_ids": []string{"dev-1"},
+			"hdp_device_ids":   []string{"11111111-1111-1111-1111-111111111111"},
+		})
+	}))
+	defer ts.Close()
+
+	e := New(nil, nil, Options{HTTPClient: ts.Client(), ERSServiceURL: ts.URL})
+	ctx := context.Background()
+	targets, err := e.resolveSelectorTargets(ctx, "tag:kitchen")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(targets) != 1 || targets[0].ExternalID != "dev-1" || targets[0].HDPDeviceID == nil || targets[0].HDPDeviceID.String() != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("unexpected targets: %#v", targets)
+	}
+}
+
 func TestResolveTargets_Device(t *testing.T) {
 	e := New(nil, nil, Options{ERSServiceURL: "http://example"})
 	ctx := context.Background()
@@ -71,7 +93,7 @@ func TestResolveTargets_Device(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(ids) != 2 || ids[0] != "dev-1" || ids[1] != "dev-2" {
+	if len(ids) != 2 || ids[0].ExternalID != "dev-1" || ids[1].ExternalID != "dev-2" {
 		t.Fatalf("unexpected ids: %#v", ids)
 	}
 }

@@ -19,13 +19,15 @@ type Device struct {
 	Description  string         `gorm:"type:text" json:"description"`
 	Firmware     string         `json:"firmware"`
 	Icon         string         `json:"icon"`
-	Capabilities datatypes.JSON `gorm:"type:jsonb" json:"capabilities"`
-	Inputs       datatypes.JSON `gorm:"type:jsonb" json:"inputs"`
-	Online       bool           `json:"online"`
+	Capabilities datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'" json:"capabilities"`
+	Inputs       datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'" json:"inputs"`
+	Online       bool           `gorm:"not null;default:false" json:"online"`
 	LastSeen     time.Time      `json:"last_seen"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
+
+func (Device) TableName() string { return "hdp_devices" }
 
 func (d *Device) BeforeCreate(tx *gorm.DB) (err error) {
 	if d.ID == uuid.Nil {
