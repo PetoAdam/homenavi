@@ -143,7 +143,7 @@ The default local UI endpoints are:
 * Frontend app (direct frontend container): http://localhost:5173
 * Full reverse-proxy entrypoint (Nginx): http://localhost
 
-By default, Docker Compose now uses the same release tag as the Helm chart `appVersion` (`v0.4.28`). Override `HN_VERSION` in `.env` only when you intentionally want a different image tag.
+By default, Docker Compose now uses the same release tag as the Helm chart `appVersion` (`v0.5.0`). Override `HN_VERSION` in `.env` only when you intentionally want a different image tag.
 
 If you have a physical Zigbee USB adapter connected and configured, include the optional hardware profile:
 
@@ -166,6 +166,8 @@ Entry Points:
 * Prometheus: http://localhost:9090
 * Jaeger UI: http://localhost:16686
 * (Grafana optional) http://localhost:3000
+
+Compose hardening note: by default only `frontend`, `api-gateway`, and `nginx` are intended as primary app ingress paths, while internal services stay network-internal unless you explicitly uncomment DEV `ports` mappings in `docker-compose.yml`.
 
 See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
 
@@ -418,8 +420,14 @@ Environment variables (selected):
 	* `INTEGRATIONS_COMPOSE_PULL_TIMEOUT` (defaults to `2m`, used for slow pulls)
 	* `INTEGRATIONS_RUNTIME_MODE` (example: `compose`, `helm`, or `gitops` depending on deployment model)
 * Database connection vars (PostgreSQL)
-* Redis host/port
+* Redis:
+	* `REDIS_MODE` (`standalone` or `sentinel`)
+	* `REDIS_ADDR` (standalone endpoint)
+	* `REDIS_SENTINEL_ADDRS` and `REDIS_MASTER_NAME` (sentinel mode)
+	* `REDIS_PASSWORD` / `REDIS_DB`
 * Email provider / SMTP credentials (for Email Service)
+* Tracing / observability:
+	* `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (defaults to Jaeger OTLP HTTP endpoint in compose)
 * Weather:
 	* `OPENWEATHER_API_KEY` (required for real weather data)
 	* `WEATHER_CACHE_TTL_MINUTES` (optional, defaults to 15)
