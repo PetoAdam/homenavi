@@ -143,7 +143,7 @@ The default local UI endpoints are:
 * Frontend app (direct frontend container): http://localhost:5173
 * Full reverse-proxy entrypoint (Nginx): http://localhost
 
-By default, Docker Compose now uses the same release tag as the Helm chart `appVersion` (`v0.5.0`). Override `HN_VERSION` in `.env` only when you intentionally want a different image tag.
+By default, Docker Compose now uses the same release tag as the Helm chart `appVersion` (`v0.5.1`). Override `HN_VERSION` in `.env` only when you intentionally want a different image tag.
 
 If you have a physical Zigbee USB adapter connected and configured, include the optional hardware profile:
 
