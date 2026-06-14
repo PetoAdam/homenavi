@@ -330,9 +330,20 @@
   min-width: 0;
 }
 
+.automation-topbar-row-primary {
+  width: auto;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.automation-topbar-row-primary .automation-topbar-new,
+.automation-topbar-row-primary .automation-topbar-status {
+  flex: 0 0 auto;
+}
+
 .automation-topbar-row-select {
   display: grid;
-  grid-template-columns: auto minmax(220px, 320px) auto;
+  grid-template-columns: auto minmax(220px, 320px) auto auto;
   align-items: center;
   gap: 10px;
 }
@@ -353,15 +364,44 @@
   white-space: nowrap;
 }
 
+.automation-topbar-rename-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-topbar-rename-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--color-surface-panel-alt) 84%, transparent);
+  color: rgba(255, 255, 255, 0.85);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.automation-topbar-rename-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 16%, rgba(255, 255, 255, 0.06));
+  border-color: color-mix(in srgb, var(--color-primary) 24%, var(--color-glass-border-xlight));
+  transform: translateY(-1px);
+}
+
+.automation-topbar-rename-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.automation-topbar-rename-input {
+  padding-right: 12px;
+}
+
 .automation-topbar-label {
   font-weight: 600;
   opacity: 0.85;
-}
-
-.automation-topbar-name {
-  min-width: 0;
-  width: 100%;
-  max-width: 520px;
 }
 
 .automation-topbar-select {
@@ -477,12 +517,6 @@
   .automation-topbar-row-primary .automation-topbar-status {
     margin-left: 0;
     justify-content: flex-start;
-  }
-
-  .automation-topbar-name {
-    min-width: 0;
-    width: 100%;
-    max-width: none;
   }
 
   .automation-topbar-right {
@@ -770,15 +804,43 @@
 }
 
 .automation-workflow-item.glass-card {
+  position: relative;
   margin: 0;
+  flex: 0 0 auto;
   min-width: 0;
   border-radius: 14px;
-  min-height: 76px;
+  min-height: 96px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(180deg, rgba(28, 38, 54, 0.82), rgba(19, 27, 39, 0.76));
   transition: transform 0.16s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.automation-workflow-item.glass-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.automation-workflow-item.glass-card.drop-before::before,
+.automation-workflow-item.glass-card.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 68%, #ffffff 32%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 14px color-mix(in srgb, var(--color-primary) 32%, transparent);
+  z-index: 4;
+}
+
+.automation-workflow-item.glass-card.drop-before::before {
+  top: -7px;
+}
+
+.automation-workflow-item.glass-card.drop-after::after {
+  bottom: -7px;
 }
 
 .automation-workflow-item.glass-card .card-content {
@@ -790,7 +852,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.65rem;
-  align-items: stretch;
+  align-items: start;
   height: 100%;
 }
 
@@ -821,16 +883,23 @@
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
-.automation-workflow-run-btn {
+.automation-workflow-item-actions {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
   flex: 0 0 auto;
-  width: 2.6rem;
-  height: 2.6rem;
-  align-self: flex-start;
-  margin: 12px 12px 12px 0;
+  margin: 12px 12px 0 0;
+}
+
+.automation-workflow-reorder-btn,
+.automation-workflow-run-btn {
+  width: 2.45rem;
+  height: 2.45rem;
   border-radius: 12px;
   border: 1px solid var(--color-glass-border-xlight);
   background: color-mix(in srgb, var(--color-surface-panel-soft) 76%, transparent);
@@ -838,11 +907,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   transition: transform 0.16s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 20px rgba(0, 0, 0, 0.16);
 }
 
+.automation-workflow-reorder-btn {
+  cursor: grab;
+}
+
+.automation-workflow-reorder-btn:active {
+  cursor: grabbing;
+}
+
+.automation-workflow-run-btn {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.automation-workflow-reorder-btn:hover,
 .automation-workflow-run-btn:hover {
   background: color-mix(in srgb, var(--color-primary) 16%, rgba(255, 255, 255, 0.06));
   border-color: color-mix(in srgb, var(--color-primary) 24%, var(--color-glass-border-xlight));
@@ -850,12 +932,14 @@
   box-shadow: 0 12px 24px rgba(7, 12, 20, 0.22);
 }
 
+.automation-workflow-item.glass-card.selected .automation-workflow-reorder-btn,
 .automation-workflow-item.glass-card.selected .automation-workflow-run-btn {
   border-color: rgba(129, 140, 248, 0.38);
   background: color-mix(in srgb, rgba(129, 140, 248, 0.18) 65%, var(--color-surface-panel-soft));
 }
 
 .automation-workflow-item--add {
+  flex: 0 0 auto;
   border: 1.5px dashed rgba(34, 197, 94, 0.35);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(20, 34, 38, 0.72), rgba(15, 27, 31, 0.68));
@@ -869,7 +953,7 @@
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   font-family: inherit;
-  min-height: 76px;
+  min-height: 104px;
 }
 
 .automation-workflow-item--add:hover {
@@ -919,9 +1003,10 @@
 
 .automation-workflow-item .meta {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px 10px;
   font-size: 0.82rem;
 }
 
@@ -942,6 +1027,7 @@
 .automation-workflow-item .meta .muted {
   font-size: 0.78rem;
   opacity: 0.78;
+  line-height: 1.25;
 }
 
 .automation-workflow-list .muted {
@@ -1168,31 +1254,10 @@
   }
 }
 
-.automation-canvas-name {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 12;
-  width: min(280px, calc(100% - 24px));
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-glass-border-xlight));
-  background: color-mix(in srgb, var(--color-surface-panel-soft) 86%, transparent);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.automation-canvas-name-input {
-  border-color: color-mix(in srgb, var(--color-primary) 18%, var(--color-glass-border-xlight));
-  padding: 8px 10px;
-  font-size: 0.95rem;
-}
-
 .automation-canvas-controls {
   position: absolute;
-  right: 10px;
-  top: 10px;
+  right: 12px;
+  top: 12px;
   bottom: auto;
   z-index: 10;
 }
@@ -1263,7 +1328,7 @@
 }
 
 .automation-canvas-controls.editable {
-  top: 58px;
+  top: 12px;
 }
 
 .automation-canvas-next-section {

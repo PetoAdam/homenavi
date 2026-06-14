@@ -16,6 +16,10 @@ export async function updateWorkflow(id, payload, token) {
   return http.put(`/api/automation/workflows/${id}`, payload, { token });
 }
 
+export async function reorderWorkflows(ids, token) {
+  return http.post('/api/automation/workflows/reorder', { ids }, { token });
+}
+
 export async function enableWorkflow(id, token) {
   return http.post(`/api/automation/workflows/${id}/enable`, {}, { token });
 }

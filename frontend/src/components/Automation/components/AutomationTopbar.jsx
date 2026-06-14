@@ -6,12 +6,15 @@ import '../../common/Toolbar/Toolbar.css';
 import {
   faArrowsRotate,
   faBroom,
+  faCheck,
   faChevronDown,
+  faPen,
   faPlay,
   faPlus,
   faRotateLeft,
   faRotateRight,
   faTrash,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function AutomationTopbar({
@@ -20,6 +23,8 @@ export default function AutomationTopbar({
   onSelectId,
   startNewWorkflow,
   selectedWorkflow,
+  workflowName,
+  onWorkflowNameChange,
   saving,
   lastSavedAt,
   loading,
@@ -33,8 +38,34 @@ export default function AutomationTopbar({
   toggleEnabled,
   runNow,
   removeWorkflow,
+  done,
   isAdmin,
 }) {
+  const [isRenaming, setIsRenaming] = React.useState(false);
+  const [renameDraft, setRenameDraft] = React.useState(String(workflowName || ''));
+
+  React.useEffect(() => {
+    setRenameDraft(String(workflowName || ''));
+  }, [workflowName]);
+
+  const canRename = Boolean(selectedWorkflow);
+
+  const commitRename = () => {
+    if (!canRename) {
+      setIsRenaming(false);
+      return;
+    }
+    const trimmed = String(renameDraft || '').trim();
+    if (!trimmed) return;
+    onWorkflowNameChange(trimmed);
+    setIsRenaming(false);
+  };
+
+  const cancelRename = () => {
+    setRenameDraft(String(workflowName || ''));
+    setIsRenaming(false);
+  };
+
   return (
     <div className="automation-topbar hn-toolbar">
       <div className="automation-topbar-left hn-toolbar-left">
@@ -42,23 +73,80 @@ export default function AutomationTopbar({
           <div className="automation-topbar-label muted">Workflow</div>
 
           <div className="automation-topbar-select-wrap" aria-label="Workflow selector">
-            <select
-              className="input automation-topbar-select"
-              value={selectedId || ''}
-              onChange={(e) => {
-                const v = String(e.target.value || '');
-                onSelectId(v || null);
-              }}
-              aria-label="Select workflow"
-            >
-              <option value="">(new workflow)</option>
-              {workflows.map((wf) => (
-                <option key={wf.id} value={wf.id}>{wf.name}</option>
-              ))}
-            </select>
-            <span className="automation-topbar-select-icon" aria-hidden="true">
-              <FontAwesomeIcon icon={faChevronDown} />
-            </span>
+            {isRenaming ? (
+              <input
+                className="input automation-topbar-select automation-topbar-rename-input"
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') cancelRename();
+                }}
+                placeholder="Workflow name"
+                aria-label="Rename workflow"
+                autoFocus
+              />
+            ) : (
+              <>
+                <select
+                  className="input automation-topbar-select"
+                  value={selectedId || ''}
+                  onChange={(e) => {
+                    const v = String(e.target.value || '');
+                    onSelectId(v || null);
+                  }}
+                  aria-label="Select workflow"
+                >
+                  <option value="">(new workflow)</option>
+                  {workflows.map((wf) => (
+                    <option key={wf.id} value={wf.id}>{wf.name}</option>
+                  ))}
+                </select>
+                <span className="automation-topbar-select-icon" aria-hidden="true">
+                  <FontAwesomeIcon icon={faChevronDown} />
+                </span>
+              </>
+            )}
+          </div>
+
+          <div className="automation-topbar-rename-actions">
+            {isRenaming ? (
+              <>
+                <button
+                  type="button"
+                  className="automation-topbar-rename-btn"
+                  title="Save name"
+                  aria-label="Save name"
+                  onClick={commitRename}
+                >
+                  <FontAwesomeIcon icon={faCheck} />
+                </button>
+                <button
+                  type="button"
+                  className="automation-topbar-rename-btn"
+                  title="Cancel rename"
+                  aria-label="Cancel rename"
+                  onClick={cancelRename}
+                >
+                  <FontAwesomeIcon icon={faXmark} />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="automation-topbar-rename-btn"
+                title={canRename ? 'Rename workflow' : 'Select a workflow first'}
+                aria-label="Rename workflow"
+                disabled={!canRename}
+                onClick={() => {
+                  if (!canRename) return;
+                  setRenameDraft(String(workflowName || ''));
+                  setIsRenaming(true);
+                }}
+              >
+                <FontAwesomeIcon icon={faPen} />
+              </button>
+            )}
           </div>
 
           {(saving || lastSavedAt) && (
@@ -98,6 +186,21 @@ export default function AutomationTopbar({
       </div>
 
       <div className="automation-topbar-right hn-toolbar-right">
+        <div className="automation-topbar-group hn-toolbar-group">
+          <Button
+            variant="secondary"
+            className="automation-topbar-iconbtn hn-toolbar-iconbtn"
+            type="button"
+            disabled={saving}
+            onClick={done}
+            title="Save and exit editor"
+            aria-label="Done"
+          >
+            <span className="btn-icon"><FontAwesomeIcon icon={faCheck} /></span>
+            <span className="btn-label">Done</span>
+          </Button>
+        </div>
+
         <div className="automation-topbar-group hn-toolbar-group">
           <Button
             variant="secondary"

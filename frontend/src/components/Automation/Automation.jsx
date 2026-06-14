@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faPen, faPlay, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faGripVertical, faPen, faPlay, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../common/PageHeader/PageHeader';
@@ -28,6 +28,7 @@ import {
   disableWorkflow,
   enableWorkflow,
   getRun,
+  reorderWorkflows,
   runWorkflow,
   updateWorkflow,
 } from '../../services/automationService';
@@ -65,6 +66,28 @@ function defaultEditorState() {
     nodes: [],
     edges: [],
   };
+}
+
+function reorderByInsert(list, draggedId, overId, position) {
+  const items = Array.isArray(list) ? [...list] : [];
+  const fromId = String(draggedId || '').trim();
+  const toId = String(overId || '').trim();
+  if (!fromId || !toId || fromId === toId) return items;
+
+  const fromIndex = items.findIndex((wf) => String(wf?.id || '') === fromId);
+  const overIndex = items.findIndex((wf) => String(wf?.id || '') === toId);
+  if (fromIndex < 0 || overIndex < 0) return items;
+
+  const [moved] = items.splice(fromIndex, 1);
+  const nextOverIndex = items.findIndex((wf) => String(wf?.id || '') === toId);
+  if (nextOverIndex < 0) {
+    items.push(moved);
+    return items;
+  }
+
+  const insertAt = position === 'before' ? nextOverIndex : nextOverIndex + 1;
+  items.splice(insertAt, 0, moved);
+  return items;
 }
 
 function Automation() {
@@ -137,6 +160,7 @@ function Automation() {
     selectedWorkflow,
     fetchWorkflows,
     upsertWorkflowInList,
+    replaceWorkflows,
     removeWorkflowFromList,
     runs,
     runsLoading,
@@ -147,8 +171,21 @@ function Automation() {
     refreshAllData,
   } = useAutomationLists({ accessToken, onError: setErr });
 
+  const [workflowDrag, setWorkflowDrag] = useState({
+    dragId: '',
+    overId: '',
+    position: 'after',
+  });
+
+  const previewWorkflows = useMemo(() => {
+    if (!workflowDrag.dragId || !workflowDrag.overId) {
+      return Array.isArray(workflows) ? workflows : [];
+    }
+    return reorderByInsert(workflows, workflowDrag.dragId, workflowDrag.overId, workflowDrag.position);
+  }, [workflowDrag.dragId, workflowDrag.overId, workflowDrag.position, workflows]);
+
   const filteredWorkflows = useMemo(() => {
-    const list = Array.isArray(workflows) ? workflows : [];
+    const list = Array.isArray(previewWorkflows) ? previewWorkflows : [];
     const query = String(workflowSearch || '').trim().toLowerCase();
     if (!query) return list;
     return list.filter((wf) => {
@@ -156,7 +193,7 @@ function Automation() {
       const id = String(wf?.id || '').toLowerCase();
       return name.includes(query) || id.includes(query);
     });
-  }, [workflows, workflowSearch]);
+  }, [previewWorkflows, workflowSearch]);
 
   // Allow deep-linking to a specific workflow.
   useEffect(() => {
@@ -516,6 +553,39 @@ function Automation() {
   const canExecuteFromNode = !!selectedWorkflow && !saving && !loading;
   const executeFromNodeTitle = !selectedWorkflow ? 'Create the workflow first' : 'Execute (Run)';
 
+  const handleDoneEditing = useCallback(async () => {
+    if (saving) return;
+
+    let nextWorkflow = selectedWorkflow;
+    if (!selectedWorkflow || isDirty) {
+      const saved = await saveWorkflowInternal({ silent: false });
+      if (!saved) return;
+      nextWorkflow = saved;
+    }
+
+    setHasOverviewSelection(Boolean(nextWorkflow?.id));
+    setViewMode('overview');
+  }, [isDirty, saveWorkflowInternal, saving, selectedWorkflow]);
+
+  const handleWorkflowReorder = useCallback(async (nextOrder) => {
+    const ordered = Array.isArray(nextOrder) ? nextOrder : [];
+    if (!ordered.length || !accessToken) return;
+
+    const previous = Array.isArray(workflows) ? workflows : [];
+    replaceWorkflows(ordered);
+
+    const res = await reorderWorkflows(ordered.map((wf) => wf.id).filter(Boolean), accessToken);
+    if (res.success) {
+      const next = Array.isArray(res.data?.workflows) ? res.data.workflows : ordered;
+      replaceWorkflows(next);
+      setToast('Workflow order updated');
+      return;
+    }
+
+    replaceWorkflows(previous);
+    setErr(res.error || 'Failed to reorder workflows');
+  }, [accessToken, replaceWorkflows, setErr, setToast, workflows]);
+
   const edgesToRender = useMemo(() => {
     return computeEdgesToRender({
       nodes: editor.nodes,
@@ -644,6 +714,8 @@ function Automation() {
               onSelectId={setSelectedId}
               startNewWorkflow={startNewWorkflow}
               selectedWorkflow={selectedWorkflow}
+              workflowName={editor.workflowName}
+              onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
               saving={saving}
               lastSavedAt={lastSavedAt}
               loading={loading}
@@ -657,6 +729,7 @@ function Automation() {
               toggleEnabled={toggleEnabled}
               runNow={runNow}
               removeWorkflow={removeWorkflow}
+              done={handleDoneEditing}
               isAdmin={isAdmin}
             />
 
@@ -715,8 +788,6 @@ function Automation() {
                     runNow={runNow}
                     canvasSize={canvasSize}
                     zoomAroundPoint={zoomAroundPoint}
-                    workflowName={editor.workflowName}
-                    onWorkflowNameChange={(name) => applyEditorUpdateBatched('workflow-name', prev => ({ ...prev, workflowName: name }))}
                     autoFitKey={editAutoFitKey}
                     autoFitDataReady={automationDataReady}
                     onAutoFitComplete={handleEditAutoFitComplete}
@@ -787,7 +858,41 @@ function Automation() {
                     <GlassCard
                       key={wf.id}
                       interactive={false}
-                      className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
+                      className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}${workflowDrag.dragId === wf.id ? ' dragging' : ''}${workflowDrag.overId === wf.id && workflowDrag.position === 'before' ? ' drop-before' : ''}${workflowDrag.overId === wf.id && workflowDrag.position === 'after' ? ' drop-after' : ''}`}
+                      onDragOver={(event) => {
+                        if (!workflowDrag.dragId || workflowDrag.dragId === wf.id) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const relativeY = event.clientY - rect.top;
+                        const nextPosition = relativeY < rect.height / 2 ? 'before' : 'after';
+                        if (workflowDrag.overId !== wf.id || workflowDrag.position !== nextPosition) {
+                          setWorkflowDrag((prev) => ({
+                            ...prev,
+                            overId: wf.id,
+                            position: nextPosition,
+                          }));
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (!workflowDrag.dragId || !workflowDrag.overId) {
+                          setWorkflowDrag({ dragId: '', overId: '', position: 'after' });
+                          return;
+                        }
+                        const nextOrder = reorderByInsert(workflows, workflowDrag.dragId, workflowDrag.overId, workflowDrag.position);
+                        setWorkflowDrag({ dragId: '', overId: '', position: 'after' });
+                        handleWorkflowReorder(nextOrder);
+                      }}
+                      onDragLeave={(event) => {
+                        const related = event.relatedTarget;
+                        if (related && event.currentTarget.contains(related)) return;
+                        if (workflowDrag.overId !== wf.id) return;
+                        setWorkflowDrag((prev) => ({
+                          ...prev,
+                          overId: '',
+                        }));
+                      }}
                     >
                       <div className="automation-workflow-item-shell">
                         <button
@@ -805,20 +910,43 @@ function Automation() {
                             <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
                           </div>
                         </button>
-                        {canWorkflowRunNow(wf) && (
+                        <div className="automation-workflow-item-actions">
                           <button
                             type="button"
-                            className="automation-workflow-run-btn"
-                            title={`Run ${wf.name}`}
-                            aria-label={`Run ${wf.name}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              runWorkflowFromList(wf);
+                            className="automation-workflow-reorder-btn"
+                            title={`Reorder ${wf.name}`}
+                            aria-label={`Reorder ${wf.name}`}
+                            draggable
+                            onDragStart={(event) => {
+                              setWorkflowDrag({
+                                dragId: wf.id,
+                                overId: wf.id,
+                                position: 'after',
+                              });
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData('text/plain', wf.id);
+                            }}
+                            onDragEnd={() => {
+                              setWorkflowDrag({ dragId: '', overId: '', position: 'after' });
                             }}
                           >
-                            <FontAwesomeIcon icon={faPlay} />
+                            <FontAwesomeIcon icon={faGripVertical} />
                           </button>
-                        )}
+                          {canWorkflowRunNow(wf) && (
+                            <button
+                              type="button"
+                              className="automation-workflow-run-btn"
+                              title={`Run ${wf.name}`}
+                              aria-label={`Run ${wf.name}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                runWorkflowFromList(wf);
+                              }}
+                            >
+                              <FontAwesomeIcon icon={faPlay} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </GlassCard>
                   ))}

@@ -56,7 +56,7 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("create workflows: %w", err)
 		}
 	}
-	for _, column := range []string{"SourceKind", "SourceFormat", "SourceCode", "SourceRevision"} {
+	for _, column := range []string{"SortOrder", "SourceKind", "SourceFormat", "SourceCode", "SourceRevision"} {
 		if !m.HasColumn(&Workflow{}, column) {
 			if err := m.AddColumn(&Workflow{}, column); err != nil {
 				return fmt.Errorf("add workflows.%s: %w", strings.ToLower(column), err)
@@ -101,6 +101,9 @@ func ensureSchema(database *gorm.DB) error {
 	if err := backfillWorkflowSourceDefaults(database.WithContext(context.Background())); err != nil {
 		return err
 	}
+	if err := backfillWorkflowSortOrder(database.WithContext(context.Background())); err != nil {
+		return err
+	}
 	if err := backfillPendingCorrelationHDPDeviceIDs(database.WithContext(context.Background())); err != nil {
 		return err
 	}
@@ -119,6 +122,23 @@ func backfillWorkflowSourceDefaults(database *gorm.DB) error {
 	}
 	if err := database.Model(&Workflow{}).Where("source_revision IS NULL OR source_revision = 0").Update("source_revision", 1).Error; err != nil {
 		return fmt.Errorf("backfill workflows.source_revision: %w", err)
+	}
+	return nil
+}
+
+func backfillWorkflowSortOrder(database *gorm.DB) error {
+	if err := database.Exec(`
+		WITH ordered AS (
+			SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS position
+			FROM workflows
+			WHERE sort_order IS NULL OR sort_order = 0
+		)
+		UPDATE workflows AS workflows
+		SET sort_order = ordered.position
+		FROM ordered
+		WHERE workflows.id = ordered.id
+	`).Error; err != nil {
+		return fmt.Errorf("backfill workflows.sort_order: %w", err)
 	}
 	return nil
 }
@@ -192,7 +212,7 @@ func splitHDPExternalRef(externalRef string) (string, string, bool) {
 
 func (r *Repository) ListWorkflows(ctx context.Context) ([]Workflow, error) {
 	var rows []Workflow
-	if err := r.db.WithContext(ctx).Order("created_at desc").Find(&rows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Order("sort_order desc, created_at desc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -210,6 +230,13 @@ func (r *Repository) CreateWorkflow(ctx context.Context, workflow *Workflow) err
 	if workflow.ID == uuid.Nil {
 		workflow.ID = uuid.New()
 	}
+	if workflow.SortOrder == 0 {
+		nextOrder, err := r.nextWorkflowSortOrder(ctx)
+		if err != nil {
+			return err
+		}
+		workflow.SortOrder = nextOrder
+	}
 	applyWorkflowSourceDefaults(workflow)
 	return r.db.WithContext(ctx).Create(workflow).Error
 }
@@ -225,6 +252,32 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, id uuid.UUID) error {
 
 func (r *Repository) SetWorkflowEnabled(ctx context.Context, id uuid.UUID, enabled bool) error {
 	return r.db.WithContext(ctx).Model(&Workflow{}).Where("id = ?", id).Update("enabled", enabled).Error
+}
+
+func (r *Repository) ReorderWorkflows(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for index, id := range ids {
+			order := len(ids) - index
+			if err := tx.Model(&Workflow{}).Where("id = ?", id).Update("sort_order", order).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *Repository) nextWorkflowSortOrder(ctx context.Context) (int, error) {
+	var next int
+	if err := r.db.WithContext(ctx).Model(&Workflow{}).Select("COALESCE(MAX(sort_order), 0) + 1").Scan(&next).Error; err != nil {
+		return 0, err
+	}
+	if next <= 0 {
+		return 1, nil
+	}
+	return next, nil
 }
 
 func (r *Repository) CreateRun(ctx context.Context, run *WorkflowRun) error {

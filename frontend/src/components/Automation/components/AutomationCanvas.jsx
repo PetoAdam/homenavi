@@ -49,8 +49,6 @@ export default function AutomationCanvas({
   runNow,
   canvasSize,
   zoomAroundPoint,
-  workflowName,
-  onWorkflowNameChange,
   autoFitKey,
   autoFitDataReady = true,
   onAutoFitComplete,
@@ -206,22 +204,6 @@ export default function AutomationCanvas({
         role="application"
         aria-label="Workflow canvas"
       >
-        {!readOnly && (
-          <div className="hn-canvas-overlay-panel automation-canvas-name" onPointerDown={(e) => e.stopPropagation()}>
-            <input
-              className="input hn-canvas-overlay-input automation-canvas-name-input"
-              value={workflowName}
-              onChange={(e) => {
-                if (readOnly) return;
-                onWorkflowNameChange(e.target.value);
-              }}
-              placeholder="Untitled workflow"
-              aria-label="Workflow name"
-              readOnly={readOnly}
-            />
-          </div>
-        )}
-
         <div
           className="hn-canvas-layer automation-canvas-layer"
           style={{

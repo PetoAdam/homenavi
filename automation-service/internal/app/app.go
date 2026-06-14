@@ -12,6 +12,7 @@ import (
 	httptransport "github.com/PetoAdam/homenavi/automation-service/internal/http"
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 )
 
 // App is the composed automation-service application.
@@ -19,6 +20,7 @@ type App struct {
 	server *http.Server
 	engine *engine.Engine
 	mqtt   *mqttinfra.Client
+	cache  *cachex.JSONStore
 	logger *slog.Logger
 }
 
@@ -47,7 +49,22 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		ERSServiceURL:       cfg.ERSServiceURL,
 		IntegrationProxyURL: cfg.IntegrationProxyURL,
 	})
-	handler := httptransport.NewServer(repo, eng, pubKey, cfg.UserServiceURL, cfg.IntegrationProxyURL, &http.Client{Timeout: 10 * time.Second})
+	var cacheStore *cachex.JSONStore
+	if cfg.ListCacheTTL > 0 {
+		cacheStore, err = cachex.NewJSONStore(context.Background(), cfg.Redis)
+		if err != nil {
+			logger.Warn("automation-service workflow cache disabled", "error", err)
+		}
+	}
+	handler := httptransport.NewServer(
+		repo,
+		eng,
+		pubKey,
+		cfg.UserServiceURL,
+		cfg.IntegrationProxyURL,
+		&http.Client{Timeout: 10 * time.Second},
+		httptransport.WithCache(cacheStore, cfg.ListCacheTTL),
+	)
 
 	return &App{
 		server: &http.Server{
@@ -57,6 +74,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		},
 		engine: eng,
 		mqtt:   mqttClient,
+		cache:  cacheStore,
 		logger: logger,
 	}, nil
 }
@@ -67,6 +85,11 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer a.engine.Stop()
 	defer a.mqtt.Close()
+	defer func() {
+		if a.cache != nil {
+			_ = a.cache.Close()
+		}
+	}()
 
 	errCh := make(chan error, 1)
 	go func() {

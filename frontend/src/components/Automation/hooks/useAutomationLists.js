@@ -60,6 +60,28 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     });
   };
 
+  const reorderWorkflowsInList = (draggedId, targetId) => {
+    let nextItems = [];
+    setWorkflows(prev => {
+      const items = Array.isArray(prev) ? prev : [];
+      const fromIndex = items.findIndex(w => w?.id === draggedId);
+      const toIndex = items.findIndex(w => w?.id === targetId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        nextItems = items;
+        return items;
+      }
+      nextItems = [...items];
+      const [moved] = nextItems.splice(fromIndex, 1);
+      nextItems.splice(toIndex, 0, moved);
+      return nextItems;
+    });
+    return nextItems;
+  };
+
+  const replaceWorkflows = (items) => {
+    setWorkflows(Array.isArray(items) ? items : []);
+  };
+
   const removeWorkflowFromList = (workflowId) => {
     const id = workflowId;
     if (!id) return;
@@ -115,6 +137,8 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     selectedWorkflow,
     fetchWorkflows,
     upsertWorkflowInList,
+    reorderWorkflowsInList,
+    replaceWorkflows,
     removeWorkflowFromList,
 
     runs,

@@ -3,10 +3,12 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/PetoAdam/homenavi/shared/dbx"
 	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/PetoAdam/homenavi/shared/mqttx"
+	"github.com/PetoAdam/homenavi/shared/redisx"
 )
 
 // Config holds bootstrap configuration for automation-service.
@@ -20,9 +22,15 @@ type Config struct {
 	ERSServiceURL       string
 	IntegrationProxyURL string
 	DB                  dbx.PostgresConfig
+	Redis               redisx.Config
+	ListCacheTTL        time.Duration
 }
 
 func LoadConfig() (Config, error) {
+	redisConfig, err := redisx.LoadConfig(redisx.Config{Addrs: []string{"redis:6379"}})
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		Port:                envx.String("AUTOMATION_SERVICE_PORT", "8094"),
 		LogLevel:            envx.String("LOG_LEVEL", "info"),
@@ -33,6 +41,8 @@ func LoadConfig() (Config, error) {
 		ERSServiceURL:       envx.String("ERS_SERVICE_URL", "http://entity-registry-service:8095"),
 		IntegrationProxyURL: envx.String("INTEGRATION_PROXY_URL", "http://integration-proxy:8099"),
 		DB:                  dbx.LoadPostgresConfig(dbx.PostgresConfig{SSLMode: "disable"}),
+		Redis:               redisConfig,
+		ListCacheTTL:        envx.Duration("AUTOMATION_WORKFLOW_CACHE_TTL", 30*time.Second),
 	}
 	if err := cfg.MQTT.Validate(); err != nil {
 		return Config{}, err

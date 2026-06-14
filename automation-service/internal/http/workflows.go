@@ -22,6 +22,10 @@ type workflowPayload struct {
 	Source     *workflowSource `json:"source,omitempty"`
 }
 
+type workflowReorderPayload struct {
+	IDs []string `json:"ids"`
+}
+
 type workflowSource struct {
 	Kind   string `json:"kind,omitempty"`
 	Format string `json:"format,omitempty"`
@@ -29,12 +33,19 @@ type workflowSource struct {
 }
 
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
+	var cached map[string]any
+	if s.cacheRead(r.Context(), s.workflowListCacheKey(), &cached) {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 	rows, err := s.repo.ListWorkflows(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list workflows")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"workflows": rows})
+	response := map[string]any{"workflows": rows}
+	s.cacheWrite(r.Context(), s.workflowListCacheKey(), response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -43,11 +54,17 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid workflow id")
 		return
 	}
+	var cached dbinfra.Workflow
+	if s.cacheRead(r.Context(), s.workflowItemCacheKey(id), &cached) {
+		writeJSON(w, http.StatusOK, &cached)
+		return
+	}
 	wf, err := s.repo.GetWorkflow(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "workflow not found")
 		return
 	}
+	s.cacheWrite(r.Context(), s.workflowItemCacheKey(id), wf)
 	writeJSON(w, http.StatusOK, wf)
 }
 
@@ -83,6 +100,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create workflow")
 		return
 	}
+	s.invalidateWorkflowCaches(r.Context(), s.workflowListCacheKey(), s.workflowItemCacheKey(wf.ID))
 	_ = s.engine.ReloadNow(r.Context())
 	writeJSON(w, http.StatusCreated, wf)
 }
@@ -128,8 +146,51 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update workflow")
 		return
 	}
+	s.invalidateWorkflowCaches(r.Context(), s.workflowListCacheKey(), s.workflowItemCacheKey(wf.ID))
 	_ = s.engine.ReloadNow(r.Context())
 	writeJSON(w, http.StatusOK, wf)
+}
+
+func (s *Server) handleReorderWorkflows(w http.ResponseWriter, r *http.Request) {
+	var p workflowReorderPayload
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if len(p.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "ids are required")
+		return
+	}
+	ids := make([]uuid.UUID, 0, len(p.IDs))
+	seen := make(map[uuid.UUID]struct{}, len(p.IDs))
+	for _, rawID := range p.IDs {
+		id, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid workflow id")
+			return
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if err := s.repo.ReorderWorkflows(r.Context(), ids); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to reorder workflows")
+		return
+	}
+	keys := make([]string, 0, len(ids)+1)
+	keys = append(keys, s.workflowListCacheKey())
+	for _, id := range ids {
+		keys = append(keys, s.workflowItemCacheKey(id))
+	}
+	s.invalidateWorkflowCaches(r.Context(), keys...)
+	rows, err := s.repo.ListWorkflows(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list workflows")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workflows": rows})
 }
 
 func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +203,7 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete workflow")
 		return
 	}
+	s.invalidateWorkflowCaches(r.Context(), s.workflowListCacheKey(), s.workflowItemCacheKey(id))
 	_ = s.engine.ReloadNow(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
@@ -157,6 +219,7 @@ func (s *Server) handleEnableWorkflow(enabled bool) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to update workflow")
 			return
 		}
+		s.invalidateWorkflowCaches(r.Context(), s.workflowListCacheKey(), s.workflowItemCacheKey(id))
 		_ = s.engine.ReloadNow(r.Context())
 		writeJSON(w, http.StatusOK, map[string]any{"enabled": enabled})
 	}

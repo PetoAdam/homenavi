@@ -12,6 +12,7 @@ import (
 type Workflow struct {
 	ID             uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
 	Name           string         `gorm:"not null" json:"name"`
+	SortOrder      int            `gorm:"not null;default:0" json:"sort_order"`
 	Enabled        bool           `gorm:"not null;default:false" json:"enabled"`
 	Definition     datatypes.JSON `gorm:"type:jsonb;not null" json:"definition"`
 	SourceKind     string         `gorm:"type:varchar(16);not null;default:'graph'" json:"source_kind"`
