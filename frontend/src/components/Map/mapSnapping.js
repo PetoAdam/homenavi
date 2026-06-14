@@ -134,7 +134,7 @@ export function snapForDraw(prevPoint, rawPoint, firstPoint, params) {
   if (snapSettings?.grid) {
     const g = snapToGrid(p, gridSize, snapWorld);
     if (g?.snapped) {
-      p = g;
+      p = { ...g, snapKind: 'grid' };
       guide = { kind: 'grid', px: p.x, py: p.y };
     }
   }
@@ -146,7 +146,7 @@ export function snapForDraw(prevPoint, rawPoint, firstPoint, params) {
   }
 
   // Align to existing corners by snapping to their X/Y axis.
-  if (!p.snapped && snapSettings?.align) {
+  if (snapSettings?.align) {
     const axis = snapAxisToVertices(p, vertices, snapWorld);
     if (axis?.snapped) {
       p = { ...axis, snapKind: axis.snapKind || 'axis' };
@@ -157,7 +157,7 @@ export function snapForDraw(prevPoint, rawPoint, firstPoint, params) {
     }
   }
 
-  if (!p.snapped && prevPoint && snapSettings?.align) {
+  if (prevPoint && snapSettings?.align) {
     let bestSeg = null;
     let bestD = Infinity;
     (Array.isArray(segments) ? segments : []).forEach((s) => {
@@ -193,7 +193,7 @@ export function snapForDraw(prevPoint, rawPoint, firstPoint, params) {
     }
   }
 
-  if (!p.snapped && prevPoint && snapSettings?.ortho) {
+  if (prevPoint && snapSettings?.ortho) {
     const o = applyOrthoSnap(prevPoint, p, orthoRatio);
     if (o?.snapped) {
       p = o;

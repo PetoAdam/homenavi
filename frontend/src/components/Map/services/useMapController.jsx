@@ -1317,6 +1317,25 @@ export default function useMapController() {
     return pts.length >= 2 ? `M ${pts.map(p => `${p.x} ${p.y}`).join(' L ')}` : '';
   }, [draft, hoverPoint]);
 
+  const liveWallMeasurement = useMemo(() => {
+    if (mode !== 'draw') return null;
+    const pts = Array.isArray(draft?.points) ? draft.points : [];
+    if (pts.length === 0 || !hoverPoint) return null;
+    const start = pts[pts.length - 1];
+    const end = hoverPoint;
+    if (!start || !end) return null;
+    const value = dist(start, end);
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return {
+      value,
+      label: String(Math.round(value * 100) / 100),
+      midpoint: {
+        x: (start.x + end.x) / 2,
+        y: (start.y + end.y) / 2 - 12,
+      },
+    };
+  }, [draft?.points, hoverPoint, mode]);
+
   const activeWallDisplay = useMemo(() => {
     const r = activeRoom;
     if (!r) return null;
@@ -1544,6 +1563,7 @@ export default function useMapController() {
     hoverPoint,
     setHoverPoint,
     draftPath,
+    liveWallMeasurement,
     snapGuide,
     insertCornerPreview,
 

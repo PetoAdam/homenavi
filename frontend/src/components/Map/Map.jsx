@@ -19,7 +19,7 @@ export default function Map() {
 
   if (!c.isResidentOrAdmin) {
     if (c.bootstrapping) {
-      return <LoadingView title="Map" message="Loading map…" />;
+      return <LoadingView title="Map" message="Loading map…" variant="map-skeleton" />;
     }
     return (
       <UnauthorizedView
@@ -116,6 +116,7 @@ export default function Map() {
                   view={c.view}
                   mode={c.mode}
                   snapGuide={c.snapGuide}
+                  liveWallMeasurement={c.liveWallMeasurement}
                   roomPaths={c.roomPaths}
                   activeRoomId={c.activeRoomId}
                   editEnabled={c.editEnabled}
@@ -162,7 +163,7 @@ export default function Map() {
 
         {!c.isMapPrepared ? (
           <div className="map-stage-loading">
-            <LoadingView title="Map" message="Preparing map view…" />
+            <LoadingView showHeader={false} variant="map-skeleton" message="Preparing map view…" className="loading-page--embedded" />
           </div>
         ) : null}
       </div>

@@ -15,12 +15,23 @@
   min-height: 420px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 10%, var(--color-glass-border-xlight));
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-color: transparent;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1.4px);
   overflow: hidden;
   overscroll-behavior: contain;
   touch-action: none;
+}
+
+.hn-canvas-surface::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.05), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.035), transparent 24%),
+    linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.01));
+	pointer-events: none;
+	z-index: 0;
 }
 
 .hn-canvas-overlay-panel {
@@ -54,6 +65,7 @@
 .hn-canvas-layer {
   position: absolute;
   inset: 0;
+  z-index: 1;
 }
 
 .hn-canvas-empty {

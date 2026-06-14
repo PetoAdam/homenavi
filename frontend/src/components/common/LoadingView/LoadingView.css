@@ -10,6 +10,24 @@
   max-width: 760px;
 }
 
+.loading-page--embedded {
+  padding: 0;
+  gap: 0;
+  height: 100%;
+}
+
+.loading-page--embedded .loading-card {
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-surface-panel-soft) 76%, transparent);
+}
+
+.loading-page--embedded .card-content {
+  height: 100%;
+}
+
 .loading-body {
   display: flex;
   flex-direction: column;
@@ -18,6 +36,12 @@
   gap: 0.85rem;
   padding: 1.1rem 0.75rem 1.25rem;
   min-height: 180px;
+}
+
+.loading-page--embedded .loading-body {
+	min-height: 100%;
+	padding: 1.5rem 1rem;
+	gap: 1rem;
 }
 
 .loading-spinner {
@@ -41,8 +65,197 @@
   padding: 0.25rem 0.25rem;
 }
 
+.loading-page--map-skeleton .loading-body,
+.loading-page--automation-skeleton .loading-body {
+  gap: 1.15rem;
+}
+
+.loading-map-skeleton,
+.loading-automation-skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-map-skeleton::after,
+.loading-automation-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 20%, rgba(255,255,255,0.08) 38%, transparent 56%);
+  transform: translateX(-100%);
+  animation: loadingSkeletonSweep 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.loading-map-skeleton {
+  position: relative;
+  width: min(100%, 420px);
+  height: 170px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 14%, var(--color-glass-border-xlight));
+  background:
+    radial-gradient(circle at top left, rgba(255,255,255,0.06), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.loading-map-skeleton::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.08) 0.9px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.loading-map-skeleton__room,
+.loading-map-skeleton__device,
+.loading-automation-skeleton__toolbar,
+.loading-automation-skeleton__node,
+.loading-automation-skeleton__edge {
+  background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05));
+  border: 1px solid rgba(255,255,255,0.16);
+}
+
+.loading-map-skeleton__room {
+  position: absolute;
+  border-radius: 18px;
+  backdrop-filter: blur(4px);
+}
+
+.loading-map-skeleton__room--primary {
+  left: 16px;
+  top: 18px;
+  width: 46%;
+  height: 42%;
+}
+
+.loading-map-skeleton__room--secondary {
+  right: 18px;
+  top: 28px;
+  width: 34%;
+  height: 34%;
+}
+
+.loading-map-skeleton__room--accent {
+  left: 31%;
+  bottom: 18px;
+  width: 40%;
+  height: 30%;
+}
+
+.loading-map-skeleton__device {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 5px rgba(255,255,255,0.08), 0 6px 16px rgba(0,0,0,0.18);
+}
+
+.loading-map-skeleton__device--one {
+  left: 28%;
+  top: 33%;
+}
+
+.loading-map-skeleton__device--two {
+  right: 26%;
+  top: 39%;
+}
+
+.loading-map-skeleton__device--three {
+  left: 52%;
+  bottom: 26%;
+}
+
+.loading-automation-skeleton {
+  width: min(100%, 520px);
+  min-height: 220px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 14%, var(--color-glass-border-xlight));
+  background:
+    radial-gradient(circle at top left, rgba(255,255,255,0.05), transparent 40%),
+    radial-gradient(circle at bottom right, rgba(255,255,255,0.04), transparent 28%);
+}
+
+.loading-automation-skeleton::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.08) 0.9px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.loading-automation-skeleton__toolbar {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 180px;
+  height: 32px;
+  border-radius: 12px;
+}
+
+.loading-automation-skeleton__node {
+  position: absolute;
+  width: 132px;
+  height: 72px;
+  border-radius: 18px;
+}
+
+.loading-automation-skeleton__node--one {
+  left: 32px;
+  top: 78px;
+}
+
+.loading-automation-skeleton__node--two {
+  left: 206px;
+  top: 54px;
+}
+
+.loading-automation-skeleton__node--three {
+  right: 34px;
+  bottom: 34px;
+}
+
+.loading-automation-skeleton__edge {
+  position: absolute;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.2), rgba(255,255,255,0.04));
+  border: 0;
+}
+
+.loading-automation-skeleton__edge--one {
+  left: 150px;
+  top: 110px;
+  width: 112px;
+  transform: rotate(-10deg);
+}
+
+.loading-automation-skeleton__edge--two {
+  left: 304px;
+  top: 122px;
+  width: 126px;
+  transform: rotate(24deg);
+}
+
+@keyframes loadingSkeletonSweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .loading-spinner {
+    animation: none;
+  }
+
+  .loading-map-skeleton::after,
+  .loading-automation-skeleton::after {
     animation: none;
   }
 }

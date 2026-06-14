@@ -22,6 +22,7 @@ export default function MapSvg({
   view,
   mode,
   snapGuide,
+  liveWallMeasurement,
   roomPaths,
   activeRoomId,
   editEnabled,
@@ -73,6 +74,8 @@ export default function MapSvg({
               .map-fav-icon { fill: rgba(255,255,255,0.75); }
               .map-guide { stroke: var(--color-glass-border-light); stroke-width: 1.5; stroke-dasharray: 6 6; opacity: 0.85; pointer-events: none; }
               .map-guide-point { fill: var(--color-primary); opacity: 0.85; pointer-events: none; }
+              .map-measure-label { fill: rgba(255,255,255,0.95); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; paint-order: stroke; stroke: rgba(8,11,20,0.92); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+              .map-measure-chip { fill: rgba(8,11,20,0.72); stroke: rgba(255,255,255,0.14); stroke-width: 1; rx: 999px; ry: 999px; pointer-events: none; }
             `}
           </style>
         </defs>
@@ -83,6 +86,14 @@ export default function MapSvg({
           ) : null}
           {mode === 'draw' && snapGuide?.px !== undefined && snapGuide?.py !== undefined ? (
             <circle cx={snapGuide.px} cy={snapGuide.py} r={4.2} className="map-guide-point" />
+          ) : null}
+          {mode === 'draw' && liveWallMeasurement?.midpoint ? (
+            <g transform={`translate(${liveWallMeasurement.midpoint.x} ${liveWallMeasurement.midpoint.y})`}>
+              <rect x={-28} y={-12} width={56} height={24} className="map-measure-chip" />
+              <text x={0} y={4} textAnchor="middle" className="map-measure-label">
+                {liveWallMeasurement.label}
+              </text>
+            </g>
           ) : null}
 
           {roomPaths.map(r => (

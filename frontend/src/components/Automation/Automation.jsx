@@ -600,7 +600,7 @@ function Automation() {
 
   if (!isResidentOrAdmin) {
     if (bootstrapping) {
-      return <LoadingView title="Automation" message="Loading automation…" />;
+      return <LoadingView title="Automation" message="Loading automation…" variant="automation-skeleton" />;
     }
     return (
       <UnauthorizedView
@@ -671,7 +671,7 @@ function Automation() {
               <div className="automation-stage-wrap">
                 {(!automationDataReady || !editReadyForRender) ? (
                   <div className="automation-stage-loading">
-                    <LoadingView title="Automation editor" message="Preparing editor…" />
+                    <LoadingView showHeader={false} variant="automation-skeleton" message="Preparing editor…" className="loading-page--embedded" />
                   </div>
                 ) : null}
                 <div className={`automation-stage-content${automationDataReady && editReadyForRender ? '' : ' automation-stage-content-hidden'}`}>
@@ -784,40 +784,43 @@ function Automation() {
               {Array.isArray(filteredWorkflows) && filteredWorkflows.length ? (
                 <div className="automation-workflow-list">
                   {filteredWorkflows.map((wf) => (
-                    <div
+                    <GlassCard
                       key={wf.id}
-                      className={`automation-workflow-item-row${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
+                      interactive={false}
+                      className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
                     >
-                      <button
-                        type="button"
-                        className={`automation-workflow-item${!isNarrow && selectedId === wf.id ? ' selected' : ''}`}
-                        onClick={() => {
-                          setSelectedId(wf.id);
-                          setViewMode('overview');
-                          setHasOverviewSelection(true);
-                        }}
-                      >
-                        <div className="name">{wf.name}</div>
-                        <div className="meta">
-                          <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
-                          <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
-                        </div>
-                      </button>
-                      {canWorkflowRunNow(wf) && (
+                      <div className="automation-workflow-item-shell">
                         <button
                           type="button"
-                          className="automation-workflow-run-btn"
-                          title={`Run ${wf.name}`}
-                          aria-label={`Run ${wf.name}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            runWorkflowFromList(wf);
+                          className="automation-workflow-item-main"
+                          onClick={() => {
+                            setSelectedId(wf.id);
+                            setViewMode('overview');
+                            setHasOverviewSelection(true);
                           }}
                         >
-                          <FontAwesomeIcon icon={faPlay} />
+                          <div className="name">{wf.name}</div>
+                          <div className="meta">
+                            <span className={`badge ${wf.enabled ? 'success' : 'muted'}`}>{wf.enabled ? 'Enabled' : 'Disabled'}</span>
+                            <span className="muted">{wf.updated_at ? `Updated ${new Date(wf.updated_at).toLocaleDateString()}` : 'No updates yet'}</span>
+                          </div>
                         </button>
-                      )}
-                    </div>
+                        {canWorkflowRunNow(wf) && (
+                          <button
+                            type="button"
+                            className="automation-workflow-run-btn"
+                            title={`Run ${wf.name}`}
+                            aria-label={`Run ${wf.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              runWorkflowFromList(wf);
+                            }}
+                          >
+                            <FontAwesomeIcon icon={faPlay} />
+                          </button>
+                        )}
+                      </div>
+                    </GlassCard>
                   ))}
                   <button
                     type="button"
@@ -917,7 +920,7 @@ function Automation() {
                       <div className="automation-stage-wrap">
                         {(!automationDataReady || !previewReadyForRender) ? (
                           <div className="automation-stage-loading">
-                            <LoadingView title="Workflow preview" message="Preparing preview…" />
+                            <LoadingView showHeader={false} variant="automation-skeleton" message="Preparing preview…" className="loading-page--embedded" />
                           </div>
                         ) : null}
 
