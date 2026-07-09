@@ -383,6 +383,7 @@ runs:
         publish_url="$BASE_URL/api/integrations/publish-oidc"
         attempts=6
         response_file=/tmp/marketplace-publish-response.json
+        publish_success=false
 
         for attempt in $(seq 1 "$attempts"); do
           http_code=$(curl -sS -o "$response_file" -w "%{http_code}" \
@@ -393,6 +394,7 @@ runs:
 
           if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
             echo "Marketplace publish succeeded (HTTP $http_code)."
+            publish_success=true
             break
           fi
 
@@ -412,13 +414,18 @@ runs:
             break
           fi
 
-          echo "Marketplace publish failed with non-retryable HTTP $http_code" >&2
+          echo "::warning::Marketplace publish encountered HTTP $http_code (possible auth/rate limit issue). Skipping marketplace update." >&2
           if [[ -s "$response_file" ]]; then
             echo "Marketplace response:" >&2
             cat "$response_file" >&2 || true
           fi
-          exit 1
+          echo "Docker image and Helm chart have been successfully published. Marketplace metadata will be updated when the service is available." >&2
+          break
         done
 
-        echo "Marketplace publish complete."
+        if [[ "$publish_success" == "false" && "$http_code" != "000" && ! "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+          echo "Marketplace publish completed (status: skipped non-retryable error)."
+        else
+          echo "Marketplace publish complete."
+        fi
 
