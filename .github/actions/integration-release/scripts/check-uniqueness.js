@@ -2,6 +2,8 @@ const fs = require('fs');
 
 const baseUrl = (process.env.MARKETPLACE_API_URL || '').replace(/\/+$/, '');
 const metadataPath = process.env.METADATA_PATH || '';
+const retryCount = Number.parseInt(process.env.MARKETPLACE_RETRY_COUNT || '3', 10);
+const retryDelayMs = Number.parseInt(process.env.MARKETPLACE_RETRY_DELAY_MS || '1500', 10);
 
 if (!baseUrl) {
   throw new Error('MARKETPLACE_API_URL is required.');
@@ -24,12 +26,41 @@ if (!id || !name || !listenPath) {
   throw new Error('metadata must include id, name, and listen_path.');
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryableStatus = (status) => status >= 500;
+
 const fetchJSON = async (url) => {
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  let lastError = null;
+  const attempts = Number.isFinite(retryCount) && retryCount > 0 ? retryCount : 3;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (res.ok) {
+        return res.json();
+      }
+
+      const error = new Error(`Failed to fetch ${url}: ${res.status}`);
+      error.status = res.status;
+      error.retryable = isRetryableStatus(res.status);
+      lastError = error;
+    } catch (err) {
+      const wrapped = new Error(err && err.message ? err.message : String(err));
+      wrapped.retryable = true;
+      lastError = wrapped;
+    }
+
+    if (!lastError.retryable || attempt === attempts) {
+      break;
+    }
+
+    const delay = retryDelayMs * attempt;
+    console.warn(`Marketplace lookup failed (attempt ${attempt}/${attempts}). Retrying in ${delay}ms...`);
+    await sleep(delay);
   }
-  return res.json();
+
+  throw lastError || new Error('Unknown marketplace lookup error');
 };
 
 const main = async () => {
@@ -75,6 +106,12 @@ const main = async () => {
 };
 
 main().catch((err) => {
+  const status = Number(err && err.status);
+  if ((Number.isFinite(status) && status >= 500) || err.retryable) {
+    console.warn(`Marketplace uniqueness check skipped due to transient marketplace error: ${err.message || err}`);
+    process.exit(0);
+  }
+
   console.error(err.message || err);
   process.exit(1);
 });
