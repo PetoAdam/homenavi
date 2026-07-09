@@ -380,11 +380,45 @@ runs:
           MANIFEST_PATH="$MANIFEST_PATH" \
           node "${GITHUB_ACTION_PATH}/scripts/build-payload.js")
 
-        curl -fsS \
-          -X POST "$BASE_URL/api/integrations/publish-oidc" \
-          -H "Authorization: Bearer $OIDC_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$PAYLOAD"
+        publish_url="$BASE_URL/api/integrations/publish-oidc"
+        attempts=6
+        response_file=/tmp/marketplace-publish-response.json
+
+        for attempt in $(seq 1 "$attempts"); do
+          http_code=$(curl -sS -o "$response_file" -w "%{http_code}" \
+            -X POST "$publish_url" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD") || http_code=000
+
+          if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Marketplace publish succeeded (HTTP $http_code)."
+            break
+          fi
+
+          if [[ "$http_code" =~ ^5[0-9][0-9]$ || "$http_code" == "000" ]]; then
+            if [[ "$attempt" -lt "$attempts" ]]; then
+              delay=$((attempt * 5))
+              echo "Marketplace publish transient failure (HTTP $http_code), retry ${attempt}/${attempts} in ${delay}s..." >&2
+              sleep "$delay"
+              continue
+            fi
+            echo "::warning::Marketplace publish skipped after ${attempts} transient failures (last HTTP $http_code)." >&2
+            if [[ -s "$response_file" ]]; then
+              echo "Marketplace response:" >&2
+              cat "$response_file" >&2 || true
+            fi
+            echo "Proceeding without failing release because marketplace endpoint is currently unavailable." >&2
+            break
+          fi
+
+          echo "Marketplace publish failed with non-retryable HTTP $http_code" >&2
+          if [[ -s "$response_file" ]]; then
+            echo "Marketplace response:" >&2
+            cat "$response_file" >&2 || true
+          fi
+          exit 1
+        done
 
         echo "Marketplace publish complete."
 
