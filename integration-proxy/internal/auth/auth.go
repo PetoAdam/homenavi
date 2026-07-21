@@ -24,10 +24,10 @@ func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 	return jwt.ParseRSAPublicKeyFromPEM(keyData)
 }
 
-func RequireResident(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
+func RequireResident(pubKey *rsa.PublicKey, allowUnauthenticated func(*http.Request) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isHealthPath(r) {
+			if isHealthPath(r) || (allowUnauthenticated != nil && allowUnauthenticated(r)) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -86,13 +86,6 @@ func isHealthPath(r *http.Request) bool {
 	}
 	p := strings.TrimSpace(r.URL.Path)
 	if p == "/healthz" || p == "/integrations/healthz" {
-		return true
-	}
-	// OAuth callbacks arrive as top-level cross-site redirects from the OAuth
-	// provider, so the browser cannot attach the SameSite auth cookie. The
-	// callback itself is protected by the short-lived OAuth state token stored
-	// server-side, so it is safe to bypass JWT auth here.
-	if strings.HasSuffix(p, "/api/admin/auth/callback") {
 		return true
 	}
 	return false

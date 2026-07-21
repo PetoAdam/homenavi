@@ -44,8 +44,14 @@ type Manifest struct {
 		} `json:"entry"`
 	} `json:"widgets"`
 
+	Auth ManifestAuth `json:"auth,omitempty"`
+
 	DeviceExtension     DeviceExtensionManifest     `json:"device_extension,omitempty"`
 	AutomationExtension AutomationExtensionManifest `json:"automation_extension,omitempty"`
+}
+
+type ManifestAuth struct {
+	PublicPaths []string `json:"public_paths,omitempty"`
 }
 
 type DeviceExtensionManifest struct {

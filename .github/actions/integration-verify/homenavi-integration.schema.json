@@ -121,6 +121,16 @@
         "execute_endpoint": { "type": "string", "pattern": "^/" }
       }
     },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "public_paths": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^/" }
+        }
+      }
+    },
     "config_schema": { "type": "object" }
   }
 }

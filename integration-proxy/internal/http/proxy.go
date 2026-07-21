@@ -99,6 +99,7 @@ func (s *Server) refreshManifest(ctx context.Context, id string, upstream *url.U
 		return err
 	}
 	m.ID = id
+	m.Auth.PublicPaths = normalizePublicPaths(m.Auth.PublicPaths)
 
 	s.mu.Lock()
 	s.manifests[id] = m
@@ -112,6 +113,29 @@ func (s *Server) refreshManifest(ctx context.Context, id string, upstream *url.U
 	s.updates[id] = state
 	s.mu.Unlock()
 	return nil
+}
+
+func normalizePublicPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		normalized := normalizeManifestPath(p)
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Server) setManifestErr(id, msg string) {
