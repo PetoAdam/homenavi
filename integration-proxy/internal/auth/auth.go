@@ -84,8 +84,18 @@ func isHealthPath(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false
 	}
-	path := strings.TrimSpace(r.URL.Path)
-	return path == "/healthz" || path == "/integrations/healthz"
+	p := strings.TrimSpace(r.URL.Path)
+	if p == "/healthz" || p == "/integrations/healthz" {
+		return true
+	}
+	// OAuth callbacks arrive as top-level cross-site redirects from the OAuth
+	// provider, so the browser cannot attach the SameSite auth cookie. The
+	// callback itself is protected by the short-lived OAuth state token stored
+	// server-side, so it is safe to bypass JWT auth here.
+	if strings.HasSuffix(p, "/api/admin/auth/callback") {
+		return true
+	}
+	return false
 }
 
 func RoleFromRequest(pubKey *rsa.PublicKey, r *http.Request) (string, error) {
