@@ -1,501 +1,221 @@
 <p align="center">
-	<img src="frontend/public/icons/icon-192x192.png" alt="Homenavi" width="72" height="72" />
+  <img src="frontend/public/icons/icon-192x192.png" alt="Homenavi" width="72" height="72" />
 </p>
 
-<h1 align="center" style="margin-bottom: 0;">
-	<span style="font-family: 'Manrope', 'Montserrat', 'Inter', 'Segoe UI', Arial, sans-serif; letter-spacing: 0.18em; text-transform: uppercase;">Homenavi</span>
-</h1>
+<h1 align="center">Homenavi</h1>
 
-<p align="center"><strong>A smart home platform for developers, by developers. Modern, microservice-based, and built to be extended.</strong></p>
+<p align="center"><strong>Open smart-home platform with a microservice core, MQTT/HDP realtime plane, and integration-first extensibility.</strong></p>
 
 <p align="center">
-	<a href="#quickstart">Quickstart</a> •
-	<a href="doc/architecture_diagram.md">Architecture</a> •
-	<a href="https://github.com/PetoAdam/homenavi/issues">Issues</a>
+  <a href="#quickstart">Quickstart</a> •
+  <a href="doc/architecture_diagram.md">Architecture</a> •
+  <a href="doc/gallery.md">Gallery</a> •
+  <a href="https://github.com/PetoAdam/homenavi/issues">Issues</a>
 </p>
 
 <p align="center">
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml"><img alt="Build Frontend Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/frontend_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml"><img alt="Build User Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/user_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml"><img alt="Build API Gateway Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/api_gateway_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml"><img alt="Build Auth Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/auth_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml"><img alt="Build Device Hub Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/device_hub_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml"><img alt="Build Email Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/email_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml"><img alt="Build Profile Picture Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/profile_picture_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml"><img alt="Build Echo Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/echo_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml"><img alt="Build History Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/history_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml"><img alt="Build Zigbee Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/zigbee_adapter_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/mock_adapter_docker_build.yaml"><img alt="Build Mock Adapter Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/mock_adapter_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml"><img alt="Build Automation Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/automation_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml"><img alt="Build Entity Registry Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/entity_registry_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml"><img alt="Build Weather Service Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/weather_service_docker_build.yaml/badge.svg" /></a>
-	<a href="https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml"><img alt="Build Integration Proxy Docker Image" src="https://github.com/PetoAdam/homenavi/actions/workflows/integration_proxy_docker_build.yaml/badge.svg" /></a>
+  <img src="doc/resources/dashboard.png" alt="Homenavi dashboard overview" style="width:100%;max-width:1280px;aspect-ratio:16/9;object-fit:cover;border-radius:12px;" />
 </p>
 
-Welcome to Homenavi — your open, hackable smart home solution. Built with a modern microservices architecture, Homenavi is designed for tinkerers, makers, and pros who want full control and easy extensibility.
+<p align="center"><a href="doc/gallery.md">View the full screenshot gallery</a></p>
 
 ---
 
-
-## Table of Contents
-1. 🚀 Why Homenavi
-2. 🧩 Architecture Overview
-3. 🔮 Smart Home Vision (Current + Upcoming)
-4. 🐳 Quickstart
-5. 📂 Service Directory
-6. 🔒 Security & Auth
-7. 📊 Observability
-8. ⚡ WebSockets & Real‑Time
-9. 🔌 Extending the Platform
-10. 🗺️ Roadmap
-11. ⚙️ Configuration & Environment
-12. 📦 CI/CD
-13. 🤝 Contributing & Community
-14. ❓ FAQ
-15. 📜 License
+## Table of contents
+1. Why Homenavi
+2. Current architecture
+3. Quickstart
+4. Deployments (Docker and Kubernetes)
+5. Service map
+6. Current capabilities
+7. Integrations and extension model
+8. Observability and security snapshot
+9. Documentation map
+10. FAQ
+11. Contributing
+12. License
 
 ---
 
-## 1. 🚀 Why Homenavi
-- **Microservice-first:** Each core feature is its own service – scale, swap, or extend as you like.
-- **Modern stack:** Go, React, Python, Docker, and more.
-- **Dev-friendly:** Easy to run, hack, and contribute.
-- **Open & Transparent:** 100% open source, MIT licensed.
-- **Cloud or Home:** Run it on your Raspberry Pi, your server, or in the cloud.
-- **Observability built-in:** Prometheus metrics, Jaeger tracing, and request/correlation IDs for easy debugging and monitoring.
-- **WebSocket support:** Real-time communication with cookie-based JWT authentication.
-- **Extensible by design:** Add new device protocols, automations, and integrations with minimal friction.
+## 1. Why Homenavi
+Homenavi is designed for people who want full control over smart-home behavior without locking themselves into one vendor ecosystem.
 
----
+What it emphasizes today:
+- Service boundaries that are explicit and replaceable.
+- Realtime device/event handling over MQTT with a normalized HDP contract.
+- Canonical inventory ownership via ERS (names, rooms, tags, map metadata).
+- Highly customizable dashboards, widget composition, automation workflows, and integration-driven extension points.
+- Role-aware user management, groups, and realtime communication across UI and services.
+- Straightforward local operation with Docker Compose and a path to Kubernetes.
 
-## 2. 🧩 Architecture Overview
+## 2. Current architecture
+Homenavi runs as a layered system:
+- Browser app (PWA frontend).
+- Nginx ingress for HTTPS/WSS.
+- API Gateway for auth checks, routing, and websocket upgrades.
+- Domain services (auth, user, dashboard, device-hub, ERS, history, automation, weather).
+- Integration runtime via integration-proxy and installed integrations.
+- Shared messaging via EMQX (HDP topics).
 
-Further reading:
-* [ERS / HDP / Device Hub — How it works (current)](doc/ers_hdp_devicehub_overview.md)
-* [Architecture diagram (current)](doc/architecture_diagram.md)
-
-Current Core:
-* API Gateway (Go): Routing, JWT verification, rate limit, WebSocket upgrade.
-* Device Hub (Go): Central device inventory and **HDP-only** adapter bridge over MQTT.
-* History Service (Go): Persists HDP device state into Postgres and serves query endpoints for charts.
-* Automation Service (Go): Automation/workflow orchestration (graph builder UI backend).
-* Weather Service (Go): Cached weather API used by the frontend via the gateway.
-* Auth Service (Go): Login, password management, 2FA (email now, TOTP coming), lockout logic.
-* User Service (Go): Profile, roles, administrative user actions.
-* Dashboard Service (Go): Stores per-user dashboards and widget configuration.
-* Marketplace API (Go, external): Integration catalog + downloads/trending stats (consumed by frontend and integration-proxy).
-* Entity Registry Service (Go): Home inventory primitives (rooms/tags/devices) and discovery surface.
-* Email Service (Go): Outbound verification & notification emails.
-* Profile Picture Service (Python): Image handling (avatars, basic processing).
-* Echo Service (Python): Real-time WebSocket demo & test surface.
-* Frontend (React + Vite + PWA): Auth flows, user management, device UI, dashboards.
-* Adapters:
-	* Zigbee Adapter (Go): Zigbee2MQTT bridge that emits HDP state/metadata/events and consumes HDP commands.
-	* Thread Adapter (Go): Placeholder implementation that emits HDP hello/status/pairing and acks commands.
-* Infrastructure: PostgreSQL, Redis, Nginx, Prometheus, Jaeger, (Grafana ready).
-
-Key Design Principles:
-* Clear separation of auth vs user domain.
-* Stateless services (use Redis / DB for state persistence & coordination).
-* Consistent JSON error schema across services.
-* Incremental addition of domain (devices, automations, adapters) without core rewrites.
-* SPA frontend with history fallback (direct links work out of the box).
-
-Current Features (Implemented):
-* **Device abstraction via HDP v1:** adapters translate protocol payloads into a single internal contract consumed by core services. See `doc/hdp.md`.
-* **Adapters (today):** Zigbee2MQTT → HDP bridge (plus pairing/commands); Mock adapter placeholder using the same HDP surfaces.
-* **ERS + Device Hub boundary:** ERS owns names/rooms/tags/map metadata; device-hub owns realtime telemetry, pairing, commands. See `doc/ers_hdp_devicehub_overview.md`.
-* **Customizable UI dashboards:** widget-based Home dashboard with Edit mode + per-user persistence via Dashboard Service. See `doc/dashboard_ui_functional_spec.md`.
-* **Operational About page:** the frontend now exposes release tag, build time, session context, and integration inventory from the running deployment.
-* **Integration marketplace flow:** frontend queries the Marketplace API directly for catalog + stats, posts download increments on successful installs, and integration-proxy installs using runtime-resolved `deployment_artifacts` from marketplace metadata.
-* **Automation engine + scheduling:** rule/workflow engine with manual triggers and **cron schedule triggers**, plus run tracking and live run stream via websocket. (APIs documented in `doc/external_api_surface.md`.)
-
----
-
-## 3. 🔮 Smart Home Vision (Current + Upcoming)
-Homenavi’s “vision” is already partially implemented (dashboards, HDP-based adapters, automations). The next steps are about **expanding capabilities** and **hardening extensibility**:
-
-Upcoming focus areas:
-* **More adapters / protocol coverage:** Matter, Z-Wave, BLE, and cloud integrations.
-* **Automation evolution:** versioned deployments, richer trigger/action/condition library, improved editor UX, and safe integration-provided automation steps.
-* **Smarter scheduling:** beyond cron (sunrise/sunset and other home-aware schedules).
-* **Scene & Mode Management:** grouped device state snapshots and home modes (Away / Night / Eco).
-* **Presence & Energy modules:** occupancy inference; energy usage aggregation.
-* **Integration marketplace model:** verified/unverified integrations, secure sandboxing for third-party widgets.
-* **Edge nodes:** lightweight agents pushing device state/events to the core cluster.
-
-Contributions and feedback on these modules are welcome!
-
----
+Primary references:
+- Architecture + flow diagrams: [doc/architecture_diagram.md](doc/architecture_diagram.md)
+- ERS/HDP/device-hub interaction: [doc/ers_hdp_devicehub_overview.md](doc/ers_hdp_devicehub_overview.md)
+- HDP contract and topic model: [doc/hdp.md](doc/hdp.md)
+- API surface: [doc/external_api_surface.md](doc/external_api_surface.md)
 
 <a id="quickstart"></a>
-## 4. 🐳 Quickstart
+## 3. Quickstart
 
+### Local (Docker Compose)
 ```sh
 git clone https://github.com/PetoAdam/homenavi.git
 cd homenavi
-cp .env.example .env   # adjust secrets / paths
+cp .env.example .env
 docker compose up --build
 ```
 
-The default local UI endpoints are:
+Notes:
+- The stack defaults to EMQX for MQTT.
+- Mock adapter is opt-in via profile.
+- zigbee2mqtt is included and can be used with a USB coordinator.
 
-* Frontend app (direct frontend container): http://localhost:5173
-* Full reverse-proxy entrypoint (Nginx): http://localhost
+## 4. Deployments (Docker and Kubernetes)
 
-By default, Docker Compose now uses the same release tag as the Helm chart `appVersion` (`v0.5.2`). Override `HN_VERSION` in `.env` only when you intentionally want a different image tag.
+### Docker deployment
+Use Compose as the canonical local and small-instance deployment path:
+- Build/run details: [doc/local_build.md](doc/local_build.md)
+- Nginx behavior and TLS/dev modes: [doc/nginx_guide.md](doc/nginx_guide.md)
+- MQTT bridging patterns: [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md)
 
-If you have a physical Zigbee USB adapter connected and configured, include the optional hardware profile:
-
+### Kubernetes deployment
+Use Helm for cluster deployment:
 ```sh
-docker compose --profile zigbee-hardware up --build
-```
-
-By default, the stack now uses **EMQX** as the main MQTT broker. If you need to connect Homenavi to an external MQTT deployment, load one or more bridge snippets from `emqx/bridge.d/*.hocon`. A fully commented starter lives at `emqx/bridge.d/homenavi-bridge.example.hocon`. See [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md).
-
-The placeholder mock adapter remains opt-in. The default local stack excludes it, and the profile uses the published container image rather than a local source build:
-
-```sh
-docker compose --profile mock-adapter up
-```
-
-Entry Points:
-* Frontend (direct): http://localhost:5173
-* Frontend (via Nginx): http://localhost
-* API Gateway (REST): http://localhost/api
-* Prometheus: http://localhost:9090
-* Jaeger UI: http://localhost:16686
-* (Grafana optional) http://localhost:3000
-
-Compose hardening note: by default only `frontend`, `api-gateway`, and `nginx` are intended as primary app ingress paths, while internal services stay network-internal unless you explicitly uncomment DEV `ports` mappings in `docker-compose.yml`.
-
-See `doc/local_build.md` and `doc/nginx_guide.md` for deeper setup details.
-
----
-
-
-## 5. 📂 Service Directory
-| Service | Path | Purpose | Docker Build Tag |
-|---------|------|---------|------------------|
-| API Gateway | `api-gateway/` | Request routing, auth verification, rate limiting, WS proxy | `homenavi-api-gateway:latest` |
-| Auth Service | `auth-service/` | Credentials, tokens, 2FA, lockout logic | `homenavi-auth-service:latest` |
-| User Service | `user-service/` | User profiles, roles, admin operations | `homenavi-user-service:latest` |
-| Dashboard Service | `dashboard-service/` | Per-user dashboards + widget persistence | `homenavi-dashboard-service:latest` |
-| Entity Registry Service | `entity-registry-service/` | Home inventory primitives and discovery surface | `homenavi-entity-registry-service:latest` |
-| Device Hub | `device-hub/` | Device inventory, HDP bridge over MQTT, metadata/state fan-out | `homenavi-device-hub:latest` |
-| History Service | `history-service/` | HDP device state persistence + query API for charts | `homenavi-history-service:latest` |
-| Automation Service | `automation-service/` | Automations/workflows service | `homenavi-automation-service:latest` |
-| Weather Service | `weather-service/` | Cached weather API (OpenWeather) | `homenavi-weather-service:latest` |
-| Email Service | `email-service/` | Sending verification / notification emails | `homenavi-email-service:latest` |
-| Profile Picture | `profile-picture-service/` | Avatar upload & processing | `homenavi-profile-picture-service:latest` |
-| Echo Service | `echo-service/` | WebSocket echo & diagnostic tool | `homenavi-echo-service:latest` |
-| Zigbee Adapter | `zigbee-adapter/` | Zigbee2MQTT adapter emitting/consuming HDP | `homenavi-zigbee-adapter:latest` |
-| Mock Adapter | `mock-adapter/` | Placeholder adapter for HDP hello/status/pairing; compose uses the published image via an opt-in profile | `homenavi-mock-adapter:latest` |
-| Frontend | `frontend/` | SPA & PWA client | `homenavi-frontend:latest` |
-
-Support:
-* `nginx/` reverse proxy templates.
-* `prometheus/` scrape config.
-* `emqx/` broker configuration, including gitignored bridge snippets loaded from `emqx/bridge.d/`.
-* `keys/` (DO NOT COMMIT PRIVATE KEYS IN PRODUCTION REPOS).
-* `doc/` guides and design docs.
-
----
-
-## 6. 🔒 Security & Auth
-Implemented:
-* RS256 JWT (private signing in Auth Service, public verification at gateway).
-* Email-based 2FA workflow (TOTP planned).
-* Account & 2FA attempt lockouts (structured 423 responses with remaining time).
-* Rate limiting (per-route & global) with Redis.
-* Standard JSON error format: `{ "error": string, "code"?: int, ... }` plus optional `reason`, `lockout_remaining`, `unlock_at`.
-
----
-
-## 7. 📊 Observability
-* Metrics: Prometheus scrape (gateway, Go runtime, device hub, etc.).
-* Tracing: Jaeger via OpenTelemetry exporters.
-* Correlation: Request IDs / correlation IDs propagated across hops.
-* Health: Expose `/health` (liveness/readiness separation recommended for prod).
-* Device Hub exports its own `/metrics` endpoint and participates in the same trace pipeline.
-
----
-
-## 8. ⚡ WebSockets & Real‑Time
-* Gateway upgrades authenticated using existing JWT (cookie-based flow supported).
-* Echo service demonstrates publishing & latency characteristics.
-* Device Hub uses MQTT topics for adapter input/output and connects via WebSockets to the UI.
-* Foundation for future real-time device state, automation events, and notifications.
-
-Test: `python3 test-websocket.py` (see root script).
-
----
-
-## 9. 🔌 Extending the Platform
-Integrations are **containers** that expose a manifest and optional UI surfaces:
-
-- The integration runs in the same Docker network as the stack.
-- `integration-proxy` reads `integrations/config/installed.yaml` and proxies `/integrations/<id>/...`.
-- The dashboard catalog merges integration widgets from `GET /integrations/registry.json`.
-
-Template repository (source of truth):
-
-- https://github.com/PetoAdam/homenavi-integration-template
-
-Current runtime model:
-
-- Integrations publish `/.well-known/homenavi-integration.json` (manifest).
-- UI surfaces are rendered in sandboxed iframes (tab + widget).
-- Same‑origin assets are served under `/integrations/<id>/...` via the proxy.
-- Automation actions execute by calling the integration container directly on the internal Docker network (not via `/integrations/<id>/...`).
-
-### Third-party integration development
-
-Third-party integrations should be built in their own repos using the official template:
-
-- https://github.com/PetoAdam/homenavi-integration-template
-
-Design references for next-gen integrations (devices + automations + UI):
-
-- `doc/integration_device_and_automation_extensions.md`
-- `doc/poc_lg_thinq_integration_v2.md`
-
-Recommended workflow:
-
-1) Implement your integration and keep metadata in `marketplace/metadata.json`.
-2) Add the centralized CI actions from this repo:
-	- Verify: `PetoAdam/homenavi/.github/actions/integration-verify@main`
-	- Release: `PetoAdam/homenavi/.github/actions/integration-release@main`
-3) Tag a release (`vX.Y.Z`). The release workflow builds the image and publishes to the marketplace.
-
-Release hardening (CI):
-
-- `verify.yml` is the primary quality gate (manifest/structure checks, tests, `go vet`, `gosec`, Docker build, and Trivy scan).
-- `release.yml` runs `verify.yml` as a required stage before publishing.
-- The shared `PetoAdam/homenavi/.github/actions/integration-release@main` action also enforces a central verify gate (`integration-verify` + `go vet` + `gosec`) so release validation cannot be bypassed by repo-local workflow edits.
-- Before marketplace publish, release enforces uniqueness checks, emits SBOM + provenance, and signs image digests with keyless Cosign.
-
-Marketplace publishing uses GitHub OIDC tokens (no repo secrets). The marketplace validates:
-
-- The OIDC token is from GitHub Actions for the tagging workflow.
-- The tag matches the payload `version` and `release_tag`.
-- The repo has a successful `verify.yml` workflow run for the tagged commit.
-
-Make sure your integration repo includes a `verify.yml` workflow and grants `id-token: write` in the release workflow so the OIDC token can be requested.
-
-Security note: when compose-managed installs are enabled, `integration-proxy` runs with Docker socket access and elevated privileges. Treat it as a high‑trust service and restrict access accordingly.
-
-JWT bootstrap behavior:
-
-- Docker Compose runs a one-shot `jwt-bootstrap` service before JWT-consuming services start. It verifies `keys/jwt_private.pem` and `keys/jwt_public.pem`, and generates them if needed via [scripts/ensure-jwt-keys.sh](scripts/ensure-jwt-keys.sh).
-- Helm/Kubernetes can do the same in-cluster: if no JWT secret is supplied, the pre-install/pre-upgrade hook in [helm/homenavi/templates/jwt-bootstrap-job.yaml](helm/homenavi/templates/jwt-bootstrap-job.yaml) creates the secret on first install and reuses it on later upgrades.
-
-### Integration proxy installation (recommended)
-
-Use the Admin → Integrations UI to install integrations from the marketplace and manage secrets. The proxy updates [integrations/config/installed.yaml](integrations/config/installed.yaml) automatically.
-
-Runtime policy: use one integration lifecycle runtime per environment.
-
-- Compose-based environment: manage integrations via Compose.
-- Kubernetes/Helm-based environment: manage integrations via Helm/Kubernetes artifacts.
-- Mixed runtime installs in a single environment are not supported.
-
-First-party integrations (for example Spotify and LG ThinQ) publish both `deployment_artifacts.compose` and `deployment_artifacts.helm` so install/update behavior is parity-first across Compose and Helm runtime modes.
-
-The Helm chart defaults marketplace-backed integration installs to the public Homenavi marketplace at `marketplace.homenavi.org`. End users do not need to run the marketplace in their own cluster for normal installs. If you want Helm installs to resolve metadata from a local marketplace deployment for development, override `INTEGRATIONS_MARKETPLACE_API_BASE` as shown in [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
-
-Installed integrations track their installed `version` (and `auto_update` policy) in `installed.yaml`. Homenavi compares the installed version to the marketplace version (semver) to surface **Update available** and to support **Auto-update**.
-
-If you run custom integrations manually, ensure the container is on the same Docker network and then use Admin → Integrations to add or refresh the entry.
-
-### Integration updates (admin-managed)
-
-- The Admin → Integrations UI shows installed vs latest marketplace version and provides an Update button.
-- Updates run asynchronously (queued) and the UI shows progress via the same status surface used during installs.
-- Auto-update can be enabled per integration; `integration-proxy` periodically checks the marketplace and applies updates when available.
-
-### Helm installation
-
-An initial Helm chart scaffold is available at [helm/homenavi](helm/homenavi).
-
-Released Helm charts are published to GHCR as OCI artifacts. For tagged releases, install directly from:
-
-- `oci://ghcr.io/petoadam/charts/homenavi`
-
-Example:
-
-```bash
-helm install homenavi oci://ghcr.io/petoadam/charts/homenavi \
-	--version X.Y.Z \
-	-n homenavi --create-namespace
-```
-
-The release chart defaults service image tags to the chart `appVersion`, so a chart release and its container images stay aligned by default.
-
-For the current MVP goal (local Minikube Helm for core + marketplace), use the runbook at [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md).
-
-The local marketplace deployment in that runbook is for development and end-to-end testing only. In normal homelab installs, Homenavi uses the central marketplace service.
-
-For single-namespace MVP deployment in one step, run [scripts/deploy-minikube.sh](scripts/deploy-minikube.sh).
-
-The script supports Kubernetes-native secret ingestion from env files, installs the CloudNativePG operator when needed, and can inject a local EMQX bridge snippet into the Helm release:
-
-```bash
-./scripts/deploy-minikube.sh --env-file ./.env
-./scripts/deploy-minikube.sh --bridge-config-file ./emqx/bridge.d/20-external-bridge.hocon
-./scripts/deploy-minikube.sh --start-port-forwards
-```
-
-For broker topology guidance, including the preferred direct-bridge pattern and EMQX bridge snippet layout, see [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md).
-
-For a safe starter template, use [k8s/secrets/homenavi.env.example](k8s/secrets/homenavi.env.example).
-
-Default port-forward targets from the deploy script are stable for easier testing:
-
-- frontend: `http://localhost:50001`
-- marketplace: `http://localhost:50010`
-
-Legacy alias [scripts/deploy-minikube-planes.sh](scripts/deploy-minikube-planes.sh) now redirects to the current single-namespace deploy script.
-
-Quick start:
-
-```bash
 helm upgrade --install homenavi ./helm/homenavi -n homenavi --create-namespace
 ```
 
-Validation:
+Operational runbooks:
+- Minikube MVP path: [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md)
+- HA/operations notes: [doc/helm_ha_operations.md](doc/helm_ha_operations.md)
+- Deployment model guidance: [doc/deployment_modes_compose_helm_implementation_plan.md](doc/deployment_modes_compose_helm_implementation_plan.md)
 
-```bash
-helm lint ./helm/homenavi
-helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
-```
+## 5. Service map
 
-### GitOps note for Kubernetes (ArgoCD/Flux)
+| Domain | Services | Responsibility |
+|---|---|---|
+| Ingress and edge API | nginx, api-gateway | Public HTTPS/WSS ingress, auth checks, route and websocket dispatch |
+| Identity and access | auth-service, user-service | Login/session/JWT, lockouts/2FA, RBAC-aware user profiles, roles and admin operations |
+| Home model and state | entity-registry-service, device-hub, history-service | Canonical inventory, rooms/tags/groups/map metadata, HDP command/state plane, historical state persistence |
+| Automation and UI model | automation-service, dashboard-service | Workflow engine, run stream, widget and dashboard persistence |
+| Integrations runtime | integration-proxy, installed integrations | Registry, UI/API proxying, install/update orchestration, integration action execution |
+| Supporting services | weather-service, email-service, profile-picture-service, echo-service | Weather facade, outbound email, avatar storage, websocket diagnostics |
+| Messaging and data infra | EMQX, PostgreSQL, Redis, MinIO | MQTT backbone, relational storage, cache/rate-limit state, object storage |
 
-For Kubernetes GitOps deployments, manage Homenavi and integrations in your GitOps repository (for example ArgoCD/Flux manifests/apps) and let reconciliation apply changes.
+## 6. Current capabilities
 
-In this mode, do not use the marketplace install/update actions in the Homenavi UI as your source of truth.
+### Devices and realtime
+- HDP-based command and state model across adapters and integrations.
+- Zigbee path through zigbee2mqtt and zigbee-adapter.
+- MQTT-over-WebSocket for live device updates in UI.
+- Realtime communication for device state, command lifecycle, automation runs, and inventory change notifications.
+- ERS auto-import/binding of HDP identities to canonical inventory.
 
-This approach works when your GitOps repository includes the required integration artifacts/references and desired release configuration for each integration.
+### Inventory and map
+- Rooms/tags/device metadata owned in ERS.
+- Interactive drag-and-drop map editing with persisted room geometry, device placement, and favorites.
+- Device and inventory grouping through room/tag/group selector semantics.
+- Selector resolution for automation targeting (room/tag/group semantics).
 
-### Integration secrets (admin-managed)
+### Automation engine
+- Manual, device-state, and schedule triggers.
+- Drag-and-drop workflow authoring in the UI backed by branching, loop, sleep, and device command actions.
+- Integration actions via integration runtime metadata and execute endpoint.
+- Live run stream websocket endpoint.
 
-Integrations can declare the secrets they require in the manifest via a `secrets` array. The Admin → Integrations page uses this list to render write-only secret fields and sends values to each integration’s admin endpoint.
+### Dashboards and widgets
+- User-scoped dashboards with persisted layout/state and edit-mode customization with simple drag-and-drop placement and resizing.
+- Custom widget composition, placement, and integration widget discovery through integration-proxy registry.
 
-Integrations may also expose a **setup UI** flow (in addition to or instead of secrets) via `/api/admin/setup`.
+### Identity, users, and access
+- User-service backed profile and administrative user management.
+- Role-aware and admin-oriented flows across gateway-protected APIs.
+- Auth-service and user-service split keeps credentials/session logic separate from user domain data.
 
-Each integration stores secrets in its own file (default `config/integration.secrets.json` in the integration repo/container, configurable with `INTEGRATION_SECRETS_PATH`). This prevents integrations from seeing each other’s secrets.
+### Marketplace-backed integrations
+- Runtime install/update model through integration-proxy.
+- Artifact-driven deployment metadata (Compose/Helm).
+- OIDC-based publishing and verify/release gate expectations.
 
-See the detailed architecture/roadmap: [doc/dashboard_widgets_integrations_marketplace_roadmap.md](doc/dashboard_widgets_integrations_marketplace_roadmap.md).
+## 7. Integrations and extension model
 
----
+Existing integration repositories you can use as references:
+- Official template: https://github.com/PetoAdam/homenavi-integration-template
+- Spotify integration: https://github.com/PetoAdam/homenavi-spotify
+- Connector integration: https://github.com/PetoAdam/homenavi-connector
 
-## 10. 🗺️ Roadmap (Condensed)
+How to extend:
+- Start from template + manifest + marketplace metadata.
+- Implement sidebar/widget UI and optional automation/device extensions.
+- Publish through verify/release pipelines and marketplace metadata contract.
 
-Mid Term:
-* More adapters (Matter/Z-Wave/BLE) and cloud integrations
-* Automation: versioning, richer step library, editor UX improvements
-* Scheduling upgrades (sunrise/sunset and other home-aware schedules)
-* Scenes & home modes (Away / Night / Eco)
-* Third-party integrations groundwork (catalog, sandboxing, verification model)
-* AI assistant service (local or cloud) for docs/config/dev support
+Read the dedicated docs:
+- Integration extension contract: [doc/integration_device_and_automation_extensions.md](doc/integration_device_and_automation_extensions.md)
+- Marketplace/integration roadmap: [doc/dashboard_widgets_integrations_marketplace_roadmap.md](doc/dashboard_widgets_integrations_marketplace_roadmap.md)
+- LG ThinQ implementation POC: [doc/poc_lg_thinq_integration_v2.md](doc/poc_lg_thinq_integration_v2.md)
 
-Long Term:
-* Edge node agent & secure tunneling
-* Energy analytics & occupancy inference
-* Plugin SDK + extension marketplace
+## 8. Observability and security snapshot
 
----
+### Observability
+- Metrics via Prometheus scrape endpoints.
+- Traces exported to Jaeger for currently instrumented services.
+- Correlation IDs propagated through gateway/service hops.
 
-## 11. ⚙️ Configuration & Environment
-Environment variables (selected):
-* Image / build metadata:
-	* `HN_VERSION` (compose image tag override; also used for frontend build metadata in Docker builds)
-	* `GITHUB_SHA` (optional commit SHA embedded into frontend build metadata for compose-built images)
-* `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`
-* Integrations / marketplace:
-	* `INTEGRATIONS_MARKETPLACE_API_BASE` (defaults to `https://marketplace.homenavi.org`)
-	* `INTEGRATIONS_UPDATE_CHECK_INTERVAL` (defaults to `15m`; set `0` to disable periodic checks)
-	* `INTEGRATIONS_COMPOSE_ENABLED` (enables compose-managed install/update)
-	* `INTEGRATIONS_COMPOSE_PULL_TIMEOUT` (defaults to `2m`, used for slow pulls)
-	* `INTEGRATIONS_RUNTIME_MODE` (example: `compose`, `helm`, or `gitops` depending on deployment model)
-* Database connection vars (PostgreSQL)
-* Redis:
-	* `REDIS_MODE` (`standalone` or `sentinel`)
-	* `REDIS_ADDR` (standalone endpoint)
-	* `REDIS_SENTINEL_ADDRS` and `REDIS_MASTER_NAME` (sentinel mode)
-	* `REDIS_PASSWORD` / `REDIS_DB`
-* Email provider / SMTP credentials (for Email Service)
-* Tracing / observability:
-	* `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (defaults to Jaeger OTLP HTTP endpoint in compose)
-* Weather:
-	* `OPENWEATHER_API_KEY` (required for real weather data)
-	* `WEATHER_CACHE_TTL_MINUTES` (optional, defaults to 15)
-* Local entrypoints / transport:
-	* `FRONTEND_HOST_PORT` / `FRONTEND_CONTAINER_PORT`
-	* `NGINX_HOST_PORT` / `NGINX_PORT`
-	* `MQTT_BROKER_URL` / `MQTT_WEBSOCKET_UPSTREAM_URL`
-* Media storage:
-	* `PROFILE_PICTURE_STORAGE_TYPE`
-	* `PROFILE_PICTURE_STORAGE_S3_ENDPOINT`
-	* `PROFILE_PICTURE_STORAGE_S3_BUCKET`
-	* `PROFILE_PICTURE_STORAGE_S3_ACCESS_KEY`
-	* `PROFILE_PICTURE_STORAGE_S3_SECRET_KEY`
+Services with OTEL tracing support today:
+- api-gateway, auth-service, user-service, dashboard-service, device-hub, email-service, zigbee-adapter, mock-adapter.
 
-Example: `cp .env.example .env` then edit. In production avoid storing secrets directly in env files—use a secrets manager.
+Services without first-class OTEL tracing support yet:
+- automation-service, entity-registry-service, history-service, integration-proxy, weather-service.
 
-Key Management:
-```sh
-mkdir -p keys
-openssl genpkey -algorithm RSA -out keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
-openssl rsa -pubout -in keys/jwt_private.pem -out keys/jwt_public.pem
-```
+### Security
+- RS256 JWT signing/verification split.
+- Email-based 2FA flow and lockout policy.
+- Redis-backed rate limiting and lockout state.
+- Integration runtime privilege boundaries depend on deployment mode; treat docker-socket access as high trust.
 
----
+## 9. Documentation map
+- Architecture diagrams and message flows: [doc/architecture_diagram.md](doc/architecture_diagram.md)
+- API endpoint map: [doc/external_api_surface.md](doc/external_api_surface.md)
+- MQTT/HDP contract and interoperability: [doc/hdp.md](doc/hdp.md), [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md)
+- Local developer setup: [doc/local_build.md](doc/local_build.md)
+- Kubernetes runbook: [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md)
+- Screenshot gallery: [doc/gallery.md](doc/gallery.md)
 
-## 12. 📦 CI/CD
-* GitHub Actions build Docker images per service and publish release images to GHCR on tags.
-* The frontend image now embeds release/build metadata for the About page via Docker build args.
-* Integration repositories consume shared verify/release actions from this repo, including `go vet`, `gosec`, container builds, and vulnerability scanning before publish.
+## 10. FAQ
 
----
+**Can I run it on a Raspberry Pi?** Yes. All the services are written in Go, so you can run Homenavi on a single-board computer without any issues. The platform is intended to work in homelab environments as well as larger deployments, but validate the exact images, storage, and attached hardware path you need.
 
-## 13. 🤝 Contributing & Community
-Contributions welcome:
-1. Fork & branch
-2. Make focused changes (tests appreciated)
-3. Open PR with rationale & scope
+**Is it production ready?** The platform is actively evolving. Core auth, user management, dashboards, HDP device handling, and automation foundations are implemented, but you should still review the current service set and deployment model for your use case.
 
-Discussions / Discord: (coming soon)
+**Does it support realtime updates?** Yes. Homenavi uses websocket and MQTT-backed flows for device state, command lifecycle, automation run updates, and inventory refresh notifications.
+
+**Can I add my own device protocol or cloud integration?** Yes. The preferred path is an integration or adapter that speaks HDP and, when needed, exposes UI and automation extensions through the integration runtime.
+
+**Can I build custom widgets or dashboards?** Yes. The dashboard model is intentionally customizable and supports first-party plus integration-provided widgets.
+
+**How do integrations get published?** Integration repositories should use the template plus the shared verify/release actions and publish marketplace metadata through the OIDC-backed release flow.
+
+**Where should I look for Kubernetes deployment guidance?** Start with [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md) and [doc/helm_ha_operations.md](doc/helm_ha_operations.md).
+
+## 11. Contributing
+Contributions are welcome:
+1. Fork and create a focused branch.
+2. Keep changes scoped and include tests/docs where relevant.
+3. Open a pull request with rationale and validation notes.
+
 Issues: https://github.com/PetoAdam/homenavi/issues
 
----
-
-## 14. ❓ FAQ
-**Can I run it on a Raspberry Pi?** Yes—multi-arch images are the target; optimize build flags if needed.
-
-**Is it production ready?** Homenavi is under active development. The core authentication and user management features are stable, and device + automation layers are implemented, but the platform is still evolving—review the code for your specific use case.
-
-**Can I add my own device protocol now?** Yes, via a custom service publishing REST/WS endpoints through the gateway. The platform is designed to support new adapters and integrations with minimal changes.
-
-**Does it support real-time updates?** Yes—WebSockets already integrated; domain events layer planned.
-
-**Can I build my own automation engine or dashboard?** Yes—extend the platform with custom services, frontend modules, or plugins. The architecture is intentionally open for extension.
-
-**How do I contribute or request a feature?** Open an issue or PR on GitHub, or join the upcoming Discord community.
-
-**How do I run integration tests?** See `test/` for Python scripts covering device, auth, and WebSocket flows. Most tests require a running stack (`docker compose up`).
-
----
-
-## 15. License
-MIT License © 2025 Adam Peto — See [LICENSE](LICENSE).
+## 12. License
+MIT License. See [LICENSE](LICENSE).
 
 ### Icon attribution
-
-Font Awesome Free icons are used in the UI. Font Awesome is licensed under CC BY 4.0: https://fontawesome.com/license/free
-
----
-
-> This README describes current capabilities and the forward-looking smart home direction. Features marked “planned” are not yet implemented but inform architectural choices.
-
+Font Awesome Free icons are used in the UI and are licensed under CC BY 4.0:
+https://fontawesome.com/license/free
