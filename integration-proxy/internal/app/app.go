@@ -11,14 +11,16 @@ import (
 	proxyauth "github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
 	integrationconfig "github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 	httptransport "github.com/PetoAdam/homenavi/integration-proxy/internal/http"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // App is the composed integration-proxy application.
 type App struct {
-	proxy  *httptransport.Server
-	server *http.Server
-	logger *log.Logger
-	cfg    Config
+	proxy    *httptransport.Server
+	server   *http.Server
+	logger   *log.Logger
+	cfg      Config
+	shutdown func()
 }
 
 func New(cfg Config, logger *log.Logger) (*App, error) {
@@ -43,15 +45,26 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 			return nil, fmt.Errorf("add integration %q: %w", ic.ID, err)
 		}
 	}
+	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("integration-proxy")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
+	router := httptransport.NewRouter(proxyServer, pubKey)
 	return &App{
-		proxy:  proxyServer,
-		server: &http.Server{Addr: cfg.ListenAddr, Handler: httptransport.NewRouter(proxyServer, pubKey), ReadHeaderTimeout: 5 * time.Second},
-		logger: logger,
-		cfg:    cfg,
+		proxy:    proxyServer,
+		server:   &http.Server{Addr: cfg.ListenAddr, Handler: sharedobs.WithMetricsEndpoint(promHandler, tracer, "integration-proxy", router), ReadHeaderTimeout: 5 * time.Second},
+		logger:   logger,
+		cfg:      cfg,
+		shutdown: shutdown,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
+	defer func() {
+		if a.shutdown != nil {
+			a.shutdown()
+		}
+	}()
 	errCh := make(chan error, 1)
 	go a.proxy.StartRefreshLoop(ctx, a.cfg.RefreshInterval)
 	go a.proxy.StartUpdateLoop(ctx, a.cfg.UpdateCheckInterval)

@@ -111,6 +111,13 @@ func WrapHandler(tracer oteltrace.Tracer, serviceName string, next http.Handler)
 	return MetricsAndTracingMiddleware(tracer, serviceName)(next)
 }
 
+func WithMetricsEndpoint(promHandler http.Handler, tracer oteltrace.Tracer, serviceName string, next http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promHandler)
+	mux.Handle("/", WrapHandler(tracer, serviceName, next))
+	return mux
+}
+
 type statusRecorder struct {
 	http.ResponseWriter
 	status int

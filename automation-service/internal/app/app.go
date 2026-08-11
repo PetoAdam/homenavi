@@ -13,15 +13,17 @@ import (
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/cachex"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // App is the composed automation-service application.
 type App struct {
-	server *http.Server
-	engine *engine.Engine
-	mqtt   *mqttinfra.Client
-	cache  *cachex.JSONStore
-	logger *slog.Logger
+	server   *http.Server
+	engine   *engine.Engine
+	mqtt     *mqttinfra.Client
+	cache    *cachex.JSONStore
+	shutdown func()
+	logger   *slog.Logger
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
@@ -56,6 +58,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			logger.Warn("automation-service workflow cache disabled", "error", err)
 		}
 	}
+	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("automation-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	handler := httptransport.NewServer(
 		repo,
 		eng,
@@ -65,17 +71,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		&http.Client{Timeout: 10 * time.Second},
 		httptransport.WithCache(cacheStore, cfg.ListCacheTTL),
 	)
+	router := httptransport.NewRouter(handler)
 
 	return &App{
 		server: &http.Server{
 			Addr:              ":" + cfg.Port,
-			Handler:           httptransport.NewRouter(handler),
+			Handler:           sharedobs.WithMetricsEndpoint(promHandler, tracer, "automation-service", router),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
-		engine: eng,
-		mqtt:   mqttClient,
-		cache:  cacheStore,
-		logger: logger,
+		engine:   eng,
+		mqtt:     mqttClient,
+		cache:    cacheStore,
+		shutdown: shutdown,
+		logger:   logger,
 	}, nil
 }
 
@@ -85,6 +93,11 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer a.engine.Stop()
 	defer a.mqtt.Close()
+	defer func() {
+		if a.shutdown != nil {
+			a.shutdown()
+		}
+	}()
 	defer func() {
 		if a.cache != nil {
 			_ = a.cache.Close()

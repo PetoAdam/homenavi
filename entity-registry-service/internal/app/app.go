@@ -14,17 +14,19 @@ import (
 	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
 	"github.com/PetoAdam/homenavi/shared/cachex"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // App is the composed entity-registry-service application.
 type App struct {
-	server *http.Server
-	repo   *dbinfra.Repository
-	hub    *realtime.Hub
-	db     *sql.DB
-	cache  *cachex.JSONStore
-	cfg    Config
-	logger *slog.Logger
+	server   *http.Server
+	repo     *dbinfra.Repository
+	hub      *realtime.Hub
+	db       *sql.DB
+	cache    *cachex.JSONStore
+	cfg      Config
+	shutdown func()
+	logger   *slog.Logger
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
@@ -49,14 +51,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		}
 	}
 	handler := httptransport.NewServer(repo, hub, httptransport.WithCache(cacheStore, cfg.ListCacheTTL))
+	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("entity-registry-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
+	router := httptransport.NewRouter(handler)
 	return &App{
-		server: &http.Server{Addr: ":" + cfg.Port, Handler: httptransport.NewRouter(handler), ReadHeaderTimeout: 5 * time.Second},
-		repo:   repo,
-		hub:    hub,
-		db:     underlyingDB,
-		cache:  cacheStore,
-		cfg:    cfg,
-		logger: logger,
+		server:   &http.Server{Addr: ":" + cfg.Port, Handler: sharedobs.WithMetricsEndpoint(promHandler, tracer, "entity-registry-service", router), ReadHeaderTimeout: 5 * time.Second},
+		repo:     repo,
+		hub:      hub,
+		db:       underlyingDB,
+		cache:    cacheStore,
+		cfg:      cfg,
+		shutdown: shutdown,
+		logger:   logger,
 	}, nil
 }
 
@@ -67,6 +75,9 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		if a.cache != nil {
 			_ = a.cache.Close()
+		}
+		if a.shutdown != nil {
+			a.shutdown()
 		}
 	}()
 

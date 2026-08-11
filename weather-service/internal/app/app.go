@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/PetoAdam/homenavi/weather-service/internal/forecast"
 	httptransport "github.com/PetoAdam/homenavi/weather-service/internal/http"
 	cacheinfra "github.com/PetoAdam/homenavi/weather-service/internal/infra/cache"
@@ -15,30 +16,41 @@ import (
 
 // App is the composed weather-service application.
 type App struct {
-	server *http.Server
-	logger *slog.Logger
+	server   *http.Server
+	shutdown func()
+	logger   *slog.Logger
 }
 
-func New(cfg Config, logger *slog.Logger) *App {
+func New(cfg Config, logger *slog.Logger) (*App, error) {
 	provider := openweather.New(cfg.OpenWeatherAPIKey)
 	cache := cacheinfra.NewMemoryCache(cfg.CacheTTL)
 	service := forecast.NewService(provider, cache)
 	handler := httptransport.NewHandler(service)
 	router := httptransport.NewRouter(handler)
+	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("weather-service")
+	if err != nil {
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 
 	return &App{
 		server: &http.Server{
 			Addr:         ":" + cfg.Port,
-			Handler:      router,
+			Handler:      sharedobs.WithMetricsEndpoint(promHandler, tracer, "weather-service", router),
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
-		logger: logger,
-	}
+		shutdown: shutdown,
+		logger:   logger,
+	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
+	defer func() {
+		if a.shutdown != nil {
+			a.shutdown()
+		}
+	}()
 	errCh := make(chan error, 1)
 	go func() {
 		a.logger.Info("weather-service started", "addr", a.server.Addr)

@@ -12,13 +12,15 @@ import (
 	dbinfra "github.com/PetoAdam/homenavi/history-service/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/history-service/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/history-service/internal/ingest"
+	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // App is the composed history-service application.
 type App struct {
-	server *http.Server
-	mqtt   *mqttinfra.Client
-	logger *slog.Logger
+	server   *http.Server
+	mqtt     *mqttinfra.Client
+	shutdown func()
+	logger   *slog.Logger
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
@@ -34,6 +36,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
+	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("history-service")
+	if err != nil {
+		mqttClient.Close()
+		return nil, fmt.Errorf("setup observability: %w", err)
+	}
 	ingestor := &ingest.Ingestor{Repo: repo, StatePrefix: cfg.TopicPrefix, AllowRetains: cfg.IngestRetained}
 	subTopic := strings.TrimRight(cfg.TopicPrefix, "/") + "/#"
 	if err := mqttClient.Subscribe(subTopic, func(m mqttinfra.Message) {
@@ -45,15 +52,22 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	logger.Info("history ingest subscribed", "topic", subTopic)
 
 	handler := httptransport.NewServer(repo)
+	router := httptransport.NewRouter(handler)
 	return &App{
-		server: &http.Server{Addr: ":" + cfg.Port, Handler: httptransport.NewRouter(handler), ReadHeaderTimeout: 5 * time.Second},
-		mqtt:   mqttClient,
-		logger: logger,
+		server:   &http.Server{Addr: ":" + cfg.Port, Handler: sharedobs.WithMetricsEndpoint(promHandler, tracer, "history-service", router), ReadHeaderTimeout: 5 * time.Second},
+		mqtt:     mqttClient,
+		shutdown: shutdown,
+		logger:   logger,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
 	defer a.mqtt.Close()
+	defer func() {
+		if a.shutdown != nil {
+			a.shutdown()
+		}
+	}()
 	errCh := make(chan error, 1)
 	go func() {
 		a.logger.Info("history-service listening", "addr", a.server.Addr)

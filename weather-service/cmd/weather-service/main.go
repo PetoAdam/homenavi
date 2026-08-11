@@ -15,7 +15,11 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
 	slog.SetDefault(logger)
-	application := app.New(cfg, logger)
+	application, err := app.New(cfg, logger)
+	if err != nil {
+		slog.Error("failed to bootstrap application", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
