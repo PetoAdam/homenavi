@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDashboard, updateDashboard, getWidgetCatalog } from '../services/dashboardService';
 import { getWidgetDefaultHeight, listLocalWidgetCatalog } from '../components/Home/Dashboard/widgetRegistry';
 import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
+import { queryKeys } from '../state/queryKeys';
 
 /**
  * useDashboard - Custom hook for dashboard state management
@@ -16,163 +18,178 @@ import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCach
 const SAVE_DEBOUNCE_MS = 800;
 const DASHBOARD_CACHE_TTL_MS = 30 * 1000;
 
-export default function useDashboard({ enabled, accessToken }) {
-  const [dashboard, setDashboard] = useState(null);
-  const [catalog, setCatalog] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+function asDashboardData(response, fallbackMessage) {
+  if (response?.success) return response.data;
+  throw new Error(response?.error || fallbackMessage);
+}
 
-  const isMountedRef = useRef(false);
+export function dashboardScopeFromAccessToken(accessToken) {
+  return accessToken ? accessToken.slice(-16) : 'anonymous';
+}
+
+export function parseDashboardDoc(dashboard) {
+  if (!dashboard || !dashboard.doc) return { layouts: {}, items: [] };
+
+  let doc = dashboard.doc;
+  if (typeof doc === 'string') {
+    try {
+      doc = JSON.parse(doc);
+    } catch {
+      return { layouts: {}, items: [] };
+    }
+  }
+
+  return {
+    layouts: doc.layouts || {},
+    items: Array.isArray(doc.items) ? doc.items : [],
+  };
+}
+
+export function mergeWidgetCatalogData(remoteData) {
+  const base = Array.isArray(remoteData) ? remoteData : [];
+  const local = listLocalWidgetCatalog();
+  const knownIds = new Set(base.map((item) => item?.id).filter(Boolean));
+  return [...base, ...local.filter((item) => item?.id && !knownIds.has(item.id))];
+}
+
+export function applyPendingDashboardDoc(dashboard, pendingDoc) {
+  if (!dashboard || !pendingDoc) return dashboard;
+  return {
+    ...dashboard,
+    doc: pendingDoc,
+  };
+}
+
+export function shouldPersistDashboardCache({ queryEnabled, dashboard, pendingDoc }) {
+  return Boolean(queryEnabled && dashboard && !pendingDoc);
+}
+
+export async function fetchWidgetCatalogData(accessToken) {
+  const response = await getWidgetCatalog(accessToken);
+  if (!response?.success) {
+    return listLocalWidgetCatalog();
+  }
+  return mergeWidgetCatalogData(response.data);
+}
+
+export function dashboardQueryOptions(accessToken, { enabled = true, initialData } = {}) {
+  const scope = dashboardScopeFromAccessToken(accessToken);
+  return {
+    queryKey: queryKeys.dashboard.me(scope),
+    queryFn: async () => asDashboardData(
+      await getDashboard(accessToken),
+      'Failed to load dashboard'
+    ),
+    enabled,
+    staleTime: DASHBOARD_CACHE_TTL_MS,
+    initialData,
+    initialDataUpdatedAt: typeof initialData !== 'undefined' ? 0 : undefined,
+  };
+}
+
+export function widgetCatalogQueryOptions(accessToken, { enabled = true, initialData } = {}) {
+  const scope = dashboardScopeFromAccessToken(accessToken);
+  return {
+    queryKey: queryKeys.dashboard.catalog(scope),
+    queryFn: async () => fetchWidgetCatalogData(accessToken),
+    enabled,
+    staleTime: DASHBOARD_CACHE_TTL_MS,
+    initialData,
+    initialDataUpdatedAt: typeof initialData !== 'undefined' ? 0 : undefined,
+  };
+}
+
+export default function useDashboard({ enabled, accessToken }) {
+  const queryClient = useQueryClient();
   const saveTimeoutRef = useRef(null);
   const pendingDocRef = useRef(null);
-  const cacheKey = accessToken ? `homenavi:dashboard:${accessToken.slice(-16)}` : '';
-  
-  // Parse doc from dashboard
-  const parseDoc = useCallback((d) => {
-    if (!d || !d.doc) return { layouts: {}, items: [] };
-    
-    let doc = d.doc;
-    // Handle string JSON
-    if (typeof doc === 'string') {
-      try {
-        doc = JSON.parse(doc);
-      } catch {
-        return { layouts: {}, items: [] };
+  const scope = useMemo(() => dashboardScopeFromAccessToken(accessToken), [accessToken]);
+  const cacheKey = accessToken ? `homenavi:dashboard:${scope}` : '';
+  const queryEnabled = Boolean(enabled && accessToken);
+  const cached = useMemo(
+    () => (queryEnabled ? readStaleResourceCache(cacheKey, DASHBOARD_CACHE_TTL_MS) : null),
+    [cacheKey, queryEnabled],
+  );
+
+  const dashboardQuery = useQuery(dashboardQueryOptions(accessToken, {
+    enabled: queryEnabled,
+    initialData: cached?.dashboard,
+  }));
+
+  const catalogQuery = useQuery(widgetCatalogQueryOptions(accessToken, {
+    enabled: queryEnabled,
+    initialData: Array.isArray(cached?.catalog) ? cached.catalog : undefined,
+  }));
+
+  const dashboard = queryEnabled ? (dashboardQuery.data ?? null) : null;
+  const catalog = useMemo(() => {
+    if (!queryEnabled) return [];
+    return Array.isArray(catalogQuery.data) ? catalogQuery.data : listLocalWidgetCatalog();
+  }, [catalogQuery.data, queryEnabled]);
+  const doc = parseDashboardDoc(dashboard);
+
+  const reload = useCallback(async () => {
+    if (!queryEnabled) return;
+    await Promise.all([dashboardQuery.refetch(), catalogQuery.refetch()]);
+  }, [catalogQuery, dashboardQuery, queryEnabled]);
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ currentVersion, newDoc }) => {
+      const response = await updateDashboard(currentVersion, newDoc, accessToken);
+      if (response?.success) {
+        return { conflict: false, dashboard: response.data };
       }
-    }
-    
-    return {
-      layouts: doc.layouts || {},
-      items: Array.isArray(doc.items) ? doc.items : [],
-    };
-  }, []);
-  
-  // Get current doc
-  const doc = parseDoc(dashboard);
-
-  const load = useCallback(async ({ showLoading = true } = {}) => {
-    if (!enabled || !accessToken) {
-      if (isMountedRef.current) {
-        setLoading(false);
+      if (response?.status === 409) {
+        return { conflict: true, dashboard: null };
       }
-      return;
-    }
-
-    if (showLoading) {
-      setLoading(true);
-    }
-    setError('');
-
-    try {
-      const [dashRes, catRes] = await Promise.all([
-        getDashboard(accessToken),
-        getWidgetCatalog(accessToken),
-      ]);
-
-      if (!isMountedRef.current) return;
-
-      if (!dashRes.success) {
-        setError(dashRes.error || 'Failed to load dashboard');
-        setDashboard(null);
-      } else {
-        setDashboard(dashRes.data);
-      }
-
-      if (catRes.success) {
-        const base = Array.isArray(catRes.data) ? catRes.data : [];
-        const local = listLocalWidgetCatalog();
-        const knownIds = new Set(base.map((item) => item?.id).filter(Boolean));
-        const merged = [...base, ...local.filter((item) => item?.id && !knownIds.has(item.id))];
-        setCatalog(merged);
-        if (dashRes.success) {
-          writeStaleResourceCache(cacheKey, {
-            dashboard: dashRes.data,
-            catalog: merged,
-          });
+      throw new Error(response?.error || 'Failed to save dashboard');
+    },
+    onSuccess: async (result) => {
+      if (result.conflict) {
+        const pendingDoc = pendingDocRef.current;
+        const [{ data: reloadedDashboard }] = await Promise.all([
+          dashboardQuery.refetch(),
+          catalogQuery.refetch(),
+        ]);
+        if (pendingDoc && reloadedDashboard) {
+          queryClient.setQueryData(
+            queryKeys.dashboard.me(scope),
+            applyPendingDashboardDoc(reloadedDashboard, pendingDoc),
+          );
         }
-      } else {
-        // Temporary fallback until backend catalog is always available.
-        const fallbackCatalog = listLocalWidgetCatalog();
-        setCatalog(fallbackCatalog);
-        if (dashRes.success) {
-          writeStaleResourceCache(cacheKey, {
-            dashboard: dashRes.data,
-            catalog: fallbackCatalog,
-          });
-        }
+        return;
       }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setError(err?.message || 'Failed to load dashboard');
-      setCatalog(listLocalWidgetCatalog());
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [accessToken, cacheKey, enabled]);
+      queryClient.setQueryData(queryKeys.dashboard.me(scope), result.dashboard);
+      writeStaleResourceCache(cacheKey, {
+        dashboard: result.dashboard,
+        catalog,
+      });
+      pendingDocRef.current = null;
+    },
+  });
 
   useEffect(() => {
-    isMountedRef.current = true;
-    if (!enabled || !accessToken) {
+    if (!queryEnabled) {
       clearStaleResourceCache(cacheKey);
-      load();
-    } else {
-      const cached = readStaleResourceCache(cacheKey, DASHBOARD_CACHE_TTL_MS);
-      if (cached) {
-        setDashboard(cached.dashboard || null);
-        setCatalog(Array.isArray(cached.catalog) ? cached.catalog : listLocalWidgetCatalog());
-        setLoading(false);
-        setError('');
-        load({ showLoading: false });
-      } else {
-        load();
-      }
     }
+  }, [cacheKey, queryEnabled]);
+
+  useEffect(() => {
+    if (!shouldPersistDashboardCache({ queryEnabled, dashboard, pendingDoc: pendingDocRef.current })) return;
+    writeStaleResourceCache(cacheKey, {
+      dashboard,
+      catalog,
+    });
+  }, [cacheKey, catalog, dashboard, queryEnabled]);
+
+  useEffect(() => {
     return () => {
-      isMountedRef.current = false;
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
       }
     };
-  }, [accessToken, cacheKey, enabled, load]);
-  
-  // Internal save function
-  const doSave = useCallback(async (newDoc, currentVersion) => {
-    if (!accessToken || !dashboard) return;
-    
-    setSaving(true);
-    
-    try {
-      const res = await updateDashboard(currentVersion, newDoc, accessToken);
-      
-      if (!isMountedRef.current) return;
-      
-      if (res.success) {
-        setDashboard(res.data);
-        writeStaleResourceCache(cacheKey, {
-          dashboard: res.data,
-          catalog,
-        });
-        pendingDocRef.current = null;
-      } else if (res.status === 409) {
-        // Version conflict - reload
-        console.warn('Dashboard version conflict, reloading...');
-        await load();
-      } else {
-        setError(res.error || 'Failed to save dashboard');
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setError(err.message || 'Failed to save dashboard');
-    } finally {
-      if (isMountedRef.current) {
-        setSaving(false);
-      }
-    }
-  }, [accessToken, cacheKey, catalog, dashboard, load]);
+  }, []);
   
   // Public save function with debounce
   const saveDoc = useCallback((newDoc, options = {}) => {
@@ -184,25 +201,25 @@ export default function useDashboard({ enabled, accessToken }) {
     const currentVersion = dashboard.layout_version;
     
     // Optimistic update
-    setDashboard((prev) => ({
+    queryClient.setQueryData(queryKeys.dashboard.me(scope), (prev) => (prev ? {
       ...prev,
       doc: newDoc,
-    }));
+    } : prev));
     
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
     
     if (immediate) {
-      doSave(newDoc, currentVersion);
+      void saveMutation.mutateAsync({ currentVersion, newDoc });
     } else {
       saveTimeoutRef.current = setTimeout(() => {
         if (pendingDocRef.current) {
-          doSave(pendingDocRef.current, currentVersion);
+          void saveMutation.mutateAsync({ currentVersion, newDoc: pendingDocRef.current });
         }
       }, SAVE_DEBOUNCE_MS);
     }
-  }, [dashboard, doSave]);
+  }, [dashboard, queryClient, saveMutation, scope]);
   
   // Flush any pending saves (call when leaving edit mode)
   const flushSave = useCallback(() => {
@@ -212,9 +229,12 @@ export default function useDashboard({ enabled, accessToken }) {
     }
     
     if (pendingDocRef.current && dashboard) {
-      doSave(pendingDocRef.current, dashboard.layout_version);
+      void saveMutation.mutateAsync({
+        currentVersion: dashboard.layout_version,
+        newDoc: pendingDocRef.current,
+      });
     }
-  }, [dashboard, doSave]);
+  }, [dashboard, saveMutation]);
   
   // Update layout (from grid changes)
   const updateLayouts = useCallback((newLayouts) => {
@@ -302,10 +322,10 @@ export default function useDashboard({ enabled, accessToken }) {
     dashboard,
     doc,
     catalog,
-    loading,
-    saving,
-    error,
-    reload: load,
+    loading: queryEnabled ? (dashboardQuery.isLoading || catalogQuery.isLoading) : false,
+    saving: saveMutation.isPending,
+    error: queryEnabled ? (saveMutation.error?.message || dashboardQuery.error?.message || '') : '',
+    reload,
     updateLayouts,
     addWidget,
     removeWidget,

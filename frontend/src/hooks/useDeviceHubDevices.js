@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getSharedMqttConnection } from '../services/realtime/sharedMqtt';
 import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
+import { createDeviceHubConnectionInitialState, deviceHubConnectionReducer } from './deviceHubConnectionReducer';
 
 const HDP_SCHEMA = 'hdp.v1';
 const HDP_ROOT = 'homenavi/hdp/';
@@ -653,15 +654,6 @@ function nowMs() {
   return Date.now();
 }
 
-function createRealtimeInitMetrics() {
-  return {
-    authReadyMs: null,
-    socketOpenMs: null,
-    subscribeCompleteMs: null,
-    firstStateReceivedMs: null,
-  };
-}
-
 export default function useDeviceHubDevices(options = {}) {
   const {
     enabled = true,
@@ -674,9 +666,11 @@ export default function useDeviceHubDevices(options = {}) {
   const [stats, setStats] = useState({ total: 0, online: 0, withState: 0, sensors: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [metadataStatus, setMetadataStatus] = useState(() => ({ connected: false, source: metadataMode }));
-  const [stateStatus, setStateStatus] = useState({ connected: false, subscribed: false, firstStateReceived: false });
-  const [realtimeMetrics, setRealtimeMetrics] = useState(createRealtimeInitMetrics);
+  const [connectionState, dispatchConnection] = useReducer(
+    deviceHubConnectionReducer,
+    metadataMode,
+    createDeviceHubConnectionInitialState,
+  );
   const [pairingSessions, setPairingSessions] = useState({});
   const [pairingConfig, setPairingConfig] = useState({});
   const deviceListCacheKey = accessToken ? `homenavi:device-hub:list:${accessToken.slice(-16)}` : 'homenavi:device-hub:list:anon';
@@ -703,31 +697,27 @@ export default function useDeviceHubDevices(options = {}) {
   }, []);
 
   useEffect(() => {
-    setMetadataStatus({ connected: false, source: metadataMode });
+    dispatchConnection({ type: 'reset', metadataMode });
   }, [metadataMode]);
 
   const resetRealtimeInitMetrics = useCallback(() => {
     realtimeInitStartedAtRef.current = nowMs();
     subscriptionAcksRef.current = new Set();
-    setRealtimeMetrics(createRealtimeInitMetrics());
-    setStateStatus({ connected: false, subscribed: false, firstStateReceived: false });
-  }, []);
+    dispatchConnection({ type: 'reset', metadataMode });
+  }, [metadataMode]);
 
   const markRealtimeMetric = useCallback((key) => {
     const startedAt = realtimeInitStartedAtRef.current;
     if (!startedAt) return;
     const elapsed = Math.max(0, Math.round(nowMs() - startedAt));
-    setRealtimeMetrics((prev) => {
-      if (prev[key] != null) return prev;
-      return { ...prev, [key]: elapsed };
-    });
+    dispatchConnection({ type: 'mark-realtime-metric', key, elapsed });
   }, []);
 
   useEffect(() => {
     if (!enabled || !authReady) return;
-    if (realtimeMetrics.authReadyMs != null) return;
+    if (connectionState.realtimeMetrics.authReadyMs != null) return;
     markRealtimeMetric('authReadyMs');
-  }, [authReady, enabled, markRealtimeMetric, realtimeMetrics.authReadyMs]);
+  }, [authReady, connectionState.realtimeMetrics.authReadyMs, enabled, markRealtimeMetric]);
 
   const schedulePublish = useCallback(() => {
     if (updateScheduledRef.current || !enabledRef.current) return;
@@ -889,7 +879,7 @@ export default function useDeviceHubDevices(options = {}) {
         return false;
       }
       if (metadataMode === 'rest') {
-        setMetadataStatus({ connected: true, source: 'rest' });
+        dispatchConnection({ type: 'set-metadata-status', value: { connected: true, source: 'rest' } });
       }
       writeStaleResourceCache(deviceListCacheKey, payload);
       setError(prev => {
@@ -905,7 +895,7 @@ export default function useDeviceHubDevices(options = {}) {
         return false;
       }
       if (!silent && metadataMode === 'rest') {
-        setMetadataStatus({ connected: false, source: 'rest' });
+        dispatchConnection({ type: 'set-metadata-status', value: { connected: false, source: 'rest' } });
         setError(prev => prev || 'Unable to load device list');
         setLoading(false);
       }
@@ -918,7 +908,7 @@ export default function useDeviceHubDevices(options = {}) {
     })();
     deviceLoadPromiseRef.current = request;
     return request;
-  }, [buildFetchOptions, deviceListCacheKey, hydrateDeviceList, metadataMode]);
+  }, [buildFetchOptions, deviceListCacheKey, hydrateDeviceList, metadataMode, schedulePublish]);
 
   const handleRealtimeMessage = useCallback(({ topic, payloadString, payloadBytes }) => {
     if (!enabledRef.current || !topic) return;
@@ -1022,7 +1012,7 @@ export default function useDeviceHubDevices(options = {}) {
 
     if (topic.startsWith(STATE_PREFIX)) {
       markRealtimeMetric('firstStateReceivedMs');
-      setStateStatus((prev) => (prev.firstStateReceived ? prev : { ...prev, firstStateReceived: true }));
+      dispatchConnection({ type: 'set-first-state-received', value: true });
       const stateEnvelope = safeParseJSON(payload) || {};
       const norm = normalizeDeviceId(stateEnvelope.device_id || topic.slice(STATE_PREFIX.length));
       const mapKey = norm.hdpId || '';
@@ -1052,9 +1042,7 @@ export default function useDeviceHubDevices(options = {}) {
       clearStaleResourceCache(deviceListCacheKey);
       setDevices([]);
       setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
-      setMetadataStatus({ connected: false, source: metadataMode });
-      setStateStatus({ connected: false, subscribed: false, firstStateReceived: false });
-      setRealtimeMetrics(createRealtimeInitMetrics());
+      dispatchConnection({ type: 'reset', metadataMode });
       setLoading(false);
       setError(null);
       return undefined;
@@ -1066,7 +1054,7 @@ export default function useDeviceHubDevices(options = {}) {
     }
     setDevices([]);
     setStats({ total: 0, online: 0, withState: 0, sensors: 0 });
-    setMetadataStatus({ connected: false, source: metadataMode });
+    dispatchConnection({ type: 'reset', metadataMode });
     setError(null);
     setLoading(true);
 
@@ -1087,13 +1075,16 @@ export default function useDeviceHubDevices(options = {}) {
       } else {
         subscriptionAcksRef.current = new Set();
       }
-      setStateStatus((prev) => ({
-        ...prev,
-        connected: Boolean(connected),
-        subscribed: Boolean(connected) ? prev.subscribed : false,
-      }));
+      dispatchConnection({
+        type: 'set-state-status',
+        value: prev => ({
+          ...prev,
+          connected: Boolean(connected),
+          subscribed: connected ? prev.subscribed : false,
+        }),
+      });
       if (metadataMode === 'ws') {
-        setMetadataStatus({ connected: Boolean(connected), source: 'ws' });
+        dispatchConnection({ type: 'set-metadata-status', value: { connected: Boolean(connected), source: 'ws' } });
         setLoading(false);
       }
       if (!connected && (status === 'error' || status === 'disconnected')) {
@@ -1112,10 +1103,7 @@ export default function useDeviceHubDevices(options = {}) {
         if (subscribed) {
           markRealtimeMetric('subscribeCompleteMs');
         }
-        setStateStatus((prev) => ({
-          ...prev,
-          subscribed,
-        }));
+        dispatchConnection({ type: 'set-state-status', value: prev => ({ ...prev, subscribed }) });
       },
     }));
 
@@ -1177,20 +1165,20 @@ export default function useDeviceHubDevices(options = {}) {
 
   const commandLockReason = useMemo(() => {
     if (!authReady) return 'Waiting for authentication to finish.';
-    if (!stateStatus.connected) return 'Connecting live device channel…';
-    if (!stateStatus.subscribed) return 'Waiting for live topic subscriptions…';
+    if (!connectionState.stateStatus.connected) return 'Connecting live device channel…';
+    if (!connectionState.stateStatus.subscribed) return 'Waiting for live topic subscriptions…';
     return '';
-  }, [authReady, stateStatus.connected, stateStatus.subscribed]);
+  }, [authReady, connectionState.stateStatus.connected, connectionState.stateStatus.subscribed]);
 
-  const commandsReady = Boolean(authReady && stateStatus.connected && stateStatus.subscribed);
+  const commandsReady = Boolean(authReady && connectionState.stateStatus.connected && connectionState.stateStatus.subscribed);
 
   const connectionInfo = useMemo(() => ({
-    metadata: metadataStatus,
-    state: stateStatus,
-    timings: realtimeMetrics,
+    metadata: connectionState.metadataStatus,
+    state: connectionState.stateStatus,
+    timings: connectionState.realtimeMetrics,
     commandsReady,
     commandLockReason,
-  }), [commandLockReason, commandsReady, metadataStatus, realtimeMetrics, stateStatus]);
+  }), [commandLockReason, commandsReady, connectionState.metadataStatus, connectionState.realtimeMetrics, connectionState.stateStatus]);
 
   return {
     devices,

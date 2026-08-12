@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import useDeviceHubDevices from '../../../hooks/useDeviceHubDevices';
@@ -9,6 +9,7 @@ import { createErsRoom, deleteErsRoom, patchErsDevice, patchErsRoom } from '../.
 import usePersistedLayout from './mapController/usePersistedLayout';
 import useDevicePalette from './mapController/useDevicePalette';
 import useMapViewportHandlers from './mapController/useMapViewportHandlers';
+import { mapControllerUiInitialState, mapControllerUiReducer } from './mapControllerUiReducer';
 
 import { formatMetricValueAndUnitForKey } from '../../../utils/stateFormat';
 
@@ -128,55 +129,74 @@ export default function useMapController() {
     applyEditorUpdateBatched,
   } = usePersistedLayout({ storageKey: STORAGE_KEY, snapshotForSave: layoutSnapshotForSave });
 
-  const [mode, setMode] = useState('select'); // select | draw
-  const [editEnabled, setEditEnabled] = useState(false);
-  const [activeRoomId, setActiveRoomId] = useState('');
-  const [activeVertexIndex, setActiveVertexIndex] = useState(null);
-  const [draft, setDraft] = useState(null); // { id, name, points: [], wallLengths: [] }
-  const [hoverPoint, setHoverPoint] = useState(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState(''); // mobile click-to-place
-  const [activeWallIndex, setActiveWallIndex] = useState(null);
-  const [mapError, setMapError] = useState('');
-  const [opPending, setOpPending] = useState(false);
-  const [roomNameEdit, setRoomNameEdit] = useState('');
-
-  const [expandedDeviceKey, setExpandedDeviceKey] = useState('');
-  const [favoritesEditorKey, setFavoritesEditorKey] = useState('');
+  const [uiState, dispatchUi] = useReducer(mapControllerUiReducer, undefined, mapControllerUiInitialState);
+  const {
+    mode,
+    editEnabled,
+    activeRoomId,
+    activeVertexIndex,
+    draft,
+    hoverPoint,
+    selectedDeviceId,
+    activeWallIndex,
+    mapError,
+    opPending,
+    roomNameEdit,
+    expandedDeviceKey,
+    favoritesEditorKey,
+    insertCornerPreview,
+    labelScale,
+    view,
+    isMapPrepared,
+    snapSettings,
+    snapGuide,
+  } = uiState;
+  const setMode = useCallback((value) => dispatchUi({ type: 'set-field', key: 'mode', value }), []);
+  const setEditEnabled = useCallback((value) => dispatchUi({ type: 'set-field', key: 'editEnabled', value }), []);
+  const setActiveRoomId = useCallback((value) => dispatchUi({ type: 'set-field', key: 'activeRoomId', value }), []);
+  const setActiveVertexIndex = useCallback((value) => dispatchUi({ type: 'set-field', key: 'activeVertexIndex', value }), []);
+  const setDraft = useCallback((value) => dispatchUi({ type: 'set-field', key: 'draft', value }), []);
+  const setHoverPoint = useCallback((value) => dispatchUi({ type: 'set-field', key: 'hoverPoint', value }), []);
+  const setSelectedDeviceId = useCallback((value) => dispatchUi({ type: 'set-field', key: 'selectedDeviceId', value }), []);
+  const setActiveWallIndex = useCallback((value) => dispatchUi({ type: 'set-field', key: 'activeWallIndex', value }), []);
+  const setMapError = useCallback((value) => dispatchUi({ type: 'set-field', key: 'mapError', value }), []);
+  const setOpPending = useCallback((value) => dispatchUi({ type: 'set-field', key: 'opPending', value }), []);
+  const setRoomNameEdit = useCallback((value) => dispatchUi({ type: 'set-field', key: 'roomNameEdit', value }), []);
+  const setExpandedDeviceKey = useCallback((value) => dispatchUi({ type: 'set-field', key: 'expandedDeviceKey', value }), []);
+  const setFavoritesEditorKey = useCallback((value) => dispatchUi({ type: 'set-field', key: 'favoritesEditorKey', value }), []);
+  const setInsertCornerPreview = useCallback((value) => dispatchUi({ type: 'set-field', key: 'insertCornerPreview', value }), []);
+  const setLabelScale = useCallback((value) => dispatchUi({ type: 'set-field', key: 'labelScale', value }), []);
+  const setView = useCallback((value) => dispatchUi({ type: 'set-field', key: 'view', value }), []);
+  const setIsMapPrepared = useCallback((value) => dispatchUi({ type: 'set-field', key: 'isMapPrepared', value }), []);
+  const setSnapSettings = useCallback((value) => {
+    if (typeof value === 'function') {
+      dispatchUi({ type: 'set-field', key: 'snapSettings', value: prev => value(prev) });
+      return;
+    }
+    dispatchUi({ type: 'merge-snap-settings', value });
+  }, []);
+  const setSnapGuide = useCallback((value) => dispatchUi({ type: 'set-field', key: 'snapGuide', value }), []);
   const dragDeviceRef = useRef(null); // { key, offsetX, offsetY, lastX, lastY, moved }
   const suppressDeviceClickRef = useRef(false);
   const dragRoomRef = useRef(null); // { roomId, startWorld, startPoints, moved, lastDx, lastDy }
   const dragRoomVertexRef = useRef(null); // { roomId, vertexIndex, moved, startPoints }
   const suppressRoomClickRef = useRef(false);
   const dragInsertCornerRef = useRef(null); // { roomId, segIndex, moved }
-  const [insertCornerPreview, setInsertCornerPreview] = useState(null); // { roomId, segIndex, point }
-  const [labelScale, setLabelScale] = useState(1);
-
   useEffect(() => {
     if (!expandedDeviceKey) {
       setFavoritesEditorKey('');
       return;
     }
     setFavoritesEditorKey(prev => (prev && prev !== expandedDeviceKey ? '' : prev));
-  }, [expandedDeviceKey]);
+  }, [expandedDeviceKey, setFavoritesEditorKey]);
 
-  const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
   const viewRef = useRef({ scale: 1, tx: 0, ty: 0 });
   const panRef = useRef({ active: false, startX: 0, startY: 0, startTx: 0, startTy: 0, moved: false });
   const didAutoCenterRef = useRef(false);
-  const [isMapPrepared, setIsMapPrepared] = useState(false);
 
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
-
-  const [snapSettings, setSnapSettings] = useState({
-    vertex: true,
-    edge: true,
-    align: true,
-    ortho: true,
-    grid: false,
-  });
-  const [snapGuide, setSnapGuide] = useState(null); // { kind, x1,y1,x2,y2, px, py }
 
   const rooms = useMemo(() => (Array.isArray(layout.rooms) ? layout.rooms : []), [layout.rooms]);
 
@@ -222,7 +242,7 @@ export default function useMapController() {
     const r = rooms.find(x => x.id === activeRoomId);
     setRoomNameEdit(safeString(r?.name));
     setActiveVertexIndex(null);
-  }, [activeRoomId, mode, rooms]);
+  }, [activeRoomId, mode, rooms, setActiveVertexIndex, setRoomNameEdit]);
 
   const snapWorld = useMemo(() => (SNAP_DISTANCE_PX / (view.scale || 1)), [view.scale]);
 
@@ -250,15 +270,15 @@ export default function useMapController() {
 
   const increaseLabelScale = useCallback(() => {
     setLabelScale((prev) => clamp(prev + 0.1, 0.65, 2));
-  }, []);
+  }, [setLabelScale]);
 
   const decreaseLabelScale = useCallback(() => {
     setLabelScale((prev) => clamp(prev - 0.1, 0.65, 2));
-  }, []);
+  }, [setLabelScale]);
 
   const resetLabelScale = useCallback(() => {
     setLabelScale(1);
-  }, []);
+  }, [setLabelScale]);
 
   const svgPointFromEvent = useCallback((evt) => {
     const svg = svgRef.current;
@@ -319,7 +339,7 @@ export default function useMapController() {
     setActiveRoomId('');
     setActiveWallIndex(null);
     setMapError('');
-  }, [editEnabled, existingNamesLower]);
+  }, [editEnabled, existingNamesLower, setActiveRoomId, setActiveWallIndex, setDraft, setMapError, setMode]);
 
   const cancelDraft = useCallback(() => {
     setDraft(null);
@@ -327,7 +347,7 @@ export default function useMapController() {
     setHoverPoint(null);
     setActiveWallIndex(null);
     setMapError('');
-  }, []);
+  }, [setActiveWallIndex, setDraft, setHoverPoint, setMapError, setMode]);
 
   useEffect(() => {
     if (editEnabled) return;
@@ -335,7 +355,7 @@ export default function useMapController() {
     setActiveRoomId('');
     setActiveWallIndex(null);
     setSelectedDeviceId('');
-  }, [cancelDraft, editEnabled]);
+  }, [cancelDraft, editEnabled, setActiveRoomId, setActiveWallIndex, setSelectedDeviceId]);
 
   const finalizeDraft = useCallback(async () => {
     if (!draft) return;
@@ -382,7 +402,7 @@ export default function useMapController() {
     } finally {
       setOpPending(false);
     }
-  }, [accessToken, draft, existingNamesLower, setLayout]);
+  }, [accessToken, draft, existingNamesLower, setActiveRoomId, setActiveWallIndex, setDraft, setLayout, setMapError, setMode, setOpPending]);
 
   const updateRoomName = useCallback(async (roomId, name) => {
     const desired = safeString(name).trim();
@@ -479,7 +499,7 @@ export default function useMapController() {
     } catch {
       // ignore
     }
-  }, [editEnabled, mode, rooms, svgPointFromEvent]);
+  }, [editEnabled, mode, rooms, setActiveRoomId, setActiveWallIndex, setActiveVertexIndex, svgPointFromEvent]);
 
   const handleRoomDragMove = useCallback((e) => {
     const st = dragRoomRef.current;
@@ -530,7 +550,7 @@ export default function useMapController() {
     setActiveRoomId(roomId);
     setActiveWallIndex(null);
     setActiveVertexIndex(null);
-  }, []);
+  }, [setActiveRoomId, setActiveWallIndex, setActiveVertexIndex]);
 
   const beginRoomVertexDrag = useCallback((e, roomId, vertexIndex) => {
     if (!editEnabled) return;
@@ -563,7 +583,7 @@ export default function useMapController() {
     } catch {
       // ignore
     }
-  }, [editEnabled, mode, rooms]);
+  }, [editEnabled, mode, rooms, setActiveRoomId, setActiveWallIndex, setActiveVertexIndex]);
 
   const handleRoomVertexDragMove = useCallback((e) => {
     const st = dragRoomVertexRef.current;
@@ -641,7 +661,7 @@ export default function useMapController() {
       const nextTy = cy - worldY * nextScale;
       return { scale: nextScale, tx: nextTx, ty: nextTy };
     });
-  }, []);
+  }, [setView]);
 
   const fitViewToContent = useCallback(() => {
     const svg = svgRef.current;
@@ -672,18 +692,18 @@ export default function useMapController() {
 
     setView({ scale: nextScale, tx: nextTx, ty: nextTy });
     return true;
-  }, [layout.devicePlacements, rooms]);
+  }, [layout.devicePlacements, rooms, setView]);
 
   const resetView = useCallback(() => {
     if (!fitViewToContent()) {
       setView({ scale: 1, tx: 0, ty: 0 });
     }
-  }, [fitViewToContent]);
+  }, [fitViewToContent, setView]);
 
   useEffect(() => {
     didAutoCenterRef.current = false;
     setIsMapPrepared(false);
-  }, [mapRenderKey]);
+  }, [mapRenderKey, setIsMapPrepared]);
 
   useEffect(() => {
     if (bootstrapping || ersLoading) return;
@@ -722,7 +742,7 @@ export default function useMapController() {
       if (retry) window.clearTimeout(retry);
       if (reveal) window.clearTimeout(reveal);
     };
-  }, [bootstrapping, ersLoading, fitViewToContent, isMapPrepared]);
+  }, [bootstrapping, ersLoading, fitViewToContent, isMapPrepared, setIsMapPrepared]);
 
   const setWallLength = useCallback((roomId, wallIndex, length) => {
     applyEditorUpdate(prev => ({
@@ -751,7 +771,7 @@ export default function useMapController() {
       const pts = applyLengthToSegment(prev.points, wallIndex, length);
       return { ...prev, wallLengths: current, points: pts };
     });
-  }, []);
+  }, [setDraft]);
 
   const persistDevicePlacement = useCallback(async (deviceKey, roomId, x, y) => {
     const dev = deviceByKey.get(deviceKey);
@@ -798,7 +818,7 @@ export default function useMapController() {
       room_id: null,
       meta: { map: null },
     }, accessToken);
-  }, [accessToken, deviceByKey, setLayout]);
+  }, [accessToken, deviceByKey, setLayout, setExpandedDeviceKey]);
 
   const assignDeviceToRoomAt = useCallback(async (deviceKey, roomId, point) => {
     if (!deviceKey || !roomId || !point) return;
@@ -931,7 +951,7 @@ export default function useMapController() {
     } finally {
       setOpPending(false);
     }
-  }, [accessToken, setLayout]);
+  }, [accessToken, setLayout, setActiveRoomId, setActiveWallIndex, setMapError, setOpPending]);
 
   const closestSegmentHit = useCallback((p, preferredRoomId = '') => {
     let best = null; // { roomId, segIndex, point, d }
@@ -984,7 +1004,7 @@ export default function useMapController() {
     setActiveWallIndex(segIndex);
     setActiveVertexIndex(insertAt);
     void persistRoomGeometry(roomId, nextPts, wl);
-  }, [applyEditorUpdate, layoutRef, persistRoomGeometry]);
+  }, [applyEditorUpdate, layoutRef, persistRoomGeometry, setActiveRoomId, setActiveWallIndex, setActiveVertexIndex]);
 
   const deleteCornerOnRoom = useCallback((roomId, vertexIndex) => {
     if (!roomId) return;
@@ -1029,7 +1049,7 @@ export default function useMapController() {
     setActiveWallIndex(null);
     setActiveVertexIndex(null);
     void persistRoomGeometry(roomId, nextPts, nextWl);
-  }, [applyEditorUpdate, layoutRef, persistRoomGeometry, setMapError]);
+  }, [applyEditorUpdate, layoutRef, persistRoomGeometry, setActiveRoomId, setActiveVertexIndex, setActiveWallIndex, setMapError]);
 
   useEffect(() => {
     if (!editEnabled) return;
@@ -1104,7 +1124,7 @@ export default function useMapController() {
     } catch {
       // ignore
     }
-  }, [editEnabled, mode, rooms]);
+  }, [editEnabled, mode, rooms, setActiveRoomId, setActiveWallIndex, setInsertCornerPreview]);
 
   const handleInsertCornerDragMove = useCallback((e) => {
     const st = dragInsertCornerRef.current;
@@ -1134,7 +1154,7 @@ export default function useMapController() {
     st.moved = true;
     setInsertCornerPreview({ roomId: st.roomId, segIndex: st.segIndex, point: { x: p.x, y: p.y } });
     return true;
-  }, [snapAxisToVertices, snapPoint, snapSettings.align, snapSettings.grid, snapSettings.vertex, snapToGrid, svgPointFromEvent]);
+  }, [setInsertCornerPreview, snapAxisToVertices, snapPoint, snapSettings.align, snapSettings.grid, snapSettings.vertex, snapToGrid, svgPointFromEvent]);
 
   const endInsertCornerDrag = useCallback(() => {
     const st = dragInsertCornerRef.current;
@@ -1152,7 +1172,7 @@ export default function useMapController() {
     setTimeout(() => {
       suppressRoomClickRef.current = false;
     }, 0);
-  }, [insertCornerOnRoom, insertCornerPreview]);
+  }, [insertCornerOnRoom, insertCornerPreview, setInsertCornerPreview]);
 
   const handleCanvasPointerMove = useCallback((e) => {
     if (mode !== 'draw') return;
@@ -1164,7 +1184,7 @@ export default function useMapController() {
     const { point: snappedPoint, guide } = snapForDraw(prevPoint, p, firstPoint);
     setHoverPoint(snappedPoint);
     setSnapGuide(guide);
-  }, [draft?.points, mode, snapForDraw, svgPointFromEvent]);
+  }, [draft?.points, mode, setHoverPoint, setSnapGuide, snapForDraw, svgPointFromEvent]);
 
   const {
     handlePointerDown,
@@ -1209,7 +1229,7 @@ export default function useMapController() {
     });
     setHoverPoint(null);
     setActiveWallIndex(idx => (typeof idx === 'number' ? Math.max(0, idx - 1) : idx));
-  }, [mode, selectedDeviceId]);
+  }, [mode, selectedDeviceId, setActiveWallIndex, setDraft, setHoverPoint, setSelectedDeviceId]);
 
   const handleCanvasClick = useCallback((e) => {
     // if this click was actually a pan drag, ignore
@@ -1283,11 +1303,11 @@ export default function useMapController() {
       setActiveWallIndex(pts.length - 2);
       return prev;
     });
-  }, [activeRoomId, assignDeviceToRoomAt, closestSegmentHit, draft?.points, editEnabled, insertCornerOnRoom, mode, roomAtPoint, selectedDeviceId, snapForDraw, snapPoint, snapSettings.edge, snapSettings.vertex, snapWorld, svgPointFromEvent]);
+  }, [activeRoomId, assignDeviceToRoomAt, closestSegmentHit, draft?.points, editEnabled, insertCornerOnRoom, mode, roomAtPoint, selectedDeviceId, setActiveRoomId, setActiveWallIndex, setActiveVertexIndex, setDraft, setSelectedDeviceId, setExpandedDeviceKey, setSnapGuide, snapForDraw, snapPoint, snapSettings.edge, snapSettings.vertex, snapWorld, svgPointFromEvent]);
 
   useEffect(() => {
     if (mode !== 'draw') setSnapGuide(null);
-  }, [mode]);
+  }, [mode, setSnapGuide]);
 
   const handleDrop = useCallback((e) => {
     if (!editEnabled) return;
@@ -1513,7 +1533,7 @@ export default function useMapController() {
         </g>
       );
     })
-  ), [beginDeviceDrag, deviceByKey, deviceLabelFontPx, devicesForPalette, editEnabled, layout.devicePlacements]);
+  ), [beginDeviceDrag, deviceByKey, deviceLabelFontPx, devicesForPalette, editEnabled, layout.devicePlacements, setExpandedDeviceKey]);
 
   return {
     // auth/permissions

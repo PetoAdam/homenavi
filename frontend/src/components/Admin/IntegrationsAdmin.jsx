@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faMusic,
@@ -22,92 +23,137 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import {
   detectIntegrationSetupCapability,
-  getIntegrationRegistry,
-  getIntegrationMarketplace,
   getIntegrationInstallStatus,
   getIntegrationUpdates,
-  installIntegration,
   incrementMarketplaceDownloads,
-  reloadIntegrations,
-  restartAllIntegrations,
   restartIntegration,
-  setIntegrationAutoUpdate,
   setIntegrationSecrets,
-  updateIntegration,
-  uninstallIntegration,
 } from '../../services/integrationService';
+import {
+  integrationMarketplaceQueryOptions,
+  integrationRegistryQueryOptions,
+  useIntegrationMarketplaceQuery,
+  useIntegrationRegistryQuery,
+} from '../../features/integrations/hooks/useIntegrationQueries';
+import { useIntegrationMutations } from '../../features/integrations/hooks/useIntegrationMutations';
+import { useIntegrationOperationPolling } from '../../features/integrations/hooks/useIntegrationOperationPolling';
+import {
+  integrationsAdminUiInitialState,
+  integrationsAdminUiReducer,
+} from '../../features/integrations/reducers/integrationsAdminUiReducer';
+import {
+  integrationsAdminOperationsInitialState,
+  integrationsAdminOperationsReducer,
+} from '../../features/integrations/reducers/integrationsAdminOperationsReducer';
+import { queryKeys } from '../../state/queryKeys';
 import { hasSetupUiPath, setupRouteForIntegration } from '../../utils/integrationSetup';
 import '../Auth/AuthModal/AuthModal.css';
 import './IntegrationsAdmin.css';
 
 export default function IntegrationsAdmin() {
   const { user, accessToken } = useAuth();
-  const [registry, setRegistry] = useState(null);
+  const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
-  const [reloading, setReloading] = useState(false);
   const [secretValues, setSecretValues] = useState({});
   const [saving, setSaving] = useState({});
-  const [activeTab, setActiveTab] = useState('installed');
-  const [selectedIntegration, setSelectedIntegration] = useState(null);
-  const [restartingAll, setRestartingAll] = useState(false);
-  const [restarting, setRestarting] = useState({});
-  const [restartAllTargets, setRestartAllTargets] = useState([]);
+  const [uiState, dispatchUi] = useReducer(integrationsAdminUiReducer, integrationsAdminUiInitialState);
+  const [operationsState, dispatchOperations] = useReducer(
+    integrationsAdminOperationsReducer,
+    integrationsAdminOperationsInitialState
+  );
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [marketplace, setMarketplace] = useState(null);
-  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
-  const [marketplaceError, setMarketplaceError] = useState('');
-  const [pendingSecretsId, setPendingSecretsId] = useState(null);
-  const [pendingPostInstallId, setPendingPostInstallId] = useState(null);
   const [secretValidation, setSecretValidation] = useState({});
   const [secretActionStatus, setSecretActionStatus] = useState({});
-  const [selectedMarketplaceIntegration, setSelectedMarketplaceIntegration] = useState(null);
-  const [installedModalTab, setInstalledModalTab] = useState('about');
-  const [installing, setInstalling] = useState({});
-  const [uninstalling, setUninstalling] = useState({});
   const [marketplaceQuery, setMarketplaceQuery] = useState('');
   const [marketplaceShowInstalled, setMarketplaceShowInstalled] = useState(false);
-  const [installStatus, setInstallStatus] = useState({});
-  const [updating, setUpdating] = useState({});
   const [marketplaceMode, setMarketplaceMode] = useState('discover');
   const [marketplaceFilter, setMarketplaceFilter] = useState('all');
   const [marketplaceSort, setMarketplaceSort] = useState('trending');
   const [setupCapabilities, setSetupCapabilities] = useState({});
 
+  const {
+    activeTab,
+    selectedIntegration,
+    selectedMarketplaceIntegration,
+    installedModalTab,
+    pendingSecretsId,
+    pendingPostInstallId,
+  } = uiState;
+
+  const {
+    reloading,
+    restartingAll,
+    restartAllTargets,
+    installing,
+    uninstalling,
+    updating,
+    restarting,
+    installStatus,
+  } = operationsState;
+
+  const setActiveTabState = useCallback((tab) => {
+    dispatchUi({ type: 'set-active-tab', tab });
+  }, []);
+
+  const setInstalledModalTabState = useCallback((tab) => {
+    dispatchUi({ type: 'set-installed-modal-tab', tab });
+  }, []);
+
+  const setPendingSecretsIdState = useCallback((id) => {
+    dispatchUi({ type: 'set-pending-secrets-id', id });
+  }, []);
+
+  const setPendingPostInstallIdState = useCallback((id) => {
+    dispatchUi({ type: 'set-pending-post-install-id', id });
+  }, []);
+
+  const setSelectedMarketplaceIntegrationState = useCallback((integration) => {
+    dispatchUi({ type: 'set-selected-marketplace-integration', integration });
+  }, []);
+
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
-    let alive = true;
-    if (!accessToken || !isAdmin) {
-      setRegistry(null);
-      return () => { alive = false; };
-    }
     const handle = setTimeout(() => {
-      (async () => {
-        const res = await getIntegrationRegistry({ q: query, page, pageSize });
-        if (!alive) return;
-        if (!res.success) {
-          setError(res.error || 'Failed to load integrations');
-          setRegistry(null);
-          return;
-        }
-        setError('');
-        setRegistry(res.data);
-      })();
+      setDebouncedQuery(query);
     }, query ? 300 : 0);
     return () => {
-      alive = false;
       clearTimeout(handle);
     };
-  }, [accessToken, isAdmin, query, page, pageSize]);
+  }, [query]);
 
-  const integrations = registry?.integrations || [];
+  const registryQuery = useIntegrationRegistryQuery(
+    { q: debouncedQuery, page, pageSize },
+    { enabled: Boolean(accessToken && isAdmin) }
+  );
+
+  const marketplaceDataQuery = useIntegrationMarketplaceQuery({
+    enabled: Boolean(accessToken && isAdmin),
+  });
+  const {
+    reloadMutation,
+    restartAllMutation,
+    installMutation,
+    uninstallMutation,
+    updateMutation,
+    setAutoUpdateMutation,
+  } = useIntegrationMutations({ q: debouncedQuery, page, pageSize });
+
+  const registry = registryQuery.data || null;
+  const marketplace = marketplaceDataQuery.data || null;
+  const registryError = registryQuery.error?.message || '';
+  const marketplaceError = marketplaceDataQuery.error?.message || '';
+  const marketplaceLoading = marketplaceDataQuery.isLoading || marketplaceDataQuery.isFetching;
+
+  const integrations = useMemo(() => registry?.integrations || [], [registry]);
   const installedCount = registry?.total ?? integrations.length;
   const PageSizeOptions = [10, 20, 50, 100];
   const installedIds = useMemo(() => new Set(integrations.map((integration) => integration.id)), [integrations]);
-  const marketplaceIntegrations = marketplace?.integrations || [];
+  const marketplaceIntegrations = useMemo(() => marketplace?.integrations || [], [marketplace]);
   const marketplaceById = useMemo(() => {
     const map = new Map();
     marketplaceIntegrations.forEach((entry) => {
@@ -239,12 +285,12 @@ export default function IntegrationsAdmin() {
     return raw.toLowerCase();
   };
 
-  const resolveFaIcon = (iconName) => {
+  const resolveFaIcon = useCallback((iconName) => {
     const key = normalizeIconKey(iconName);
     if (!key) return null;
     const faKey = key.startsWith('fa:') ? key.slice('fa:'.length).trim() : key;
     return FA_ICON_MAP[faKey] || null;
-  };
+  }, [FA_ICON_MAP]);
 
   const buildOperationToast = useCallback((id, action) => {
     const meta = integrationMetaById.get(id) || {};
@@ -295,19 +341,12 @@ export default function IntegrationsAdmin() {
   };
 
   const refreshMarketplace = useCallback(async () => {
-    setMarketplaceLoading(true);
-    const res = await getIntegrationMarketplace();
-    if (!res.success) {
-      setMarketplaceError(res.error || 'Failed to load marketplace');
-      setMarketplace(null);
-      setMarketplaceLoading(false);
-      return false;
-    }
-    setMarketplaceError('');
-    setMarketplace(res.data);
-    setMarketplaceLoading(false);
-    return true;
-  }, []);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.marketplace() });
+    const refreshed = await queryClient.fetchQuery(
+      integrationMarketplaceQueryOptions({ enabled: true })
+    );
+    return Boolean(refreshed);
+  }, [queryClient]);
 
   const notifyIntegrationsUpdated = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -315,56 +354,39 @@ export default function IntegrationsAdmin() {
     }
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    if (!accessToken || !isAdmin) {
-      return () => { alive = false; };
-    }
-    const shouldFetch = activeTab === 'marketplace' || (!marketplace && activeTab === 'installed');
-    if (!shouldFetch) {
-      return () => { alive = false; };
-    }
-    setMarketplaceLoading(true);
-    (async () => {
-      const res = await getIntegrationMarketplace();
-      if (!alive) return;
-      if (!res.success) {
-        setMarketplaceError(res.error || 'Failed to load marketplace');
-        setMarketplace(null);
-      } else {
-        setMarketplaceError('');
-        setMarketplace(res.data);
-      }
-      setMarketplaceLoading(false);
-    })();
-    return () => { alive = false; };
-  }, [accessToken, activeTab, isAdmin]);
-
   const refreshRegistryWithRetry = async (maxAttempts = 6, delayMs = 700, allowEmpty = false) => {
     const previousCount = registry?.integrations?.length || 0;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const refreshed = await getIntegrationRegistry({ q: query, page, pageSize });
-      if (refreshed.success) {
-        const nextList = Array.isArray(refreshed.data?.integrations) ? refreshed.data.integrations : [];
-        if (nextList.length === 0 && previousCount > 0 && !allowEmpty) {
-          setError('Integrations registry returned empty. Check installed.yaml and integration-proxy mounts.');
-          return false;
+      try {
+        const refreshed = await queryClient.fetchQuery(
+          integrationRegistryQueryOptions(
+            { q: debouncedQuery, page, pageSize },
+            { enabled: true }
+          )
+        );
+        if (refreshed) {
+          const nextList = Array.isArray(refreshed.integrations) ? refreshed.integrations : [];
+          if (nextList.length === 0 && previousCount > 0 && !allowEmpty) {
+            setError('Integrations registry returned empty. Check installed.yaml and integration-proxy mounts.');
+            return false;
+          }
+          return true;
         }
-        setRegistry(refreshed.data);
-        return true;
+      } catch {
+        // Retry below.
       }
-      // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     return false;
   };
 
   const handleReload = async () => {
-    setReloading(true);
-    const res = await reloadIntegrations();
-    if (!res.success) {
-      setError(res.error || 'Failed to refresh integrations');
-      setReloading(false);
+    dispatchOperations({ type: 'set-reloading', value: true });
+    try {
+      await reloadMutation.mutateAsync();
+    } catch (err) {
+      setError(err?.message || 'Failed to refresh integrations');
+      dispatchOperations({ type: 'set-reloading', value: false });
       return;
     }
     setError('');
@@ -372,54 +394,32 @@ export default function IntegrationsAdmin() {
     await new Promise((resolve) => setTimeout(resolve, 600));
     await refreshRegistryWithRetry();
     notifyIntegrationsUpdated();
-    setReloading(false);
+    dispatchOperations({ type: 'set-reloading', value: false });
   };
 
   const handleRestartAll = async () => {
     const ids = (registry?.integrations || []).map((integration) => integration.id).filter(Boolean);
     if (ids.length) {
-      setRestarting((prev) => {
-        const next = { ...prev };
-        ids.forEach((id) => {
-          next[id] = true;
-        });
-        return next;
-      });
-      setInstallStatus((prev) => {
-        const next = { ...prev };
-        ids.forEach((id) => {
-          next[id] = {
-            ...(next[id] || {}),
-            id,
-            stage: 'queued',
-            progress: 10,
-            message: 'Queued for restart',
-          };
-        });
-        return next;
-      });
-      setRestartAllTargets(ids);
-    }
-    setRestartingAll(true);
-    const res = await restartAllIntegrations();
-    if (!res.success) {
-      setError(res.error || 'Failed to restart integrations');
-      if (ids.length) {
-        setRestarting((prev) => {
-          const next = { ...prev };
-          ids.forEach((id) => {
-            next[id] = false;
-          });
-          return next;
-        });
-      }
-      setRestartAllTargets([]);
-      setRestartingAll(false);
+      dispatchOperations({ type: 'queue-restart-all', ids });
     } else {
-      setError('');
-      if (!ids.length) {
-        setRestartingAll(false);
+      dispatchOperations({ type: 'set-restarting-all', value: true });
+    }
+    try {
+      await restartAllMutation.mutateAsync();
+    } catch (err) {
+      setError(err?.message || 'Failed to restart integrations');
+      if (ids.length) {
+        ids.forEach((id) => {
+          dispatchOperations({ type: 'set-restarting', id, value: false });
+        });
       }
+      dispatchOperations({ type: 'set-restart-all-targets', ids: [] });
+      dispatchOperations({ type: 'set-restarting-all', value: false });
+      return;
+    }
+    setError('');
+    if (!ids.length) {
+      dispatchOperations({ type: 'set-restarting-all', value: false });
     }
   };
 
@@ -442,21 +442,17 @@ export default function IntegrationsAdmin() {
         compose_file: entryOrId?.compose_file,
         version: entryOrId?.version,
       };
-    setInstalling((prev) => ({ ...prev, [id]: true }));
-    setInstallStatus((prev) => ({
-      ...prev,
-      [id]: { id, stage: 'queued', progress: 5, message: 'Queued' },
-    }));
-    const res = await installIntegration(id, upstream, composePayload);
-    if (!res.success) {
-      const detail = res.data?.detail ? ` (${res.data.detail})` : '';
-      setError(`${res.error || 'Failed to install integration'}${detail}`);
-      setInstalling((prev) => ({ ...prev, [id]: false }));
+    dispatchOperations({ type: 'queue-install', id });
+    try {
+      await installMutation.mutateAsync({ id, upstream, composePayload });
+    } catch (err) {
+      setError(err?.message || 'Failed to install integration');
+      dispatchOperations({ type: 'set-installing', id, value: false });
       return;
     }
     if (typeof entryOrId !== 'string') {
       incrementMarketplaceDownloads(id).catch(() => {});
-      setMarketplace((prev) => {
+      queryClient.setQueryData(queryKeys.integrations.marketplace(), (prev) => {
         if (!prev || !Array.isArray(prev.integrations)) return prev;
         const nextList = prev.integrations.map((entry) => {
           if (entry?.id !== id) return entry;
@@ -465,99 +461,87 @@ export default function IntegrationsAdmin() {
         });
         return { ...prev, integrations: nextList };
       });
-      setSelectedMarketplaceIntegration((prev) => {
-        if (!prev || prev.id !== id) return prev;
-        return { ...prev, downloads: Number(prev.downloads || 0) + 1 };
-      });
+      if (selectedMarketplaceIntegration?.id === id) {
+        setSelectedMarketplaceIntegrationState({
+          ...selectedMarketplaceIntegration,
+          downloads: Number(selectedMarketplaceIntegration.downloads || 0) + 1,
+        });
+      }
     }
     setError('');
     await refreshRegistryWithRetry();
     await refreshMarketplace();
-    setInstalling((prev) => ({ ...prev, [id]: false }));
-    setPendingPostInstallId(id);
+    dispatchOperations({ type: 'set-installing', id, value: false });
+    setPendingPostInstallIdState(id);
     notifyIntegrationsUpdated();
   };
 
   const handleUninstall = async (id) => {
-    setUninstalling((prev) => ({ ...prev, [id]: true }));
-    const res = await uninstallIntegration(id);
-    if (!res.success) {
-      const detail = res.data?.detail ? ` (${res.data.detail})` : '';
-      setError(`${res.error || 'Failed to uninstall integration'}${detail}`);
-      setUninstalling((prev) => ({ ...prev, [id]: false }));
+    dispatchOperations({ type: 'set-uninstalling', id, value: true });
+    try {
+      await uninstallMutation.mutateAsync({ id });
+    } catch (err) {
+      setError(err?.message || 'Failed to uninstall integration');
+      dispatchOperations({ type: 'set-uninstalling', id, value: false });
       return;
     }
     setError('');
-    setRegistry((prev) => {
+    queryClient.setQueryData(queryKeys.integrations.registry({ q: debouncedQuery, page, pageSize }), (prev) => {
       if (!prev) return prev;
       const nextList = Array.isArray(prev.integrations) ? prev.integrations.filter((integration) => integration.id !== id) : [];
       const nextTotal = typeof prev.total === 'number' ? Math.max(0, prev.total - 1) : undefined;
       return { ...prev, integrations: nextList, ...(nextTotal !== undefined ? { total: nextTotal } : {}) };
     });
     if (selectedIntegration?.id === id) {
-      setSelectedIntegration(null);
+      dispatchUi({ type: 'close-installed-modal' });
     }
     await refreshRegistryWithRetry(6, 700, true);
     await refreshMarketplace();
-    setUninstalling((prev) => ({ ...prev, [id]: false }));
+    dispatchOperations({ type: 'set-uninstalling', id, value: false });
     notifyIntegrationsUpdated();
   };
 
-  useEffect(() => {
-    const activeIds = Array.from(new Set([
-      ...Object.entries(installing)
-        .filter(([, active]) => active)
-        .map(([id]) => id),
-      ...Object.entries(updating)
-        .filter(([, active]) => active)
-        .map(([id]) => id),
-      ...Object.entries(restarting)
-        .filter(([, active]) => active)
-        .map(([id]) => id),
-    ]));
-    if (!activeIds.length) return undefined;
-    let cancelled = false;
-    const poll = async () => {
-      await Promise.all(activeIds.map(async (id) => {
-        const res = await getIntegrationInstallStatus(id);
-        if (!res.success || cancelled) return;
-        const status = res.data;
-        setInstallStatus((prev) => ({ ...prev, [id]: status }));
-        if (!isTerminalOperationStatus(status)) return;
-        if (installing[id]) {
-          setInstalling((prev) => ({ ...prev, [id]: false }));
-          if (isSuccessfulOperationStatus(status)) {
-            setToast(buildOperationToast(id, 'installed'));
-          }
-        }
-        if (updating[id]) {
-          setUpdating((prev) => ({ ...prev, [id]: false }));
-          if (isSuccessfulOperationStatus(status)) {
-            setToast(buildOperationToast(id, 'updated'));
-          }
-        }
-        if (restarting[id]) {
-          setRestarting((prev) => ({ ...prev, [id]: false }));
-          if (isSuccessfulOperationStatus(status) && !restartAllTargets.includes(id)) {
-            setToast(buildOperationToast(id, 'restarted'));
-          }
-        }
-      }));
-    };
-    poll();
-    const handle = setInterval(poll, 1500);
-    return () => {
-      cancelled = true;
-      clearInterval(handle);
-    };
-  }, [installing, updating, restarting, buildOperationToast, restartAllTargets]);
+  const handleInstallTerminal = useCallback((id, status) => {
+    dispatchOperations({ type: 'set-installing', id, value: false });
+    if (isSuccessfulOperationStatus(status)) {
+      setToast(buildOperationToast(id, 'installed'));
+    }
+  }, [buildOperationToast]);
+
+  const handleUpdateTerminal = useCallback((id, status) => {
+    dispatchOperations({ type: 'set-updating', id, value: false });
+    if (isSuccessfulOperationStatus(status)) {
+      setToast(buildOperationToast(id, 'updated'));
+    }
+  }, [buildOperationToast]);
+
+  const handleRestartTerminal = useCallback((id, status) => {
+    dispatchOperations({ type: 'set-restarting', id, value: false });
+    if (isSuccessfulOperationStatus(status) && !restartAllTargets.includes(id)) {
+      setToast(buildOperationToast(id, 'restarted'));
+    }
+  }, [buildOperationToast, restartAllTargets]);
+
+  useIntegrationOperationPolling({
+    installing,
+    updating,
+    restarting,
+    getStatus: getIntegrationInstallStatus,
+    onStatus: (id, status) => {
+      dispatchOperations({ type: 'set-install-status', id, status });
+    },
+    onInstallTerminal: handleInstallTerminal,
+    onUpdateTerminal: handleUpdateTerminal,
+    onRestartTerminal: handleRestartTerminal,
+    isTerminalOperationStatus,
+  });
 
   useEffect(() => {
     if (!restartingAll || !restartAllTargets.length) return;
     const hasActive = restartAllTargets.some((id) => Boolean(restarting[id]));
     if (hasActive) return;
-    setRestartingAll(false);
-    setRestartAllTargets([]);
+    dispatchOperations({ type: 'set-restarting-all', value: false });
+    dispatchOperations({ type: 'set-restart-all-targets', ids: [] });
     setToast('All integrations restarted successfully.');
   }, [restartingAll, restartAllTargets, restarting]);
 
@@ -566,8 +550,7 @@ export default function IntegrationsAdmin() {
     const next = market
       ? { ...integration, description: market.description || integration.description, images: market.images || integration.images, marketplace: market }
       : integration;
-    setSelectedIntegration(next);
-    setInstalledModalTab(tab);
+    dispatchUi({ type: 'open-installed-modal', integration: next, tab });
   }, [marketplaceById]);
 
   useEffect(() => {
@@ -576,10 +559,10 @@ export default function IntegrationsAdmin() {
     if (!match) return;
     const secretsRequired = Array.isArray(match.secrets) && match.secrets.length > 0;
     if (secretsRequired) {
-      setActiveTab('installed');
-      setPendingSecretsId(match.id);
+      setActiveTabState('installed');
+      setPendingSecretsIdState(match.id);
       openIntegrationModal(match, 'manage');
-      setPendingPostInstallId(null);
+      setPendingPostInstallIdState(null);
       return;
     }
     const setupCapable = hasSetupUiPath(match) || Boolean(setupCapabilities[match.id]);
@@ -589,17 +572,23 @@ export default function IntegrationsAdmin() {
         window.open(setupURL, '_blank', 'noopener,noreferrer');
       }
     }
-    setPendingPostInstallId(null);
-  }, [pendingPostInstallId, registry, openIntegrationModal, setupCapabilities]);
+    setPendingPostInstallIdState(null);
+  }, [
+    pendingPostInstallId,
+    registry,
+    openIntegrationModal,
+    setupCapabilities,
+    setActiveTabState,
+    setPendingSecretsIdState,
+    setPendingPostInstallIdState,
+  ]);
 
   const closeModal = () => {
     if (selectedIntegration?.id) {
       setSecretValidation((prev) => ({ ...prev, [selectedIntegration.id]: null }));
       setSecretActionStatus((prev) => ({ ...prev, [selectedIntegration.id]: null }));
     }
-    setSelectedIntegration(null);
-    setPendingSecretsId(null);
-    setInstalledModalTab('about');
+    dispatchUi({ type: 'close-installed-modal' });
   };
 
   const handleSearchSubmit = () => {
@@ -615,21 +604,11 @@ export default function IntegrationsAdmin() {
   };
 
   const handleRestartIntegration = async (id) => {
-    setRestarting((prev) => ({ ...prev, [id]: true }));
-    setInstallStatus((prev) => ({
-      ...prev,
-      [id]: {
-        ...(prev[id] || {}),
-        id,
-        stage: 'queued',
-        progress: 10,
-        message: 'Queued for restart',
-      },
-    }));
+    dispatchOperations({ type: 'queue-restart', id });
     const res = await restartIntegration(id);
     if (!res.success) {
       setError(res.error || 'Failed to restart integration');
-      setRestarting((prev) => ({ ...prev, [id]: false }));
+      dispatchOperations({ type: 'set-restarting', id, value: false });
     } else {
       setError('');
     }
@@ -637,40 +616,35 @@ export default function IntegrationsAdmin() {
 
   const handleUpdateIntegration = async (id) => {
     if (!id) return;
-    setInstallStatus((prev) => ({
-      ...prev,
-      [id]: {
-        ...(prev[id] || {}),
-        id,
-        stage: 'queued',
-        progress: prev[id]?.progress ?? 5,
-        message: prev[id]?.message || 'Queued',
-      },
-    }));
-    setUpdating((prev) => ({ ...prev, [id]: true }));
-    const res = await updateIntegration(id);
-    if (!res.success) {
-      const detail = res.data?.detail ? ` (${res.data.detail})` : '';
-      setError(`${res.error || 'Failed to update integration'}${detail}`);
-      setUpdating((prev) => ({ ...prev, [id]: false }));
+    dispatchOperations({
+      type: 'queue-update',
+      id,
+      progress: installStatus[id]?.progress ?? 5,
+      message: installStatus[id]?.message || 'Queued',
+    });
+    try {
+      await updateMutation.mutateAsync({ id });
+    } catch (err) {
+      setError(err?.message || 'Failed to update integration');
+      dispatchOperations({ type: 'set-updating', id, value: false });
       return;
     }
     setError('');
     await getIntegrationUpdates(true);
     await refreshRegistryWithRetry();
-    setUpdating((prev) => ({ ...prev, [id]: false }));
+    dispatchOperations({ type: 'set-updating', id, value: false });
     notifyIntegrationsUpdated();
   };
 
   const handleToggleAutoUpdate = async (id, enabled) => {
-    const res = await setIntegrationAutoUpdate(id, enabled);
-    if (!res.success) {
-      const detail = res.data?.detail ? ` (${res.data.detail})` : '';
-      setError(`${res.error || 'Failed to update auto-update policy'}${detail}`);
+    try {
+      await setAutoUpdateMutation.mutateAsync({ id, enabled });
+    } catch (err) {
+      setError(err?.message || 'Failed to update auto-update policy');
       return;
     }
     setError('');
-    setRegistry((prev) => {
+    queryClient.setQueryData(queryKeys.integrations.registry({ q: debouncedQuery, page, pageSize }), (prev) => {
       if (!prev || !Array.isArray(prev.integrations)) return prev;
       return {
         ...prev,
@@ -745,12 +719,14 @@ export default function IntegrationsAdmin() {
       setError('');
       setSecretValues((prev) => ({ ...prev, [id]: {} }));
       setSecretValidation((prev) => ({ ...prev, [id]: null }));
-      setPendingSecretsId((prev) => (prev === id ? null : prev));
+      if (pendingSecretsId === id) {
+        setPendingSecretsIdState(null);
+      }
       setSecretActionStatus((prev) => ({
         ...prev,
         [id]: { message: 'Restarting integration', progress: 70 },
       }));
-      setRestarting((prev) => ({ ...prev, [id]: true }));
+      dispatchOperations({ type: 'set-restarting', id, value: true });
       const restartResult = await restartIntegration(id);
       if (!restartResult.success) {
         setSecretActionStatus((prev) => ({ ...prev, [id]: null }));
@@ -764,11 +740,10 @@ export default function IntegrationsAdmin() {
         setTimeout(() => {
           setSecretActionStatus((prev) => ({ ...prev, [id]: null }));
           setSecretValidation((prev) => ({ ...prev, [id]: null }));
-          setPendingSecretsId(null);
-          setSelectedIntegration(null);
+          dispatchUi({ type: 'close-installed-modal' });
         }, 900);
       }
-      setRestarting((prev) => ({ ...prev, [id]: false }));
+      dispatchOperations({ type: 'set-restarting', id, value: false });
     }
     setSaving((prev) => ({ ...prev, [id]: false }));
   };
@@ -776,9 +751,7 @@ export default function IntegrationsAdmin() {
   const handleSetupLater = () => {
     if (!selectedIntegration?.id) return;
     setSecretActionStatus((prev) => ({ ...prev, [selectedIntegration.id]: null }));
-    setPendingSecretsId(null);
-    setSelectedIntegration(null);
-    setInstalledModalTab('about');
+    dispatchUi({ type: 'close-installed-modal' });
   };
 
   const handleOpenSetup = useCallback((integration) => {
@@ -798,6 +771,8 @@ export default function IntegrationsAdmin() {
     }
   };
 
+  const displayError = error || registryError;
+
   if (!isAdmin) {
     return (
       <UnauthorizedView
@@ -812,7 +787,7 @@ export default function IntegrationsAdmin() {
     <InstalledIntegrationModal
       integration={selectedIntegration}
       activeTab={installedModalTab}
-      onTabChange={setInstalledModalTab}
+      onTabChange={setInstalledModalTabState}
       onClose={closeModal}
       onRestartIntegration={handleRestartIntegration}
       onUninstallIntegration={handleUninstall}
@@ -840,7 +815,7 @@ export default function IntegrationsAdmin() {
   const marketplaceModalElement = selectedMarketplaceIntegration ? (
     <MarketplaceIntegrationModal
       integration={selectedMarketplaceIntegration}
-      onClose={() => setSelectedMarketplaceIntegration(null)}
+      onClose={() => setSelectedMarketplaceIntegrationState(null)}
       onInstallIntegration={handleInstall}
       installing={installing}
       installStatus={installStatus}
@@ -868,7 +843,7 @@ export default function IntegrationsAdmin() {
           <button
             key={tab.id}
             className={`integrations-admin-nav-btn${activeTab === tab.id ? ' active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => setActiveTabState(tab.id)}
             type="button"
           >
             <FontAwesomeIcon icon={tab.icon} />
@@ -879,7 +854,7 @@ export default function IntegrationsAdmin() {
         ))}
       </div>
 
-      {error ? <div className="integrations-admin-error">{error}</div> : null}
+      {displayError ? <div className="integrations-admin-error">{displayError}</div> : null}
       {activeTab === 'installed' ? (
         <InstalledIntegrationsSection
           integrations={pagedIntegrations}
@@ -929,7 +904,7 @@ export default function IntegrationsAdmin() {
           onSortChange={setMarketplaceSort}
           onQueryChange={setMarketplaceQuery}
           onShowInstalledChange={setMarketplaceShowInstalled}
-          onSelectIntegration={setSelectedMarketplaceIntegration}
+          onSelectIntegration={setSelectedMarketplaceIntegrationState}
           onInstallIntegration={handleInstall}
           installing={installing}
           installStatus={installStatus}

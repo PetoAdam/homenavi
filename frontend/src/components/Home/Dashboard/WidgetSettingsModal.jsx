@@ -135,6 +135,9 @@ export default function WidgetSettingsModal({
   const [title, setTitle] = useState('');
   const previousWidgetIdRef = useRef('');
   const titleDirtyRef = useRef(false);
+  const widgetId = widgetItem?.instance_id || '';
+  const widgetType = widgetItem?.widget_type || '';
+  const widgetSettings = widgetItem?.settings || null;
 
   // ERS inventory for device selection
   const { accessToken, user } = useAuth();
@@ -202,30 +205,27 @@ export default function WidgetSettingsModal({
   useEffect(() => {
     if (!open || !widgetItem) return;
 
-    const widgetId = widgetItem.instance_id || '';
     const shouldResetDraft = widgetId !== previousWidgetIdRef.current || previousWidgetIdRef.current === '';
     if (!shouldResetDraft) return;
 
-    const widgetSettings = widgetItem.settings || {};
-    setSettings(widgetSettings);
-    setTitle(computeDefaultTitle(widgetItem.widget_type, widgetSettings));
+    setSettings(widgetSettings || {});
+    setTitle(computeDefaultTitle(widgetType, widgetSettings));
     titleDirtyRef.current = false;
     previousWidgetIdRef.current = widgetId;
-  }, [open, widgetItem?.instance_id, widgetItem?.widget_type, computeDefaultTitle]);
+  }, [computeDefaultTitle, open, widgetId, widgetItem, widgetSettings, widgetType]);
 
   useEffect(() => {
     if (!open || !widgetItem) return;
-    if (!widgetItem.instance_id || widgetItem.instance_id !== previousWidgetIdRef.current) return;
+    if (!widgetId || widgetId !== previousWidgetIdRef.current) return;
     if (titleDirtyRef.current) return;
 
-    const widgetSettings = widgetItem.settings || {};
     if (widgetSettings.title) return;
 
-    const nextTitle = computeDefaultTitle(widgetItem.widget_type, widgetSettings);
+    const nextTitle = computeDefaultTitle(widgetType, widgetSettings);
     if (!nextTitle) return;
 
     setTitle((prevTitle) => (prevTitle === nextTitle ? prevTitle : nextTitle));
-  }, [open, widgetItem, computeDefaultTitle]);
+  }, [computeDefaultTitle, open, widgetId, widgetItem, widgetSettings, widgetType]);
 
   useEffect(() => {
     if (open) return;

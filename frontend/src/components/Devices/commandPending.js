@@ -51,7 +51,7 @@ function clonePlainObject(value) {
   try {
     // Device state payloads are expected to be plain JSON-like objects.
     return JSON.parse(JSON.stringify(value));
-  } catch (err) {
+  } catch {
     return null;
   }
 }

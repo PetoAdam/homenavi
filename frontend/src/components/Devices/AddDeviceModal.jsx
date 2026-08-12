@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faCircleCheck } from '@fortawesome/free-solid-svg-icons';
 import { DEVICE_ICON_CHOICES } from './deviceIconChoices';
@@ -13,6 +13,11 @@ import {
   getProtocolOptions,
   isPairingSupported,
 } from './pairing/pairingSchema';
+import {
+  addDeviceModalReducer,
+  createAddDeviceModalInitialState,
+  createDefaultAddDeviceForm,
+} from './addDeviceModalReducer';
 import './AddDeviceModal.css';
 
 const FLOW_STEPS = [
@@ -20,16 +25,6 @@ const FLOW_STEPS = [
   { id: 'pairing', label: 'Pairing' },
   { id: 'success', label: 'Complete' },
 ];
-
-const defaultForm = {
-  protocol: '',
-  name: '',
-  type: '',
-  manufacturer: '',
-  model: '',
-  description: '',
-  icon: 'auto',
-};
 
 function getProtocolLabel(protocol, options) {
   if (!protocol) return 'Device';
@@ -107,36 +102,32 @@ export default function AddDeviceModal({
   onStartPairing,
   onStopPairing,
 }) {
-  const [form, setForm] = useState(defaultForm);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [flowStep, setFlowStep] = useState('form');
-  const [activePairing, setActivePairing] = useState(null);
-  const [pairingNotice, setPairingNotice] = useState('');
-  const [pairingError, setPairingError] = useState(null);
-  const [secondsRemaining, setSecondsRemaining] = useState(null);
-  const [stopPending, setStopPending] = useState(false);
-  const [pairingStartPending, setPairingStartPending] = useState(false);
-  const [pairingSetupOverride, setPairingSetupOverride] = useState(false);
-  const [pairingRecoveryDraft, setPairingRecoveryDraft] = useState(null);
-  const [pairingTerminalContext, setPairingTerminalContext] = useState(null);
-  const [pairedDevicesSummary, setPairedDevicesSummary] = useState([]);
+  const [state, dispatch] = useReducer(addDeviceModalReducer, undefined, createAddDeviceModalInitialState);
+  const {
+    form,
+    showAdvanced,
+    flowStep,
+    activePairing,
+    pairingNotice,
+    pairingError,
+    secondsRemaining,
+    stopPending,
+    pairingStartPending,
+    pairingSetupOverride,
+    pairingRecoveryDraft,
+    pairingTerminalContext,
+    pairedDevicesSummary,
+  } = state;
 
   const modalRef = useRef(null);
   const resumePairingRef = useRef(false);
 
+  const updateForm = useCallback((updater) => {
+    dispatch({ type: 'update-form', updater });
+  }, []);
+
   const resetFlow = useCallback(() => {
-    setFlowStep('form');
-    setActivePairing(null);
-    setPairingNotice('');
-    setPairingError(null);
-    setSecondsRemaining(null);
-    setStopPending(false);
-    setPairingStartPending(false);
-    setShowAdvanced(false);
-    setPairingSetupOverride(false);
-    setPairingRecoveryDraft(null);
-    setPairingTerminalContext(null);
-    setPairedDevicesSummary([]);
+    dispatch({ type: 'reset-flow' });
   }, []);
 
   const protocolOptions = useMemo(
@@ -233,22 +224,26 @@ export default function AddDeviceModal({
 
   const beginGuidedPairing = useCallback(async payload => {
     if (!pairingSupported) {
-      setPairingError(pairingBlockedReason || 'Guided pairing is not available for this protocol yet.');
+      dispatch({ type: 'patch', partial: { pairingError: pairingBlockedReason || 'Guided pairing is not available for this protocol yet.' } });
       return;
     }
     if (activeSessionForSelected?.active) {
-      setFlowStep('pairing');
-      setPairingNotice('Pairing already running. Monitoring progress…');
+      dispatch({
+        type: 'patch',
+        partial: {
+          flowStep: 'pairing',
+          pairingNotice: 'Pairing already running. Monitoring progress…',
+        },
+      });
       return;
     }
     if (typeof onStartPairing !== 'function') {
-      setPairingError('Pairing is not available right now.');
+      dispatch({ type: 'patch', partial: { pairingError: 'Pairing is not available right now.' } });
       return;
     }
 
     try {
-      setPairingStartPending(true);
-      setPairingError(null);
+      dispatch({ type: 'patch', partial: { pairingStartPending: true, pairingError: null } });
       const metadata = buildPairingMetadata();
       const response = await onStartPairing({
         ...payload,
@@ -261,23 +256,28 @@ export default function AddDeviceModal({
       }
       const startedAt = session.started_at ? new Date(session.started_at) : new Date();
       const expiresAt = session.expires_at ? new Date(session.expires_at) : new Date(startedAt.getTime() + Number(payload?.timeout || 180) * 1000);
-      setActivePairing({
-        id: session.id || `${selectedProtocol}-${Date.now()}`,
-        protocol: selectedProtocol,
-        startedAt,
-        expiresAt,
-        status: session.status || 'active',
+      dispatch({
+        type: 'patch',
+        partial: {
+          activePairing: {
+            id: session.id || `${selectedProtocol}-${Date.now()}`,
+            protocol: selectedProtocol,
+            startedAt,
+            expiresAt,
+            status: session.status || 'active',
+          },
+          flowStep: 'pairing',
+          pairingSetupOverride: false,
+          pairingRecoveryDraft: null,
+          pairingTerminalContext: null,
+          pairingNotice: pairingProfile?.notes || 'Permit join enabled. Put your device into pairing mode now.',
+        },
       });
-      setFlowStep('pairing');
-      setPairingSetupOverride(false);
-      setPairingRecoveryDraft(null);
-      setPairingTerminalContext(null);
-      setPairingNotice(pairingProfile?.notes || 'Permit join enabled. Put your device into pairing mode now.');
       resumePairingRef.current = true;
     } catch (error) {
-      setPairingError(error?.message || 'Unable to start pairing');
+      dispatch({ type: 'patch', partial: { pairingError: error?.message || 'Unable to start pairing' } });
     } finally {
-      setPairingStartPending(false);
+      dispatch({ type: 'patch', partial: { pairingStartPending: false } });
     }
   }, [
     activeSessionForSelected,
@@ -299,13 +299,13 @@ export default function AddDeviceModal({
       return;
     }
     try {
-      setStopPending(true);
+      dispatch({ type: 'patch', partial: { stopPending: true } });
       await onStopPairing(protocolToStop);
       resetFlow();
     } catch (error) {
-      setPairingError(error?.message || 'Unable to stop pairing');
+      dispatch({ type: 'patch', partial: { pairingError: error?.message || 'Unable to stop pairing' } });
     } finally {
-      setStopPending(false);
+      dispatch({ type: 'patch', partial: { stopPending: false } });
     }
   }, [activePairing, activePairingSession, activeSessionForSelected, onStopPairing, resetFlow]);
 
@@ -325,27 +325,32 @@ export default function AddDeviceModal({
 
   const handleSuccessDismiss = useCallback(() => {
     resetFlow();
-    setForm(defaultForm);
+    dispatch({ type: 'set-form', form: createDefaultAddDeviceForm() });
     handleClose();
   }, [resetFlow, handleClose]);
 
   const handleAddAnother = useCallback(() => {
     resetFlow();
-    setForm(defaultForm);
+    dispatch({ type: 'set-form', form: createDefaultAddDeviceForm() });
   }, [resetFlow]);
 
   const handleEnterPairingFlow = useCallback(() => {
-    setPairingError(null);
-    setPairingNotice('');
-    setPairingSetupOverride(true);
-    setPairingRecoveryDraft(null);
-    setPairingTerminalContext(null);
-    setFlowStep('pairing');
+    dispatch({
+      type: 'patch',
+      partial: {
+        pairingError: null,
+        pairingNotice: '',
+        pairingSetupOverride: true,
+        pairingRecoveryDraft: null,
+        pairingTerminalContext: null,
+        flowStep: 'pairing',
+      },
+    });
   }, []);
 
   const handleRetryPairing = useCallback(async () => {
     if (!pairingProfile || !selectedProtocol) {
-      setPairingError('Pairing profile is unavailable for retry.');
+      dispatch({ type: 'patch', partial: { pairingError: 'Pairing profile is unavailable for retry.' } });
       return;
     }
 
@@ -371,25 +376,35 @@ export default function AddDeviceModal({
       errorCode: pairingTerminalContext?.errorCode || '',
       preferAlternateMode: true,
     });
-    setPairingError(null);
-    setPairingNotice('Choose a different mode and continue pairing.');
-    setPairingSetupOverride(true);
-    setPairingRecoveryDraft(recoveryPreset);
-    setPairingTerminalContext(null);
-    setFlowStep('pairing');
+    dispatch({
+      type: 'patch',
+      partial: {
+        pairingError: null,
+        pairingNotice: 'Choose a different mode and continue pairing.',
+        pairingSetupOverride: true,
+        pairingRecoveryDraft: recoveryPreset,
+        pairingTerminalContext: null,
+        flowStep: 'pairing',
+      },
+    });
   }, [pairingProfile, pairingRecoveryDraft, pairingTerminalContext]);
 
   const handleReturnToDetails = useCallback(() => {
-    setPairingSetupOverride(false);
-    setPairingRecoveryDraft(null);
-    setPairingTerminalContext(null);
-    setFlowStep('form');
+    dispatch({
+      type: 'patch',
+      partial: {
+        pairingSetupOverride: false,
+        pairingRecoveryDraft: null,
+        pairingTerminalContext: null,
+        flowStep: 'form',
+      },
+    });
   }, []);
 
   const handleResolveNeedsInput = useCallback(async () => {
     const protocol = activePairing?.protocol || activePairingSession?.protocol || selectedProtocol;
     if (!protocol) {
-      setPairingError('Unable to resolve required inputs for pairing session.');
+      dispatch({ type: 'patch', partial: { pairingError: 'Unable to resolve required inputs for pairing session.' } });
       return;
     }
 
@@ -401,24 +416,29 @@ export default function AddDeviceModal({
       : (activePairingSession?.inputs && typeof activePairingSession.inputs === 'object' ? { ...activePairingSession.inputs } : {});
 
     try {
-      setStopPending(true);
+      dispatch({ type: 'patch', partial: { stopPending: true } });
       if (typeof onStopPairing === 'function') {
         await onStopPairing(protocol);
       }
-      setPairingSetupOverride(true);
-      setPairingRecoveryDraft({
-        mode: activePairingSession?.mode || '',
-        values: recoveryValues,
-        requiredFieldIds,
+      dispatch({
+        type: 'patch',
+        partial: {
+          pairingSetupOverride: true,
+          pairingRecoveryDraft: {
+            mode: activePairingSession?.mode || '',
+            values: recoveryValues,
+            requiredFieldIds,
+          },
+          pairingTerminalContext: null,
+          pairingError: null,
+          pairingNotice: 'Provide the missing fields and continue pairing.',
+          activePairing: null,
+        },
       });
-      setPairingTerminalContext(null);
-      setPairingError(null);
-      setPairingNotice('Provide the missing fields and continue pairing.');
-      setActivePairing(null);
     } catch (error) {
-      setPairingError(error?.message || 'Unable to switch to required input flow.');
+      dispatch({ type: 'patch', partial: { pairingError: error?.message || 'Unable to switch to required input flow.' } });
     } finally {
-      setStopPending(false);
+      dispatch({ type: 'patch', partial: { stopPending: false } });
     }
   }, [activePairing, activePairingSession, onStopPairing, selectedProtocol]);
 
@@ -464,34 +484,38 @@ export default function AddDeviceModal({
     }
     const started = existing.startedAt || existing.started_at;
     const expires = existing.expiresAt || existing.expires_at;
-    setActivePairing({
-      id: existing.id || `${existing.protocol || 'pairing'}-${Date.now()}`,
-      protocol: existing.protocol || '',
-      startedAt: started instanceof Date ? started : (started ? new Date(started) : new Date()),
-      expiresAt: expires instanceof Date ? expires : (expires ? new Date(expires) : null),
+    dispatch({
+      type: 'patch',
+      partial: {
+        activePairing: {
+          id: existing.id || `${existing.protocol || 'pairing'}-${Date.now()}`,
+          protocol: existing.protocol || '',
+          startedAt: started instanceof Date ? started : (started ? new Date(started) : new Date()),
+          expiresAt: expires instanceof Date ? expires : (expires ? new Date(expires) : null),
+        },
+        flowStep: 'pairing',
+        pairingNotice: 'Pairing already running. Monitoring progress…',
+      },
     });
-    setFlowStep('pairing');
-    setPairingNotice('Pairing already running. Monitoring progress…');
     resumePairingRef.current = true;
   }, [open, pairingSessions]);
 
   useEffect(() => {
     if (!open) {
-      setForm(defaultForm);
-      resetFlow();
+      dispatch({ type: 'reset-all' });
     }
-  }, [open, resetFlow]);
+  }, [open]);
 
   useEffect(() => {
     if (!activePairing) {
-      setSecondsRemaining(null);
+      dispatch({ type: 'patch', partial: { secondsRemaining: null } });
       return;
     }
 
     const session = activePairingSession || activePairing;
     const sessionStatusForTimer = (activePairingSession?.status || '').toLowerCase();
     if (['interviewing', 'interview_complete', 'completed'].includes(sessionStatusForTimer)) {
-      setSecondsRemaining(null);
+      dispatch({ type: 'patch', partial: { secondsRemaining: null } });
       return;
     }
     // Prefer the expiresAt we stored from the API response when the session
@@ -501,14 +525,14 @@ export default function AddDeviceModal({
       || session?.expiresAt
       || session?.expires_at;
     if (!expirationRaw) {
-      setSecondsRemaining(null);
+      dispatch({ type: 'patch', partial: { secondsRemaining: null } });
       return;
     }
 
     const expiration = expirationRaw instanceof Date ? expirationRaw : new Date(expirationRaw);
     const updateSeconds = () => {
       const diff = expiration.getTime() - Date.now();
-      setSecondsRemaining(diff > 0 ? Math.ceil(diff / 1000) : 0);
+      dispatch({ type: 'patch', partial: { secondsRemaining: diff > 0 ? Math.ceil(diff / 1000) : 0 } });
     };
 
     updateSeconds();
@@ -521,62 +545,76 @@ export default function AddDeviceModal({
     const { status } = activePairingSession;
     const allowMultipleDevices = Boolean(activePairingSession?.allowMultipleDevices);
     if (status === 'device_joined') {
-      setPairingNotice('Device joined the network. Interview starting…');
-      setPairingError(null);
+      dispatch({ type: 'patch', partial: { pairingNotice: 'Device joined the network. Interview starting…', pairingError: null } });
       return;
     }
     if (status === 'interviewing') {
-      setPairingNotice('Interview in progress. We are reading device capabilities…');
-      setPairingError(null);
+      dispatch({ type: 'patch', partial: { pairingNotice: 'Interview in progress. We are reading device capabilities…', pairingError: null } });
       return;
     }
     if (status === 'interview_complete') {
-      setPairingNotice('Interview complete. Finalizing registration…');
-      setPairingError(null);
+      dispatch({ type: 'patch', partial: { pairingNotice: 'Interview complete. Finalizing registration…', pairingError: null } });
       return;
     }
     if (status === 'device_detected') {
-      setPairingNotice('Device detected. Finalizing…');
-      setPairingError(null);
+      dispatch({ type: 'patch', partial: { pairingNotice: 'Device detected. Finalizing…', pairingError: null } });
       return;
     }
     if (status === 'device_added') {
-      setPairingNotice(
-        sessionAddedDevices.length > 1
-          ? `${sessionAddedDevices.length} devices added. Keep pairing open for more devices or stop when you are done.`
-          : '1 device added. Keep pairing open for more devices or stop when you are done.',
-      );
-      setPairingError(null);
+      dispatch({
+        type: 'patch',
+        partial: {
+          pairingNotice: sessionAddedDevices.length > 1
+            ? `${sessionAddedDevices.length} devices added. Keep pairing open for more devices or stop when you are done.`
+            : '1 device added. Keep pairing open for more devices or stop when you are done.',
+          pairingError: null,
+        },
+      });
       return;
     }
     if (status === 'needs_input') {
-      setPairingNotice(activePairingSession?.message || 'Additional pairing input is required.');
-      setPairingError(null);
-      setPairingTerminalContext(null);
+      dispatch({
+        type: 'patch',
+        partial: {
+          pairingNotice: activePairingSession?.message || 'Additional pairing input is required.',
+          pairingError: null,
+          pairingTerminalContext: null,
+        },
+      });
       return;
     }
     if (status === 'completed') {
-      setPairedDevicesSummary(sessionAddedDevices);
-      setPairingNotice('Device paired successfully.');
-      setPairingError(null);
-      setFlowStep('success');
-      setSecondsRemaining(null);
-      setActivePairing(null);
-      setPairingSetupOverride(false);
-      setPairingRecoveryDraft(null);
-      setPairingTerminalContext(null);
+      dispatch({
+        type: 'patch',
+        partial: {
+          pairedDevicesSummary: sessionAddedDevices,
+          pairingNotice: 'Device paired successfully.',
+          pairingError: null,
+          flowStep: 'success',
+          secondsRemaining: null,
+          activePairing: null,
+          pairingSetupOverride: false,
+          pairingRecoveryDraft: null,
+          pairingTerminalContext: null,
+        },
+      });
       return;
     }
     if (status === 'stopped' && allowMultipleDevices && sessionAddedDevices.length > 0) {
-      setPairedDevicesSummary(sessionAddedDevices);
-      setPairingNotice('Pairing stopped after adding the selected devices.');
-      setPairingError(null);
-      setFlowStep('success');
-      setSecondsRemaining(null);
-      setActivePairing(null);
-      setPairingSetupOverride(false);
-      setPairingRecoveryDraft(null);
-      setPairingTerminalContext(null);
+      dispatch({
+        type: 'patch',
+        partial: {
+          pairedDevicesSummary: sessionAddedDevices,
+          pairingNotice: 'Pairing stopped after adding the selected devices.',
+          pairingError: null,
+          flowStep: 'success',
+          secondsRemaining: null,
+          activePairing: null,
+          pairingSetupOverride: false,
+          pairingRecoveryDraft: null,
+          pairingTerminalContext: null,
+        },
+      });
       return;
     }
     if (['timeout', 'failed', 'stopped', 'error'].includes(status)) {
@@ -584,11 +622,6 @@ export default function AddDeviceModal({
         status === 'timeout'
           ? 'Pairing timed out. Try again after resetting your device.'
           : (activePairingSession?.message || 'Pairing stopped. You can try again.');
-      setPairingError(errorMessage);
-      setPairingNotice('');
-      setFlowStep('pairing');
-      setActivePairing(null);
-      setPairingSetupOverride(true);
       const terminalInputs = activePairingSession?.progress?.inputs && typeof activePairingSession.progress.inputs === 'object'
         ? { ...activePairingSession.progress.inputs }
         : (activePairingSession?.inputs && typeof activePairingSession.inputs === 'object'
@@ -608,16 +641,26 @@ export default function AddDeviceModal({
         terminalStatus: status,
         errorCode: terminalErrorCode,
       });
-      setPairingRecoveryDraft(recoveryPreset);
-      setPairingTerminalContext({
-        status,
-        message: activePairingSession?.message || '',
-        errorCode: terminalErrorCode,
-        requiredInputs: Array.isArray(activePairingSession?.requiredInputs)
-          ? activePairingSession.requiredInputs
-          : [],
+      dispatch({
+        type: 'patch',
+        partial: {
+          pairingError: errorMessage,
+          pairingNotice: '',
+          flowStep: 'pairing',
+          activePairing: null,
+          pairingSetupOverride: true,
+          pairingRecoveryDraft: recoveryPreset,
+          pairingTerminalContext: {
+            status,
+            message: activePairingSession?.message || '',
+            errorCode: terminalErrorCode,
+            requiredInputs: Array.isArray(activePairingSession?.requiredInputs)
+              ? activePairingSession.requiredInputs
+              : [],
+          },
+          secondsRemaining: null,
+        },
       });
-      setSecondsRemaining(null);
     }
   }, [activePairingSession, pairingProfile, sessionAddedDevices]);
 
@@ -728,7 +771,7 @@ export default function AddDeviceModal({
                             id="add-device-protocol"
                             className="auth-modal-input add-device-select"
                             value={selectedProtocol}
-                            onChange={event => setForm(prev => ({ ...prev, protocol: event.target.value }))}
+                            onChange={event => updateForm(prev => ({ ...prev, protocol: event.target.value }))}
                             required
                           >
                             {protocolOptions.map(option => (
@@ -748,7 +791,7 @@ export default function AddDeviceModal({
                             type="text"
                             placeholder=" "
                             value={form.name}
-                            onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+                            onChange={event => updateForm(prev => ({ ...prev, name: event.target.value }))}
                           />
                           <label className="auth-modal-label" htmlFor="add-device-name">Name (optional)</label>
                         </div>
@@ -760,7 +803,7 @@ export default function AddDeviceModal({
                             type="text"
                             placeholder=" "
                             value={form.type}
-                            onChange={event => setForm(prev => ({ ...prev, type: event.target.value }))}
+                            onChange={event => updateForm(prev => ({ ...prev, type: event.target.value }))}
                           />
                           <label className="auth-modal-label" htmlFor="add-device-type">Type</label>
                         </div>
@@ -774,7 +817,7 @@ export default function AddDeviceModal({
                               key={choice.key}
                               type="button"
                               className={`device-icon-choice${selectedIcon === choice.key ? ' active' : ''}`}
-                              onClick={() => setForm(prev => ({ ...prev, icon: choice.key }))}
+                              onClick={() => updateForm(prev => ({ ...prev, icon: choice.key }))}
                             >
                               <FontAwesomeIcon icon={choice.icon} />
                               <span>{choice.label}</span>
@@ -788,7 +831,7 @@ export default function AddDeviceModal({
                       <button
                         type="button"
                         className={`add-device-advanced-toggle${showAdvanced ? ' open' : ''}`}
-                        onClick={() => setShowAdvanced(prev => !prev)}
+                        onClick={() => dispatch({ type: 'set-show-advanced', value: !showAdvanced })}
                         aria-expanded={showAdvanced}
                       >
                         <div>
@@ -807,7 +850,7 @@ export default function AddDeviceModal({
                               type="text"
                               placeholder=" "
                               value={form.manufacturer}
-                              onChange={event => setForm(prev => ({ ...prev, manufacturer: event.target.value }))}
+                              onChange={event => updateForm(prev => ({ ...prev, manufacturer: event.target.value }))}
                             />
                             <label className="auth-modal-label" htmlFor="add-device-manufacturer">Manufacturer</label>
                           </div>
@@ -818,7 +861,7 @@ export default function AddDeviceModal({
                               type="text"
                               placeholder=" "
                               value={form.model}
-                              onChange={event => setForm(prev => ({ ...prev, model: event.target.value }))}
+                              onChange={event => updateForm(prev => ({ ...prev, model: event.target.value }))}
                             />
                             <label className="auth-modal-label" htmlFor="add-device-model">Model</label>
                           </div>
@@ -829,7 +872,7 @@ export default function AddDeviceModal({
                               rows={2}
                               placeholder=" "
                               value={form.description}
-                              onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
+                              onChange={event => updateForm(prev => ({ ...prev, description: event.target.value }))}
                             />
                             <label className="auth-modal-label" htmlFor="add-device-description">Description</label>
                           </div>
@@ -905,7 +948,7 @@ export default function AddDeviceModal({
                       busy={pairingStartPending}
                       ctaLabel={activeSessionForSelected?.active ? 'Pairing in progress' : pairingCtaLabel}
                       blockedReason={pairingBlockedReason}
-                      onError={setPairingError}
+                      onError={(errorMessage) => dispatch({ type: 'patch', partial: { pairingError: errorMessage } })}
                       onStart={beginGuidedPairing}
                       initialMode={pairingRecoveryDraft?.mode || ''}
                       initialValues={pairingRecoveryDraft?.values || null}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsRotate, faChartLine, faCheck, faHouse, faPen, faPlus, faStar, faTag, faTags, faTrash, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -13,8 +13,7 @@ import useErsInventory from '../../hooks/useErsInventory';
 import { useAuth } from '../../context/AuthContext';
 import DeviceTile from './DeviceTile';
 import { deleteDevice, reconfigureDevice, sendDeviceCommand, setDeviceIcon } from '../../services/deviceHubService';
-import { createErsTag, deleteErsTag, patchErsDevice, setErsDeviceTags } from '../../services/entityRegistryService';
-import { listStatePoints } from '../../services/historyService';
+import { patchErsDevice } from '../../services/entityRegistryService';
 import HistoryChart from '../History/HistoryChart';
 import {
   applyPendingStateToDevice,
@@ -22,6 +21,10 @@ import {
   createPendingCommand,
   shouldClearPendingFromDevice,
 } from './commandPending';
+import { deviceDetailUiInitialState, deviceDetailUiReducer } from './deviceDetailUiReducer';
+import { deviceDetailHistoryInitialState, deviceDetailHistoryReducer } from './deviceDetailHistoryReducer';
+import { useDeviceDetailHistoryQuery } from './hooks/useDeviceDetailHistoryQuery';
+import { useDeviceDetailMetadataActions } from './hooks/useDeviceDetailMetadataActions';
 import './DeviceDetail.css';
 
 function toRFC3339(value) {
@@ -266,40 +269,6 @@ function extractMetricSeries(points) {
     .sort((a, b) => a.key.localeCompare(b.key, undefined, { sensitivity: 'base' }));
 }
 
-function readFavoriteFieldsFromErsMeta(ersDevice) {
-  const meta = ersDevice?.meta && typeof ersDevice.meta === 'object' ? ersDevice.meta : null;
-  const mapMeta = meta?.map && typeof meta.map === 'object' ? meta.map : null;
-  if (!mapMeta) return [];
-  const rawArray = mapMeta.favorite_fields ?? mapMeta.favoriteFields ?? mapMeta.favorite_keys ?? mapMeta.favoriteKeys;
-  const rawSingle = mapMeta.favorite_field ?? mapMeta.favoriteField ?? mapMeta.favorite_key ?? mapMeta.favoriteKey;
-  const normalize = (value) => (typeof value === 'string' ? value.trim() : '');
-  const out = [];
-  if (Array.isArray(rawArray)) {
-    rawArray.forEach(v => {
-      const s = normalize(v);
-      if (s) out.push(s);
-    });
-  }
-  if (out.length === 0) {
-    const s = normalize(rawSingle);
-    if (s) out.push(s);
-  }
-  return Array.from(new Set(out));
-}
-
-function collectFavoriteFieldOptionsFromDevice(device) {
-  const state = device?.state && typeof device.state === 'object' && !Array.isArray(device.state) ? device.state : null;
-  if (!state) return [];
-  const reserved = new Set([
-    'schema', 'device_id', 'deviceid', 'external_id', 'externalid', 'protocol', 'topic', 'retained',
-    'ts', 'timestamp', 'time', 'received_at', 'receivedat',
-    'capabilities',
-  ]);
-  return Object.keys(state)
-    .filter(k => k && !reserved.has(k.toLowerCase()))
-    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-}
-
 function describeManagementLifecycle(result, action) {
   const status = `${result?.status || ''}`.trim().toLowerCase();
   const label = action?.label || 'Maintenance action';
@@ -382,8 +351,32 @@ export default function DeviceDetail() {
   const commandsReady = Boolean(connectionInfo?.commandsReady);
   const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
 
-  const [pendingCommand, setPendingCommand] = useState(null);
-  const [commandError, setCommandError] = useState('');
+  const [uiState, dispatchUi] = useReducer(deviceDetailUiReducer, deviceDetailUiInitialState);
+  const {
+    pendingCommand,
+    commandError,
+    managementActionPending,
+    managementActionState,
+    managementActionError,
+    ersMetaSaving,
+    ersMetaError,
+    groupingEditing,
+    editRoomId,
+    editTagIds,
+    newTagName,
+    favoriteSaving,
+    favoriteError,
+  } = uiState;
+  const setPendingCommand = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchUi({ type: 'update-field', key: 'pendingCommand', updater: next });
+      return;
+    }
+    dispatchUi({ type: 'set-field', key: 'pendingCommand', value: next });
+  }, []);
+  const setCommandError = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'commandError', value });
+  }, []);
   const displayDevice = useMemo(() => applyPendingStateToDevice(resolvedDevice, pendingCommand), [resolvedDevice, pendingCommand]);
   const managementSourceDevice = useMemo(() => device || resolvedDevice || null, [device, resolvedDevice]);
   const configuration = useMemo(() => (
@@ -392,20 +385,44 @@ export default function DeviceDetail() {
   const managementActions = useMemo(() => (
     Array.isArray(managementSourceDevice?.managementActions) ? managementSourceDevice.managementActions : []
   ), [managementSourceDevice]);
-  const [managementActionPending, setManagementActionPending] = useState('');
-  const [managementActionState, setManagementActionState] = useState(null);
-  const [managementActionError, setManagementActionError] = useState('');
-
-  const [ersMetaSaving, setErsMetaSaving] = useState(false);
-  const [ersMetaError, setErsMetaError] = useState('');
-  const [groupingEditing, setGroupingEditing] = useState(false);
-  const [editRoomId, setEditRoomId] = useState('');
-  const [editTagIds, setEditTagIds] = useState([]);
-  const [newTagName, setNewTagName] = useState('');
-
-  const [favoriteSaving, setFavoriteSaving] = useState(false);
-  const [favoriteError, setFavoriteError] = useState('');
-  const [favoriteFields, setFavoriteFields] = useState([]);
+  const setManagementActionPending = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'managementActionPending', value });
+  }, []);
+  const setManagementActionState = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchUi({ type: 'update-field', key: 'managementActionState', updater: next });
+      return;
+    }
+    dispatchUi({ type: 'set-field', key: 'managementActionState', value: next });
+  }, []);
+  const setManagementActionError = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'managementActionError', value });
+  }, []);
+  const setErsMetaError = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'ersMetaError', value });
+  }, []);
+  const setGroupingEditing = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'groupingEditing', value });
+  }, []);
+  const setEditRoomId = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'editRoomId', value });
+  }, []);
+  const setEditTagIds = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchUi({ type: 'update-field', key: 'editTagIds', updater: next });
+      return;
+    }
+    dispatchUi({ type: 'set-field', key: 'editTagIds', value: next });
+  }, []);
+  const setNewTagName = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'newTagName', value });
+  }, []);
+  const setFavoriteSaving = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'favoriteSaving', value });
+  }, []);
+  const setFavoriteError = useCallback((value) => {
+    dispatchUi({ type: 'set-field', key: 'favoriteError', value });
+  }, []);
 
   const currentRoomId = useMemo(() => (
     (ersDevice?.room?.id || ersDevice?.room_id || '').toString()
@@ -417,29 +434,6 @@ export default function DeviceDetail() {
       .filter(Boolean)
   ), [ersDevice?.tags]);
 
-  const currentRoomName = useMemo(() => {
-    const rid = currentRoomId;
-    if (!rid) return 'None';
-    const room = (Array.isArray(ersRooms) ? ersRooms : []).find(r => (r?.id || '').toString() === rid);
-    return room?.name || ersDevice?.room?.name || 'None';
-  }, [currentRoomId, ersRooms, ersDevice?.room?.name]);
-
-  const currentTags = useMemo(() => {
-    const ids = new Set(currentTagIds);
-    return (Array.isArray(ersTags) ? ersTags : [])
-      .filter(t => ids.has((t?.id || '').toString()))
-      .map(t => ({ id: (t?.id || '').toString(), name: t?.name || '' }))
-      .filter(t => t.id && t.name);
-  }, [currentTagIds, ersTags]);
-
-  const tagOptions = useMemo(() => (
-    (Array.isArray(ersTags) ? ersTags : [])
-      .slice()
-      .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }))
-      .map(t => ({ value: (t?.id || '').toString(), label: t?.name || '' }))
-      .filter(t => t.value && t.label)
-  ), [ersTags]);
-
   useEffect(() => {
     // Reset edit mode when switching devices.
     setGroupingEditing(false);
@@ -448,7 +442,7 @@ export default function DeviceDetail() {
     setNewTagName('');
     setErsMetaError('');
     setFavoriteError('');
-  }, [ersDevice?.ersId]);
+  }, [ersDevice?.ersId, setEditRoomId, setEditTagIds, setErsMetaError, setFavoriteError, setGroupingEditing, setNewTagName]);
 
   useEffect(() => {
     setPendingCommand(prev => {
@@ -458,13 +452,13 @@ export default function DeviceDetail() {
       }
       return null;
     });
-  }, [deviceId]);
+  }, [deviceId, setPendingCommand]);
 
   useEffect(() => {
     setManagementActionPending('');
     setManagementActionState(null);
     setManagementActionError('');
-  }, [deviceId]);
+  }, [deviceId, setManagementActionError, setManagementActionPending, setManagementActionState]);
 
   useEffect(() => {
     const current = managementSourceDevice?.lastCommandResult;
@@ -491,48 +485,13 @@ export default function DeviceDetail() {
     if (['applied', 'failed', 'rejected', 'timeout'].includes(`${current.status || ''}`.trim().toLowerCase())) {
       setManagementActionPending('');
     }
-  }, [managementActionState, managementSourceDevice?.lastCommandResult]);
-
-  useEffect(() => {
-    setFavoriteFields(readFavoriteFieldsFromErsMeta(ersDevice));
-  }, [ersDevice]);
-
-  const favoriteFieldOptions = useMemo(() => (
-    collectFavoriteFieldOptionsFromDevice(device)
-  ), [device]);
-
-  const saveFavoriteFields = useCallback(async (nextValues) => {
-    if (!accessToken) {
-      setFavoriteError('Authentication required');
-      return;
-    }
-    if (!ersDevice?.ersId) {
-      setFavoriteError('This device is not registered in ERS yet.');
-      return;
-    }
-    const list = Array.isArray(nextValues) ? nextValues : [];
-    const normalized = list.map(v => (typeof v === 'string' ? v.trim() : '')).filter(Boolean);
-    const deduped = Array.from(new Set(normalized));
-    setFavoriteSaving(true);
-    setFavoriteError('');
-    try {
-      const res = await patchErsDevice(ersDevice.ersId, {
-        meta: { map: { favorite_fields: deduped.length ? deduped : null } },
-      }, accessToken);
-      if (!res.success) throw new Error(res.error || 'Unable to save favorite field');
-      await refreshErs();
-    } catch (err) {
-      setFavoriteError(err?.message || 'Unable to save favorite field');
-    } finally {
-      setFavoriteSaving(false);
-    }
-  }, [accessToken, ersDevice?.ersId, refreshErs]);
+  }, [managementActionState, managementSourceDevice?.lastCommandResult, setManagementActionPending, setManagementActionState]);
 
   useEffect(() => {
     if (!groupingEditing) return;
     setEditRoomId(currentRoomId);
     setEditTagIds(currentTagIds);
-  }, [currentRoomId, currentTagIds, groupingEditing]);
+  }, [currentRoomId, currentTagIds, groupingEditing, setEditRoomId, setEditTagIds]);
 
   const handleCommand = useCallback(async (dev, payload) => {
     if (!dev?.id) return;
@@ -573,7 +532,7 @@ export default function DeviceDetail() {
       });
       throw err;
     }
-  }, [accessToken, commandLockReason, commandsReady]);
+  }, [accessToken, commandLockReason, commandsReady, setCommandError, setPendingCommand]);
 
   useEffect(() => {
     if (!pendingCommand || !resolvedDevice) return;
@@ -586,7 +545,7 @@ export default function DeviceDetail() {
       clearPendingTimeout(prev);
       return null;
     });
-  }, [resolvedDevice, pendingCommand]);
+  }, [resolvedDevice, pendingCommand, setPendingCommand]);
 
   const handleRename = useCallback(async (dev, name) => {
     const ersId = dev?.ersId || ersDevice?.ersId;
@@ -664,102 +623,99 @@ export default function DeviceDetail() {
       setManagementActionError(err?.message || 'Unable to queue maintenance action');
       setManagementActionPending('');
     }
-  }, [accessToken, managementSourceDevice]);
+  }, [accessToken, managementSourceDevice, setManagementActionError, setManagementActionPending, setManagementActionState]);
 
-  const saveGrouping = useCallback(async () => {
-    if (!accessToken) {
-      setErsMetaError('Authentication required');
+  const [historyState, dispatchHistory] = useReducer(deviceDetailHistoryReducer, deviceDetailHistoryInitialState);
+  const {
+    rangePreset,
+    fromLocal,
+    toLocal,
+    limitEnabled,
+    limit,
+    order,
+    historyLoading,
+    historyError,
+    historyPoints,
+    overlay,
+    overlayPhase,
+  } = historyState;
+  const setRangePreset = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'rangePreset', updater: next });
       return;
     }
-    if (!ersDevice?.ersId) return;
-    setErsMetaSaving(true);
-    setErsMetaError('');
-    try {
-      const nextRoom = editRoomId ? editRoomId : null;
-      const roomChanged = (currentRoomId || '') !== (editRoomId || '');
-      const nextTags = Array.isArray(editTagIds) ? editTagIds : [];
-      const tagsChanged = JSON.stringify([...currentTagIds].sort()) !== JSON.stringify([...nextTags].map(String).sort());
-
-      if (roomChanged) {
-        const res = await patchErsDevice(ersDevice.ersId, { room_id: nextRoom }, accessToken);
-        if (!res.success) throw new Error(res.error || 'Unable to update room');
-      }
-
-      if (tagsChanged) {
-        const res = await setErsDeviceTags(ersDevice.ersId, nextTags, accessToken);
-        if (!res.success) throw new Error(res.error || 'Unable to update tags');
-      }
-
-      await refreshErs();
-      setGroupingEditing(false);
-      setNewTagName('');
-    } catch (err) {
-      setErsMetaError(err?.message || 'Unable to update grouping');
-    } finally {
-      setErsMetaSaving(false);
-    }
-  }, [accessToken, currentRoomId, currentTagIds, editRoomId, editTagIds, ersDevice?.ersId, refreshErs]);
-
-  const handleCreateTag = useCallback(async () => {
-    const name = typeof newTagName === 'string' ? newTagName.trim() : '';
-    if (!name) return;
-    if (!accessToken) {
-      setErsMetaError('Authentication required');
+    dispatchHistory({ type: 'set-field', key: 'rangePreset', value: next });
+  }, []);
+  const setFromLocal = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'fromLocal', updater: next });
       return;
     }
-    setErsMetaSaving(true);
-    setErsMetaError('');
-    try {
-      const res = await createErsTag({ name }, accessToken);
-      if (!res.success) throw new Error(res.error || 'Unable to create tag');
-      const createdId = (res.data?.id || '').toString();
-      await refreshErs();
-      if (createdId) {
-        setEditTagIds(prev => (prev.includes(createdId) ? prev : [...prev, createdId]));
-      }
-      setNewTagName('');
-    } catch (err) {
-      setErsMetaError(err?.message || 'Unable to create tag');
-    } finally {
-      setErsMetaSaving(false);
-    }
-  }, [accessToken, newTagName, refreshErs]);
-
-  const handleDeleteTag = useCallback(async (tagId, tagName) => {
-    const id = typeof tagId === 'string' ? tagId.trim() : '';
-    if (!id) return;
-    if (!accessToken) {
-      setErsMetaError('Authentication required');
+    dispatchHistory({ type: 'set-field', key: 'fromLocal', value: next });
+  }, []);
+  const setToLocal = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'toLocal', updater: next });
       return;
     }
-    const label = typeof tagName === 'string' && tagName.trim() ? tagName.trim() : 'this tag';
-    const ok = window.confirm(`Delete tag "${label}"? This removes it from all devices.`);
-    if (!ok) return;
-
-    setErsMetaSaving(true);
-    setErsMetaError('');
-    try {
-      const res = await deleteErsTag(id, accessToken);
-      if (!res.success) throw new Error(res.error || 'Unable to delete tag');
-      setEditTagIds(prev => (Array.isArray(prev) ? prev.filter(x => x !== id) : []));
-      await refreshErs();
-    } catch (err) {
-      setErsMetaError(err?.message || 'Unable to delete tag');
-    } finally {
-      setErsMetaSaving(false);
+    dispatchHistory({ type: 'set-field', key: 'toLocal', value: next });
+  }, []);
+  const setLimitEnabled = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'limitEnabled', updater: next });
+      return;
     }
-  }, [accessToken, refreshErs]);
-
-  const [rangePreset, setRangePreset] = useState('24h');
-  const [fromLocal, setFromLocal] = useState('');
-  const [toLocal, setToLocal] = useState('');
-  const [limitEnabled, setLimitEnabled] = useState(false);
-  const [limit, setLimit] = useState(300);
-  const [order, setOrder] = useState('desc');
-
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState(null);
-  const [historyPoints, setHistoryPoints] = useState([]);
+    dispatchHistory({ type: 'set-field', key: 'limitEnabled', value: next });
+  }, []);
+  const setLimit = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'limit', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'limit', value: next });
+  }, []);
+  const setOrder = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'order', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'order', value: next });
+  }, []);
+  const setHistoryLoading = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'historyLoading', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'historyLoading', value: next });
+  }, []);
+  const setHistoryError = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'historyError', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'historyError', value: next });
+  }, []);
+  const setHistoryPoints = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'historyPoints', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'historyPoints', value: next });
+  }, []);
+  const setOverlay = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'overlay', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'overlay', value: next });
+  }, []);
+  const setOverlayPhase = useCallback((next) => {
+    if (typeof next === 'function') {
+      dispatchHistory({ type: 'update-field', key: 'overlayPhase', updater: next });
+      return;
+    }
+    dispatchHistory({ type: 'set-field', key: 'overlayPhase', value: next });
+  }, []);
 
   useEffect(() => {
     // Default to "last 24 hours", and keep it visible.
@@ -768,7 +724,7 @@ export default function DeviceDetail() {
     setFromLocal(prev => prev || toDatetimeLocalValue(from));
     setToLocal(prev => prev || toDatetimeLocalValue(now));
     setRangePreset(prev => prev || '24h');
-  }, []);
+  }, [setFromLocal, setRangePreset, setToLocal]);
 
   useEffect(() => {
     if (rangePreset === 'custom') return;
@@ -780,74 +736,54 @@ export default function DeviceDetail() {
     const from = new Date(now.getTime() - ms);
     setFromLocal(toDatetimeLocalValue(from));
     setToLocal(toDatetimeLocalValue(now));
-  }, [rangePreset]);
+  }, [rangePreset, setFromLocal, setToLocal]);
 
-  const fetchHistory = useCallback(async () => {
-    if (!deviceId) return;
-    if (!accessToken) {
-      setHistoryError('Authentication required');
-      return;
-    }
+  const { canQueryHistory, fetchHistory } = useDeviceDetailHistoryQuery({
+    deviceId,
+    accessToken,
+    isResidentOrAdmin,
+    fromLocal,
+    toLocal,
+    limitEnabled,
+    limit,
+    order,
+    toRFC3339,
+    setHistoryLoading,
+    setHistoryError,
+    setHistoryPoints,
+  });
 
-    setHistoryLoading(true);
-    setHistoryError(null);
-    try {
-      const res = await listStatePoints(deviceId, {
-        from: toRFC3339(fromLocal),
-        to: toRFC3339(toLocal),
-        limit: limitEnabled ? limit : undefined,
-        order,
-      }, accessToken);
-
-      if (!res.success) {
-        throw new Error(res.error || 'Unable to load history');
-      }
-
-      const points = Array.isArray(res.data?.points) ? res.data.points : [];
-      const normalized = points.map(p => {
-        let payload = p?.payload;
-        if (typeof payload === 'string') {
-          try {
-            payload = JSON.parse(payload);
-          } catch {
-            payload = {};
-          }
-        }
-        return {
-          ts: p?.ts,
-          payload: payload && typeof payload === 'object' ? payload : {},
-          retained: Boolean(p?.retained),
-          topic: p?.topic || '',
-        };
-      });
-      setHistoryPoints(normalized);
-    } catch (err) {
-      setHistoryError(err?.message || 'Unable to load history');
-      setHistoryPoints([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [accessToken, deviceId, fromLocal, toLocal, limitEnabled, limit, order]);
-
-  const autoFetchedRef = useRef(false);
-
-  const canQueryHistory = Boolean(isResidentOrAdmin && accessToken && deviceId);
-
-  useEffect(() => {
-    // Switching devices should re-run the default history query.
-    autoFetchedRef.current = false;
-    setHistoryPoints([]);
-    setHistoryError(null);
-  }, [deviceId]);
-
-  useEffect(() => {
-    if (!canQueryHistory) return;
-    if (autoFetchedRef.current) return;
-    if (!fromLocal || !toLocal) return;
-    // Auto-run once so the page doesn't look empty with the default "Last 24 hours" range.
-    autoFetchedRef.current = true;
-    fetchHistory();
-  }, [canQueryHistory, fetchHistory, fromLocal, toLocal]);
+  const {
+    currentRoomName,
+    currentTags,
+    favoriteFieldOptions,
+    favoriteFields: metadataFavoriteFields,
+    handleCreateTag,
+    handleDeleteTag,
+    beginGroupingEdit,
+    cancelGroupingEdit,
+    saveGrouping,
+    saveFavoriteFields,
+    tagOptions,
+  } = useDeviceDetailMetadataActions({
+    accessToken,
+    device,
+    ersDevice,
+    ersRooms,
+    ersTags,
+    currentRoomId,
+    currentTagIds,
+    editRoomId,
+    editTagIds,
+    newTagName,
+    favoriteSaving,
+    setFavoriteSaving,
+    setFavoriteError,
+    setGroupingEditing,
+    setNewTagName,
+    setEditTagIds,
+    refreshErs,
+  });
 
   const metrics = useMemo(() => {
     const raw = extractMetricSeries(historyPoints);
@@ -885,8 +821,6 @@ export default function DeviceDetail() {
 
   const originRefs = useRef(new Map());
   const overlayCardRef = useRef(null);
-  const [overlay, setOverlay] = useState(null); // { key, fromRect }
-  const [overlayPhase, setOverlayPhase] = useState(''); // opening | open | closing
   const prefersReducedMotion = useMemo(() => {
     try {
       return Boolean(window?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
@@ -916,12 +850,12 @@ export default function DeviceDetail() {
     const fromRect = node.getBoundingClientRect();
     setOverlay({ key, fromRect });
     setOverlayPhase('opening');
-  }, [overlay]);
+  }, [overlay, setOverlay, setOverlayPhase]);
 
   const closeOverlay = useCallback(() => {
     if (!overlay) return;
     setOverlayPhase('closing');
-  }, [overlay]);
+  }, [overlay, setOverlayPhase]);
 
   useLayoutEffect(() => {
     if (!overlay || !overlayCardRef.current) return;
@@ -981,7 +915,7 @@ export default function DeviceDetail() {
       };
       return () => anim.cancel();
     }
-  }, [overlay, overlayPhase, prefersReducedMotion]);
+  }, [overlay, overlayPhase, prefersReducedMotion, setOverlay, setOverlayPhase]);
 
   // Close on Escape and manage body scroll & focus when overlay is open
   useEffect(() => {
@@ -1152,11 +1086,7 @@ export default function DeviceDetail() {
                   <button
                     type="button"
                     className="device-title-action device-title-cancel"
-                    onClick={() => {
-                      setGroupingEditing(false);
-                      setErsMetaError('');
-                      setNewTagName('');
-                    }}
+                    onClick={cancelGroupingEdit}
                     disabled={ersMetaSaving}
                     title="Cancel"
                   >
@@ -1177,11 +1107,7 @@ export default function DeviceDetail() {
                   <button
                     type="button"
                     className="device-title-action device-title-edit"
-                    onClick={() => {
-                      if (!ersDevice) return;
-                      setGroupingEditing(true);
-                      setErsMetaError('');
-                    }}
+                    onClick={beginGroupingEdit}
                     disabled={!ersDevice || ersMetaSaving}
                     title="Edit grouping"
                   >
@@ -1325,10 +1251,9 @@ export default function DeviceDetail() {
                   <ChipMultiSelect
                     ariaLabel="Favorite fields"
                     options={favoriteFieldOptions}
-                    value={Array.isArray(favoriteFields) ? favoriteFields : []}
+                    value={Array.isArray(metadataFavoriteFields) ? metadataFavoriteFields : []}
                     disabled={favoriteSaving}
                     onChange={(selected) => {
-                      setFavoriteFields(selected);
                       void saveFavoriteFields(selected);
                     }}
                   />

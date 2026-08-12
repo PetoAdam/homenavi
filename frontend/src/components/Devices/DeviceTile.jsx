@@ -1009,7 +1009,6 @@ export default function DeviceTile({
   useEffect(() => {
     setColorDrafts({});
     setIsEditingName(false);
-    setNameDraft(device.displayName || '');
     setRenamePending(false);
     setRenameError(null);
     setShowAllControls(false);
@@ -1021,7 +1020,6 @@ export default function DeviceTile({
     setDeleteModalOpen(false);
     setForceDelete(false);
     setActionMenuOpen(false);
-    previousDisplayNameRef.current = device.displayName || '';
   }, [device.id]);
 
   useEffect(() => {
@@ -1030,7 +1028,7 @@ export default function DeviceTile({
       setNameDraft(nextDisplayName);
     }
     previousDisplayNameRef.current = nextDisplayName;
-  }, [device.displayName, isEditingName]);
+  }, [device.displayName, isEditingName, setNameDraft]);
 
   useEffect(() => {
     if (!isEditingName) {

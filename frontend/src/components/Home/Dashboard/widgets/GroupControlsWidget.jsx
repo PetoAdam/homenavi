@@ -155,6 +155,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
   }, []);
 
   const resolvedGroup = useMemo(() => {
+    const graceTick = graceVersion;
     if (!group) return null;
     const nextValues = { ...(group.visibleValues || {}) };
     const nextInputs = group.visibleInputs.map((input) => {
@@ -175,6 +176,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
       visibleInputs: nextInputs,
       visibleValues: nextValues,
       pending: (pendingGroupCounts[group.id] || 0) > 0,
+      graceTick,
     };
   }, [buildGraceKey, graceVersion, group, pendingGroupCounts]);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useReducer } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { 
   requestEmailVerify, 
@@ -13,45 +13,33 @@ import {
 import './UserSettings.css';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
 import BaseModal from '../common/BaseModal/BaseModal';
+import { userSettingsInitialState, userSettingsReducer } from './userSettingsReducer';
 
 export default function UserSettings({ onClose }) {
   const { user, accessToken, handleLogout, refreshUser } = useAuth();
-  const [emailVerified, setEmailVerified] = useState(user?.email_confirmed || false);
-  const [twoFAEnabled, setTwoFAEnabled] = useState(user?.two_factor_enabled || false);
-  const [status, setStatus] = useState('');
-  const [emailCode, setEmailCode] = useState('');
-  const [twoFACode, setTwoFACode] = useState('');
-  const [showEmailCodeInput, setShowEmailCodeInput] = useState(false);
-  const [show2FACodeInput, setShow2FACodeInput] = useState(false);
-  
-  // Profile editing states
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [profileForm, setProfileForm] = useState({
-    firstName: user?.first_name || '',
-    lastName: user?.last_name || ''
-  });
-  
-  // Password reset states
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
+  const [state, dispatch] = useReducer(userSettingsReducer, user, userSettingsInitialState);
+  const {
+    emailVerified,
+    twoFAEnabled,
+    status,
+    emailCode,
+    twoFACode,
+    showEmailCodeInput,
+    show2FACodeInput,
+    editingProfile,
+    profileForm,
+    showPasswordReset,
+    passwordForm,
+    showProfilePictureModal,
+    profilePictureFile,
+  } = state;
 
-  // Profile picture states
-  const [showProfilePictureModal, setShowProfilePictureModal] = useState(false);
-  const [profilePictureFile, setProfilePictureFile] = useState(null);
+  const setStateField = (key, value) => dispatch({ type: 'set-field', key, value });
 
   // Sync local state with user data from AuthContext
   useEffect(() => {
     if (user) {
-      setEmailVerified(user.email_confirmed || false);
-      setTwoFAEnabled(user.two_factor_enabled || false);
-      setProfileForm({
-        firstName: user.first_name || '',
-        lastName: user.last_name || ''
-      });
+      dispatch({ type: 'reset-from-user', user });
     }
   }, [user]);
 
@@ -62,133 +50,133 @@ export default function UserSettings({ onClose }) {
 
   const handleEmailVerify = async () => {
     if (!user?.id) return;
-    setStatus('Requesting email verification...');
+    setStateField('status', 'Requesting email verification...');
     const resp = await requestEmailVerify(user.id, accessToken);
     if (resp.success) {
-      setStatus('Check your email for the code.');
-      setShowEmailCodeInput(true);
+      setStateField('status', 'Check your email for the code.');
+      setStateField('showEmailCodeInput', true);
     } else {
-      setStatus(resp.error || 'Failed to request email verification');
+      setStateField('status', resp.error || 'Failed to request email verification');
     }
   };
 
   const handleEmailConfirm = async () => {
     if (!user?.id || !emailCode.trim()) return;
-    setStatus('Confirming email...');
+    setStateField('status', 'Confirming email...');
     const resp = await confirmEmailVerify(user.id, emailCode.trim(), accessToken);
     if (resp.success) {
-      setStatus('✅ Email verified successfully!');
-      setEmailCode('');
-      setShowEmailCodeInput(false);
+      setStateField('status', '✅ Email verified successfully!');
+      setStateField('emailCode', '');
+      setStateField('showEmailCodeInput', false);
       // Refresh user data from backend to get updated email_confirmed status
       await refreshUser();
     } else {
-      setStatus('❌ ' + (resp.error || 'Email verification failed'));
+      setStateField('status', '❌ ' + (resp.error || 'Email verification failed'));
     }
   };
 
   const handle2FASetup = async () => {
     if (!user?.id) return;
-    setStatus('Setting up 2FA...');
+    setStateField('status', 'Setting up 2FA...');
     const resp = await request2FAEmail(user.id, accessToken);
     if (resp.success) {
-      setStatus('Check your email for the 2FA code.');
-      setShow2FACodeInput(true);
+      setStateField('status', 'Check your email for the 2FA code.');
+      setStateField('show2FACodeInput', true);
     } else {
-      setStatus('❌ ' + (resp.error || 'Failed to setup 2FA'));
+      setStateField('status', '❌ ' + (resp.error || 'Failed to setup 2FA'));
     }
   };
 
   const handle2FAVerify = async () => {
     if (!user?.id || !twoFACode.trim()) return;
-    setStatus('Verifying 2FA...');
+    setStateField('status', 'Verifying 2FA...');
     const resp = await verify2FAEmail(user.id, twoFACode.trim(), accessToken);
     if (resp.success) {
-      setStatus('✅ 2FA enabled successfully!');
-      setTwoFACode('');
-      setShow2FACodeInput(false);
+      setStateField('status', '✅ 2FA enabled successfully!');
+      setStateField('twoFACode', '');
+      setStateField('show2FACodeInput', false);
       // Refresh user data from backend to get updated two_factor_enabled status
       await refreshUser();
     } else {
-      setStatus('❌ ' + (resp.error || '2FA verification failed'));
+      setStateField('status', '❌ ' + (resp.error || '2FA verification failed'));
     }
   };
 
   const handleProfileSave = async () => {
     if (!user?.id || !profileForm.firstName.trim() || !profileForm.lastName.trim()) {
-      setStatus('❌ First name and last name are required');
+      setStateField('status', '❌ First name and last name are required');
       return;
     }
-    setStatus('Updating profile...');
+    setStateField('status', 'Updating profile...');
     const resp = await patchUserService(user.id, {
       first_name: profileForm.firstName.trim(),
       last_name: profileForm.lastName.trim()
     }, accessToken);
     if (resp.success) {
-      setStatus('✅ Profile updated successfully!');
-      setEditingProfile(false);
+      setStateField('status', '✅ Profile updated successfully!');
+      setStateField('editingProfile', false);
       await refreshUser();
     } else {
-      setStatus('❌ ' + (resp.error || 'Profile update failed'));
+      setStateField('status', '❌ ' + (resp.error || 'Profile update failed'));
     }
   };
 
   const handlePasswordReset = async () => {
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      setStatus('❌ All password fields are required');
+      setStateField('status', '❌ All password fields are required');
       return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setStatus('❌ New passwords do not match');
+      setStateField('status', '❌ New passwords do not match');
       return;
     }
     if (passwordForm.currentPassword === passwordForm.newPassword) {
-      setStatus('❌ New password must be different from current password');
+      setStateField('status', '❌ New password must be different from current password');
       return;
     }
     if (passwordForm.newPassword.length < 8) {
-      setStatus('❌ New password must be at least 8 characters');
+      setStateField('status', '❌ New password must be at least 8 characters');
       return;
     }
-    setStatus('Updating password...');
+    setStateField('status', 'Updating password...');
     console.log('Attempting password change...');
     const resp = await changePassword(passwordForm.currentPassword, passwordForm.newPassword, accessToken);
     console.log('Password change response:', resp);
     if (resp.success) {
-      setStatus('✅ Password updated successfully!');
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setShowPasswordReset(false);
+      setStateField('status', '✅ Password updated successfully!');
+      dispatch({ type: 'reset-password-form' });
+      setStateField('showPasswordReset', false);
     } else {
-      setStatus('❌ ' + (resp.error || 'Password update failed'));
+      setStateField('status', '❌ ' + (resp.error || 'Password update failed'));
     }
   };
 
   const handleGenerateAvatar = async () => {
-    setStatus('Generating avatar...');
+    setStateField('status', 'Generating avatar...');
     const resp = await generateAvatar(accessToken);
     if (resp.success) {
-      setStatus('✅ Avatar generated successfully!');
+      setStateField('status', '✅ Avatar generated successfully!');
       await refreshUser();
-      setShowProfilePictureModal(false);
+      setStateField('showProfilePictureModal', false);
     } else {
-      setStatus('❌ ' + (resp.error || 'Avatar generation failed'));
+      setStateField('status', '❌ ' + (resp.error || 'Avatar generation failed'));
     }
   };
 
   const handleFileUpload = async () => {
     if (!profilePictureFile) {
-      setStatus('❌ Please select a file first');
+      setStateField('status', '❌ Please select a file first');
       return;
     }
-    setStatus('Uploading profile picture...');
+    setStateField('status', 'Uploading profile picture...');
     const resp = await uploadProfilePicture(profilePictureFile, accessToken);
     if (resp.success) {
-      setStatus('✅ Profile picture updated successfully!');
+      setStateField('status', '✅ Profile picture updated successfully!');
       await refreshUser();
-      setShowProfilePictureModal(false);
-      setProfilePictureFile(null);
+      setStateField('showProfilePictureModal', false);
+      setStateField('profilePictureFile', null);
     } else {
-      setStatus('❌ ' + (resp.error || 'Upload failed'));
+      setStateField('status', '❌ ' + (resp.error || 'Upload failed'));
     }
   };
 
@@ -197,16 +185,16 @@ export default function UserSettings({ onClose }) {
     if (file) {
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        setStatus('❌ Please select an image file');
+        setStateField('status', '❌ Please select an image file');
         return;
       }
       // Validate file size (5MB max)
       if (file.size > 5 * 1024 * 1024) {
-        setStatus('❌ File too large (max 5MB)');
+        setStateField('status', '❌ File too large (max 5MB)');
         return;
       }
-      setProfilePictureFile(file);
-      setStatus('');
+      setStateField('profilePictureFile', file);
+      setStateField('status', '');
     }
   };
 
@@ -235,7 +223,7 @@ export default function UserSettings({ onClose }) {
                 className="profile-avatar-container"
                 onMouseEnter={() => {}}
                 onMouseLeave={() => {}}
-                onClick={() => setShowProfilePictureModal(true)}
+                onClick={() => setStateField('showProfilePictureModal', true)}
               >
                 <div className="profile-avatar">
                   <UserAvatar user={user} size={64} />
@@ -268,7 +256,7 @@ export default function UserSettings({ onClose }) {
                       type="text"
                       placeholder=" "
                       value={profileForm.firstName}
-                      onChange={e => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
+                      onChange={e => dispatch({ type: 'update-profile-form', value: { firstName: e.target.value } })}
                       id="edit-firstname"
                     />
                     <label htmlFor="edit-firstname">First Name</label>
@@ -278,7 +266,7 @@ export default function UserSettings({ onClose }) {
                       type="text"
                       placeholder=" "
                       value={profileForm.lastName}
-                      onChange={e => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
+                      onChange={e => dispatch({ type: 'update-profile-form', value: { lastName: e.target.value } })}
                       id="edit-lastname"
                     />
                     <label htmlFor="edit-lastname">Last Name</label>
@@ -287,13 +275,13 @@ export default function UserSettings({ onClose }) {
                 <div className="button-group">
                   <button onClick={handleProfileSave}>Save Changes</button>
                   <button onClick={() => {
-                    setEditingProfile(false);
-                    setProfileForm({ firstName: user?.first_name || '', lastName: user?.last_name || '' });
+                    setStateField('editingProfile', false);
+                    dispatch({ type: 'reset-from-user', user });
                   }} className="secondary">Cancel</button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => setEditingProfile(true)} className="secondary">
+              <button onClick={() => setStateField('editingProfile', true)} className="secondary">
                 Edit Profile
               </button>
             )}
@@ -333,7 +321,7 @@ export default function UserSettings({ onClose }) {
                   type="text" 
                   placeholder="Enter verification code" 
                   value={emailCode}
-                  onChange={e => setEmailCode(e.target.value)}
+                  onChange={e => setStateField('emailCode', e.target.value)}
                 />
                 <button onClick={handleEmailConfirm} disabled={!emailCode.trim()}>
                   Confirm Email
@@ -368,7 +356,7 @@ export default function UserSettings({ onClose }) {
                   type="text" 
                   placeholder="Enter 2FA code" 
                   value={twoFACode}
-                  onChange={e => setTwoFACode(e.target.value)}
+                  onChange={e => setStateField('twoFACode', e.target.value)}
                 />
                 <button onClick={handle2FAVerify} disabled={!twoFACode.trim()}>
                   Enable 2FA
@@ -387,7 +375,7 @@ export default function UserSettings({ onClose }) {
             
             {/* Change Password */}
             <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(60,70,90,0.3)' }}>
-              <button onClick={() => setShowPasswordReset(!showPasswordReset)} className="secondary">
+              <button onClick={() => setStateField('showPasswordReset', !showPasswordReset)} className="secondary">
                 {showPasswordReset ? 'Cancel Password Change' : 'Change Password'}
               </button>
               
@@ -398,7 +386,7 @@ export default function UserSettings({ onClose }) {
                       type="password"
                       placeholder=" "
                       value={passwordForm.currentPassword}
-                      onChange={e => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      onChange={e => dispatch({ type: 'update-password-form', value: { currentPassword: e.target.value } })}
                       id="current-password"
                     />
                     <label htmlFor="current-password">Current Password</label>
@@ -408,7 +396,7 @@ export default function UserSettings({ onClose }) {
                       type="password"
                       placeholder=" "
                       value={passwordForm.newPassword}
-                      onChange={e => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      onChange={e => dispatch({ type: 'update-password-form', value: { newPassword: e.target.value } })}
                       id="new-password"
                     />
                     <label htmlFor="new-password">New Password</label>
@@ -418,7 +406,7 @@ export default function UserSettings({ onClose }) {
                       type="password"
                       placeholder=" "
                       value={passwordForm.confirmPassword}
-                      onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      onChange={e => dispatch({ type: 'update-password-form', value: { confirmPassword: e.target.value } })}
                       id="confirm-password"
                     />
                     <label htmlFor="confirm-password">Confirm New Password</label>
@@ -493,9 +481,9 @@ export default function UserSettings({ onClose }) {
               
               <button 
                 onClick={() => {
-                  setShowProfilePictureModal(false);
-                  setProfilePictureFile(null);
-                  setStatus('');
+                  setStateField('showProfilePictureModal', false);
+                  setStateField('profilePictureFile', null);
+                  setStateField('status', '');
                 }} 
                 className="secondary"
               >

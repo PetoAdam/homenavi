@@ -292,7 +292,7 @@ export default function About() {
     { label: 'Gateway', value: gatewaySummary.text, meta: gatewaySummary.meta, icon: faHeartPulse, tone: gatewaySummary.tone },
     { label: 'Downstream', value: downstreamSummary.text, meta: downstreamSummary.meta, icon: faServer, tone: downstreamSummary.tone },
     { label: 'Session', value: user?.role || 'Unknown', meta: user?.user_name || user?.email || 'Unknown user', icon: faUser },
-  ]), [BUILD.releaseTag, BUILD.version, downstreamSummary.meta, downstreamSummary.text, downstreamSummary.tone, gatewaySummary.meta, gatewaySummary.text, gatewaySummary.tone, user?.email, user?.role, user?.user_name]);
+  ]), [downstreamSummary.meta, downstreamSummary.text, downstreamSummary.tone, gatewaySummary.meta, gatewaySummary.text, gatewaySummary.tone, user?.email, user?.role, user?.user_name]);
 
   const links = useMemo(() => ([
     externalLink('GitHub repository', 'https://github.com/PetoAdam/homenavi', 'Source, issues, and release history.'),

@@ -47,7 +47,6 @@ export default function InstalledIntegrationsSection({
   uninstalling,
   updating,
   installStatus,
-  setupCapabilities,
   onOpenSetup,
   resolveFaIcon,
 }) {

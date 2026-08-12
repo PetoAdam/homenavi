@@ -121,7 +121,7 @@ export default function MultiDeviceWidget({ settings = {}, editMode, onSettings,
   const pendingRef = useRef({});
   const graceRef = useRef(new Map());
   const graceTimersRef = useRef(new Map());
-  const [graceVersion, setGraceVersion] = useState(0);
+  const [, setGraceVersion] = useState(0);
 
   useEffect(() => {
     pendingRef.current = pendingMap;
@@ -150,16 +150,22 @@ export default function MultiDeviceWidget({ settings = {}, editMode, onSettings,
   });
 
   const loading = hdpLoading || ersLoading;
-  const selectedIds = Array.isArray(settings.device_ids) ? settings.device_ids : [];
-  const selectedGroupIds = Array.isArray(settings.group_ids) ? settings.group_ids : [];
+  const selectedIds = useMemo(
+    () => (Array.isArray(settings.device_ids) ? settings.device_ids : []),
+    [settings.device_ids],
+  );
+  const selectedGroupIds = useMemo(
+    () => (Array.isArray(settings.group_ids) ? settings.group_ids : []),
+    [settings.group_ids],
+  );
 
   const items = useMemo(() => resolveQuickControlItems({
-    selectedIds,
-    selectedGroupIds,
-    ersDevices,
-    ersGroups,
-    realtimeDevices,
-  }), [selectedGroupIds, selectedIds, ersDevices, ersGroups, realtimeDevices]);
+      selectedIds,
+      selectedGroupIds,
+      ersDevices,
+      ersGroups,
+      realtimeDevices,
+    }), [selectedGroupIds, selectedIds, ersDevices, ersGroups, realtimeDevices]);
 
   const buildGraceKey = useCallback((groupId, inputKey) => `${groupId}::${inputKey}`, []);
 

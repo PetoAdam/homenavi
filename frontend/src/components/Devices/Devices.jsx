@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBolt, faGaugeHigh, faSatelliteDish, faSignal, faPlus, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
@@ -16,12 +16,8 @@ import { useAuth } from '../../context/AuthContext';
 import {
   sendDeviceCommand as sendDeviceCommandApi,
   createDevice as createDeviceApi,
-  listIntegrations as listIntegrationsApi,
   setDeviceIcon as setDeviceIconApi,
   deleteDevice as deleteDeviceApi,
-  startPairing as startPairingApi,
-  stopPairing as stopPairingApi,
-  listPairings as listPairingsApi,
 } from '../../services/deviceHubService';
 import {
   createErsDevice as createErsDeviceApi,
@@ -30,18 +26,16 @@ import {
   setErsDeviceHdpBindings as setErsDeviceHdpBindingsApi,
 } from '../../services/entityRegistryService';
 import AddDeviceModal from './AddDeviceModal';
-import { loadDevicesListPrefs, normalizeDevicesListPrefs, saveDevicesListPrefs } from './devicesListPrefs';
-import { getIntegrationRegistry as getIntegrationRegistryApi } from '../../services/integrationService';
+import { useDevicesViewStore } from '../../state/devicesViewStore';
 import {
   applyPendingStateToDevice,
-  baselineStateFromDevice,
   clearPendingTimeout,
   createPendingCommand,
-  createCommandCorrelationId,
   shouldClearPendingFromDevice,
-  stateVersionFromDevice,
-  withCommandCorrelation,
 } from './commandPending';
+import { devicesUiInitialState, devicesUiReducer } from './devicesUiReducer';
+import { useDevicePairingMutations } from './hooks/useDevicePairingMutations';
+import { useDevicesIntegrationSources } from './hooks/useDevicesIntegrationSources';
 import './Devices.css';
 
 const FALLBACK_INTEGRATIONS = [
@@ -56,23 +50,22 @@ function formatProtocolLabel(protocol, fallback) {
   return protocol;
 }
 
-function normalizeProtocolKey(protocol) {
-  return (protocol || '').toString().trim().toLowerCase();
-}
-
 export default function Devices() {
   const navigate = useNavigate();
   const { user, accessToken, bootstrapping } = useAuth();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
-
-  const initialPrefsRef = React.useRef(null);
-  if (initialPrefsRef.current === null) {
-    initialPrefsRef.current = normalizeDevicesListPrefs(loadDevicesListPrefs());
-  }
-  const initialPrefs = initialPrefsRef.current;
-
-  const [metadataMode, setMetadataMode] = useState(initialPrefs.metadataMode);
-  const [groupByRoom, setGroupByRoom] = useState(initialPrefs.groupByRoom);
+  const metadataMode = useDevicesViewStore((state) => state.metadataMode);
+  const setMetadataMode = useDevicesViewStore((state) => state.setMetadataMode);
+  const groupByRoom = useDevicesViewStore((state) => state.groupByRoom);
+  const setGroupByRoom = useDevicesViewStore((state) => state.setGroupByRoom);
+  const protocolFilter = useDevicesViewStore((state) => state.protocolFilter);
+  const setProtocolFilter = useDevicesViewStore((state) => state.setProtocolFilter);
+  const roomFilter = useDevicesViewStore((state) => state.roomFilter);
+  const setRoomFilter = useDevicesViewStore((state) => state.setRoomFilter);
+  const tagFilter = useDevicesViewStore((state) => state.tagFilter);
+  const setTagFilter = useDevicesViewStore((state) => state.setTagFilter);
+  const searchTerm = useDevicesViewStore((state) => state.searchTerm);
+  const setSearchTerm = useDevicesViewStore((state) => state.setSearchTerm);
   const {
     devices: realtimeDevices,
     loading: realtimeLoading,
@@ -117,30 +110,27 @@ export default function Devices() {
     return { total, online, withState, sensors };
   }, [devices]);
 
-  const [pendingCommands, setPendingCommands] = useState({}); // { [hdpId]: { corr, timerId } }
-  const [commandError, setCommandError] = useState(null);
-  const [integrations, setIntegrations] = useState([]);
-  const [integrationsLoading, setIntegrationsLoading] = useState(false);
-  const [integrationsError, setIntegrationsError] = useState(null);
-  const [protocolDisplayNames, setProtocolDisplayNames] = useState({});
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [uiState, dispatchUi] = useReducer(devicesUiReducer, devicesUiInitialState);
   const [iconOverrides, setIconOverrides] = useState({});
-  const [protocolFilter, setProtocolFilter] = useState(initialPrefs.protocolFilter);
-  const [roomFilter, setRoomFilter] = useState(initialPrefs.roomFilter);
-  const [tagFilter, setTagFilter] = useState(initialPrefs.tagFilter);
-  const [searchTerm, setSearchTerm] = useState(initialPrefs.searchTerm);
-  const openAddModal = useCallback(() => setShowAddModal(true), []);
+  const { pendingCommands, commandError, showAddModal } = uiState;
+  const { startPairingMutation, stopPairingMutation } = useDevicePairingMutations({
+    accessToken,
+    refreshPairings,
+  });
+  const {
+    integrations,
+    integrationsLoading,
+    integrationsError,
+    protocolDisplayNames,
+    reload: loadIntegrations,
+  } = useDevicesIntegrationSources({
+    enabled: Boolean(isResidentOrAdmin && accessToken),
+    accessToken,
+  });
 
-  useEffect(() => {
-    saveDevicesListPrefs({
-      metadataMode,
-      groupByRoom,
-      protocolFilter,
-      roomFilter,
-      tagFilter,
-      searchTerm,
-    });
-  }, [groupByRoom, metadataMode, protocolFilter, roomFilter, searchTerm, tagFilter]);
+  const openAddModal = useCallback(() => {
+    dispatchUi({ type: 'open-add-modal' });
+  }, []);
 
   const integrationsErrorDisplay = useMemo(() => {
     if (!integrationsError) return null;
@@ -152,7 +142,7 @@ export default function Devices() {
 
   const toggleMetadataMode = useCallback(() => {
     setMetadataMode(prev => (prev === 'rest' ? 'ws' : 'rest'));
-  }, []);
+  }, [setMetadataMode]);
 
   const connectionPills = useMemo(() => {
     const pills = [];
@@ -214,31 +204,28 @@ export default function Devices() {
     if (!device?.id) return Promise.resolve();
     if (!commandsReady) {
       const message = commandLockReason;
-      setCommandError(message);
+      dispatchUi({ type: 'set-command-error', message });
       return Promise.reject(new Error(message));
     }
-    setCommandError(null);
+    dispatchUi({ type: 'clear-command-error' });
 
     const { corr, enrichedPayload, pending } = createPendingCommand(device, payload, {
       onTimeout: ({ corr: expiredCorr }) => {
-        setCommandError('Device did not confirm the command in time');
-        setPendingCommands(prev => {
+        dispatchUi({ type: 'set-command-error', message: 'Device did not confirm the command in time' });
+        dispatchUi({ type: 'update-pending-commands', updater: (prev) => {
           const next = { ...prev };
           const current = next[device.id];
           if (!current || current.corr !== expiredCorr) return prev;
           clearPendingTimeout(current);
           delete next[device.id];
           return next;
-        });
+        }});
       },
     });
 
     // Keep UI in pending until we see the device-hub lifecycle complete or a matching
     // newer HDP state echo arrives.
-    setPendingCommands(prev => ({
-      ...prev,
-      [device.id]: pending,
-    }));
+    dispatchUi({ type: 'set-pending-command', id: device.id, pending });
 
     return sendDeviceCommandApi(device.id, enrichedPayload, accessToken)
       .then(res => {
@@ -251,15 +238,15 @@ export default function Devices() {
       .catch(err => {
         console.error('Failed to send device command', err);
         const message = err?.message || 'Unable to send device command';
-        setCommandError(message);
-        setPendingCommands(prev => {
+        dispatchUi({ type: 'set-command-error', message });
+        dispatchUi({ type: 'update-pending-commands', updater: (prev) => {
           const next = { ...prev };
           const current = next[device.id];
           if (!current || current.corr !== corr) return prev;
           clearPendingTimeout(current);
           delete next[device.id];
           return next;
-        });
+        }});
         throw err;
       })
       .finally(() => {});
@@ -268,7 +255,7 @@ export default function Devices() {
   // Clear pending when command_result with matching corr is observed.
   useEffect(() => {
     if (!devices || !devices.length) return;
-    setPendingCommands(prev => {
+    dispatchUi({ type: 'update-pending-commands', updater: (prev) => {
       let changed = false;
       const next = { ...prev };
       devices.forEach(dev => {
@@ -281,7 +268,7 @@ export default function Devices() {
         changed = true;
       });
       return changed ? next : prev;
-    });
+    }});
   }, [devices]);
 
   const handleRename = async (device, name) => {
@@ -386,111 +373,18 @@ export default function Devices() {
     return hdpRes.data;
   }, [accessToken, refreshErs]);
 
-  const handleStartPairing = useCallback(async payload => {
-    if (!accessToken) {
-      throw new Error('Authentication required');
-    }
-    if (payload?.protocol) {
-      const listRes = await listPairingsApi(accessToken);
-      if (listRes.success && Array.isArray(listRes.data)) {
-        const activeSession = listRes.data.find(item => {
-          const protocol = (item?.protocol || '').toLowerCase();
-          const isActive = Boolean(item?.active);
-          return protocol && protocol === payload.protocol.toLowerCase() && isActive;
-        });
-        if (activeSession) {
-          refreshPairings?.();
-          return activeSession;
-        }
-      }
-    }
-    const res = await startPairingApi(payload, accessToken);
-    if (!res.success) {
-      if (res.status === 409) {
-        const listRes = await listPairingsApi(accessToken);
-        if (listRes.success && Array.isArray(listRes.data)) {
-          const match = listRes.data.find(item => (item?.protocol || '').toLowerCase() === (payload?.protocol || '').toLowerCase());
-          if (match) {
-            refreshPairings?.();
-            return match;
-          }
-        }
-      }
-      throw new Error(res.error || 'Unable to start pairing');
-    }
-    refreshPairings?.();
-    return res.data;
-  }, [accessToken, refreshPairings]);
+  const handleStartPairing = useCallback(
+    async (payload) => startPairingMutation.mutateAsync(payload),
+    [startPairingMutation],
+  );
 
-  const handleStopPairing = useCallback(async protocol => {
-    if (!accessToken) {
-      throw new Error('Authentication required');
-    }
-    const res = await stopPairingApi(protocol, accessToken);
-    if (!res.success) {
-      throw new Error(res.error || 'Unable to stop pairing');
-    }
-    refreshPairings?.();
-    return res.data;
-  }, [accessToken, refreshPairings]);
-
-  const loadIntegrations = useCallback(async () => {
-    if (!isResidentOrAdmin) return;
-    setIntegrationsLoading(true);
-    setIntegrationsError(null);
-    try {
-      const res = await listIntegrationsApi(accessToken);
-      if (!res.success) {
-        throw new Error(res.error || 'Unable to load integrations');
-      }
-      setIntegrations(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      setIntegrationsError(err?.message || 'Unable to load integrations');
-    } finally {
-      setIntegrationsLoading(false);
-    }
-  }, [accessToken, isResidentOrAdmin]);
-
-  useEffect(() => {
-    if (isResidentOrAdmin) {
-      loadIntegrations();
-    }
-  }, [isResidentOrAdmin, loadIntegrations]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!isResidentOrAdmin) return undefined;
-
-    (async () => {
-      try {
-        const res = await getIntegrationRegistryApi({ page: 1, pageSize: 250 });
-        if (!res.success) {
-          return;
-        }
-        const next = {};
-        const list = Array.isArray(res.data?.integrations) ? res.data.integrations : [];
-        list.forEach(intg => {
-          const protocol = normalizeProtocolKey(intg?.device_extension?.protocol);
-          const name = typeof intg?.display_name === 'string' ? intg.display_name.trim() : '';
-          if (protocol && name) {
-            next[protocol] = name;
-          }
-        });
-        if (!cancelled) {
-          setProtocolDisplayNames(next);
-        }
-      } catch {
-        // ignore (fallback to adapter labels)
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isResidentOrAdmin]);
+  const handleStopPairing = useCallback(
+    async (protocol) => stopPairingMutation.mutateAsync(protocol),
+    [stopPairingMutation],
+  );
 
   const resolveProtocolLabel = useCallback((protocol, fallback) => {
-    const key = normalizeProtocolKey(protocol);
+    const key = (protocol || '').toString().trim().toLowerCase();
     if (key && protocolDisplayNames?.[key]) {
       return protocolDisplayNames[key];
     }
@@ -931,10 +825,10 @@ export default function Devices() {
 
       <AddDeviceModal
         open={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => dispatchUi({ type: 'close-add-modal' })}
         onCreate={async payload => {
           await handleCreateDevice(payload);
-          setShowAddModal(false);
+          dispatchUi({ type: 'close-add-modal' });
         }}
         integrations={integrations}
         pairingSessions={pairingSessions}

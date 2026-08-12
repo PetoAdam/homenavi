@@ -109,7 +109,7 @@ export default function useMapViewportHandlers({
       startTy: view.ty,
       moved: false,
     };
-  }, [mode, panRef, view.tx, view.ty]);
+  }, [mode, panRef, view.scale, view.tx, view.ty]);
 
   const handlePointerMove = useCallback((e) => {
     if (e.pointerType === 'touch' && pointersRef.current.has(e.pointerId)) {
@@ -147,7 +147,7 @@ export default function useMapViewportHandlers({
     const dy = (e.clientY ?? 0) - panRef.current.startY;
     if (Math.abs(dx) + Math.abs(dy) > 3) panRef.current.moved = true;
     setView(prev => ({ ...prev, tx: panRef.current.startTx + dx, ty: panRef.current.startTy + dy }));
-  }, [handleDeviceDragMove, handleInsertCornerDragMove, handleRoomDragMove, handleRoomVertexDragMove, panRef, setView]);
+  }, [canvasRef, handleDeviceDragMove, handleInsertCornerDragMove, handleRoomDragMove, handleRoomVertexDragMove, maxZoom, minZoom, panRef, setView]);
 
   const handleCanvasPointerMoveCombined = useCallback((e) => {
     handlePointerMove(e);

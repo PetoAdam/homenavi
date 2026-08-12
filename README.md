@@ -23,17 +23,18 @@
 
 ## Table of contents
 1. Why Homenavi
-2. Current architecture
-3. Quickstart
-4. Deployments (Docker and Kubernetes)
-5. Service map
-6. Current capabilities
-7. Integrations and extension model
-8. Observability and security snapshot
-9. Documentation map
-10. FAQ
-11. Contributing
-12. License
+2. Project status
+3. Current architecture
+4. Quickstart
+5. Deployments (Docker and Kubernetes)
+6. Service map
+7. Current capabilities
+8. Integrations and extension model
+9. Observability and security snapshot
+10. Documentation map
+11. FAQ
+12. Contributing
+13. License
 
 ---
 
@@ -48,7 +49,20 @@ What it emphasizes today:
 - Role-aware user management, groups, and realtime communication across UI and services.
 - Straightforward local operation with Docker Compose and a path to Kubernetes.
 
-## 2. Current architecture
+## 2. Project status
+Homenavi is in active development, but the core platform is already structured as a coherent end-to-end system rather than a loose prototype.
+
+Current repo state at a glance:
+- Core microservices, frontend, MQTT backbone, and deployment assets live in this repository.
+- The frontend state architecture has been consolidated around React Query for server state, Zustand for durable client preferences, and reducers for complex local workflows.
+- Compose remains the fastest way to run the full platform locally, while Helm charts cover the current Kubernetes path.
+- Integration-first extension points, marketplace metadata, and separate integration repositories are part of the normal development model.
+
+What is still true:
+- Some roadmap and design-plan documents remain in `doc/` for larger future work.
+- Production suitability depends on your deployment, observability, backup, and operational requirements.
+
+## 3. Current architecture
 Homenavi runs as a layered system:
 - Browser app (PWA frontend).
 - Nginx ingress for HTTPS/WSS.
@@ -64,7 +78,7 @@ Primary references:
 - API surface: [doc/external_api_surface.md](doc/external_api_surface.md)
 
 <a id="quickstart"></a>
-## 3. Quickstart
+## 4. Quickstart
 
 ### Local (Docker Compose)
 ```sh
@@ -79,7 +93,7 @@ Notes:
 - Mock adapter is opt-in via profile.
 - zigbee2mqtt is included and can be used with a USB coordinator.
 
-## 4. Deployments (Docker and Kubernetes)
+## 5. Deployments (Docker and Kubernetes)
 
 ### Docker deployment
 Use Compose as the canonical local and small-instance deployment path:
@@ -98,7 +112,7 @@ Operational runbooks:
 - HA/operations notes: [doc/helm_ha_operations.md](doc/helm_ha_operations.md)
 - Deployment model guidance: [doc/deployment_modes_compose_helm_implementation_plan.md](doc/deployment_modes_compose_helm_implementation_plan.md)
 
-## 5. Service map
+## 6. Service map
 
 | Domain | Services | Responsibility |
 |---|---|---|
@@ -110,7 +124,7 @@ Operational runbooks:
 | Supporting services | weather-service, email-service, profile-picture-service, echo-service | Weather facade, outbound email, avatar storage, websocket diagnostics |
 | Messaging and data infra | EMQX, PostgreSQL, Redis, MinIO | MQTT backbone, relational storage, cache/rate-limit state, object storage |
 
-## 6. Current capabilities
+## 7. Current capabilities
 
 ### Devices and realtime
 - HDP-based command and state model across adapters and integrations.
@@ -145,7 +159,7 @@ Operational runbooks:
 - Artifact-driven deployment metadata (Compose/Helm).
 - OIDC-based publishing and verify/release gate expectations.
 
-## 7. Integrations and extension model
+## 8. Integrations and extension model
 
 Existing integration repositories you can use as references:
 - Official template: https://github.com/PetoAdam/homenavi-integration-template
@@ -162,7 +176,7 @@ Read the dedicated docs:
 - Marketplace/integration roadmap: [doc/dashboard_widgets_integrations_marketplace_roadmap.md](doc/dashboard_widgets_integrations_marketplace_roadmap.md)
 - LG ThinQ implementation POC: [doc/poc_lg_thinq_integration_v2.md](doc/poc_lg_thinq_integration_v2.md)
 
-## 8. Observability and security snapshot
+## 9. Observability and security snapshot
 
 ### Observability
 - Metrics via Prometheus scrape endpoints.
@@ -181,19 +195,20 @@ Services without first-class OTEL tracing support yet:
 - Redis-backed rate limiting and lockout state.
 - Integration runtime privilege boundaries depend on deployment mode; treat docker-socket access as high trust.
 
-## 9. Documentation map
+## 10. Documentation map
 - Architecture diagrams and message flows: [doc/architecture_diagram.md](doc/architecture_diagram.md)
 - API endpoint map: [doc/external_api_surface.md](doc/external_api_surface.md)
 - MQTT/HDP contract and interoperability: [doc/hdp.md](doc/hdp.md), [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md)
 - Local developer setup: [doc/local_build.md](doc/local_build.md)
+- Frontend state conventions: [doc/frontend-state-architecture-guide.md](doc/frontend-state-architecture-guide.md)
 - Kubernetes runbook: [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md)
 - Screenshot gallery: [doc/gallery.md](doc/gallery.md)
 
-## 10. FAQ
+## 11. FAQ
 
 **Can I run it on a Raspberry Pi?** Yes. All the services are written in Go, so you can run Homenavi on a single-board computer without any issues. The platform is intended to work in homelab environments as well as larger deployments, but validate the exact images, storage, and attached hardware path you need.
 
-**Is it production ready?** The platform is actively evolving. Core auth, user management, dashboards, HDP device handling, and automation foundations are implemented, but you should still review the current service set and deployment model for your use case.
+**Is it production ready?** The platform has a real service layout, deployment assets, and implemented core domains, but it is still an actively evolving project. Treat it as self-hostable software that needs environment-specific validation rather than a finished turnkey product.
 
 **Does it support realtime updates?** Yes. Homenavi uses websocket and MQTT-backed flows for device state, command lifecycle, automation run updates, and inventory refresh notifications.
 
@@ -205,7 +220,7 @@ Services without first-class OTEL tracing support yet:
 
 **Where should I look for Kubernetes deployment guidance?** Start with [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md) and [doc/helm_ha_operations.md](doc/helm_ha_operations.md).
 
-## 11. Contributing
+## 12. Contributing
 Contributions are welcome:
 1. Fork and create a focused branch.
 2. Keep changes scoped and include tests/docs where relevant.
@@ -213,7 +228,7 @@ Contributions are welcome:
 
 Issues: https://github.com/PetoAdam/homenavi/issues
 
-## 12. License
+## 13. License
 MIT License. See [LICENSE](LICENSE).
 
 ### Icon attribution
