@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faGripVertical, faPen, faPlay, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { useParams } from 'react-router-dom';
@@ -54,6 +54,7 @@ import AutomationLeftPanel from './components/AutomationLeftPanel';
 import AutomationCanvas from './components/AutomationCanvas';
 import AutomationPropertiesPanel from './components/AutomationPropertiesPanel';
 import AutomationRuns from './components/AutomationRuns';
+import { automationUiInitialState, automationUiReducer } from './automationUiReducer';
 import './Automation.css';
 
 const NODE_WIDTH = 260;
@@ -97,12 +98,46 @@ function Automation() {
   const isAdmin = user?.role === 'admin';
   const currentUserId = user?.id || user?.user_id || user?.sub || '';
 
-  const [viewMode, setViewMode] = useState(() => (workflowIdParam ? 'edit' : 'overview'));
+  const [uiState, dispatchUi] = useReducer(automationUiReducer, workflowIdParam, automationUiInitialState);
+  const {
+    viewMode,
+    isNarrow,
+    hasOverviewSelection,
+    workflowSearch,
+    loadedWorkflowId,
+    selectedNodeId,
+    workflowDrag,
+    editAutoFitDoneKey,
+    previewAutoFitDoneKey,
+  } = uiState;
   const isEditMode = viewMode === 'edit';
-  const [isNarrow, setIsNarrow] = useState(false);
-  const [hasOverviewSelection, setHasOverviewSelection] = useState(false);
-  const [workflowSearch, setWorkflowSearch] = useState('');
-  const [loadedWorkflowId, setLoadedWorkflowId] = useState(null);
+  const setViewMode = useCallback((value) => {
+    dispatchUi({ type: 'set-view-mode', value });
+  }, []);
+  const setHasOverviewSelection = useCallback((value) => {
+    dispatchUi({ type: 'set-has-overview-selection', value });
+  }, []);
+  const setWorkflowSearch = useCallback((value) => {
+    dispatchUi({ type: 'set-workflow-search', value });
+  }, []);
+  const setLoadedWorkflowId = useCallback((value) => {
+    dispatchUi({ type: 'set-loaded-workflow-id', value });
+  }, []);
+  const setSelectedNodeId = useCallback((value) => {
+    dispatchUi({ type: 'set-selected-node-id', value });
+  }, []);
+  const setWorkflowDrag = useCallback((value) => {
+    dispatchUi({ type: 'set-workflow-drag', value });
+  }, []);
+  const resetWorkflowDrag = useCallback(() => {
+    dispatchUi({ type: 'reset-workflow-drag' });
+  }, []);
+  const setEditAutoFitDoneKey = useCallback((value) => {
+    dispatchUi({ type: 'set-edit-autofit-done-key', value });
+  }, []);
+  const setPreviewAutoFitDoneKey = useCallback((value) => {
+    dispatchUi({ type: 'set-preview-autofit-done-key', value });
+  }, []);
 
   const [err, setErr] = useState('');
   const [toast, setToast] = useState('');
@@ -171,12 +206,6 @@ function Automation() {
     refreshAllData,
   } = useAutomationLists({ accessToken, onError: setErr });
 
-  const [workflowDrag, setWorkflowDrag] = useState({
-    dragId: '',
-    overId: '',
-    position: 'after',
-  });
-
   const previewWorkflows = useMemo(() => {
     if (!workflowDrag.dragId || !workflowDrag.overId) {
       return Array.isArray(workflows) ? workflows : [];
@@ -204,13 +233,13 @@ function Automation() {
   }, [workflowIdParam, selectedId, setSelectedId]);
 
   useEffect(() => {
-    if (workflowIdParam) setViewMode('edit');
+    if (workflowIdParam) dispatchUi({ type: 'set-view-mode', value: 'edit' });
   }, [workflowIdParam]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const media = window.matchMedia('(max-width: 720px)');
-    const handleChange = () => setIsNarrow(media.matches);
+    const handleChange = () => dispatchUi({ type: 'set-is-narrow', value: media.matches });
     handleChange();
     if (media.addEventListener) {
       media.addEventListener('change', handleChange);
@@ -251,7 +280,6 @@ function Automation() {
     await refreshErsInventory?.();
   };
 
-  const [selectedNodeId, setSelectedNodeId] = useState('workflow'); // workflow|nodeId
   const {
     editor,
     setEditor,
@@ -402,7 +430,7 @@ function Automation() {
         edges: edges.filter(e => String(e?.from) !== id && String(e?.to) !== id),
       };
     });
-    setSelectedNodeId('workflow');
+    dispatchUi({ type: 'set-selected-node-id', value: 'workflow' });
   };
 
   useAutomationEditorLoader({
@@ -565,7 +593,7 @@ function Automation() {
 
     setHasOverviewSelection(Boolean(nextWorkflow?.id));
     setViewMode('overview');
-  }, [isDirty, saveWorkflowInternal, saving, selectedWorkflow]);
+  }, [isDirty, saveWorkflowInternal, saving, selectedWorkflow, setHasOverviewSelection, setViewMode]);
 
   const handleWorkflowReorder = useCallback(async (nextOrder) => {
     const ordered = Array.isArray(nextOrder) ? nextOrder : [];
@@ -630,9 +658,6 @@ function Automation() {
   const loadedKey = useMemo(() => String(selectedId || 'new'), [selectedId]);
   const editAutoFitKey = useMemo(() => `edit:${loadedKey}`, [loadedKey]);
   const previewAutoFitKey = useMemo(() => `preview:${loadedKey}`, [loadedKey]);
-  const [editAutoFitDoneKey, setEditAutoFitDoneKey] = useState('');
-  const [previewAutoFitDoneKey, setPreviewAutoFitDoneKey] = useState('');
-
   const automationDataReady = useMemo(() => {
     if (bootstrapping || loading) return false;
     if (!isSelectionSettled) return false;
@@ -645,11 +670,11 @@ function Automation() {
 
   useEffect(() => {
     setEditAutoFitDoneKey('');
-  }, [editAutoFitKey, isSelectionSettled]);
+  }, [editAutoFitKey, isSelectionSettled, setEditAutoFitDoneKey]);
 
   useEffect(() => {
     setPreviewAutoFitDoneKey('');
-  }, [previewAutoFitKey, isSelectionSettled]);
+  }, [previewAutoFitKey, isSelectionSettled, setPreviewAutoFitDoneKey]);
 
   useEffect(() => {
     if (!automationDataReady) return;
@@ -658,15 +683,15 @@ function Automation() {
       setPreviewAutoFitDoneKey(previewAutoFitKey);
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [automationDataReady, previewAutoFitKey, previewReadyForRender]);
+  }, [automationDataReady, previewAutoFitKey, previewReadyForRender, setPreviewAutoFitDoneKey]);
 
   const handleEditAutoFitComplete = useCallback((key) => {
     setEditAutoFitDoneKey(String(key || ''));
-  }, []);
+  }, [setEditAutoFitDoneKey]);
 
   const handlePreviewAutoFitComplete = useCallback((key) => {
     setPreviewAutoFitDoneKey(String(key || ''));
-  }, []);
+  }, [setPreviewAutoFitDoneKey]);
 
   if (!isResidentOrAdmin) {
     if (bootstrapping) {
@@ -867,31 +892,24 @@ function Automation() {
                         const relativeY = event.clientY - rect.top;
                         const nextPosition = relativeY < rect.height / 2 ? 'before' : 'after';
                         if (workflowDrag.overId !== wf.id || workflowDrag.position !== nextPosition) {
-                          setWorkflowDrag((prev) => ({
-                            ...prev,
-                            overId: wf.id,
-                            position: nextPosition,
-                          }));
+                          setWorkflowDrag({ overId: wf.id, position: nextPosition });
                         }
                       }}
                       onDrop={(event) => {
                         event.preventDefault();
                         if (!workflowDrag.dragId || !workflowDrag.overId) {
-                          setWorkflowDrag({ dragId: '', overId: '', position: 'after' });
+                          resetWorkflowDrag();
                           return;
                         }
                         const nextOrder = reorderByInsert(workflows, workflowDrag.dragId, workflowDrag.overId, workflowDrag.position);
-                        setWorkflowDrag({ dragId: '', overId: '', position: 'after' });
+                        resetWorkflowDrag();
                         handleWorkflowReorder(nextOrder);
                       }}
                       onDragLeave={(event) => {
                         const related = event.relatedTarget;
                         if (related && event.currentTarget.contains(related)) return;
                         if (workflowDrag.overId !== wf.id) return;
-                        setWorkflowDrag((prev) => ({
-                          ...prev,
-                          overId: '',
-                        }));
+                        setWorkflowDrag({ overId: '' });
                       }}
                     >
                       <div className="automation-workflow-item-shell">
@@ -918,7 +936,7 @@ function Automation() {
                             aria-label={`Reorder ${wf.name}`}
                             draggable
                             onDragStart={(event) => {
-                              setWorkflowDrag({
+                                setWorkflowDrag({
                                 dragId: wf.id,
                                 overId: wf.id,
                                 position: 'after',
@@ -927,7 +945,7 @@ function Automation() {
                               event.dataTransfer.setData('text/plain', wf.id);
                             }}
                             onDragEnd={() => {
-                              setWorkflowDrag({ dragId: '', overId: '', position: 'after' });
+                                resetWorkflowDrag();
                             }}
                           >
                             <FontAwesomeIcon icon={faGripVertical} />

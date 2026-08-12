@@ -90,6 +90,7 @@ export default function MarketplaceIntegrationModal({
                 <FontAwesomeIcon icon={faCubes} /> Details
               </div>
               <div className="integrations-admin-marketplace-details">
+                <div><strong>Publisher:</strong> {getMarketplacePublisher?.(integration) || 'Community'}</div>
                 <div><strong>Listen path:</strong> {integration.listen_path || `/integrations/${integration.id}`}</div>
                 <div><strong>Release tag:</strong> {integration.release_tag || 'N/A'}</div>
                 {integration.homepage ? (

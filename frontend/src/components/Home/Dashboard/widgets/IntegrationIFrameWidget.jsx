@@ -5,7 +5,6 @@ export default function IntegrationIFrameWidget({
   instanceId,
   widgetType,
   meta,
-  settings,
   editMode,
   onSettings,
   onRemove,

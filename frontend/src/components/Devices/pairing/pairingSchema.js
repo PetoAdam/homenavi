@@ -322,17 +322,6 @@ function modeHasField(normalizedFlow, mode, fieldId) {
   return form.fields.some(field => field.id === target);
 }
 
-function chooseModeWithField(normalizedFlow, preferredModes, fieldId) {
-  const modes = Array.isArray(preferredModes) ? preferredModes : [];
-  for (const mode of modes) {
-    if (modeHasField(normalizedFlow, mode, fieldId)) {
-      return `${mode}`.trim().toLowerCase();
-    }
-  }
-  const form = normalizedFlow.forms.find(item => item.fields.some(field => field.id === fieldId));
-  return form?.mode || '';
-}
-
 function chooseModeForRequiredInputs(normalizedFlow, requiredInputs, fallbackMode) {
   const targets = Array.isArray(requiredInputs) ? requiredInputs.map(item => `${item || ''}`.trim()).filter(Boolean) : [];
   if (targets.length === 0) return fallbackMode;

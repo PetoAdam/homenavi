@@ -102,15 +102,11 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 	}, [accessToken, isResidentOrAdmin]);
 
 	useEffect(() => {
-		let alive = true;
 		if (!isResidentOrAdmin || !accessToken) {
 			setIntegrations([]);
-			return () => { alive = false; };
+			return;
 		}
-		( async () => {
-			await loadIntegrations();
-		})();
-		return () => { alive = false; };
+		void loadIntegrations();
 	}, [accessToken, isResidentOrAdmin, bootstrapping, loadIntegrations]);
 
 	useEffect(() => {

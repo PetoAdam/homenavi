@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPen, faPlus, faCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
@@ -11,6 +11,7 @@ import { normalizeLayoutHeights, pickCollapsedLayoutSourceBreakpoint, pickSource
 import { getWidgetDefaultHeight } from './widgetRegistry';
 import AddWidgetModal from './AddWidgetModal';
 import WidgetSettingsModal from './WidgetSettingsModal';
+import { dashboardUiInitialState, dashboardUiReducer } from './dashboardUiReducer';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './Dashboard.css';
@@ -153,22 +154,22 @@ export default function Dashboard() {
     flushSave,
   } = useDashboard({ enabled: isResidentOrAdmin, accessToken });
 
-  const [editMode, setEditMode] = useState(false);
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [selectedWidgetId, setSelectedWidgetId] = useState(null);
-  const [dragOverTrash, setDragOverTrash] = useState(false);
+  const [uiState, dispatchUi] = useReducer(dashboardUiReducer, undefined, dashboardUiInitialState);
+  const {
+    editMode,
+    addModalOpen,
+    settingsModalOpen,
+    selectedWidgetId,
+    dragOverTrash,
+    currentBreakpoint,
+    desiredRowsByInstanceId,
+  } = uiState;
+
   const draggingWidgetRef = useRef(null);
   const trashZoneRef = useRef(null);
 
-  // Current breakpoint state
-  const [currentBreakpoint, setCurrentBreakpoint] = useState('lg');
-
   // Grid container ref for layout
   const gridContainerRef = useRef(null);
-
-  // Client-side desired heights (e.g. map widget auto-sizing).
-  const [desiredRowsByInstanceId, setDesiredRowsByInstanceId] = useState({});
 
   const widgetTypeByInstanceId = useMemo(() => {
     const map = new Map();
@@ -189,11 +190,7 @@ export default function Dashboard() {
       if (!instanceId || !Number.isFinite(heightPx) || heightPx <= 0) return;
 
       const rows = pxToRows(heightPx);
-      setDesiredRowsByInstanceId((prev) => {
-        const current = prev[instanceId];
-        if (current === rows) return prev;
-        return { ...prev, [instanceId]: rows };
-      });
+      dispatchUi({ type: 'set-desired-row-height', instanceId, value: rows });
     };
 
     window.addEventListener('homenavi:widgetDesiredHeight', handler);
@@ -202,14 +199,14 @@ export default function Dashboard() {
 
   // Handle entering edit mode
   const enterEditMode = useCallback(() => {
-    setEditMode(true);
+    dispatchUi({ type: 'set-edit-mode', value: true });
   }, []);
 
   // Handle exiting edit mode
   const exitEditMode = useCallback(() => {
     flushSave();
-    setEditMode(false);
-    setDragOverTrash(false);
+    dispatchUi({ type: 'set-edit-mode', value: false });
+    dispatchUi({ type: 'set-drag-over-trash', value: false });
   }, [flushSave]);
 
   // Handle layout changes
@@ -220,13 +217,13 @@ export default function Dashboard() {
 
   // Handle breakpoint change
   const handleBreakpointChange = useCallback((newBreakpoint) => {
-    setCurrentBreakpoint(newBreakpoint);
+    dispatchUi({ type: 'set-current-breakpoint', value: newBreakpoint });
   }, []);
 
   // Handle widget settings
   const handleWidgetSettings = useCallback((instanceId) => {
-    setSelectedWidgetId(instanceId);
-    setSettingsModalOpen(true);
+    dispatchUi({ type: 'set-selected-widget-id', value: instanceId });
+    dispatchUi({ type: 'set-settings-modal-open', value: true });
   }, []);
 
   // Handle widget remove from button
@@ -237,7 +234,7 @@ export default function Dashboard() {
   // Handle add widget from catalog
   const handleAddWidget = useCallback((widgetType, initialSettings = {}) => {
     addWidget(widgetType, initialSettings);
-    setAddModalOpen(false);
+    dispatchUi({ type: 'set-add-modal-open', value: false });
   }, [addWidget]);
 
   // Handle drag start for trash zone detection
@@ -252,7 +249,7 @@ export default function Dashboard() {
       removeWidget(draggingWidgetRef.current);
     }
     draggingWidgetRef.current = null;
-    setDragOverTrash(false);
+    dispatchUi({ type: 'set-drag-over-trash', value: false });
   }, [dragOverTrash, removeWidget]);
 
   // Handle drag movement to detect trash zone
@@ -271,7 +268,7 @@ export default function Dashboard() {
       mouseY <= trashRect.bottom
     );
     
-    setDragOverTrash(isOverTrash);
+    dispatchUi({ type: 'set-drag-over-trash', value: isOverTrash });
   }, [editMode]);
 
   // Convert dashboard layouts to react-grid-layout format
@@ -484,7 +481,7 @@ export default function Dashboard() {
           <>
             <button
               className="dashboard__fab dashboard__fab--add"
-              onClick={() => setAddModalOpen(true)}
+              onClick={() => dispatchUi({ type: 'set-add-modal-open', value: true })}
               title="Add widget"
             >
               <FontAwesomeIcon icon={faPlus} />
@@ -510,7 +507,7 @@ export default function Dashboard() {
       {/* Add widget modal */}
       <AddWidgetModal
         open={addModalOpen}
-        onClose={() => setAddModalOpen(false)}
+        onClose={() => dispatchUi({ type: 'set-add-modal-open', value: false })}
         catalog={catalog}
         onAdd={handleAddWidget}
       />
@@ -519,19 +516,19 @@ export default function Dashboard() {
       <WidgetSettingsModal
         open={settingsModalOpen}
         onClose={() => {
-          setSettingsModalOpen(false);
-          setSelectedWidgetId(null);
+          dispatchUi({ type: 'set-settings-modal-open', value: false });
+          dispatchUi({ type: 'set-selected-widget-id', value: null });
         }}
         widgetItem={selectedWidgetId ? getWidget(selectedWidgetId) : null}
         onSave={(instanceId, newSettings) => {
           updateWidgetSettings(instanceId, newSettings);
-          setSettingsModalOpen(false);
-          setSelectedWidgetId(null);
+          dispatchUi({ type: 'set-settings-modal-open', value: false });
+          dispatchUi({ type: 'set-selected-widget-id', value: null });
         }}
         onRemove={(instanceId) => {
           removeWidget(instanceId);
-          setSettingsModalOpen(false);
-          setSelectedWidgetId(null);
+          dispatchUi({ type: 'set-settings-modal-open', value: false });
+          dispatchUi({ type: 'set-selected-widget-id', value: null });
         }}
       />
     </div>

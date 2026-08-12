@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { listErsDevices, listErsGroups, listErsRooms, listErsTags } from '../services/entityRegistryService';
 import { getSharedWebSocket, wsUrlForPath } from '../services/realtime/sharedWebSocket';
 import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
+import { queryKeys } from '../state/queryKeys';
 
 const ERS_INVENTORY_CACHE_TTL_MS = 30 * 1000;
 
@@ -20,6 +22,42 @@ function parseProtocolFromHdpId(hdpId) {
   const idx = raw.indexOf('/');
   if (idx === -1) return '';
   return raw.slice(0, idx).toLowerCase();
+}
+
+export function ersInventoryScopeFromAccessToken(accessToken) {
+  return accessToken ? accessToken.slice(-16) : 'anonymous';
+}
+
+export async function fetchErsInventorySnapshot(accessToken) {
+  const [devRes, groupRes, roomRes, tagRes] = await Promise.all([
+    listErsDevices(accessToken),
+    listErsGroups(accessToken),
+    listErsRooms(accessToken),
+    listErsTags(accessToken),
+  ]);
+
+  if (!devRes.success) {
+    throw new Error(devRes.error || 'Failed to load ERS devices');
+  }
+
+  return {
+    devices: normalizeArray(devRes.data),
+    groups: groupRes.success ? normalizeArray(groupRes.data) : [],
+    rooms: roomRes.success ? normalizeArray(roomRes.data) : [],
+    tags: tagRes.success ? normalizeArray(tagRes.data) : [],
+  };
+}
+
+export function ersInventoryQueryOptions(accessToken, { enabled = true, initialData } = {}) {
+  const scope = ersInventoryScopeFromAccessToken(accessToken);
+  return {
+    queryKey: queryKeys.ers.inventory(scope),
+    queryFn: async () => fetchErsInventorySnapshot(accessToken),
+    enabled,
+    staleTime: ERS_INVENTORY_CACHE_TTL_MS,
+    initialData,
+    initialDataUpdatedAt: typeof initialData !== 'undefined' ? 0 : undefined,
+  };
 }
 
 function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
@@ -49,81 +87,52 @@ function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
 }
 
 export default function useErsInventory({ enabled, accessToken, realtimeDevices }) {
-  const [ersDevices, setErsDevices] = useState([]);
-  const [ersGroups, setErsGroups] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const cacheKey = useMemo(() => {
     if (!accessToken) return '';
-    return `homenavi:ers:inventory:${accessToken.slice(-16)}`;
+    return `homenavi:ers:inventory:${ersInventoryScopeFromAccessToken(accessToken)}`;
   }, [accessToken]);
+  const queryEnabled = Boolean(enabled && accessToken);
+  const cached = useMemo(
+    () => (queryEnabled ? readStaleResourceCache(cacheKey, ERS_INVENTORY_CACHE_TTL_MS) : null),
+    [cacheKey, queryEnabled],
+  );
 
-  const refresh = useCallback(async (opts = {}) => {
-    if (!enabled) return;
+  const inventoryQuery = useQuery(ersInventoryQueryOptions(accessToken, {
+    enabled: queryEnabled,
+    initialData: cached
+      ? {
+        devices: normalizeArray(cached.devices),
+        groups: normalizeArray(cached.groups),
+        rooms: normalizeArray(cached.rooms),
+        tags: normalizeArray(cached.tags),
+      }
+      : undefined,
+  }));
 
-    const showLoading = opts?.showLoading !== false;
-    if (showLoading) setLoading(true);
-    setError('');
+  const ersDevices = normalizeArray(inventoryQuery.data?.devices);
+  const ersGroups = normalizeArray(inventoryQuery.data?.groups);
+  const rooms = normalizeArray(inventoryQuery.data?.rooms);
+  const tags = normalizeArray(inventoryQuery.data?.tags);
 
-    const [devRes, groupRes, roomRes, tagRes] = await Promise.all([
-      listErsDevices(accessToken),
-      listErsGroups(accessToken),
-      listErsRooms(accessToken),
-      listErsTags(accessToken),
-    ]);
-
-    if (!devRes.success) {
-      setError(devRes.error || 'Failed to load ERS devices');
-      setErsDevices([]);
-      setErsGroups([]);
-      setRooms([]);
-      setTags([]);
-      if (showLoading) setLoading(false);
-      return;
-    }
-
-    setErsDevices(normalizeArray(devRes.data));
-    setErsGroups(groupRes.success ? normalizeArray(groupRes.data) : []);
-    setRooms(roomRes.success ? normalizeArray(roomRes.data) : []);
-    setTags(tagRes.success ? normalizeArray(tagRes.data) : []);
-    writeStaleResourceCache(cacheKey, {
-      devices: normalizeArray(devRes.data),
-      groups: groupRes.success ? normalizeArray(groupRes.data) : [],
-      rooms: roomRes.success ? normalizeArray(roomRes.data) : [],
-      tags: tagRes.success ? normalizeArray(tagRes.data) : [],
-    });
-    if (showLoading) setLoading(false);
-  }, [accessToken, cacheKey, enabled]);
+  const refresh = useCallback(async () => {
+    if (!queryEnabled) return;
+    await inventoryQuery.refetch();
+  }, [inventoryQuery, queryEnabled]);
 
   useEffect(() => {
-    if (!enabled) {
-      setErsDevices([]);
-      setErsGroups([]);
-      setRooms([]);
-      setTags([]);
-      setLoading(false);
-      setError('');
+    if (!queryEnabled) {
       clearStaleResourceCache(cacheKey);
       return;
     }
-    const cached = readStaleResourceCache(cacheKey, ERS_INVENTORY_CACHE_TTL_MS);
-    if (cached) {
-      setErsDevices(normalizeArray(cached.devices));
-      setErsGroups(normalizeArray(cached.groups));
-      setRooms(normalizeArray(cached.rooms));
-      setTags(normalizeArray(cached.tags));
-      setLoading(false);
-      setError('');
-      refresh({ showLoading: false });
-      return;
-    }
-    refresh();
-  }, [cacheKey, enabled, refresh]);
+  }, [cacheKey, queryEnabled]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!queryEnabled || !inventoryQuery.data) return;
+    writeStaleResourceCache(cacheKey, inventoryQuery.data);
+  }, [cacheKey, inventoryQuery.data, queryEnabled]);
+
+  useEffect(() => {
+    if (!queryEnabled) return undefined;
 
     let cancelled = false;
     let refreshTimer;
@@ -143,7 +152,7 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
       if (pollTimer) return;
       pollTimer = window.setInterval(() => {
         if (cancelled) return;
-        refresh({ showLoading: false });
+        void refresh();
       }, 15000);
     };
 
@@ -154,7 +163,7 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
       if (cancelled) return;
       clearRefreshTimer();
       refreshTimer = window.setTimeout(() => {
-        refresh({ showLoading: false });
+        void refresh();
       }, 150);
     });
 
@@ -178,7 +187,7 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
       unsubMessage();
       unsubStatus();
     };
-  }, [enabled, refresh]);
+  }, [queryEnabled, refresh]);
 
   const realtimeByHdpId = useMemo(() => {
     const m = new Map();
@@ -230,8 +239,8 @@ export default function useErsInventory({ enabled, accessToken, realtimeDevices 
     ersGroups,
     rooms,
     tags,
-    loading,
-    error,
+    loading: queryEnabled ? inventoryQuery.isLoading : false,
+    error: queryEnabled ? (inventoryQuery.error?.message || '') : '',
     refresh,
   };
 }

@@ -33,12 +33,6 @@ import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../hooks/useErsInventory';
 import { useAuth } from '../../context/AuthContext';
 import { sendDeviceCommand } from '../../services/deviceHubService';
-import {
-  createErsGroup,
-  deleteErsGroup,
-  patchErsGroup,
-  setErsGroupMembers,
-} from '../../services/entityRegistryService';
 import { resolveCommandDeviceId } from '../../utils/deviceIdentity';
 import { normalizeColorHex } from '../../utils/colorHex';
 import '../Devices/Devices.css';
@@ -47,6 +41,7 @@ import '../Devices/DeviceDetail.css';
 import '../Devices/AddDeviceModal.css';
 import '../Auth/AuthModal/AuthModal.css';
 import './Groups.css';
+import { useGroupsEditorActions } from './useGroupsEditorActions';
 
 const GROUP_SHARED_MIXED_GRACE_MS = 2800;
 
@@ -535,7 +530,6 @@ function useGroupSharedControls(members, { accessToken, enabled }) {
   const [pendingCount, setPendingCount] = useState(0);
   const graceRef = useRef(new Map());
   const graceTimersRef = useRef(new Map());
-  const [graceVersion, setGraceVersion] = useState(0);
 
   const sharedControls = useMemo(() => intersectSharedInputs(members), [members]);
   const sharedInputIds = useMemo(
@@ -549,9 +543,7 @@ function useGroupSharedControls(members, { accessToken, enabled }) {
       window.clearTimeout(timer);
       graceTimersRef.current.delete(key);
     }
-    if (graceRef.current.delete(key)) {
-      setGraceVersion((value) => value + 1);
-    }
+    graceRef.current.delete(key);
   }, []);
 
   const applyGrace = useCallback((key, value) => {
@@ -563,12 +555,9 @@ function useGroupSharedControls(members, { accessToken, enabled }) {
     });
     const timer = window.setTimeout(() => {
       graceTimersRef.current.delete(key);
-      if (graceRef.current.delete(key)) {
-        setGraceVersion((current) => current + 1);
-      }
+      graceRef.current.delete(key);
     }, GROUP_SHARED_MIXED_GRACE_MS + 25);
     graceTimersRef.current.set(key, timer);
-    setGraceVersion((current) => current + 1);
   }, [clearGrace]);
 
   useEffect(() => {
@@ -589,7 +578,7 @@ function useGroupSharedControls(members, { accessToken, enabled }) {
     graceRef.current.clear();
   }, []);
 
-  const resolvedControls = useMemo(() => {
+  const resolvedControls = (() => {
     const nextValues = { ...sharedControls.values };
     const nextInputs = sharedControls.inputs.map((input) => {
       const key = sanitizeInputKey(input);
@@ -613,7 +602,7 @@ function useGroupSharedControls(members, { accessToken, enabled }) {
       values: nextValues,
       mixedKeys,
     };
-  }, [graceVersion, pendingCount, sharedControls]);
+  })();
 
   const handleSharedValueChange = useCallback((key, nextValue) => {
     setSharedValues((prev) => ({ ...prev, [key]: nextValue }));
@@ -1141,13 +1130,6 @@ export default function Groups() {
   const navigate = useNavigate();
   const { groupId: groupRouteParam } = useParams();
   const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingGroup, setEditingGroup] = useState(null);
-  const [editorError, setEditorError] = useState('');
-  const [savePending, setSavePending] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deletePending, setDeletePending] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const { devices: realtimeDevices } = useDeviceHubDevices({
@@ -1188,6 +1170,28 @@ export default function Groups() {
     return normalizedGroups.find((group) => group.id === decodedGroupParam || group.slug === decodedGroupParam) || null;
   }, [decodedGroupParam, normalizedGroups]);
 
+  const {
+    editorOpen,
+    editingGroup,
+    editorError,
+    savePending,
+    deleteTarget,
+    deletePending,
+    deleteError,
+    openCreate,
+    openEdit,
+    closeEditor,
+    openDelete,
+    closeDelete,
+    handleSubmit,
+    confirmDelete,
+  } = useGroupsEditorActions({
+    accessToken,
+    refresh,
+    navigate,
+    decodedGroupParam,
+  });
+
   const filteredGroups = useMemo(() => {
     const query = stringOrEmpty(searchTerm).toLowerCase();
     if (!query) return normalizedGroups;
@@ -1202,80 +1206,6 @@ export default function Groups() {
       return haystack.includes(query);
     });
   }, [normalizedGroups, searchTerm]);
-
-  const openCreate = useCallback(() => {
-    setEditingGroup(null);
-    setEditorError('');
-    setEditorOpen(true);
-  }, []);
-
-  const openEdit = useCallback((group) => {
-    setEditingGroup(group);
-    setEditorError('');
-    setEditorOpen(true);
-  }, []);
-
-  const closeEditor = useCallback(() => {
-    if (savePending) return;
-    setEditorOpen(false);
-    setEditingGroup(null);
-    setEditorError('');
-  }, [savePending]);
-
-  const openDelete = useCallback((group) => {
-    setDeleteTarget(group);
-    setDeleteError('');
-  }, []);
-
-  const closeDelete = useCallback(() => {
-    if (deletePending) return;
-    setDeleteTarget(null);
-    setDeleteError('');
-  }, [deletePending]);
-
-  const handleSubmit = useCallback(async ({ id, name, description, deviceIds }) => {
-    if (!accessToken) return;
-    setSavePending(true);
-    setEditorError('');
-    try {
-      if (id) {
-        const patchResult = await patchErsGroup(id, { name, description }, accessToken);
-        if (!patchResult.success) throw new Error(patchResult.error || 'Failed to update group');
-        const membersResult = await setErsGroupMembers(id, deviceIds, accessToken);
-        if (!membersResult.success) throw new Error(membersResult.error || 'Failed to update group members');
-      } else {
-        const createResult = await createErsGroup({ name, description, device_ids: deviceIds }, accessToken);
-        if (!createResult.success) throw new Error(createResult.error || 'Failed to create group');
-      }
-      closeEditor();
-      await refresh();
-    } catch (err) {
-      setEditorError(err?.message || 'Unable to save group');
-    } finally {
-      setSavePending(false);
-    }
-  }, [accessToken, closeEditor, refresh]);
-
-  const confirmDelete = useCallback(async () => {
-    if (!accessToken || !deleteTarget?.id) return;
-    setDeletePending(true);
-    setDeleteError('');
-    try {
-      const result = await deleteErsGroup(deleteTarget.id, accessToken);
-      if (!result.success) throw new Error(result.error || 'Failed to delete group');
-      const deletedId = deleteTarget.id;
-      const deletedSlug = deleteTarget.slug;
-      closeDelete();
-      if (decodedGroupParam && (decodedGroupParam === deletedId || decodedGroupParam === deletedSlug)) {
-        navigate('/groups');
-      }
-      await refresh();
-    } catch (err) {
-      setDeleteError(err?.message || 'Unable to delete group');
-    } finally {
-      setDeletePending(false);
-    }
-  }, [accessToken, closeDelete, decodedGroupParam, deleteTarget, navigate, refresh]);
 
   const openGroupDetail = useCallback((group) => {
     const id = group?.slug || group?.id;
