@@ -78,6 +78,11 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("create pending_correlations: %w", err)
 		}
 	}
+	if !m.HasTable(&TriggerCooldown{}) {
+		if err := m.CreateTable(&TriggerCooldown{}); err != nil {
+			return fmt.Errorf("create trigger_cooldowns: %w", err)
+		}
+	}
 	if !m.HasColumn(&PendingCorrelation{}, "HDPDeviceID") {
 		if err := m.AddColumn(&PendingCorrelation{}, "HDPDeviceID"); err != nil {
 			return fmt.Errorf("add pending_correlations.hdp_device_id: %w", err)
@@ -384,6 +389,40 @@ func (r *Repository) ConsumePendingCorr(ctx context.Context, corr string) (*Pend
 func (r *Repository) PruneExpiredPending(ctx context.Context) error {
 	now := time.Now().UTC()
 	return r.db.WithContext(ctx).Where("expires_at < ?", now).Delete(&PendingCorrelation{}).Error
+}
+
+// ClaimTriggerCooldown atomically allows one trigger firing during a cooldown window.
+func (r *Repository) ClaimTriggerCooldown(ctx context.Context, workflowID uuid.UUID, triggerNodeID string, cooldown time.Duration, now time.Time) (bool, error) {
+	triggerNodeID = strings.TrimSpace(triggerNodeID)
+	if workflowID == uuid.Nil || triggerNodeID == "" {
+		return false, fmt.Errorf("workflow id and trigger node id are required")
+	}
+	if cooldown <= 0 {
+		return true, nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	claim := TriggerCooldown{
+		WorkflowID:    workflowID,
+		TriggerNodeID: triggerNodeID,
+		ExpiresAt:     now.Add(cooldown),
+	}
+	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "workflow_id"}, {Name: "trigger_node_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"expires_at": claim.ExpiresAt,
+			"updated_at": now,
+		}),
+		Where: clause.Where{Exprs: []clause.Expression{
+			clause.Expr{SQL: "trigger_cooldowns.expires_at <= ?", Vars: []any{now}},
+		}},
+	}).Create(&claim)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func applyWorkflowSourceDefaults(workflow *Workflow) {

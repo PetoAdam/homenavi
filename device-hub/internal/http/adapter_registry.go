@@ -1,12 +1,13 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
+	adapterstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/adapterstate"
 	"github.com/PetoAdam/homenavi/shared/hdp"
 )
 
@@ -186,18 +187,69 @@ func parsePairingConfig(protocol string, msg map[string]any) (*PairingConfig, bo
 }
 
 type adapterRegistry struct {
-	mu       sync.RWMutex
-	byID     map[string]adapterStatus
+	store    adapterstate.Store
 	ttl      time.Duration
 	nowFn    func() time.Time
 	onUpdate func()
 }
 
-func newAdapterRegistry(ttl time.Duration) *adapterRegistry {
+func newAdapterRegistry(store adapterstate.Store, ttl time.Duration) *adapterRegistry {
 	if ttl <= 0 {
 		ttl = 45 * time.Second
 	}
-	return &adapterRegistry{byID: make(map[string]adapterStatus), ttl: ttl, nowFn: time.Now}
+	if store == nil {
+		store = adapterstate.NewMemoryStore()
+	}
+	return &adapterRegistry{store: store, ttl: ttl, nowFn: time.Now}
+}
+
+func (r *adapterRegistry) get(adapterID string) (adapterStatus, bool) {
+	entry, ok, err := r.store.Get(context.Background(), adapterID)
+	if err != nil {
+		slog.Warn("adapter registry read failed", "adapter_id", adapterID, "error", err)
+		return adapterStatus{}, false
+	}
+	if !ok {
+		return adapterStatus{}, false
+	}
+	status := adapterStatus{AdapterID: entry.AdapterID, Protocol: entry.Protocol, Status: entry.Status, Reason: entry.Reason, Version: entry.Version, LastSeen: entry.LastSeen}
+	if len(entry.Pairing) > 0 {
+		if err := json.Unmarshal(entry.Pairing, &status.Pairing); err != nil {
+			slog.Warn("adapter pairing config decode failed", "adapter_id", adapterID, "error", err)
+		}
+	}
+	return status, true
+}
+
+func (r *adapterRegistry) put(entry adapterStatus) {
+	stored := adapterstate.Entry{AdapterID: entry.AdapterID, Protocol: entry.Protocol, Status: entry.Status, Reason: entry.Reason, Version: entry.Version, LastSeen: entry.LastSeen}
+	if entry.Pairing != nil {
+		payload, err := json.Marshal(entry.Pairing)
+		if err != nil {
+			slog.Warn("adapter pairing config encode failed", "adapter_id", entry.AdapterID, "error", err)
+			return
+		}
+		stored.Pairing = payload
+	}
+	if err := r.store.Put(context.Background(), stored, r.ttl); err != nil {
+		slog.Warn("adapter registry write failed", "adapter_id", entry.AdapterID, "error", err)
+	}
+}
+
+func (r *adapterRegistry) entries() []adapterStatus {
+	stored, err := r.store.List(context.Background())
+	if err != nil {
+		slog.Warn("adapter registry list failed", "error", err)
+		return nil
+	}
+	entries := make([]adapterStatus, 0, len(stored))
+	for _, entry := range stored {
+		status, ok := r.get(entry.AdapterID)
+		if ok {
+			entries = append(entries, status)
+		}
+	}
+	return entries
 }
 
 func (r *adapterRegistry) upsertFromStatusTopic(topic string, payload []byte) {
@@ -227,8 +279,7 @@ func (r *adapterRegistry) upsertFromStatusTopic(topic string, payload []byte) {
 	if cfg, ok := parsePairingConfig(protocol, msg); ok {
 		entry.Pairing = cfg
 	}
-	r.mu.Lock()
-	if existing, ok := r.byID[adapterID]; ok {
+	if existing, ok := r.get(adapterID); ok {
 		if entry.Protocol == "" {
 			entry.Protocol = existing.Protocol
 		}
@@ -237,8 +288,7 @@ func (r *adapterRegistry) upsertFromStatusTopic(topic string, payload []byte) {
 		}
 		entry.Pairing = mergePairingConfig(existing.Pairing, entry.Pairing)
 	}
-	r.byID[adapterID] = entry
-	r.mu.Unlock()
+	r.put(entry)
 	if r.onUpdate != nil {
 		r.onUpdate()
 	}
@@ -264,8 +314,7 @@ func (r *adapterRegistry) upsertFromHello(payload []byte) {
 		pairingCfg = cfg
 	}
 	entry := adapterStatus{AdapterID: adapterID, Protocol: protocol, Status: "online", Reason: "hello", Version: version, LastSeen: r.nowFn(), Pairing: pairingCfg}
-	r.mu.Lock()
-	existing, ok := r.byID[adapterID]
+	existing, ok := r.get(adapterID)
 	if ok {
 		if existing.Protocol == "" {
 			existing.Protocol = entry.Protocol
@@ -275,11 +324,10 @@ func (r *adapterRegistry) upsertFromHello(payload []byte) {
 		}
 		existing.Pairing = mergePairingConfig(existing.Pairing, entry.Pairing)
 		existing.LastSeen = entry.LastSeen
-		r.byID[adapterID] = existing
+		r.put(existing)
 	} else {
-		r.byID[adapterID] = entry
+		r.put(entry)
 	}
-	r.mu.Unlock()
 	if r.onUpdate != nil {
 		r.onUpdate()
 	}
@@ -296,10 +344,8 @@ func (r *adapterRegistry) isOnline(entry adapterStatus) bool {
 }
 
 func (r *adapterRegistry) integrationsSnapshot() []IntegrationDescriptor {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	byProto := map[string]IntegrationDescriptor{}
-	for _, entry := range r.byID {
+	for _, entry := range r.entries() {
 		proto := normalizeProtocol(entry.Protocol)
 		if proto == "" {
 			continue
@@ -326,10 +372,8 @@ func (r *adapterRegistry) integrationsSnapshot() []IntegrationDescriptor {
 }
 
 func (r *adapterRegistry) pairingConfigsSnapshot() []PairingConfig {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	byProto := map[string]PairingConfig{}
-	for _, entry := range r.byID {
+	for _, entry := range r.entries() {
 		proto := normalizeProtocol(entry.Protocol)
 		if proto == "" || entry.Pairing == nil {
 			continue
@@ -361,9 +405,7 @@ func (r *adapterRegistry) isPairingSupported(protocol string) bool {
 	if proto == "" {
 		return false
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, entry := range r.byID {
+	for _, entry := range r.entries() {
 		if normalizeProtocol(entry.Protocol) != proto || !r.isOnline(entry) {
 			continue
 		}
@@ -382,9 +424,7 @@ func (r *adapterRegistry) supportsInterview(protocol string) bool {
 	if proto == "" {
 		return false
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, entry := range r.byID {
+	for _, entry := range r.entries() {
 		if normalizeProtocol(entry.Protocol) != proto || !r.isOnline(entry) {
 			continue
 		}

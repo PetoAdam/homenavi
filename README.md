@@ -75,6 +75,7 @@ Primary references:
 - Architecture + flow diagrams: [doc/architecture_diagram.md](doc/architecture_diagram.md)
 - ERS/HDP/device-hub interaction: [doc/ers_hdp_devicehub_overview.md](doc/ers_hdp_devicehub_overview.md)
 - HDP contract and topic model: [doc/hdp.md](doc/hdp.md)
+- Database ownership and schema overview: [doc/database_schema.md](doc/database_schema.md)
 - API surface: [doc/external_api_surface.md](doc/external_api_surface.md)
 
 <a id="quickstart"></a>
@@ -199,6 +200,7 @@ Services without first-class OTEL tracing support yet:
 - Architecture diagrams and message flows: [doc/architecture_diagram.md](doc/architecture_diagram.md)
 - API endpoint map: [doc/external_api_surface.md](doc/external_api_surface.md)
 - MQTT/HDP contract and interoperability: [doc/hdp.md](doc/hdp.md), [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md)
+- MQTT clients, broker topology, shared consumers, and Mosquitto compatibility: [doc/mqtt_architecture.md](doc/mqtt_architecture.md)
 - Local developer setup: [doc/local_build.md](doc/local_build.md)
 - Frontend state conventions: [doc/frontend-state-architecture-guide.md](doc/frontend-state-architecture-guide.md)
 - Kubernetes runbook: [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md)

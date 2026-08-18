@@ -32,7 +32,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init repository: %w", err)
 	}
-	mqttClient, err := mqttinfra.Connect(cfg.MQTT.BrokerURL, cfg.MQTT.ClientID)
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT)
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
@@ -43,13 +43,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	ingestor := &ingest.Ingestor{Repo: repo, StatePrefix: cfg.TopicPrefix, AllowRetains: cfg.IngestRetained}
 	subTopic := strings.TrimRight(cfg.TopicPrefix, "/") + "/#"
-	if err := mqttClient.Subscribe(subTopic, func(m mqttinfra.Message) {
+	subscribe := mqttClient.Subscribe
+	if strings.TrimSpace(cfg.MQTTSharedGroup) != "" {
+		subscribe = func(topic string, handler func(mqttinfra.Message)) error {
+			return mqttClient.SubscribeShared(cfg.MQTTSharedGroup, topic, handler)
+		}
+	}
+	if err := subscribe(subTopic, func(m mqttinfra.Message) {
 		ingestor.HandleMessage(context.Background(), m, time.Now().UTC())
 	}); err != nil {
 		mqttClient.Close()
 		return nil, fmt.Errorf("subscribe mqtt topic %s: %w", subTopic, err)
 	}
-	logger.Info("history ingest subscribed", "topic", subTopic)
+	logger.Info("history ingest subscribed", "topic", subTopic, "shared_group", cfg.MQTTSharedGroup)
 
 	handler := httptransport.NewServer(repo)
 	router := httptransport.NewRouter(handler)

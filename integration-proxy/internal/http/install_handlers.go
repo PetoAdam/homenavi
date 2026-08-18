@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	dbinfra "github.com/PetoAdam/homenavi/integration-proxy/internal/infra/db"
 	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
@@ -415,6 +416,11 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 	delete(s.updates, id)
 	delete(s.updating, id)
 	s.mu.Unlock()
+	if s.stateRepo != nil {
+		if err := s.stateRepo.DeleteOperationState(context.Background(), id); err != nil {
+			s.logger.Printf("operation state cleanup failed id=%s err=%v", id, err)
+		}
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "uninstalled", "id": id})
 }
@@ -498,12 +504,26 @@ func (s *Server) setInstallStatus(id, stage string, progress int, message string
 	if strings.TrimSpace(id) == "" {
 		return
 	}
+	status := installStatus{ID: id, Stage: stage, Progress: progress, Message: message, Updated: time.Now().UTC()}
+	if s.stateRepo != nil {
+		if err := s.stateRepo.SetInstallStatus(context.Background(), dbinfra.InstallStatus{ID: status.ID, Stage: status.Stage, Progress: status.Progress, Message: status.Message, UpdatedAt: status.Updated}); err != nil {
+			s.logger.Printf("operation status persistence failed id=%s err=%v", id, err)
+		}
+	}
 	s.mu.Lock()
-	s.installStat[id] = installStatus{ID: id, Stage: stage, Progress: progress, Message: message, Updated: time.Now().UTC()}
+	s.installStat[id] = status
 	s.mu.Unlock()
 }
 
 func (s *Server) getInstallStatus(id string) (installStatus, bool) {
+	if s.stateRepo != nil {
+		status, ok, err := s.stateRepo.GetInstallStatus(context.Background(), id)
+		if err != nil {
+			s.logger.Printf("operation status read failed id=%s err=%v", id, err)
+		} else if ok {
+			return installStatus{ID: status.ID, Stage: status.Stage, Progress: status.Progress, Message: status.Message, Updated: status.UpdatedAt}, true
+		}
+	}
 	s.mu.RLock()
 	status, ok := s.installStat[id]
 	s.mu.RUnlock()

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	httptransport "github.com/PetoAdam/homenavi/device-hub/internal/http"
+	adapterstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/adapterstate"
+	commandstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/commandstate"
 	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/cachex"
@@ -16,11 +18,13 @@ import (
 
 // App is the composed device-hub application.
 type App struct {
-	server      *http.Server
-	mqtt        *mqttinfra.Client
-	cache       *cachex.JSONStore
-	shutdownObs func()
-	logger      *slog.Logger
+	server       *http.Server
+	mqtt         *mqttinfra.Client
+	cache        *cachex.JSONStore
+	adapterStore *adapterstate.RedisStore
+	commandStore *commandstate.RedisStore
+	shutdownObs  func()
+	logger       *slog.Logger
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
@@ -28,13 +32,26 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open repository: %w", err)
 	}
-	mqttClient, err := mqttinfra.Connect(cfg.MQTT.BrokerURL)
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT)
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
+	}
+	adapterStore, err := adapterstate.NewRedisStore(context.Background(), cfg.Redis)
+	if err != nil {
+		mqttClient.Close()
+		return nil, fmt.Errorf("open adapter state store: %w", err)
+	}
+	commandStore, err := commandstate.NewRedisStore(context.Background(), cfg.Redis)
+	if err != nil {
+		mqttClient.Close()
+		_ = adapterStore.Close()
+		return nil, fmt.Errorf("open command state store: %w", err)
 	}
 	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("device-hub")
 	if err != nil {
 		mqttClient.Close()
+		_ = adapterStore.Close()
+		_ = commandStore.Close()
 		return nil, fmt.Errorf("setup observability: %w", err)
 	}
 
@@ -47,15 +64,17 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			logger.Warn("device-hub cache disabled", "error", err)
 		}
 	}
-	handler := httptransport.NewServer(repo, mqttClient, httptransport.WithCache(cacheStore, cfg.ListCacheTTL))
+	handler := httptransport.NewServer(repo, mqttClient, httptransport.WithCache(cacheStore, cfg.ListCacheTTL), httptransport.WithAdapterStore(adapterStore), httptransport.WithCommandStore(commandStore), httptransport.WithMQTTSharedGroup(cfg.MQTTSharedGroup))
 	mux.Handle("/", httptransport.NewRouter(handler))
 
 	return &App{
-		server:      &http.Server{Addr: ":" + cfg.Port, Handler: sharedobs.WrapHandler(tracer, "device-hub", mux), ReadHeaderTimeout: 5 * time.Second},
-		mqtt:        mqttClient,
-		cache:       cacheStore,
-		shutdownObs: shutdownObs,
-		logger:      logger,
+		server:       &http.Server{Addr: ":" + cfg.Port, Handler: sharedobs.WrapHandler(tracer, "device-hub", mux), ReadHeaderTimeout: 5 * time.Second},
+		mqtt:         mqttClient,
+		cache:        cacheStore,
+		adapterStore: adapterStore,
+		commandStore: commandStore,
+		shutdownObs:  shutdownObs,
+		logger:       logger,
 	}, nil
 }
 
@@ -63,6 +82,12 @@ func (a *App) Run(ctx context.Context) error {
 	defer func() {
 		if a.cache != nil {
 			_ = a.cache.Close()
+		}
+		if a.adapterStore != nil {
+			_ = a.adapterStore.Close()
+		}
+		if a.commandStore != nil {
+			_ = a.commandStore.Close()
 		}
 	}()
 	defer a.mqtt.Close()

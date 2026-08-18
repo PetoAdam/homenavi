@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
 	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
+	mqttinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
 )
 
@@ -48,7 +48,7 @@ func (z *ZigbeeAdapter) reconcileFriendlyDevice(ctx context.Context, friendly, e
 	}
 }
 
-func (z *ZigbeeAdapter) handleBridgeEvent(_ paho.Client, m paho.Message) {
+func (z *ZigbeeAdapter) handleBridgeEvent(m mqttinfra.Message) {
 	var evt struct {
 		Type string         `json:"type"`
 		Data map[string]any `json:"data"`
@@ -226,7 +226,7 @@ func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, extern
 	return dev
 }
 
-func (z *ZigbeeAdapter) handleBridgeDevices(m paho.Message) {
+func (z *ZigbeeAdapter) handleBridgeDevices(m mqttinfra.Message) {
 	var list []map[string]any
 	if err := json.Unmarshal(m.Payload(), &list); err != nil {
 		slog.Warn("bridge devices unmarshal", "err", err)
@@ -330,7 +330,7 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m paho.Message) {
 	}
 }
 
-func (z *ZigbeeAdapter) handleBridgeDeviceResponse(m paho.Message) {
+func (z *ZigbeeAdapter) handleBridgeDeviceResponse(m mqttinfra.Message) {
 	var resp struct {
 		Data   map[string]any `json:"data"`
 		Status string         `json:"status"`

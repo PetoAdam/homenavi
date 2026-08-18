@@ -12,11 +12,93 @@ import (
 	"time"
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
-	paho "github.com/eclipse/paho.mqtt.golang"
+	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	"github.com/google/uuid"
 
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 )
+
+type storedPairingSession struct {
+	Session             pairingSession      `json:"session"`
+	KnownDevices        map[string]struct{} `json:"known_devices,omitempty"`
+	KnownExternalIDs    map[string]struct{} `json:"known_external_ids,omitempty"`
+	CandidateExternalID string              `json:"candidate_external_id,omitempty"`
+}
+
+func marshalPairingSession(session *pairingSession) ([]byte, error) {
+	if session == nil {
+		return nil, fmt.Errorf("pairing session is required")
+	}
+	return json.Marshal(storedPairingSession{Session: session.clone(), KnownDevices: session.knownDevices, KnownExternalIDs: session.knownExternalIDs, CandidateExternalID: session.candidateExternalID})
+}
+
+func unmarshalPairingSession(payload []byte) (*pairingSession, error) {
+	var stored storedPairingSession
+	if err := json.Unmarshal(payload, &stored); err != nil {
+		return nil, err
+	}
+	session := stored.Session
+	session.knownDevices = stored.KnownDevices
+	session.knownExternalIDs = stored.KnownExternalIDs
+	session.candidateExternalID = stored.CandidateExternalID
+	return &session, nil
+}
+
+func (s *Server) mutatePersistentPairing(protocol string, mutate func(*pairingSession) (bool, error)) (pairingSession, bool, error) {
+	lifecycle, changed, err := s.repo.MutateActivePairing(context.Background(), protocol, func(record *dbinfra.PairingLifecycle) (bool, error) {
+		session, err := unmarshalPairingSession(record.Session)
+		if err != nil {
+			return false, err
+		}
+		updated, err := mutate(session)
+		if err != nil || !updated {
+			return updated, err
+		}
+		payload, err := marshalPairingSession(session)
+		if err != nil {
+			return false, err
+		}
+		record.Status = session.Status
+		record.Active = session.Active
+		record.Session = payload
+		record.ExpiresAt = session.ExpiresAt
+		return true, nil
+	})
+	if err != nil || !changed {
+		return pairingSession{}, false, err
+	}
+	session, err := unmarshalPairingSession(lifecycle.Session)
+	if err != nil {
+		return pairingSession{}, false, err
+	}
+	return session.clone(), true, nil
+}
+
+func (s *Server) persistPairingLifecycle(session *pairingSession) {
+	if s == nil || s.repo == nil || session == nil {
+		return
+	}
+	payload, err := marshalPairingSession(session)
+	if err != nil {
+		return
+	}
+	if _, err := s.repo.CreatePairingLifecycle(context.Background(), dbinfra.PairingLifecycle{ID: session.ID, Protocol: session.Protocol, Status: session.Status, Session: payload, StartedAt: session.StartedAt, ExpiresAt: session.ExpiresAt}); err != nil {
+		slog.Warn("pairing lifecycle persistence failed", "protocol", session.Protocol, "session_id", session.ID, "error", err)
+	}
+}
+
+func (s *Server) completePairingLifecycle(session pairingSession) {
+	if s == nil || s.repo == nil || session.ID == "" || session.Active {
+		return
+	}
+	payload, err := json.Marshal(session)
+	if err != nil {
+		return
+	}
+	if _, _, err := s.repo.CompletePairingLifecycle(context.Background(), session.ID, session.Status, payload); err != nil {
+		slog.Warn("pairing lifecycle completion persistence failed", "protocol", session.Protocol, "session_id", session.ID, "error", err)
+	}
+}
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, _ *http.Request) {
 	if s == nil || s.adapters == nil {
@@ -101,6 +183,27 @@ func (s *Server) handlePairings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) snapshotPairings() []pairingSession {
+	if s.repo != nil {
+		lifecycles, err := s.repo.ListActivePairings(context.Background())
+		if err != nil {
+			slog.Warn("active pairing list failed", "error", err)
+			return nil
+		}
+		items := make([]pairingSession, 0, len(lifecycles))
+		for _, lifecycle := range lifecycles {
+			session, err := unmarshalPairingSession(lifecycle.Session)
+			if err != nil {
+				slog.Warn("active pairing decode failed", "session_id", lifecycle.ID, "error", err)
+				continue
+			}
+			if session.Active && !session.ExpiresAt.After(time.Now().UTC()) {
+				s.handlePairingTimeout(session.Protocol, session.ID)
+				continue
+			}
+			items = append(items, session.clone())
+		}
+		return items
+	}
 	s.pairingMu.Lock()
 	defer s.pairingMu.Unlock()
 	result := make([]pairingSession, 0, len(s.pairings))
@@ -149,8 +252,8 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 		Mode:                 strings.TrimSpace(strings.ToLower(mode)),
 		FlowID:               strings.TrimSpace(flowID),
 		Inputs:               normalizedInputs,
-		Stage:                "starting",
-		Status:               "starting",
+		Stage:                "active",
+		Status:               "active",
 		Active:               true,
 		StartedAt:            now,
 		ExpiresAt:            now.Add(time.Duration(timeout) * time.Second),
@@ -158,6 +261,46 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 		Metadata:             meta,
 		knownDevices:         s.snapshotKnownDevices(),
 		knownExternalIDs:     s.snapshotKnownExternalIDs(protocol),
+	}
+	if s.repo != nil {
+		payload, err := marshalPairingSession(session)
+		if err != nil {
+			return nil, fmt.Errorf("encode pairing session: %w", err)
+		}
+		created, err := s.repo.CreatePairingLifecycle(context.Background(), dbinfra.PairingLifecycle{ID: session.ID, Protocol: session.Protocol, Status: session.Status, Active: true, Session: payload, StartedAt: session.StartedAt, ExpiresAt: session.ExpiresAt})
+		if err != nil {
+			return nil, fmt.Errorf("create pairing session: %w", err)
+		}
+		if !created {
+			lifecycle, found, err := s.repo.GetActivePairing(context.Background(), protocol)
+			if err != nil {
+				return nil, fmt.Errorf("load active pairing session: %w", err)
+			}
+			if !found {
+				return nil, errPairingActive
+			}
+			existing, err := unmarshalPairingSession(lifecycle.Session)
+			if err != nil {
+				return nil, fmt.Errorf("decode active pairing session: %w", err)
+			}
+			clone := existing.clone()
+			return &clone, nil
+		}
+		if err := s.publishPairingCommand(protocol, "start", timeout, mode, flowID, inputs); err != nil {
+			_, _, _ = s.mutatePersistentPairing(protocol, func(current *pairingSession) (bool, error) {
+				if current.ID != session.ID || !current.Active {
+					return false, nil
+				}
+				current.Active = false
+				current.Status = "failed"
+				current.ExpiresAt = time.Now().UTC()
+				return true, nil
+			})
+			return nil, fmt.Errorf("failed to start pairing: %w", err)
+		}
+		s.emitPairingEvent(session.clone())
+		clone := session.clone()
+		return &clone, nil
 	}
 	s.pairingMu.Lock()
 	if existing, ok := s.pairings[protocol]; ok && existing.Active {
@@ -184,6 +327,7 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 	s.pairingMu.Lock()
 	s.pairings[protocol] = session
 	s.pairingMu.Unlock()
+	s.persistPairingLifecycle(session)
 	if err := s.publishPairingCommand(protocol, "start", timeout, mode, flowID, inputs); err != nil {
 		s.pairingMu.Lock()
 		delete(s.pairings, protocol)
@@ -202,6 +346,26 @@ func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
 	if err := s.ensurePairingSupported(protocol); err != nil {
 		return nil, err
 	}
+	if s.repo != nil {
+		snapshot, changed, err := s.mutatePersistentPairing(protocol, func(session *pairingSession) (bool, error) {
+			if !session.Active {
+				return false, nil
+			}
+			session.Active = false
+			session.Status = status
+			session.ExpiresAt = time.Now().UTC()
+			return true, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !changed {
+			return nil, errPairingNotFound
+		}
+		_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
+		s.emitPairingEvent(snapshot)
+		return &snapshot, nil
+	}
 	s.pairingMu.Lock()
 	session, ok := s.pairings[protocol]
 	if !ok {
@@ -219,6 +383,7 @@ func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
 	s.pairingMu.Unlock()
 	_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 	s.emitPairingEvent(clone)
+	s.completePairingLifecycle(clone)
 	return &clone, nil
 }
 
@@ -247,6 +412,26 @@ func (s *Server) startPairingTimeout(protocol, sessionID string, expires time.Ti
 }
 
 func (s *Server) handlePairingTimeout(protocol, sessionID string) {
+	if s.repo != nil {
+		snapshot, changed, err := s.mutatePersistentPairing(protocol, func(session *pairingSession) (bool, error) {
+			if session.ID != sessionID || !session.Active || session.ExpiresAt.After(time.Now().UTC()) {
+				return false, nil
+			}
+			session.Active = false
+			session.Status = "timeout"
+			session.ExpiresAt = time.Now().UTC()
+			return true, nil
+		})
+		if err != nil {
+			slog.Warn("pairing timeout transition failed", "protocol", protocol, "session_id", sessionID, "error", err)
+			return
+		}
+		if changed {
+			_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
+			s.emitPairingEvent(snapshot)
+		}
+		return
+	}
 	s.pairingMu.Lock()
 	session, ok := s.pairings[protocol]
 	if !ok || session.ID != sessionID || !session.Active {
@@ -264,6 +449,7 @@ func (s *Server) handlePairingTimeout(protocol, sessionID string) {
 	s.pairingMu.Unlock()
 	_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 	s.emitPairingEvent(clone)
+	s.completePairingLifecycle(clone)
 }
 
 func (s *Server) publishPairingCommand(protocol, action string, timeout int, mode, flowID string, inputs map[string]any) error {
@@ -386,7 +572,7 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 	}
 }
 
-func (s *Server) handleHDPPairingProgressEvent(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPPairingProgressEvent(msg mqttinfra.Message) {
 	protocol := strings.TrimPrefix(msg.Topic(), hdpPairingProgressPrefix)
 	if protocol == msg.Topic() {
 		protocol = ""
@@ -639,6 +825,10 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	}
 	stage = strings.TrimSpace(strings.ToLower(stage))
 	status = strings.TrimSpace(strings.ToLower(status))
+	if s.repo != nil {
+		s.processPersistentPairingProgress(proto, stage, status, externalID, update)
+		return
+	}
 
 	s.pairingMu.Lock()
 	session, ok := s.pairings[proto]
@@ -706,6 +896,73 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	snapshot := session.clone()
 	s.pairingMu.Unlock()
 	s.emitPairingEvent(snapshot)
+	s.completePairingLifecycle(snapshot)
+}
+
+func (s *Server) processPersistentPairingProgress(protocol, stage, status, externalID string, update pairingProgressUpdate) {
+	snapshot, changed, err := s.mutatePersistentPairing(protocol, func(session *pairingSession) (bool, error) {
+		if !session.Active {
+			return false, nil
+		}
+		normalizedExternalID := normalizePairingProgressExternalID(protocol, externalID)
+		if !session.AllowMultipleDevices && session.candidateExternalID == "" && normalizedExternalID != "" {
+			session.candidateExternalID = normalizedExternalID
+		}
+		if session.AllowMultipleDevices {
+			if _, known := session.knownExternalIDs[normalizedExternalID]; normalizedExternalID != "" && !known {
+				session.AddedDevices = upsertPairingAddedDevice(session.AddedDevices, buildPairingProgressDevice(protocol, normalizedExternalID, stage, status))
+			}
+			if !shouldTerminatePairingSession(session, stage, status) {
+				session.Stage = "active"
+				session.Status = "active"
+				if len(session.AddedDevices) > 0 {
+					session.Message = multiDevicePairingNotice(len(session.AddedDevices))
+				}
+			}
+		} else {
+			if stage != "" {
+				session.Stage = stage
+			}
+			if status != "" {
+				session.Status = status
+			} else if stage != "" {
+				session.Status = stage
+			}
+			if isTerminalPairingState(stage) {
+				session.Status = stage
+			}
+		}
+		if update.Message != "" {
+			session.Message = update.Message
+		}
+		if update.ErrorCode != "" {
+			session.ErrorCode = update.ErrorCode
+		}
+		if update.Mode != "" {
+			session.Mode = update.Mode
+		}
+		if update.FlowID != "" {
+			session.FlowID = update.FlowID
+		}
+		if len(update.Inputs) > 0 {
+			session.Inputs = update.Inputs
+		}
+		if update.RequiredInputs != nil {
+			session.RequiredInputs = append([]string(nil), update.RequiredInputs...)
+		}
+		if shouldTerminatePairingSession(session, stage, status) {
+			session.Active = false
+			session.ExpiresAt = time.Now().UTC()
+		}
+		return true, nil
+	})
+	if err != nil {
+		slog.Warn("pairing progress transition failed", "protocol", protocol, "error", err)
+		return
+	}
+	if changed {
+		s.emitPairingEvent(snapshot)
+	}
 }
 
 func (s *Server) shouldAcceptPairingCandidate(session *pairingSession, dev *model.Device) bool {
@@ -828,6 +1085,10 @@ func (s *Server) handlePairingCandidate(dev *model.Device) {
 	if protocol == "" {
 		return
 	}
+	if s.repo != nil {
+		s.handlePersistentPairingCandidate(protocol, dev)
+		return
+	}
 	deviceID := dev.ID.String()
 	s.pairingMu.Lock()
 	session, ok := s.pairings[protocol]
@@ -881,6 +1142,59 @@ func (s *Server) handlePairingCandidate(dev *model.Device) {
 			}
 		}
 	}(protocol, supportsInterview, session.AllowMultipleDevices)
+}
+
+func (s *Server) handlePersistentPairingCandidate(protocol string, dev *model.Device) {
+	var metadata pairingMetadata
+	var supportsInterview bool
+	snapshot, changed, err := s.mutatePersistentPairing(protocol, func(session *pairingSession) (bool, error) {
+		if !session.Active || !s.shouldAcceptPairingCandidate(session, dev) {
+			return false, nil
+		}
+		metadata = session.Metadata
+		supportsInterview = s.supportsInterviewTracking(protocol)
+		if session.DeviceID == "" {
+			session.DeviceID = dev.ID.String()
+		}
+		state := "completed"
+		if supportsInterview {
+			state = "detected"
+		}
+		session.AddedDevices = upsertPairingAddedDevice(session.AddedDevices, buildPairingAddedDevice(dev, state))
+		if session.knownDevices == nil {
+			session.knownDevices = make(map[string]struct{})
+		}
+		session.knownDevices[dev.ID.String()] = struct{}{}
+		if session.AllowMultipleDevices {
+			session.Stage = "active"
+			session.Status = "active"
+			session.Message = multiDevicePairingNotice(len(session.AddedDevices))
+		} else {
+			session.Status = "device_detected"
+		}
+		if !supportsInterview && !session.AllowMultipleDevices {
+			session.Active = false
+		}
+		return true, nil
+	})
+	if err != nil {
+		slog.Warn("pairing candidate transition failed", "protocol", protocol, "device_id", dev.ID, "error", err)
+		return
+	}
+	if !changed {
+		return
+	}
+	s.emitPairingEvent(snapshot)
+	go s.applyPairingMetadata(dev.ID.String(), metadata)
+	if snapshot.AllowMultipleDevices {
+		return
+	}
+	if err := s.publishPairingCommand(protocol, "stop", 0, "", "", nil); err != nil {
+		slog.Warn("pairing permit stop failed", "protocol", protocol, "error", err)
+	}
+	if !supportsInterview {
+		return
+	}
 }
 
 func (s *Server) applyPairingMetadata(deviceID string, meta pairingMetadata) {

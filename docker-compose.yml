@@ -395,15 +395,20 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       - DEVICE_HUB_PORT=${DEVICE_HUB_PORT}
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MQTT_BROKER_KIND=${MQTT_BROKER_KIND:-emqx}
+      - DEVICE_HUB_MQTT_SHARED_GROUP=${DEVICE_HUB_MQTT_SHARED_GROUP:-}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
       - DEVICE_HUB_ENABLE_THREAD=true
       - LOG_LEVEL=${LOG_LEVEL}
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
@@ -426,6 +431,8 @@ services:
     environment:
       - ENTITY_REGISTRY_PORT=${ENTITY_REGISTRY_PORT}
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MQTT_BROKER_KIND=${MQTT_BROKER_KIND:-emqx}
+      - ENTITY_REGISTRY_MQTT_SHARED_GROUP=${ENTITY_REGISTRY_MQTT_SHARED_GROUP:-}
       - DEVICE_HUB_URL=http://device-hub:${DEVICE_HUB_PORT}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -456,6 +463,7 @@ services:
       - ZIGBEE_ADAPTER_ID=zigbee-adapter-1
       - ZIGBEE_ADAPTER_VERSION=dev
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MQTT_BROKER_KIND=${MQTT_BROKER_KIND:-emqx}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -483,6 +491,7 @@ services:
     environment:
       - MOCK_ADAPTER_PORT=${MOCK_ADAPTER_PORT:-8092}
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MQTT_BROKER_KIND=${MQTT_BROKER_KIND:-emqx}
       - MOCK_ADAPTER_ID=mock-adapter-1
       - MOCK_ADAPTER_VERSION=dev
       - LOG_LEVEL=${LOG_LEVEL}
@@ -505,7 +514,9 @@ services:
     environment:
       - HISTORY_SERVICE_PORT=${HISTORY_SERVICE_PORT}
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MQTT_BROKER_KIND=${MQTT_BROKER_KIND:-emqx}
       - HISTORY_SERVICE_MQTT_CLIENT_ID=${HISTORY_SERVICE_MQTT_CLIENT_ID:-}
+      - HISTORY_SERVICE_MQTT_SHARED_GROUP=${HISTORY_SERVICE_MQTT_SHARED_GROUP:-}
       - HISTORY_INGEST_RETAINED=${HISTORY_INGEST_RETAINED}
       - HISTORY_HDP_STATE_PREFIX=${HISTORY_HDP_STATE_PREFIX}
       - POSTGRES_USER=${POSTGRES_USER}
@@ -535,7 +546,9 @@ services:
     environment:
       - AUTOMATION_SERVICE_PORT=${AUTOMATION_SERVICE_PORT}
       - MQTT_BROKER_URL=${MQTT_BROKER_URL:-mqtt://emqx:1883}
+      - MQTT_BROKER_KIND=${MQTT_BROKER_KIND:-emqx}
       - AUTOMATION_SERVICE_MQTT_CLIENT_ID=${AUTOMATION_SERVICE_MQTT_CLIENT_ID:-}
+      - AUTOMATION_SERVICE_MQTT_SHARED_GROUP=${AUTOMATION_SERVICE_MQTT_SHARED_GROUP:-}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -582,6 +595,12 @@ services:
       - INTEGRATIONS_COMPOSE_ENV_FILE=/app/.env
       - INTEGRATIONS_ROOT=${INTEGRATIONS_ROOT:-${PWD}}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
     volumes:
       - ${INTEGRATIONS_ROOT:-${PWD}}:${INTEGRATIONS_ROOT:-${PWD}}:ro
       - ${INTEGRATIONS_ROOT:-${PWD}}/integrations/secrets:${INTEGRATIONS_ROOT:-${PWD}}/integrations/secrets:rw
@@ -595,6 +614,8 @@ services:
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks:
       - homenavi-network
 

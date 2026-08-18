@@ -11,7 +11,6 @@ import (
 
 	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/PetoAdam/homenavi/shared/hdp"
-	paho "github.com/eclipse/paho.mqtt.golang"
 
 	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
 	dbinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/db"
@@ -198,7 +197,7 @@ func (z *ZigbeeAdapter) subscribe(topic string, handler mqttinfra.Handler) error
 	return nil
 }
 
-func (z *ZigbeeAdapter) handle(_ paho.Client, m paho.Message) {
+func (z *ZigbeeAdapter) handle(m mqttinfra.Message) {
 	topic := m.Topic()
 	if topic == "zigbee2mqtt/bridge/devices" {
 		z.handleBridgeDevices(m)
@@ -209,7 +208,7 @@ func (z *ZigbeeAdapter) handle(_ paho.Client, m paho.Message) {
 		return
 	}
 	if strings.HasPrefix(topic, "zigbee2mqtt/bridge/event") {
-		z.handleBridgeEvent(nil, m)
+		z.handleBridgeEvent(m)
 		return
 	}
 

@@ -8,25 +8,24 @@ import (
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
-	paho "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
 )
 
-func (s *Server) handleHDPAdapterHello(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPAdapterHello(msg mqttinfra.Message) {
 	if s == nil || s.adapters == nil {
 		return
 	}
 	s.adapters.upsertFromHello(msg.Payload())
 }
 
-func (s *Server) handleHDPAdapterStatus(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPAdapterStatus(msg mqttinfra.Message) {
 	if s == nil || s.adapters == nil {
 		return
 	}
 	s.adapters.upsertFromStatusTopic(msg.Topic(), msg.Payload())
 }
 
-func (s *Server) handleHDPMetadataEvent(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPMetadataEvent(msg mqttinfra.Message) {
 	deviceID := strings.TrimPrefix(msg.Topic(), hdpMetadataPrefix)
 	if deviceID == msg.Topic() || deviceID == "" {
 		return
@@ -40,7 +39,7 @@ func (s *Server) handleHDPMetadataEvent(_ paho.Client, msg mqttinfra.Message) {
 	s.upsertMetadataFromHDP(deviceID, payload)
 }
 
-func (s *Server) handleHDPEvent(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPEvent(msg mqttinfra.Message) {
 	if len(msg.Payload()) == 0 {
 		return
 	}
@@ -141,7 +140,7 @@ func (s *Server) upsertMetadataFromHDP(deviceID string, payload map[string]any) 
 	s.invalidateDeviceListCache(ctx)
 }
 
-func (s *Server) handleHDPStateEvent(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPStateEvent(msg mqttinfra.Message) {
 	topic := strings.TrimPrefix(msg.Topic(), hdpStatePrefix)
 	if topic == msg.Topic() {
 		return

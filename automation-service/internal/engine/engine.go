@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,7 +14,9 @@ import (
 
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/cachex"
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
@@ -21,7 +25,7 @@ import (
 type Engine struct {
 	repo   *dbinfra.Repository
 	mq     *mqttinfra.Client
-	events *RunEventHub
+	events RunEventBus
 
 	httpClient          *http.Client
 	emailServiceURL     string
@@ -31,18 +35,18 @@ type Engine struct {
 	selMu         sync.Mutex
 	selectorTTL   time.Duration
 	selectorCache map[string]cachedSelector
+	selectorStore *cachex.JSONStore
 
 	mu          sync.RWMutex
 	workflows   map[uuid.UUID]dbinfra.Workflow
 	defs        map[uuid.UUID]Definition
-	lastFiredAt map[string]time.Time
-
 	cron        *cron.Cron
 	cronEntries map[string]cron.EntryID
 	cronSpecs   map[string]string
 
 	reloadEvery     time.Duration
 	mqttConnectedAt atomic.Int64
+	mqttSharedGroup string
 }
 
 type cachedSelector struct {
@@ -60,6 +64,9 @@ type Options struct {
 	EmailServiceURL     string
 	ERSServiceURL       string
 	IntegrationProxyURL string
+	MQTTSharedGroup     string
+	RunEvents           RunEventBus
+	SelectorStore       *cachex.JSONStore
 }
 
 func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
@@ -71,20 +78,24 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 	eng := &Engine{
 		repo:                repo,
 		mq:                  mq,
-		events:              NewRunEventHub(),
+		events:              opts.RunEvents,
 		httpClient:          hc,
 		emailServiceURL:     strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
 		ersServiceURL:       strings.TrimRight(strings.TrimSpace(opts.ERSServiceURL), "/"),
 		integrationProxyURL: strings.TrimRight(strings.TrimSpace(opts.IntegrationProxyURL), "/"),
 		workflows:           map[uuid.UUID]dbinfra.Workflow{},
 		defs:                map[uuid.UUID]Definition{},
-		lastFiredAt:         map[string]time.Time{},
 		cron:                c,
 		cronEntries:         map[string]cron.EntryID{},
 		cronSpecs:           map[string]string{},
 		selectorTTL:         15 * time.Second,
 		selectorCache:       map[string]cachedSelector{},
+		selectorStore:       opts.SelectorStore,
 		reloadEvery:         10 * time.Second,
+		mqttSharedGroup:     strings.TrimSpace(opts.MQTTSharedGroup),
+	}
+	if eng.events == nil {
+		eng.events = NewRunEventHub()
 	}
 	eng.noteMQTTConnected(time.Now())
 	if mq != nil {
@@ -93,6 +104,11 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 		})
 	}
 	return eng
+}
+
+func (e *Engine) selectorCacheKey(selector string) string {
+	digest := sha256.Sum256([]byte(selector))
+	return fmt.Sprintf("automation-service:selector:%x", digest[:])
 }
 
 func (e *Engine) noteMQTTConnected(at time.Time) {
@@ -124,13 +140,17 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 	e.cron.Start()
 
-	// Subscribe to HDP state + command_result.
-	if err := e.mq.Subscribe(hdp.StatePrefix+"#", func(m mqttinfra.Message) {
+	mode := mqttx.SubscriptionModeExclusive
+	group := e.mqttSharedGroup
+	if group != "" {
+		mode = mqttx.SubscriptionModeShared
+	}
+	if err := e.mq.SubscribeWithOptions(mqttx.SubscriptionOptions{Topic: hdp.StatePrefix + "#", QoS: 1, Mode: mode, Group: group}, func(m mqttinfra.Message) {
 		e.handleState(ctx, m)
 	}); err != nil {
 		return err
 	}
-	if err := e.mq.Subscribe(hdp.CommandResultPrefix+"#", func(m mqttinfra.Message) {
+	if err := e.mq.SubscribeWithOptions(mqttx.SubscriptionOptions{Topic: hdp.CommandResultPrefix + "#", QoS: 1, Mode: mode, Group: group}, func(m mqttinfra.Message) {
 		e.handleCommandResult(ctx, m)
 	}); err != nil {
 		return err
@@ -150,6 +170,9 @@ func (e *Engine) ReloadNow(ctx context.Context) error {
 func (e *Engine) Stop() {
 	if e.cron != nil {
 		e.cron.Stop()
+	}
+	if e.events != nil {
+		_ = e.events.Close()
 	}
 }
 
@@ -261,8 +284,11 @@ func (e *Engine) reconcileCron() {
 			cooldownSec := t.CooldownSec
 			id, err := e.cron.AddFunc(cronExpr, func() {
 				ctx := context.Background()
-				coolKey := wfIDCopy.String() + ":" + nodeIDCopy
-				if !e.allowFire(coolKey, cooldownSec) {
+				claimed, err := e.repo.ClaimTriggerCooldown(ctx, wfIDCopy, nodeIDCopy, time.Duration(cooldownSec)*time.Second, time.Now().UTC())
+				if err != nil || !claimed {
+					if err != nil {
+						slog.Warn("automation schedule trigger cooldown claim failed", "workflow_id", wfIDCopy, "trigger_node_id", nodeIDCopy, "error", err)
+					}
 					return
 				}
 				_, _ = e.StartWorkflowRun(ctx, wfIDCopy, nodeIDCopy, map[string]any{"type": "schedule", "trigger_node_id": nodeIDCopy, "cron": cronCopy, "ts": time.Now().UTC().UnixMilli()})
@@ -285,18 +311,4 @@ func (e *Engine) reconcileCron() {
 		delete(e.cronEntries, key)
 		delete(e.cronSpecs, key)
 	}
-}
-
-func (e *Engine) allowFire(key string, cooldownSec int) bool {
-	if cooldownSec <= 0 {
-		return true
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	last, ok := e.lastFiredAt[key]
-	if ok && time.Since(last) < time.Duration(cooldownSec)*time.Second {
-		return false
-	}
-	e.lastFiredAt[key] = time.Now()
-	return true
 }

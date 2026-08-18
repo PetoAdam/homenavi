@@ -2,6 +2,8 @@
 
 Homenavi now treats **EMQX** as the primary and recommended MQTT broker in both Docker Compose and Helm.
 
+For the core client-layer design, HDP topic families, shared-consumer behavior, and Mosquitto compatibility, see [doc/mqtt_architecture.md](mqtt_architecture.md).
+
 ## 1. Default stance
 
 Use this mental model:

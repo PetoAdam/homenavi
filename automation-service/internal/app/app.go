@@ -11,6 +11,7 @@ import (
 	"github.com/PetoAdam/homenavi/automation-service/internal/engine"
 	httptransport "github.com/PetoAdam/homenavi/automation-service/internal/http"
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
+	eventsinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/events"
 	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/cachex"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
@@ -41,23 +42,34 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("init repository: %w", err)
 	}
 
-	mqttClient, err := mqttinfra.Connect(cfg.MQTT.BrokerURL, cfg.MQTT.ClientID)
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT)
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
 
-	eng := engine.New(repo, mqttClient, engine.Options{
-		EmailServiceURL:     cfg.EmailServiceURL,
-		ERSServiceURL:       cfg.ERSServiceURL,
-		IntegrationProxyURL: cfg.IntegrationProxyURL,
-	})
+	var runEvents engine.RunEventBus
+	if cfg.MQTTSharedGroup != "" {
+		runEvents, err = eventsinfra.NewRedisRunEventBus(context.Background(), cfg.Redis)
+		if err != nil {
+			mqttClient.Close()
+			return nil, fmt.Errorf("connect shared run events: %w", err)
+		}
+	}
 	var cacheStore *cachex.JSONStore
 	if cfg.ListCacheTTL > 0 {
 		cacheStore, err = cachex.NewJSONStore(context.Background(), cfg.Redis)
 		if err != nil {
-			logger.Warn("automation-service workflow cache disabled", "error", err)
+			logger.Warn("automation-service cache disabled", "error", err)
 		}
 	}
+	eng := engine.New(repo, mqttClient, engine.Options{
+		EmailServiceURL:     cfg.EmailServiceURL,
+		ERSServiceURL:       cfg.ERSServiceURL,
+		IntegrationProxyURL: cfg.IntegrationProxyURL,
+		MQTTSharedGroup:     cfg.MQTTSharedGroup,
+		RunEvents:           runEvents,
+		SelectorStore:       cacheStore,
+	})
 	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("automation-service")
 	if err != nil {
 		return nil, fmt.Errorf("setup observability: %w", err)

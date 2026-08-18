@@ -10,6 +10,7 @@ import (
 // RunEvent is streamed to the frontend during execution.
 // It is intentionally UI-friendly (node-based) rather than engine-internal.
 type RunEvent struct {
+	EventID          string  `json:"event_id"`
 	Type             string  `json:"type"`
 	RunID            string  `json:"run_id"`
 	WorkflowID       string  `json:"workflow_id,omitempty"`
@@ -20,6 +21,12 @@ type RunEvent struct {
 	Error            string  `json:"error,omitempty"`
 	TSUnixMillis     int64   `json:"ts"`
 	SleepDurationSec float64 `json:"sleep_duration_sec,omitempty"`
+}
+
+type RunEventBus interface {
+	Subscribe(runID uuid.UUID) (<-chan RunEvent, func())
+	Publish(runID uuid.UUID, evt RunEvent)
+	Close() error
 }
 
 // RunEventHub is an in-memory pub/sub keyed by run ID.
@@ -78,6 +85,9 @@ func (h *RunEventHub) Subscribe(runID uuid.UUID) (<-chan RunEvent, func()) {
 }
 
 func (h *RunEventHub) Publish(runID uuid.UUID, evt RunEvent) {
+	if evt.EventID == "" {
+		evt.EventID = uuid.NewString()
+	}
 	if evt.TSUnixMillis == 0 {
 		evt.TSUnixMillis = time.Now().UTC().UnixMilli()
 	}
@@ -107,3 +117,7 @@ func (h *RunEventHub) Publish(runID uuid.UUID, evt RunEvent) {
 		}
 	}
 }
+
+func (h *RunEventHub) Close() error { return nil }
+
+var _ RunEventBus = (*RunEventHub)(nil)

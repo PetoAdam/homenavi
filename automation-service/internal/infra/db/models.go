@@ -62,6 +62,15 @@ type PendingCorrelation struct {
 	ExpiresAt   time.Time        `gorm:"index:idx_pending_correlations_expires_at;not null" json:"expires_at"`
 }
 
+// TriggerCooldown serializes state-trigger cooldown claims across automation-service replicas.
+type TriggerCooldown struct {
+	WorkflowID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"workflow_id"`
+	TriggerNodeID string    `gorm:"primaryKey;type:varchar(128)" json:"trigger_node_id"`
+	ExpiresAt     time.Time `gorm:"index:idx_trigger_cooldowns_expires_at;not null" json:"expires_at"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type hdpDeviceRecord struct {
 	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Protocol   string    `gorm:"column:protocol"`

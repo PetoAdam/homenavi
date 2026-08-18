@@ -6,13 +6,17 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	adapterstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/adapterstate"
+	commandstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/commandstate"
 	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/cachex"
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 	"github.com/google/uuid"
 )
 
@@ -112,20 +116,39 @@ func (p *pairingSession) clone() pairingSession {
 }
 
 type Server struct {
-	repo             *dbinfra.Repository
-	mqtt             mqttinfra.ClientAPI
-	adapters         *adapterRegistry
-	pairingMu        sync.Mutex
-	pairings         map[string]*pairingSession
-	commandMu        sync.Mutex
-	commandsByCorr   map[string]*pendingCommand
-	commandsByDevice map[string]*pendingCommand
-	commandTimeout   time.Duration
-	cache            *cachex.JSONStore
-	listCacheTTL     time.Duration
+	repo            *dbinfra.Repository
+	mqtt            mqttinfra.ClientAPI
+	adapters        *adapterRegistry
+	pairingMu       sync.Mutex
+	pairings        map[string]*pairingSession
+	commandStore    commandstate.Store
+	commandTimeout  time.Duration
+	mqttSharedGroup string
+	cache           *cachex.JSONStore
+	listCacheTTL    time.Duration
 }
 
 type ServerOption func(*Server)
+
+func WithAdapterStore(store adapterstate.Store) ServerOption {
+	return func(s *Server) {
+		s.adapters = newAdapterRegistry(store, 0)
+	}
+}
+
+func WithCommandStore(store commandstate.Store) ServerOption {
+	return func(s *Server) {
+		if store != nil {
+			s.commandStore = store
+		}
+	}
+}
+
+func WithMQTTSharedGroup(group string) ServerOption {
+	return func(s *Server) {
+		s.mqttSharedGroup = strings.TrimSpace(group)
+	}
+}
 
 func WithCache(store *cachex.JSONStore, ttl time.Duration) ServerOption {
 	return func(s *Server) {
@@ -142,13 +165,12 @@ func NewServer(repo *dbinfra.Repository, mqtt mqttinfra.ClientAPI, opts ...Serve
 		slog.Warn("NewServer initialized without mqtt client; publish/subscribe will be disabled")
 	}
 	server := &Server{
-		repo:             repo,
-		mqtt:             mqtt,
-		adapters:         newAdapterRegistry(0),
-		pairings:         make(map[string]*pairingSession),
-		commandsByCorr:   make(map[string]*pendingCommand),
-		commandsByDevice: make(map[string]*pendingCommand),
-		commandTimeout:   defaultCommandLifecycleTimeout,
+		repo:           repo,
+		mqtt:           mqtt,
+		adapters:       newAdapterRegistry(nil, 0),
+		pairings:       make(map[string]*pairingSession),
+		commandStore:   commandstate.NewMemoryStore(),
+		commandTimeout: defaultCommandLifecycleTimeout,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -198,25 +220,41 @@ func (s *Server) Register(mux *http.ServeMux) {
 		slog.Warn("mqtt client not configured; skipping mqtt subscriptions")
 		return
 	}
-	if err := s.mqtt.Subscribe(hdpAdapterHelloTopic, s.handleHDPAdapterHello); err != nil {
+	s.startCommandExpiryReaper()
+	adapterSubscription := mqttx.SubscriptionOptions{Topic: hdpAdapterHelloTopic, Mode: mqttx.SubscriptionModeExclusive}
+	if s.mqttSharedGroup != "" {
+		adapterSubscription.Mode = mqttx.SubscriptionModeShared
+		adapterSubscription.Group = s.mqttSharedGroup
+	}
+	if err := s.mqtt.SubscribeWithOptions(adapterSubscription, s.handleHDPAdapterHello); err != nil {
 		slog.Error("hdp adapter hello subscribe failed", "error", err)
 	}
-	if err := s.mqtt.Subscribe(hdpAdapterStatusPrefix+"#", s.handleHDPAdapterStatus); err != nil {
+	adapterSubscription.Topic = hdpAdapterStatusPrefix + "#"
+	if err := s.mqtt.SubscribeWithOptions(adapterSubscription, s.handleHDPAdapterStatus); err != nil {
 		slog.Error("hdp adapter status subscribe failed", "error", err)
 	}
-	if err := s.mqtt.Subscribe(hdpMetadataPrefix+"#", s.handleHDPMetadataEvent); err != nil {
+	durableSubscription := mqttx.SubscriptionOptions{Topic: hdpMetadataPrefix + "#", Mode: mqttx.SubscriptionModeExclusive}
+	if s.mqttSharedGroup != "" {
+		durableSubscription.Mode = mqttx.SubscriptionModeShared
+		durableSubscription.Group = s.mqttSharedGroup
+	}
+	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPMetadataEvent); err != nil {
 		slog.Error("hdp metadata subscribe failed", "error", err)
 	}
-	if err := s.mqtt.Subscribe(hdpStatePrefix+"#", s.handleHDPStateEvent); err != nil {
+	durableSubscription.Topic = hdpStatePrefix + "#"
+	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPStateEvent); err != nil {
 		slog.Error("hdp state subscribe failed", "error", err)
 	}
-	if err := s.mqtt.Subscribe(hdpEventPrefix+"#", s.handleHDPEvent); err != nil {
+	durableSubscription.Topic = hdpEventPrefix + "#"
+	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPEvent); err != nil {
 		slog.Error("hdp event subscribe failed", "error", err)
 	}
-	if err := s.mqtt.Subscribe(hdpCommandResultPrefix+"#", s.handleHDPCommandResultEvent); err != nil {
+	durableSubscription.Topic = hdpCommandResultPrefix + "#"
+	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPCommandResultEvent); err != nil {
 		slog.Error("hdp command result subscribe failed", "error", err)
 	}
-	if err := s.mqtt.Subscribe(hdpPairingProgressPrefix+"#", s.handleHDPPairingProgressEvent); err != nil {
+	durableSubscription.Topic = hdpPairingProgressPrefix + "#"
+	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPPairingProgressEvent); err != nil {
 		slog.Error("hdp pairing progress subscribe failed", "error", err)
 	}
 }

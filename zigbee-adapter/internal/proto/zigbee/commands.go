@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	paho "github.com/eclipse/paho.mqtt.golang"
-
 	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
+	mqttinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
 )
 
@@ -219,7 +218,7 @@ func (z *ZigbeeAdapter) clearPendingReconfigure(external string) {
 	z.reconfigureMu.Unlock()
 }
 
-func (z *ZigbeeAdapter) handleHDPDeviceCommand(_ paho.Client, m paho.Message) {
+func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 	var envelope map[string]any
 	if err := json.Unmarshal(m.Payload(), &envelope); err != nil {
 		slog.Debug("hdp command decode failed", "topic", m.Topic(), "error", err)

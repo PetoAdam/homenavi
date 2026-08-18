@@ -4,10 +4,10 @@ import "testing"
 
 func TestPendingCommandSatisfied_ExpectedStateFallsBackToCorrWithChangedBaseline(t *testing.T) {
 	entry := &pendingCommand{
-		DeviceID: "zigbee/0x1234",
-		Corr:     "corr-1",
-		Expected: map[string]any{"power": "on"},
-		Baseline: map[string]any{"state": false},
+		DeviceID:  "zigbee/0x1234",
+		Corr:      "corr-1",
+		Expected:  map[string]any{"power": "on"},
+		Baseline:  map[string]any{"state": false},
 		StartedAt: 100,
 	}
 	state := map[string]any{
@@ -22,10 +22,10 @@ func TestPendingCommandSatisfied_ExpectedStateFallsBackToCorrWithChangedBaseline
 
 func TestPendingCommandSatisfied_ExpectedStateDoesNotClearOnCorrWithoutChange(t *testing.T) {
 	entry := &pendingCommand{
-		DeviceID: "zigbee/0x1234",
-		Corr:     "corr-2",
-		Expected: map[string]any{"power": "on"},
-		Baseline: map[string]any{"state": false},
+		DeviceID:  "zigbee/0x1234",
+		Corr:      "corr-2",
+		Expected:  map[string]any{"power": "on"},
+		Baseline:  map[string]any{"state": false},
 		StartedAt: 100,
 	}
 	state := map[string]any{
@@ -68,5 +68,18 @@ func TestPendingCommandSatisfied_ExpectedStateDoesNotFallbackBeforeCommandStart(
 
 	if pendingCommandSatisfied(entry, state, "", 150) {
 		t.Fatalf("expected pre-command state changes to not satisfy pending command")
+	}
+}
+
+func TestPendingCommandSatisfied_StaleExpectedStateDoesNotCompleteWithoutCorrelation(t *testing.T) {
+	entry := &pendingCommand{
+		DeviceID:  "zigbee/0x1234",
+		Corr:      "corr-5",
+		Expected:  map[string]any{"power": "on"},
+		StartedAt: 200,
+	}
+
+	if pendingCommandSatisfied(entry, map[string]any{"power": "on"}, "", 150) {
+		t.Fatal("expected stale matching state to remain pending")
 	}
 }

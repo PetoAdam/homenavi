@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
-	"github.com/PetoAdam/homenavi/shared/mqttx"
-	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
 type publishedMessage struct {
@@ -17,12 +15,12 @@ type publishedMessage struct {
 }
 
 type fakeClient struct {
-	subscribed map[string]mqttx.Handler
+	subscribed map[string]Handler
 	published  []publishedMessage
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{subscribed: map[string]mqttx.Handler{}}
+	return &fakeClient{subscribed: map[string]Handler{}}
 }
 
 func (f *fakeClient) Publish(topic string, payload []byte) error {
@@ -35,7 +33,7 @@ func (f *fakeClient) PublishWith(topic string, payload []byte, retain bool) erro
 	return nil
 }
 
-func (f *fakeClient) Subscribe(topic string, cb mqttx.Handler) error {
+func (f *fakeClient) Subscribe(topic string, cb Handler) error {
 	f.subscribed[topic] = cb
 	return nil
 }
@@ -52,8 +50,6 @@ func (f fakeMessage) Topic() string     { return f.topic }
 func (f fakeMessage) MessageID() uint16 { return 0 }
 func (f fakeMessage) Payload() []byte   { return f.payload }
 func (f fakeMessage) Ack()              {}
-
-var _ paho.Message = fakeMessage{}
 
 func TestStartPublishesHelloAndStatusAndSubscribes(t *testing.T) {
 	client := newFakeClient()
@@ -82,7 +78,7 @@ func TestHandlePairingStartPublishesProgress(t *testing.T) {
 	client := newFakeClient()
 	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
 
-	svc.handlePairingCommand(nil, fakeMessage{topic: hdp.PairingCommandPrefix + "mock", payload: []byte(`{"action":"start","mode":"default","flow_id":"flow-a"}`)})
+	svc.handlePairingCommand(fakeMessage{topic: hdp.PairingCommandPrefix + "mock", payload: []byte(`{"action":"start","mode":"default","flow_id":"flow-a"}`)})
 
 	if len(client.published) != 2 {
 		t.Fatalf("expected two progress messages, got %d", len(client.published))
@@ -111,7 +107,7 @@ func TestHandlePairingStartNeedsInputForQRCodeMode(t *testing.T) {
 	client := newFakeClient()
 	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
 
-	svc.handlePairingCommand(nil, fakeMessage{topic: hdp.PairingCommandPrefix + "mock", payload: []byte(`{"action":"start","mode":"qr_code","inputs":{}}`)})
+	svc.handlePairingCommand(fakeMessage{topic: hdp.PairingCommandPrefix + "mock", payload: []byte(`{"action":"start","mode":"qr_code","inputs":{}}`)})
 
 	if len(client.published) != 1 {
 		t.Fatalf("expected one progress message, got %d", len(client.published))
@@ -134,7 +130,7 @@ func TestHandleDeviceCommandRejectsAndPublishesResult(t *testing.T) {
 	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
 	payload := []byte(`{"device_id":"mock/node-1","corr":"corr-1"}`)
 
-	svc.handleDeviceCommand(nil, fakeMessage{topic: hdp.CommandPrefix + "mock/node-1", payload: payload})
+	svc.handleDeviceCommand(fakeMessage{topic: hdp.CommandPrefix + "mock/node-1", payload: payload})
 
 	if len(client.published) != 1 {
 		t.Fatalf("expected one command_result publish, got %d", len(client.published))

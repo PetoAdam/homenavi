@@ -35,7 +35,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("connect redis: %w", err)
 	}
 	cache := redisinfra.NewStateCache(rdb)
-	mqttClient, err := mqttinfra.Connect(cfg.MQTT.BrokerURL, "zigbee-adapter")
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT, "zigbee-adapter")
 	if err != nil {
 		_ = rdb.Close()
 		return nil, fmt.Errorf("connect mqtt: %w", err)

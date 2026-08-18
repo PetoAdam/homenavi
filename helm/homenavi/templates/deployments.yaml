@@ -253,6 +253,8 @@ spec:
             {{- if $usesMQTT }}
             - name: MQTT_BROKER_URL
               value: {{ include "homenavi.mqttBrokerURL" $ | quote }}
+            - name: MQTT_BROKER_KIND
+              value: {{ include "homenavi.mqttBrokerKind" $ | quote }}
             {{- end }}
             {{- if $injectMQTTWebsocketUpstream }}
             - name: MQTT_WEBSOCKET_UPSTREAM_URL

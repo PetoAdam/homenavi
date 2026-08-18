@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
-	"github.com/PetoAdam/homenavi/shared/mqttx"
 )
 
 const heartbeatInterval = 20 * time.Second
@@ -16,8 +15,18 @@ const heartbeatInterval = 20 * time.Second
 type Client interface {
 	Publish(topic string, payload []byte) error
 	PublishWith(topic string, payload []byte, retain bool) error
-	Subscribe(topic string, cb mqttx.Handler) error
+	Subscribe(topic string, cb Handler) error
 }
+
+type Message interface {
+	Topic() string
+	Payload() []byte
+	Qos() byte
+	Retained() bool
+	Duplicate() bool
+}
+
+type Handler func(Message)
 
 // Service is a minimal Thread placeholder that keeps observability and health
 // endpoints alive while the protocol implementation is built.
@@ -108,5 +117,3 @@ func (s *Service) externalFromHDP(deviceID string) (string, string) {
 	}
 	return proto, strings.Join(parts[1:], "/")
 }
-
-var _ Client = (*mqttx.Client)(nil)

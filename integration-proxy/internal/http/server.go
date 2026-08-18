@@ -17,6 +17,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v5"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	dbinfra "github.com/PetoAdam/homenavi/integration-proxy/internal/infra/db"
 )
 
 type Server struct {
@@ -34,6 +35,7 @@ type Server struct {
 	pubKey      *rsa.PublicKey
 	schemaPath  string
 	configPath  string
+	stateRepo   *dbinfra.Repository
 }
 
 type installStatus struct {
@@ -55,11 +57,11 @@ type integrationUpdateStatus struct {
 	InProgress       bool       `json:"in_progress"`
 }
 
-func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey, schemaPath, configPath string) *Server {
+func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey, schemaPath, configPath string, stateRepos ...*dbinfra.Repository) *Server {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
-	return &Server{
+	server := &Server{
 		logger:      logger,
 		proxies:     make(map[string]*httputil.ReverseProxy),
 		upstreams:   make(map[string]*url.URL),
@@ -74,6 +76,10 @@ func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey
 		schemaPath:  schemaPath,
 		configPath:  configPath,
 	}
+	if len(stateRepos) > 0 {
+		server.stateRepo = stateRepos[0]
+	}
+	return server
 }
 
 func LoadSchema(schemaPath string) (*jsonschema.Schema, error) {

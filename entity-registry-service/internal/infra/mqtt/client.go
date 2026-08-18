@@ -11,11 +11,14 @@ type Client struct {
 	cli *mqttx.Client
 }
 
-type Message = mqttx.Message
+type Message interface {
+	mqttx.Message
+}
 
-func Connect(brokerURL string, clientIDPrefix string) (*Client, error) {
+func Connect(cfg mqttx.Config, clientIDPrefix string) (*Client, error) {
 	cli, err := mqttx.Connect(mqttx.Options{
-		BrokerURL:             brokerURL,
+		BrokerURL:             cfg.BrokerURL,
+		BrokerKind:            cfg.BrokerKind,
 		ClientIDPrefix:        clientIDPrefix,
 		AutoReconnect:         true,
 		ConnectRetry:          true,
@@ -31,7 +34,15 @@ func Connect(brokerURL string, clientIDPrefix string) (*Client, error) {
 }
 
 func (c *Client) Subscribe(topic string, cb func(Message)) error {
-	return c.cli.SubscribeFunc(topic, cb)
+	return c.cli.SubscribeFuncWithOptions(mqttx.SubscriptionOptions{Topic: topic}, func(msg mqttx.Message) {
+		cb(msg)
+	})
+}
+
+func (c *Client) SubscribeShared(group, topic string, cb func(Message)) error {
+	return c.cli.SubscribeFuncWithOptions(mqttx.SubscriptionOptions{Topic: topic, Mode: mqttx.SubscriptionModeShared, Group: group}, func(msg mqttx.Message) {
+		cb(msg)
+	})
 }
 
 func (c *Client) Close() {
