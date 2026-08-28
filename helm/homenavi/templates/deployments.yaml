@@ -321,6 +321,18 @@ spec:
               value: {{ $renderedVal | quote }}
             {{- end }}
             {{- end }}
+            {{- if and (hasKey $svcEnv "REDIS_MODE") (not (hasKey $svcEnv "REDIS_ADDR")) }}
+            - name: REDIS_ADDR
+              value: {{ include "homenavi.redisAddr" $ | quote }}
+            {{- end }}
+            {{- if and (hasKey $svcEnv "REDIS_MODE") (not (hasKey $svcEnv "REDIS_MASTER_NAME")) }}
+            - name: REDIS_MASTER_NAME
+              value: {{ include "homenavi.redisMasterName" $ | quote }}
+            {{- end }}
+            {{- if and (hasKey $svcEnv "REDIS_MODE") (not (hasKey $svcEnv "REDIS_SENTINEL_ADDRS")) }}
+            - name: REDIS_SENTINEL_ADDRS
+              value: {{ include "homenavi.redisSentinelAddrs" $ | quote }}
+            {{- end }}
             {{- if and (hasKey $svcEnv "REDIS_MODE") (not (hasKey $svcEnv "REDIS_PASSWORD")) (not (hasKey $svcEnvValueFrom "REDIS_PASSWORD")) (ne (trim (include "homenavi.redisAuthSecretName" $)) "") }}
             - name: REDIS_PASSWORD
               valueFrom:

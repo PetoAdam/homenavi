@@ -181,14 +181,26 @@ Read the dedicated docs:
 
 ### Observability
 - Metrics via Prometheus scrape endpoints.
-- Traces exported to Jaeger for currently instrumented services.
+- Traces exported to Jaeger for all core services.
 - Correlation IDs propagated through gateway/service hops.
+- Shared OpenTelemetry bootstrap and request middleware are used across the core service set.
 
-Services with OTEL tracing support today:
-- api-gateway, auth-service, user-service, dashboard-service, device-hub, email-service, zigbee-adapter, mock-adapter.
+Validated OTEL-enabled core services:
+- api-gateway
+- auth-service
+- user-service
+- dashboard-service
+- device-hub
+- email-service
+- automation-service
+- entity-registry-service
+- history-service
+- integration-proxy
+- weather-service
+- mock-adapter
+- zigbee-adapter
 
-Services without first-class OTEL tracing support yet:
-- automation-service, entity-registry-service, history-service, integration-proxy, weather-service.
+The common setup lives in the shared observability package and is wired in each service's app bootstrap, so there are no remaining core services without first-class OTEL support.
 
 ### Security
 - RS256 JWT signing/verification split.
