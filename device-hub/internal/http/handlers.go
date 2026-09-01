@@ -116,16 +116,17 @@ func (p *pairingSession) clone() pairingSession {
 }
 
 type Server struct {
-	repo            *dbinfra.Repository
-	mqtt            mqttinfra.ClientAPI
-	adapters        *adapterRegistry
-	pairingMu       sync.Mutex
-	pairings        map[string]*pairingSession
-	commandStore    commandstate.Store
-	commandTimeout  time.Duration
-	mqttSharedGroup string
-	cache           *cachex.JSONStore
-	listCacheTTL    time.Duration
+	repo              *dbinfra.Repository
+	mqtt              mqttinfra.ClientAPI
+	adapters          *adapterRegistry
+	pairingMu         sync.Mutex
+	pairings          map[string]*pairingSession
+	pairingExpiryOnce sync.Once
+	commandStore      commandstate.Store
+	commandTimeout    time.Duration
+	mqttSharedGroup   string
+	cache             *cachex.JSONStore
+	listCacheTTL      time.Duration
 }
 
 type ServerOption func(*Server)
@@ -221,6 +222,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 		return
 	}
 	s.startCommandExpiryReaper()
+	s.startPairingExpiryReaper()
 	adapterSubscription := mqttx.SubscriptionOptions{Topic: hdpAdapterHelloTopic, Mode: mqttx.SubscriptionModeExclusive}
 	if s.mqttSharedGroup != "" {
 		adapterSubscription.Mode = mqttx.SubscriptionModeShared

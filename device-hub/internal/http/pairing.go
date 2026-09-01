@@ -411,6 +411,40 @@ func (s *Server) startPairingTimeout(protocol, sessionID string, expires time.Ti
 	}()
 }
 
+func (s *Server) startPairingExpiryReaper() {
+	if s == nil || s.repo == nil {
+		return
+	}
+	s.pairingExpiryOnce.Do(func() {
+		s.reapExpiredPairings()
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				s.reapExpiredPairings()
+			}
+		}()
+	})
+}
+
+func (s *Server) reapExpiredPairings() {
+	if s == nil || s.repo == nil {
+		return
+	}
+	lifecycles, err := s.repo.ListActivePairings(context.Background())
+	if err != nil {
+		slog.Warn("pairing expiry list failed", "error", err)
+		return
+	}
+	now := time.Now().UTC()
+	for _, lifecycle := range lifecycles {
+		if !lifecycle.Active || lifecycle.ExpiresAt.After(now) {
+			continue
+		}
+		s.handlePairingTimeout(lifecycle.Protocol, lifecycle.ID)
+	}
+}
+
 func (s *Server) handlePairingTimeout(protocol, sessionID string) {
 	if s.repo != nil {
 		snapshot, changed, err := s.mutatePersistentPairing(protocol, func(session *pairingSession) (bool, error) {

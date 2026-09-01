@@ -85,3 +85,43 @@ func TestClaimTriggerCooldownValidatesInputsAndBypassesZeroCooldown(t *testing.T
 		t.Fatal("expected zero cooldown to bypass persistence claim")
 	}
 }
+
+func TestClaimScheduledTriggerCreatesOneOccurrenceClaim(t *testing.T) {
+	now := time.Date(2026, time.August, 18, 12, 0, 0, 500, time.UTC)
+	repo, mock, closeDB := newCooldownTestRepository(t, now)
+	defer closeDB()
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO "scheduled_trigger_claims"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	claimed, err := repo.ClaimScheduledTrigger(context.Background(), uuid.New(), "schedule-trigger", now)
+	if err != nil {
+		t.Fatalf("ClaimScheduledTrigger() error = %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected scheduled occurrence claim to succeed")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestClaimScheduledTriggerRejectsDuplicateOccurrence(t *testing.T) {
+	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
+	repo, mock, closeDB := newCooldownTestRepository(t, now)
+	defer closeDB()
+
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO "scheduled_trigger_claims"`)).
+		WillReturnResult(sqlmock.NewResult(1, 0))
+
+	claimed, err := repo.ClaimScheduledTrigger(context.Background(), uuid.New(), "schedule-trigger", now)
+	if err != nil {
+		t.Fatalf("ClaimScheduledTrigger() error = %v", err)
+	}
+	if claimed {
+		t.Fatal("expected duplicate scheduled occurrence claim to be rejected")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}

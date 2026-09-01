@@ -78,9 +78,11 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("create pending_correlations: %w", err)
 		}
 	}
-	if !m.HasTable(&TriggerCooldown{}) {
-		if err := m.CreateTable(&TriggerCooldown{}); err != nil {
-			return fmt.Errorf("create trigger_cooldowns: %w", err)
+	for _, model := range []any{&TriggerCooldown{}, &ScheduledTriggerClaim{}} {
+		if !m.HasTable(model) {
+			if err := m.CreateTable(model); err != nil {
+				return fmt.Errorf("create lifecycle claim table: %w", err)
+			}
 		}
 	}
 	if !m.HasColumn(&PendingCorrelation{}, "HDPDeviceID") {
@@ -423,6 +425,32 @@ func (r *Repository) ClaimTriggerCooldown(ctx context.Context, workflowID uuid.U
 		return false, result.Error
 	}
 	return result.RowsAffected == 1, nil
+}
+
+// ClaimScheduledTrigger atomically assigns one scheduled occurrence to one
+// automation-service replica. Occurrence time is precise to a cron second.
+func (r *Repository) ClaimScheduledTrigger(ctx context.Context, workflowID uuid.UUID, triggerNodeID string, occurredAt time.Time) (bool, error) {
+	triggerNodeID = strings.TrimSpace(triggerNodeID)
+	if workflowID == uuid.Nil || triggerNodeID == "" {
+		return false, fmt.Errorf("workflow id and trigger node id are required")
+	}
+	if occurredAt.IsZero() {
+		return false, fmt.Errorf("scheduled occurrence time is required")
+	}
+	claim := ScheduledTriggerClaim{
+		WorkflowID:    workflowID,
+		TriggerNodeID: triggerNodeID,
+		OccurredAt:    occurredAt.UTC().Truncate(time.Second),
+	}
+	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&claim)
+	return result.RowsAffected == 1, result.Error
+}
+
+func (r *Repository) PruneScheduledTriggerClaims(ctx context.Context, before time.Time) error {
+	if before.IsZero() {
+		before = time.Now().UTC().Add(-24 * time.Hour)
+	}
+	return r.db.WithContext(ctx).Where("occurred_at < ?", before).Delete(&ScheduledTriggerClaim{}).Error
 }
 
 func applyWorkflowSourceDefaults(workflow *Workflow) {

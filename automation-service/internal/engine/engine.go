@@ -200,6 +200,7 @@ func (e *Engine) pruneLoop(ctx context.Context) {
 			return
 		case <-t.C:
 			_ = e.repo.PruneExpiredPending(ctx)
+			_ = e.repo.PruneScheduledTriggerClaims(ctx, time.Now().UTC().Add(-24*time.Hour))
 		}
 	}
 }
@@ -284,14 +285,22 @@ func (e *Engine) reconcileCron() {
 			cooldownSec := t.CooldownSec
 			id, err := e.cron.AddFunc(cronExpr, func() {
 				ctx := context.Background()
-				claimed, err := e.repo.ClaimTriggerCooldown(ctx, wfIDCopy, nodeIDCopy, time.Duration(cooldownSec)*time.Second, time.Now().UTC())
+				occurredAt := time.Now().UTC().Truncate(time.Second)
+				claimed, err := e.repo.ClaimScheduledTrigger(ctx, wfIDCopy, nodeIDCopy, occurredAt)
 				if err != nil || !claimed {
+					if err != nil {
+						slog.Warn("automation schedule trigger claim failed", "workflow_id", wfIDCopy, "trigger_node_id", nodeIDCopy, "error", err)
+					}
+					return
+				}
+				allowed, err := e.repo.ClaimTriggerCooldown(ctx, wfIDCopy, nodeIDCopy, time.Duration(cooldownSec)*time.Second, occurredAt)
+				if err != nil || !allowed {
 					if err != nil {
 						slog.Warn("automation schedule trigger cooldown claim failed", "workflow_id", wfIDCopy, "trigger_node_id", nodeIDCopy, "error", err)
 					}
 					return
 				}
-				_, _ = e.StartWorkflowRun(ctx, wfIDCopy, nodeIDCopy, map[string]any{"type": "schedule", "trigger_node_id": nodeIDCopy, "cron": cronCopy, "ts": time.Now().UTC().UnixMilli()})
+				_, _ = e.StartWorkflowRun(ctx, wfIDCopy, nodeIDCopy, map[string]any{"type": "schedule", "trigger_node_id": nodeIDCopy, "cron": cronCopy, "ts": occurredAt.UnixMilli()})
 			})
 			if err != nil {
 				slog.Warn("invalid cron expression", "workflow_id", wfID, "trigger_node_id", n.ID, "cron", cronExpr, "error", err)
