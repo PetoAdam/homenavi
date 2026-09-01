@@ -10,7 +10,7 @@ import (
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
-	paho "github.com/eclipse/paho.mqtt.golang"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 	"github.com/google/uuid"
 )
 
@@ -25,6 +25,10 @@ type pairingPublishedMessage struct {
 }
 
 func (f *pairingTestMQTTClient) Subscribe(_ string, _ mqttinfra.Handler) error {
+	return nil
+}
+
+func (f *pairingTestMQTTClient) SubscribeWithOptions(_ mqttx.SubscriptionOptions, _ mqttinfra.Handler) error {
 	return nil
 }
 
@@ -50,8 +54,6 @@ func (f pairingFakeMessage) Topic() string     { return f.topic }
 func (f pairingFakeMessage) MessageID() uint16 { return 0 }
 func (f pairingFakeMessage) Payload() []byte   { return f.payload }
 func (f pairingFakeMessage) Ack()              {}
-
-var _ paho.Message = pairingFakeMessage{}
 
 func TestHandlePairingsStartPublishesSchemaInputs(t *testing.T) {
 	mqtt := &pairingTestMQTTClient{}
@@ -380,7 +382,7 @@ func TestHandleHDPPairingProgressEvent_TracksRealisticZigbeePairingFlow(t *testi
 	}
 
 	for _, evt := range events {
-		srv.handleHDPPairingProgressEvent(nil, pairingFakeMessage{
+		srv.handleHDPPairingProgressEvent(pairingFakeMessage{
 			topic:   hdpPairingProgressPrefix + "zigbee",
 			payload: []byte(evt.payload),
 		})

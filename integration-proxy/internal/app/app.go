@@ -11,6 +11,7 @@ import (
 	proxyauth "github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
 	integrationconfig "github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 	httptransport "github.com/PetoAdam/homenavi/integration-proxy/internal/http"
+	dbinfra "github.com/PetoAdam/homenavi/integration-proxy/internal/infra/db"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
@@ -27,6 +28,13 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 	if strings.TrimSpace(cfg.JWTPublicKeyPath) == "" {
 		return nil, fmt.Errorf("JWT_PUBLIC_KEY_PATH is required to protect /integrations/*")
 	}
+	if err := cfg.DB.Validate(); err != nil {
+		return nil, fmt.Errorf("validate database: %w", err)
+	}
+	stateRepo, err := dbinfra.Open(cfg.DB)
+	if err != nil {
+		return nil, fmt.Errorf("open operation state repository: %w", err)
+	}
 	pubKey, err := proxyauth.LoadRSAPublicKey(cfg.JWTPublicKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load JWT public key: %w", err)
@@ -39,7 +47,7 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load schema: %w", err)
 	}
-	proxyServer := httptransport.New(logger, validator, pubKey, cfg.SchemaPath, cfg.ConfigPath)
+	proxyServer := httptransport.New(logger, validator, pubKey, cfg.SchemaPath, cfg.ConfigPath, stateRepo)
 	for _, ic := range installed.Integrations {
 		if err := proxyServer.AddIntegration(ic); err != nil {
 			return nil, fmt.Errorf("add integration %q: %w", ic.ID, err)

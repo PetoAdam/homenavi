@@ -6,10 +6,9 @@ import (
 	"strings"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
-	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
-func (s *Service) handleDeviceCommand(_ paho.Client, m paho.Message) {
+func (s *Service) handleDeviceCommand(m Message) {
 	var env map[string]any
 	if err := json.Unmarshal(m.Payload(), &env); err != nil {
 		slog.Debug("mock hdp command decode failed", "error", err)
@@ -36,7 +35,7 @@ func (s *Service) handleDeviceCommand(_ paho.Client, m paho.Message) {
 	slog.Info("mock adapter command rejected", "device_id", deviceID, "corr", corr)
 }
 
-func (s *Service) handlePairingCommand(_ paho.Client, m paho.Message) {
+func (s *Service) handlePairingCommand(m Message) {
 	var env map[string]any
 	if err := json.Unmarshal(m.Payload(), &env); err != nil {
 		slog.Debug("mock pairing decode failed", "error", err)

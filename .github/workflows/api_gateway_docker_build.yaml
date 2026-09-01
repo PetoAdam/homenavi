@@ -1,4 +1,4 @@
-name: Build API Gateway Docker Image
+name: Verify and Package API Gateway Container
 
 on:
   push:

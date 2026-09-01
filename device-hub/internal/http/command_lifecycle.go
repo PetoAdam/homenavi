@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	paho "github.com/eclipse/paho.mqtt.golang"
-
+	commandstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/commandstate"
+	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 )
 
@@ -33,7 +33,79 @@ type pendingCommand struct {
 	Baseline   map[string]any
 	StartedAt  int64
 	LastStatus string
-	Timer      *time.Timer
+}
+
+func commandEntry(entry *pendingCommand, timeout time.Duration) commandstate.Entry {
+	return commandstate.Entry{DeviceID: entry.DeviceID, Correlation: entry.Corr, Expected: entry.Expected, Baseline: entry.Baseline, StartedAt: entry.StartedAt, LastStatus: entry.LastStatus, ExpiresAt: time.UnixMilli(entry.StartedAt).Add(timeout).UnixMilli()}
+}
+
+func pendingEntry(entry commandstate.Entry) *pendingCommand {
+	return &pendingCommand{DeviceID: entry.DeviceID, Corr: entry.Correlation, Expected: cloneAnyMap(entry.Expected), Baseline: cloneAnyMap(entry.Baseline), StartedAt: entry.StartedAt, LastStatus: entry.LastStatus}
+}
+
+func (s *Server) startCommandExpiryReaper() {
+	if s == nil || s.commandStore == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.reapExpiredCommands()
+		}
+	}()
+}
+
+func (s *Server) reapExpiredCommands() {
+	if s == nil || s.commandStore == nil {
+		return
+	}
+	entries, err := s.commandStore.ClaimExpired(context.Background(), time.Now())
+	if err != nil {
+		slog.Warn("command expiry claim failed", "error", err)
+		return
+	}
+	for _, stored := range entries {
+		entry := pendingEntry(stored)
+		s.completeCommandLifecycle(entry, commandStatusTimeout, "command lifecycle timed out")
+		s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusTimeout, "command lifecycle timed out", nil)
+	}
+}
+
+func (s *Server) persistCommandLifecycle(entry *pendingCommand, timeout time.Duration) {
+	if s == nil || s.repo == nil || entry == nil || timeout <= 0 {
+		return
+	}
+	expected, err := json.Marshal(entry.Expected)
+	if err != nil {
+		return
+	}
+	baseline, err := json.Marshal(entry.Baseline)
+	if err != nil {
+		return
+	}
+	startedAt := time.UnixMilli(entry.StartedAt).UTC()
+	lifecycle := dbinfra.CommandLifecycle{
+		CorrelationID: entry.Corr,
+		DeviceID:      entry.DeviceID,
+		Status:        commandStatusAccepted,
+		Expected:      expected,
+		Baseline:      baseline,
+		StartedAt:     startedAt,
+		ExpiresAt:     startedAt.Add(timeout),
+	}
+	if _, err := s.repo.CreateCommandLifecycle(context.Background(), lifecycle); err != nil {
+		slog.Warn("command lifecycle persistence failed", "device_id", entry.DeviceID, "corr", entry.Corr, "error", err)
+	}
+}
+
+func (s *Server) completeCommandLifecycle(entry *pendingCommand, status, errorMessage string) {
+	if s == nil || s.repo == nil || entry == nil || !isTerminalLifecycleStatus(status) {
+		return
+	}
+	if _, _, err := s.repo.CompleteCommandLifecycle(context.Background(), entry.Corr, status, errorMessage); err != nil {
+		slog.Warn("command lifecycle completion persistence failed", "device_id", entry.DeviceID, "corr", entry.Corr, "error", err)
+	}
 }
 
 func (s *Server) loadBaselineState(ctx context.Context, deviceUUID string) map[string]any {
@@ -69,20 +141,14 @@ func (s *Server) beginCommandLifecycleWithTimeout(deviceID, corr string, expecte
 		Baseline:  cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
 	}
-	entry.Timer = time.AfterFunc(timeout, func() {
-		s.handleCommandTimeout(entry.DeviceID, entry.Corr)
-	})
-
-	s.commandMu.Lock()
-	defer s.commandMu.Unlock()
-	if prev := s.commandsByDevice[entry.DeviceID]; prev != nil {
-		if prev.Timer != nil {
-			prev.Timer.Stop()
-		}
-		delete(s.commandsByCorr, prev.Corr)
+	accepted, err := s.commandStore.Put(context.Background(), commandEntry(entry, timeout), false)
+	if err != nil {
+		slog.Warn("command lifecycle coordination failed", "device_id", entry.DeviceID, "corr", entry.Corr, "error", err)
+		return
 	}
-	s.commandsByDevice[entry.DeviceID] = entry
-	s.commandsByCorr[entry.Corr] = entry
+	if accepted {
+		s.persistCommandLifecycle(entry, timeout)
+	}
 }
 
 func (s *Server) beginExclusiveCommandLifecycle(deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) bool {
@@ -99,21 +165,15 @@ func (s *Server) beginExclusiveCommandLifecycle(deviceID, corr string, expected,
 		Baseline:  cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
 	}
-	entry.Timer = time.AfterFunc(timeout, func() {
-		s.handleCommandTimeout(entry.DeviceID, entry.Corr)
-	})
-
-	s.commandMu.Lock()
-	defer s.commandMu.Unlock()
-	if prev := s.commandsByDevice[entry.DeviceID]; prev != nil {
-		if entry.Timer != nil {
-			entry.Timer.Stop()
-		}
+	ok, err := s.commandStore.Put(context.Background(), commandEntry(entry, timeout), true)
+	if err != nil {
+		slog.Warn("exclusive command coordination failed", "device_id", entry.DeviceID, "corr", entry.Corr, "error", err)
 		return false
 	}
-	s.commandsByDevice[entry.DeviceID] = entry
-	s.commandsByCorr[entry.Corr] = entry
-	return true
+	if ok {
+		s.persistCommandLifecycle(entry, timeout)
+	}
+	return ok
 }
 
 func (s *Server) handleCommandTimeout(deviceID, corr string) {
@@ -121,6 +181,7 @@ func (s *Server) handleCommandTimeout(deviceID, corr string) {
 	if entry == nil {
 		return
 	}
+	s.completeCommandLifecycle(entry, commandStatusTimeout, "command lifecycle timed out")
 	s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusTimeout, "command lifecycle timed out", nil)
 }
 
@@ -131,31 +192,15 @@ func (s *Server) removePendingCommand(deviceID, corr string) *pendingCommand {
 	deviceID = strings.TrimSpace(deviceID)
 	corr = strings.TrimSpace(corr)
 
-	s.commandMu.Lock()
-	defer s.commandMu.Unlock()
-
-	var entry *pendingCommand
-	if corr != "" {
-		entry = s.commandsByCorr[corr]
-	}
-	if entry == nil && deviceID != "" {
-		entry = s.commandsByDevice[deviceID]
-	}
-	if entry == nil {
+	stored, ok, err := s.commandStore.Remove(context.Background(), deviceID, corr)
+	if err != nil {
+		slog.Warn("command lifecycle removal failed", "device_id", deviceID, "corr", corr, "error", err)
 		return nil
 	}
-	if deviceID != "" && entry.DeviceID != deviceID {
+	if !ok {
 		return nil
 	}
-	if corr != "" && entry.Corr != corr {
-		return nil
-	}
-	if entry.Timer != nil {
-		entry.Timer.Stop()
-	}
-	delete(s.commandsByCorr, entry.Corr)
-	delete(s.commandsByDevice, entry.DeviceID)
-	return entry
+	return pendingEntry(stored)
 }
 
 func (s *Server) getPendingCommand(deviceID, corr string) *pendingCommand {
@@ -165,17 +210,15 @@ func (s *Server) getPendingCommand(deviceID, corr string) *pendingCommand {
 	deviceID = strings.TrimSpace(deviceID)
 	corr = strings.TrimSpace(corr)
 
-	s.commandMu.Lock()
-	defer s.commandMu.Unlock()
-	if corr != "" {
-		if entry := s.commandsByCorr[corr]; entry != nil {
-			return entry
-		}
+	stored, ok, err := s.commandStore.Get(context.Background(), deviceID, corr)
+	if err != nil {
+		slog.Warn("command lifecycle lookup failed", "device_id", deviceID, "corr", corr, "error", err)
+		return nil
 	}
-	if deviceID != "" {
-		return s.commandsByDevice[deviceID]
+	if !ok {
+		return nil
 	}
-	return nil
+	return pendingEntry(stored)
 }
 
 func (s *Server) ensurePassivePendingCommand(deviceID, corr string) *pendingCommand {
@@ -268,7 +311,7 @@ func isFailureLifecycleStatus(status string) bool {
 	}
 }
 
-func (s *Server) handleHDPCommandResultEvent(_ paho.Client, msg mqttinfra.Message) {
+func (s *Server) handleHDPCommandResultEvent(msg mqttinfra.Message) {
 	if len(msg.Payload()) == 0 {
 		return
 	}
@@ -329,7 +372,8 @@ func (s *Server) processAdapterCommandResult(deviceID, corr, status, errMsg stri
 			s.publishCommandLifecycle(deviceID, corr, commandStatusInProgress, "", map[string]any{"source_status": status})
 		}
 	case commandStatusRejected, commandStatusFailed, commandStatusTimeout:
-		s.removePendingCommand(deviceID, corr)
+		removed := s.removePendingCommand(deviceID, corr)
+		s.completeCommandLifecycle(removed, status, errMsg)
 		s.publishCommandLifecycle(deviceID, corr, status, errMsg, map[string]any{"source_status": status})
 	}
 }
@@ -345,7 +389,8 @@ func (s *Server) processCommandStateLifecycle(deviceID string, state map[string]
 	if !pendingCommandSatisfied(entry, state, corr, stateTs) {
 		return
 	}
-	s.removePendingCommand(entry.DeviceID, entry.Corr)
+	removed := s.removePendingCommand(entry.DeviceID, entry.Corr)
+	s.completeCommandLifecycle(removed, commandStatusApplied, "")
 	s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusApplied, "", nil)
 }
 
@@ -357,7 +402,7 @@ func pendingCommandSatisfied(entry *pendingCommand, state map[string]any, corr s
 	stateAfterCommand := stateTs > 0 && entry.StartedAt > 0 && stateTs >= entry.StartedAt
 	stateChangedFromBaseline := len(entry.Baseline) > 0 && stateMapsDiffer(state, entry.Baseline)
 	if len(entry.Expected) > 0 {
-		if expectedStateSatisfied(state, entry.Expected) {
+		if expectedStateSatisfied(state, entry.Expected) && (corrMatches || stateAfterCommand) {
 			return true
 		}
 		if stateChangedFromBaseline && (corrMatches || stateAfterCommand) {

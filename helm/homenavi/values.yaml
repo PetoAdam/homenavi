@@ -41,6 +41,7 @@ dependencies:
 
 mqtt:
   brokerUrl: ""
+  brokerKind: emqx
   websocketUpstreamUrl: ""
   dependencyHost: ""
   dependencyPort: ""
@@ -207,10 +208,7 @@ services:
     env:
       AUTH_SERVICE_URL: http://auth-service:8000
       USER_SERVICE_URL: http://user-service:8001
-      REDIS_MODE: standalone
-      REDIS_ADDR: redis:6379
-      REDIS_MASTER_NAME: ""
-      REDIS_SENTINEL_ADDRS: ""
+      REDIS_MODE: sentinel
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
       LOG_LEVEL: info
     envFromSecrets: []
@@ -245,10 +243,7 @@ services:
       AUTH_SERVICE_PORT: "8000"
       USER_SERVICE_URL: http://user-service:8001
       ERS_SERVICE_URL: http://entity-registry-service:8005
-      REDIS_MODE: standalone
-      REDIS_ADDR: redis:6379
-      REDIS_MASTER_NAME: ""
-      REDIS_SENTINEL_ADDRS: ""
+      REDIS_MODE: sentinel
       EMAIL_SERVICE_URL: http://email-service:8002
       PROFILE_PICTURE_SERVICE_URL: http://profile-picture-service:8000
       JWT_PRIVATE_KEY_PATH: /app/keys/jwt_private.pem
@@ -404,7 +399,16 @@ services:
       INTEGRATIONS_HELM_NAMESPACE: homenavi-integrations
       INTEGRATIONS_MARKETPLACE_API_BASE: "https://marketplace.homenavi.org"
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: homenavi
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
     envFromSecrets: []
+    dependsOn:
+      - host: postgres
+        port: 5432
     resources: {}
     volumeMounts:
       - name: jwt-keys
@@ -687,12 +691,14 @@ services:
       port: 8090
     env:
       DEVICE_HUB_PORT: "8090"
+      DEVICE_HUB_MQTT_SHARED_GROUP: ""
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
+      REDIS_MODE: sentinel
       DEVICE_HUB_ENABLE_THREAD: "true"
       LOG_LEVEL: info
     envFromSecrets: []
@@ -715,6 +721,7 @@ services:
       port: 8095
     env:
       ENTITY_REGISTRY_PORT: "8095"
+      ENTITY_REGISTRY_MQTT_SHARED_GROUP: ""
       DEVICE_HUB_URL: http://device-hub:8090
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -750,10 +757,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
-      REDIS_MODE: standalone
-      REDIS_ADDR: redis:6379
-      REDIS_MASTER_NAME: ""
-      REDIS_SENTINEL_ADDRS: ""
+      REDIS_MODE: sentinel
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
@@ -797,6 +801,7 @@ services:
       port: 8093
     env:
       HISTORY_SERVICE_PORT: "8093"
+      HISTORY_SERVICE_MQTT_SHARED_GROUP: ""
       HISTORY_INGEST_RETAINED: "false"
       HISTORY_HDP_STATE_PREFIX: homenavi/hdp/device/state/
       POSTGRES_USER: user
@@ -826,12 +831,14 @@ services:
       port: 8094
     env:
       AUTOMATION_SERVICE_PORT: "8094"
+      AUTOMATION_SERVICE_MQTT_SHARED_GROUP: ""
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: homenavi
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
+      REDIS_MODE: sentinel
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
       USER_SERVICE_URL: http://user-service:8001
       EMAIL_SERVICE_URL: http://email-service:8002
@@ -840,6 +847,8 @@ services:
     dependsOn:
       - host: postgres
         port: 5432
+      - host: redis
+        port: 6379
     resources: {}
     volumeMounts:
       - name: jwt-keys

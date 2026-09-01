@@ -375,6 +375,10 @@ mqtt://emqx:1883
 {{- end -}}
 {{- end -}}
 
+{{- define "homenavi.mqttBrokerKind" -}}
+{{- default "emqx" .Values.mqtt.brokerKind -}}
+{{- end -}}
+
 {{- define "homenavi.mqttWebsocketUpstreamURL" -}}
 {{- $override := trim (default "" .Values.mqtt.websocketUpstreamUrl) -}}
 {{- if ne $override "" -}}
@@ -394,7 +398,7 @@ emqx
 {{- end -}}
 
 {{- define "homenavi.mqttDependencyPort" -}}
-{{- $override := trim (default "" .Values.mqtt.dependencyPort) -}}
+{{- $override := trim (printf "%v" (default "" .Values.mqtt.dependencyPort)) -}}
 {{- if ne $override "" -}}
 {{- $override -}}
 {{- else -}}

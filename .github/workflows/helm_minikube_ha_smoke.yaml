@@ -1,0 +1,131 @@
+name: Helm Minikube HA Smoke
+
+on:
+  pull_request:
+    paths:
+      - "helm/homenavi/**"
+      - "shared/mqttx/**"
+      - "shared/redisx/**"
+      - "device-hub/**"
+      - "entity-registry-service/**"
+      - "history-service/**"
+      - "automation-service/**"
+      - "integration-proxy/**"
+      - ".github/workflows/helm_minikube_ha_smoke.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "helm/homenavi/**"
+      - "shared/mqttx/**"
+      - "shared/redisx/**"
+      - "device-hub/**"
+      - "entity-registry-service/**"
+      - "history-service/**"
+      - "automation-service/**"
+      - "integration-proxy/**"
+      - ".github/workflows/helm_minikube_ha_smoke.yaml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NAMESPACE: homenavi-ha-smoke
+      RELEASE: homenavi-ha-smoke
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Start Minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          driver: docker
+          cpus: 4
+          memory: 6000mb
+
+      - name: Install CloudNativePG operator
+        run: |
+          kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.1.yaml
+          kubectl wait --for=condition=Established crd/clusters.postgresql.cnpg.io --timeout=3m
+          kubectl -n cnpg-system rollout status deployment -l app.kubernetes.io/name=cloudnative-pg --timeout=3m
+
+      - name: Lint and render HA profile
+        run: |
+          helm lint ./helm/homenavi -f ./helm/homenavi/values-ci-ha-smoke.yaml
+          helm template homenavi ./helm/homenavi -f ./helm/homenavi/values-ci-ha-smoke.yaml > /tmp/homenavi-ha.yaml
+          grep -q 'name: REDIS_MASTER_NAME' /tmp/homenavi-ha.yaml
+          grep -q 'name: REDIS_SENTINEL_ADDRS' /tmp/homenavi-ha.yaml
+
+      - name: Install HA profile
+        run: |
+          helm upgrade --install "$RELEASE" ./helm/homenavi \
+            --namespace "$NAMESPACE" --create-namespace \
+            --values ./helm/homenavi/values-ci-ha-smoke.yaml \
+            --wait --timeout 12m
+
+      - name: Verify high-availability workloads
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" rollout status statefulset/$RELEASE-redis --timeout=3m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-device-hub --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-entity-registry-service --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-history-service --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-automation-service --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-integration-proxy --timeout=4m
+          kubectl -n "$NAMESPACE" wait --for=jsonpath='{.status.readyInstances}'=3 cluster.postgresql.cnpg.io/$RELEASE-postgres --timeout=4m
+          for service in device-hub entity-registry-service history-service automation-service; do
+            kubectl -n "$NAMESPACE" get deployment "$RELEASE-$service" -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 3
+          done
+
+      - name: Verify Redis Sentinel and MQTT shared groups
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c redis -- redis-cli -p 26379 SENTINEL get-master-addr-by-name homenavi-redis | grep -qx "$RELEASE-redis-0.$RELEASE-redis-headless"
+          kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c redis -- redis-cli -p 26379 SENTINEL masters | grep -qx homenavi-redis
+          check_env() {
+            deployment="$1"
+            expected="$2"
+            actual=$(kubectl -n "$NAMESPACE" get deployment "$RELEASE-$deployment" -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}')
+            printf '%s\n' "$actual" | grep -Fx "$expected"
+            printf '%s\n' "$actual" | grep -Fx 'REDIS_MODE=sentinel'
+            printf '%s\n' "$actual" | grep -Fx 'REDIS_MASTER_NAME=homenavi-redis'
+            printf '%s\n' "$actual" | grep -q "^REDIS_SENTINEL_ADDRS=$RELEASE-redis-0.$RELEASE-redis-headless:26379,$RELEASE-redis-1.$RELEASE-redis-headless:26379,$RELEASE-redis-2.$RELEASE-redis-headless:26379$"
+          }
+          check_env device-hub 'DEVICE_HUB_MQTT_SHARED_GROUP=device-hub-ingest'
+          check_env automation-service 'AUTOMATION_SERVICE_MQTT_SHARED_GROUP=automation-events'
+          kubectl -n "$NAMESPACE" get deployment "$RELEASE-entity-registry-service" -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' | grep -Fx 'ENTITY_REGISTRY_MQTT_SHARED_GROUP=entity-registry-autoimport'
+          kubectl -n "$NAMESPACE" get deployment "$RELEASE-history-service" -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' | grep -Fx 'HISTORY_SERVICE_MQTT_SHARED_GROUP=history-ingest'
+
+      - name: Verify stateless replica recovery
+        run: |
+          set -euo pipefail
+          for service in device-hub entity-registry-service history-service automation-service; do
+            deployment="$RELEASE-$service"
+            pvc_volumes=$(kubectl -n "$NAMESPACE" get deployment "$deployment" -o jsonpath='{range .spec.template.spec.volumes[?(@.persistentVolumeClaim)]}{.name}{"\n"}{end}')
+            test -z "$pvc_volumes" || {
+              echo "$deployment must not mount persistent volumes: $pvc_volumes" >&2
+              exit 1
+            }
+            pod=$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/instance="$RELEASE",app.kubernetes.io/component="$service" -o jsonpath='{.items[0].metadata.name}')
+            kubectl -n "$NAMESPACE" delete pod "$pod" --wait=true
+            kubectl -n "$NAMESPACE" rollout status "deployment/$deployment" --timeout=4m
+            kubectl -n "$NAMESPACE" get deployment "$deployment" -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 3
+          done
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          kubectl -n "$NAMESPACE" get all -o wide
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
+          kubectl -n "$NAMESPACE" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/instance="$RELEASE" || true
+
+      - name: Remove HA smoke deployment
+        if: always()
+        run: |
+          helm uninstall "$RELEASE" --namespace "$NAMESPACE" || true
+          kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait=false

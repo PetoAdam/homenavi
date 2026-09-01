@@ -16,6 +16,7 @@ type Config struct {
 	Port                string
 	LogLevel            string
 	MQTT                mqttx.Config
+	MQTTSharedGroup     string
 	JWTPublicKeyPath    string
 	UserServiceURL      string
 	EmailServiceURL     string
@@ -35,6 +36,7 @@ func LoadConfig() (Config, error) {
 		Port:                envx.String("AUTOMATION_SERVICE_PORT", "8094"),
 		LogLevel:            envx.String("LOG_LEVEL", "info"),
 		MQTT:                mqttx.LoadConfig("mqtt://emqx:1883", "AUTOMATION_SERVICE_MQTT_CLIENT_ID"),
+		MQTTSharedGroup:     envx.String("AUTOMATION_SERVICE_MQTT_SHARED_GROUP", ""),
 		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),
 		UserServiceURL:      envx.String("USER_SERVICE_URL", "http://user-service:8001"),
 		EmailServiceURL:     envx.String("EMAIL_SERVICE_URL", "http://email-service:8002"),
@@ -46,6 +48,9 @@ func LoadConfig() (Config, error) {
 	}
 	if err := cfg.MQTT.Validate(); err != nil {
 		return Config{}, err
+	}
+	if cfg.MQTTSharedGroup != "" && cfg.MQTT.BrokerKind != mqttx.BrokerKindEMQX {
+		return Config{}, fmt.Errorf("AUTOMATION_SERVICE_MQTT_SHARED_GROUP requires MQTT_BROKER_KIND=emqx")
 	}
 	if strings.TrimSpace(cfg.JWTPublicKeyPath) == "" {
 		return Config{}, fmt.Errorf("JWT_PUBLIC_KEY_PATH is required")

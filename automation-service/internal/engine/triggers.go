@@ -74,8 +74,12 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 		if !matchStateTrigger(c.trigger, st.State) {
 			continue
 		}
-		coolKey := c.wfID.String() + ":" + c.triggerNodeID
-		if !e.allowFire(coolKey, c.trigger.CooldownSec) {
+		claimed, err := e.repo.ClaimTriggerCooldown(ctx, c.wfID, c.triggerNodeID, time.Duration(c.trigger.CooldownSec)*time.Second, time.Now().UTC())
+		if err != nil {
+			slog.Warn("automation state trigger cooldown claim failed", "workflow_id", c.wfID, "trigger_node_id", c.triggerNodeID, "error", err)
+			continue
+		}
+		if !claimed {
 			continue
 		}
 		_, _ = e.StartWorkflowRun(ctx, c.wfID, c.triggerNodeID, map[string]any{"type": "state", "trigger_node_id": c.triggerNodeID, "device_id": st.DeviceID, "state": st.State, "ts": st.TS, "retained": m.Retained()})
@@ -175,6 +179,12 @@ func (e *Engine) resolveSelectorTargets(ctx context.Context, selector string) ([
 	if e.ersServiceURL == "" {
 		return nil, errors.New("ERS service url not configured")
 	}
+	if e.selectorStore != nil {
+		var cached []resolvedTarget
+		if e.selectorStore.Get(ctx, e.selectorCacheKey(sel), &cached) == nil {
+			return append([]resolvedTarget(nil), cached...), nil
+		}
+	}
 
 	// Cache.
 	e.selMu.Lock()
@@ -233,6 +243,9 @@ func (e *Engine) resolveSelectorTargets(ctx context.Context, selector string) ([
 	e.selMu.Lock()
 	e.selectorCache[sel] = cachedSelector{FetchedAt: time.Now(), Targets: ids}
 	e.selMu.Unlock()
+	if e.selectorStore != nil {
+		_ = e.selectorStore.Set(ctx, e.selectorCacheKey(sel), ids, e.selectorTTL)
+	}
 
 	return ids, nil
 }

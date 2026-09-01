@@ -1,4 +1,4 @@
-name: Build Profile Picture Service Docker Image
+name: Verify and Package Profile Picture Service Container
 
 on:
   push:

@@ -1,4 +1,4 @@
-name: Build Entity Registry Service Docker Image
+name: Verify and Package Entity Registry Service Container
 
 on:
   push:

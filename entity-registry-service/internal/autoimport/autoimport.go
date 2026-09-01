@@ -12,6 +12,7 @@ import (
 	mqttinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 )
 
 const (
@@ -202,12 +203,9 @@ func (r *Runner) handleMessage(ctx context.Context, topic string, payload []byte
 	}
 }
 
-func Start(ctx context.Context, repo *dbinfra.Repository, brokerURL string, hub *realtime.Hub) *Runner {
-	if strings.TrimSpace(brokerURL) == "" {
-		brokerURL = "tcp://emqx:1883"
-	}
+func Start(ctx context.Context, repo *dbinfra.Repository, mqttConfig mqttx.Config, sharedGroup string, hub *realtime.Hub) *Runner {
 	r := &Runner{repo: repo, hub: hub, seen: map[string]time.Time{}}
-	cli, err := mqttinfra.Connect(brokerURL, "entity-registry-autoimport")
+	cli, err := mqttinfra.Connect(mqttConfig, "entity-registry-autoimport")
 	if err != nil {
 		panic(err)
 	}
@@ -217,10 +215,19 @@ func Start(ctx context.Context, repo *dbinfra.Repository, brokerURL string, hub 
 		r.handleMessage(ctx, msg.Topic(), msg.Payload())
 	}
 
-	// Subscribe to both metadata and state retained streams.
-	_ = r.cli.Subscribe(hdpMetadataPref+"#", h)
-	_ = r.cli.Subscribe(hdpStatePref+"#", h)
-	_ = r.cli.Subscribe(hdpEventPref+"#", h)
+	subscribe := r.cli.Subscribe
+	if strings.TrimSpace(sharedGroup) != "" {
+		subscribe = func(topic string, handler func(mqttinfra.Message)) error {
+			return r.cli.SubscribeShared(sharedGroup, topic, handler)
+		}
+	}
+
+	// Metadata/state retained streams and device-removed events share one ERS workload group.
+	for _, topic := range []string{hdpMetadataPref + "#", hdpStatePref + "#", hdpEventPref + "#"} {
+		if err := subscribe(topic, h); err != nil {
+			slog.Warn("ers auto-import subscribe failed", "topic", topic, "shared_group", sharedGroup, "error", err)
+		}
+	}
 
 	go func() {
 		<-ctx.Done()

@@ -14,16 +14,19 @@ type Client struct {
 // ClientAPI is the minimal surface area device-hub needs.
 type ClientAPI interface {
 	Subscribe(topic string, cb Handler) error
+	SubscribeWithOptions(opts mqttx.SubscriptionOptions, cb Handler) error
 	Publish(topic string, payload []byte) error
 	PublishWith(topic string, payload []byte, retain bool) error
 }
 
-type Message = mqttx.Message
+type Message interface {
+	mqttx.Message
+}
 
-type Handler = mqttx.Handler
+type Handler func(Message)
 
-func Connect(brokerURL string) (*Client, error) {
-	cli, err := mqttx.Connect(mqttx.Options{BrokerURL: brokerURL, ClientIDPrefix: "device-hub", AutoReconnect: true, ConnectRetry: true, ConnectRetryInterval: 2 * time.Second, KeepAlive: 30 * time.Second, PingTimeout: 10 * time.Second, InsecureSkipVerifyTLS: true})
+func Connect(cfg mqttx.Config) (*Client, error) {
+	cli, err := mqttx.Connect(mqttx.Options{BrokerURL: cfg.BrokerURL, BrokerKind: cfg.BrokerKind, ClientID: cfg.ClientID, ClientIDPrefix: "device-hub", AutoReconnect: true, ConnectRetry: true, ConnectRetryInterval: 2 * time.Second, KeepAlive: 30 * time.Second, PingTimeout: 10 * time.Second, InsecureSkipVerifyTLS: true})
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}
@@ -31,7 +34,13 @@ func Connect(brokerURL string) (*Client, error) {
 }
 
 func (c *Client) Subscribe(topic string, cb Handler) error {
-	return c.cli.Subscribe(topic, cb)
+	return c.SubscribeWithOptions(mqttx.SubscriptionOptions{Topic: topic}, cb)
+}
+
+func (c *Client) SubscribeWithOptions(opts mqttx.SubscriptionOptions, cb Handler) error {
+	return c.cli.SubscribeWithOptions(opts, func(msg mqttx.Message) {
+		cb(msg)
+	})
 }
 
 func (c *Client) Publish(topic string, payload []byte) error {

@@ -1,4 +1,4 @@
-name: Build History Service Docker Image
+name: Verify and Package History Service Container
 
 on:
   push:

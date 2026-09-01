@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	paho "github.com/eclipse/paho.mqtt.golang"
-
+	mqttinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
 )
 
-func (z *ZigbeeAdapter) handlePairingCommand(_ paho.Client, m paho.Message) {
+func (z *ZigbeeAdapter) handlePairingCommand(m mqttinfra.Message) {
 	var cmd struct {
 		Action   string         `json:"action"`
 		Timeout  int            `json:"timeout"`

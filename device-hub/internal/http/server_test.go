@@ -6,11 +6,48 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
+	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/mqttx"
 	"gorm.io/datatypes"
 )
+
+type subscriptionTestMQTTClient struct {
+	subscriptions []mqttx.SubscriptionOptions
+}
+
+func (c *subscriptionTestMQTTClient) Subscribe(_ string, _ mqttinfra.Handler) error { return nil }
+
+func (c *subscriptionTestMQTTClient) SubscribeWithOptions(opts mqttx.SubscriptionOptions, _ mqttinfra.Handler) error {
+	c.subscriptions = append(c.subscriptions, opts)
+	return nil
+}
+
+func (c *subscriptionTestMQTTClient) Publish(_ string, _ []byte) error { return nil }
+
+func (c *subscriptionTestMQTTClient) PublishWith(_ string, _ []byte, _ bool) error { return nil }
+
+func TestRegisterSharesAllDurableSubscriptions(t *testing.T) {
+	mqtt := &subscriptionTestMQTTClient{}
+	srv := NewServer(nil, mqtt, WithMQTTSharedGroup("device-hub-ingest"))
+	srv.Register(http.NewServeMux())
+
+	sharedTopics := map[string]bool{}
+	for _, subscription := range mqtt.subscriptions {
+		if subscription.Mode == mqttx.SubscriptionModeShared {
+			if subscription.Group != "device-hub-ingest" {
+				t.Fatalf("unexpected shared subscription group %q", subscription.Group)
+			}
+			sharedTopics[subscription.Topic] = true
+		}
+	}
+	for _, topic := range []string{hdpAdapterHelloTopic, hdpAdapterStatusPrefix + "#", hdpMetadataPrefix + "#", hdpStatePrefix + "#", hdpEventPrefix + "#", hdpCommandResultPrefix + "#", hdpPairingProgressPrefix + "#"} {
+		if !sharedTopics[topic] {
+			t.Fatalf("expected %q to use the shared group, got %#v", topic, sharedTopics)
+		}
+	}
+}
 
 func TestHandlePairingConfigReturnsConfigs(t *testing.T) {
 	srv := NewServer(nil, nil)
@@ -240,17 +277,7 @@ func TestHandleDeviceReconfigureInvalidJSON(t *testing.T) {
 
 func TestManagementActionsForProtocol_UsesInterviewSupport(t *testing.T) {
 	srv := NewServer(nil, nil)
-	srv.adapters.byID["zigbee"] = adapterStatus{
-		AdapterID: "zigbee",
-		Protocol:  "zigbee",
-		Status:    "online",
-		LastSeen:  time.Now().UTC(),
-		Pairing: &PairingConfig{
-			Protocol:          "zigbee",
-			Supported:         true,
-			SupportsInterview: true,
-		},
-	}
+	srv.adapters.upsertFromHello([]byte(`{"adapter_id":"zigbee","protocol":"zigbee","pairing":{"schema_version":"1.0","supported":true,"supports_interview":true}}`))
 
 	actions := srv.managementActionsForProtocol("zigbee")
 	if len(actions) != 1 {

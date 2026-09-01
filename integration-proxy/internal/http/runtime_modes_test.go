@@ -3,6 +3,7 @@ package http
 import (
 	"io"
 	"log"
+	"strings"
 	"testing"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
@@ -71,5 +72,19 @@ func TestHelmSpecForUsesGeneratedArtifactFallback(t *testing.T) {
 	}
 	if spec.ChartRef != "oci://example/generated" {
 		t.Fatalf("unexpected chart ref: %q", spec.ChartRef)
+	}
+}
+
+func TestHelmCommonEnvArgsIncludesBrokerKind(t *testing.T) {
+	t.Setenv("INTEGRATIONS_HELM_MQTT_BROKER_URL", "mqtt://broker:1883")
+	t.Setenv("INTEGRATIONS_HELM_MQTT_BROKER_KIND", "generic")
+
+	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
+	args := strings.Join(s.helmCommonEnvArgs(), " ")
+	if !strings.Contains(args, "env.MQTT_BROKER_URL=mqtt://broker:1883") {
+		t.Fatalf("expected broker URL Helm argument, got %q", args)
+	}
+	if !strings.Contains(args, "env.MQTT_BROKER_KIND=generic") {
+		t.Fatalf("expected broker kind Helm argument, got %q", args)
 	}
 }

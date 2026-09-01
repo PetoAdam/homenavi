@@ -1,34 +1,105 @@
 package mqttx
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
-
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type Message = mqtt.Message
+type Message interface {
+	Topic() string
+	Payload() []byte
+	Qos() byte
+	Retained() bool
+	Duplicate() bool
+}
 
-type Handler = mqtt.MessageHandler
+type Handler func(Message)
+
+type BrokerKind string
+
+const (
+	BrokerKindEMQX    BrokerKind = "emqx"
+	BrokerKindGeneric BrokerKind = "generic"
+)
+
+func (k BrokerKind) IsValid() bool {
+	switch normalizeBrokerKind(k) {
+	case BrokerKindEMQX, BrokerKindGeneric:
+		return true
+	default:
+		return false
+	}
+}
+
+type SubscriptionMode string
+
+const (
+	SubscriptionModeExclusive SubscriptionMode = "exclusive"
+	SubscriptionModeShared    SubscriptionMode = "shared"
+)
+
+type SubscriptionOptions struct {
+	Topic string
+	QoS   byte
+	Mode  SubscriptionMode
+	Group string
+}
+
+type Capabilities struct {
+	SharedSubscriptions bool
+}
+
+type TopicStrategy interface {
+	ResolveSubscribeTopic(SubscriptionOptions) (string, error)
+	Capabilities() Capabilities
+}
+
+type emqxTopicStrategy struct{}
+
+func (emqxTopicStrategy) ResolveSubscribeTopic(opts SubscriptionOptions) (string, error) {
+	if opts.Mode == SubscriptionModeShared {
+		return SharedTopic(opts.Group, opts.Topic), nil
+	}
+	return opts.Topic, nil
+}
+
+func (emqxTopicStrategy) Capabilities() Capabilities {
+	return Capabilities{SharedSubscriptions: true}
+}
+
+type genericTopicStrategy struct{}
+
+func (genericTopicStrategy) ResolveSubscribeTopic(opts SubscriptionOptions) (string, error) {
+	if opts.Mode == SubscriptionModeShared {
+		return "", fmt.Errorf("mqtt broker kind %q does not support shared subscriptions", BrokerKindGeneric)
+	}
+	return opts.Topic, nil
+}
+
+func (genericTopicStrategy) Capabilities() Capabilities {
+	return Capabilities{}
+}
 
 type Client struct {
-	cli  mqtt.Client
-	mu   sync.RWMutex
-	subs map[string]subscription
+	transport  mqttTransport
+	brokerKind BrokerKind
+	mu         sync.RWMutex
+	subs       map[string]subscription
 }
 
 type subscription struct {
-	qos byte
-	cb  Handler
+	opts          SubscriptionOptions
+	resolvedTopic string
+	cb            Handler
 }
 
 type Options struct {
 	BrokerURL             string
+	BrokerKind            BrokerKind
 	ClientID              string
 	ClientIDPrefix        string
 	AutoReconnect         bool
@@ -102,78 +173,100 @@ func normalizeBrokerURL(raw string) (string, error) {
 	}
 }
 
+func normalizeBrokerKind(kind BrokerKind) BrokerKind {
+	switch strings.ToLower(strings.TrimSpace(string(kind))) {
+	case "", string(BrokerKindEMQX):
+		return BrokerKindEMQX
+	case string(BrokerKindGeneric):
+		return BrokerKindGeneric
+	default:
+		return BrokerKind(strings.ToLower(strings.TrimSpace(string(kind))))
+	}
+}
+
+func normalizeSubscriptionMode(mode SubscriptionMode) SubscriptionMode {
+	switch strings.ToLower(strings.TrimSpace(string(mode))) {
+	case "", string(SubscriptionModeExclusive):
+		return SubscriptionModeExclusive
+	case string(SubscriptionModeShared):
+		return SubscriptionModeShared
+	default:
+		return SubscriptionMode(strings.ToLower(strings.TrimSpace(string(mode))))
+	}
+}
+
+func SharedTopic(group, topic string) string {
+	return "$share/" + strings.TrimSpace(group) + "/" + strings.TrimSpace(topic)
+}
+
+func topicStrategyFor(kind BrokerKind) (TopicStrategy, error) {
+	switch normalizeBrokerKind(kind) {
+	case BrokerKindEMQX:
+		return emqxTopicStrategy{}, nil
+	case BrokerKindGeneric:
+		return genericTopicStrategy{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported mqtt broker kind %q", kind)
+	}
+}
+
+func resolveSubscription(kind BrokerKind, opts SubscriptionOptions) (SubscriptionOptions, string, error) {
+	normalized := SubscriptionOptions{
+		Topic: strings.TrimSpace(opts.Topic),
+		QoS:   opts.QoS,
+		Mode:  normalizeSubscriptionMode(opts.Mode),
+		Group: strings.TrimSpace(opts.Group),
+	}
+	if normalized.Topic == "" {
+		return SubscriptionOptions{}, "", fmt.Errorf("mqtt subscribe topic is required")
+	}
+	switch normalized.Mode {
+	case SubscriptionModeExclusive:
+		return normalized, normalized.Topic, nil
+	case SubscriptionModeShared:
+		if normalized.Group == "" {
+			return SubscriptionOptions{}, "", fmt.Errorf("mqtt shared subscription group is required")
+		}
+	default:
+		return SubscriptionOptions{}, "", fmt.Errorf("unsupported mqtt subscription mode %q", opts.Mode)
+	}
+	strategy, err := topicStrategyFor(kind)
+	if err != nil {
+		return SubscriptionOptions{}, "", err
+	}
+	resolvedTopic, err := strategy.ResolveSubscribeTopic(normalized)
+	if err != nil {
+		return SubscriptionOptions{}, "", err
+	}
+	return normalized, resolvedTopic, nil
+}
+
 func Connect(opts Options) (*Client, error) {
 	brokerURL := strings.TrimSpace(opts.BrokerURL)
 	if brokerURL == "" {
 		brokerURL = "mqtt://emqx:1883"
 	}
-	server, err := normalizeBrokerURL(brokerURL)
-	if err != nil {
-		return nil, err
+	brokerKind := normalizeBrokerKind(opts.BrokerKind)
+	if !brokerKind.IsValid() {
+		return nil, fmt.Errorf("unsupported mqtt broker kind %q", opts.BrokerKind)
 	}
-	clientID := strings.TrimSpace(opts.ClientID)
-	if clientID == "" {
-		prefix := strings.TrimSpace(opts.ClientIDPrefix)
-		if prefix == "" {
-			prefix = "homenavi"
-		}
-		clientID = prefix + "-" + time.Now().Format("150405.000")
-	}
-	mopts := mqtt.NewClientOptions()
-	mopts.AddBroker(server)
-	mopts.SetClientID(clientID)
-	client := &Client{subs: make(map[string]subscription)}
-	mopts.SetAutoReconnect(opts.AutoReconnect)
-	mopts.SetConnectRetry(opts.ConnectRetry)
-	connectRetryInterval, maxReconnectInterval := reconnectIntervals(opts)
-	if connectRetryInterval > 0 {
-		mopts.SetConnectRetryInterval(connectRetryInterval)
-	}
-	if maxReconnectInterval > 0 {
-		mopts.SetMaxReconnectInterval(maxReconnectInterval)
-	}
-	if opts.KeepAlive > 0 {
-		mopts.SetKeepAlive(opts.KeepAlive)
-	}
-	if opts.PingTimeout > 0 {
-		mopts.SetPingTimeout(opts.PingTimeout)
-	}
-	mopts.SetWriteTimeout(resolvedWriteTimeout(opts))
-	if cleanSession, setCleanSession, resumeSubs := sessionOptions(opts); setCleanSession {
-		mopts.SetCleanSession(cleanSession)
-		mopts.SetResumeSubs(resumeSubs)
-	}
-	if strings.HasPrefix(server, "ssl://") || strings.HasPrefix(server, "wss://") {
-		mopts.SetTLSConfig(&tls.Config{InsecureSkipVerify: opts.InsecureSkipVerifyTLS})
-	}
-	parsed, _ := url.Parse(strings.TrimSpace(brokerURL))
-	if parsed != nil && parsed.User != nil {
-		pw, _ := parsed.User.Password()
-		mopts.SetUsername(parsed.User.Username())
-		mopts.SetPassword(pw)
-	}
-	mopts.OnConnect = func(_ mqtt.Client) {
+	client := &Client{brokerKind: brokerKind, subs: make(map[string]subscription)}
+	transport, err := connectPahoTransport(opts, brokerURL, func() {
 		slog.Info("mqtt connected", "broker", brokerURL)
 		client.resubscribeAll()
 		if opts.OnConnect != nil {
 			opts.OnConnect()
 		}
-	}
-	mopts.OnConnectionLost = func(_ mqtt.Client, err error) {
+	}, func(err error) {
 		slog.Error("mqtt connection lost", "broker", brokerURL, "error", err)
 		if opts.OnConnectionLost != nil {
 			opts.OnConnectionLost(err)
 		}
-	}
-	cli := mqtt.NewClient(mopts)
-	tok := cli.Connect()
-	if ok := tok.WaitTimeout(15 * time.Second); !ok {
-		return nil, fmt.Errorf("mqtt connect timeout")
-	}
-	if err := tok.Error(); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	client.cli = cli
+	client.transport = transport
 	return client, nil
 }
 
@@ -182,11 +275,23 @@ func (c *Client) Subscribe(topic string, cb Handler) error {
 }
 
 func (c *Client) SubscribeWithQoS(topic string, qos byte, cb Handler) error {
-	c.rememberSubscription(topic, qos, cb)
-	t := c.cli.Subscribe(topic, qos, cb)
-	t.Wait()
-	if err := t.Error(); err != nil {
-		c.forgetSubscription(topic)
+	return c.SubscribeWithOptions(SubscriptionOptions{Topic: topic, QoS: qos}, cb)
+}
+
+func (c *Client) SubscribeWithOptions(opts SubscriptionOptions, cb Handler) error {
+	if c == nil || c.transport == nil {
+		return fmt.Errorf("mqtt client unavailable")
+	}
+	if cb == nil {
+		return fmt.Errorf("mqtt subscribe handler is required")
+	}
+	normalized, resolvedTopic, err := resolveSubscription(c.brokerKind, opts)
+	if err != nil {
+		return err
+	}
+	c.rememberSubscription(normalized, resolvedTopic, cb)
+	if err := c.transport.Subscribe(resolvedTopic, normalized.QoS, cb); err != nil {
+		c.forgetSubscription(resolvedTopic)
 		return err
 	}
 	return nil
@@ -197,7 +302,24 @@ func (c *Client) SubscribeFunc(topic string, cb func(Message)) error {
 }
 
 func (c *Client) SubscribeFuncWithQoS(topic string, qos byte, cb func(Message)) error {
-	return c.SubscribeWithQoS(topic, qos, func(_ mqtt.Client, msg mqtt.Message) {
+	return c.SubscribeFuncWithOptions(SubscriptionOptions{Topic: topic, QoS: qos}, cb)
+}
+
+func (c *Client) SubscribeFuncWithOptions(opts SubscriptionOptions, cb func(Message)) error {
+	if cb == nil {
+		return fmt.Errorf("mqtt subscribe function is required")
+	}
+	return c.SubscribeWithOptions(opts, func(msg Message) {
+		cb(msg)
+	})
+}
+
+func (c *Client) SubscribeShared(group, topic string, qos byte, cb Handler) error {
+	return c.SubscribeWithOptions(SubscriptionOptions{Topic: topic, QoS: qos, Mode: SubscriptionModeShared, Group: group}, cb)
+}
+
+func (c *Client) SubscribeSharedFunc(group, topic string, qos byte, cb func(Message)) error {
+	return c.SubscribeShared(group, topic, qos, func(msg Message) {
 		cb(msg)
 	})
 }
@@ -211,31 +333,36 @@ func (c *Client) PublishWith(topic string, payload []byte, retain bool) error {
 }
 
 func (c *Client) PublishWithOptions(topic string, payload []byte, qos byte, retain bool) error {
-	if c == nil || c.cli == nil || !c.cli.IsConnected() {
+	if c == nil || c.transport == nil || !c.transport.IsConnected() {
 		return fmt.Errorf("mqtt client unavailable")
 	}
-	t := c.cli.Publish(topic, qos, retain, payload)
-	if ok := t.WaitTimeout(5 * time.Second); !ok {
-		return fmt.Errorf("mqtt publish timeout")
-	}
-	return t.Error()
+	return c.transport.Publish(topic, payload, qos, retain)
 }
 
 func (c *Client) Unsubscribe(topic string) error {
-	t := c.cli.Unsubscribe(topic)
-	t.Wait()
-	if err := t.Error(); err != nil {
+	return c.UnsubscribeWithOptions(SubscriptionOptions{Topic: topic})
+}
+
+func (c *Client) UnsubscribeWithOptions(opts SubscriptionOptions) error {
+	if c == nil || c.transport == nil {
+		return fmt.Errorf("mqtt client unavailable")
+	}
+	_, resolvedTopic, err := resolveSubscription(c.brokerKind, opts)
+	if err != nil {
 		return err
 	}
-	c.forgetSubscription(topic)
+	if err := c.transport.Unsubscribe(resolvedTopic); err != nil {
+		return err
+	}
+	c.forgetSubscription(resolvedTopic)
 	return nil
 }
 
 func (c *Client) Disconnect(quiesceMs uint) {
-	if c == nil || c.cli == nil {
+	if c == nil || c.transport == nil {
 		return
 	}
-	c.cli.Disconnect(quiesceMs)
+	c.transport.Disconnect(quiesceMs)
 }
 
 func (c *Client) Close() {
@@ -243,16 +370,16 @@ func (c *Client) Close() {
 }
 
 func (c *Client) IsConnected() bool {
-	return c != nil && c.cli != nil && c.cli.IsConnected()
+	return c != nil && c.transport != nil && c.transport.IsConnected()
 }
 
-func (c *Client) rememberSubscription(topic string, qos byte, cb Handler) {
-	if c == nil || strings.TrimSpace(topic) == "" || cb == nil {
+func (c *Client) rememberSubscription(opts SubscriptionOptions, resolvedTopic string, cb Handler) {
+	if c == nil || strings.TrimSpace(resolvedTopic) == "" || cb == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.subs[topic] = subscription{qos: qos, cb: cb}
+	c.subs[resolvedTopic] = subscription{opts: opts, resolvedTopic: resolvedTopic, cb: cb}
 }
 
 func (c *Client) forgetSubscription(topic string) {
@@ -265,7 +392,7 @@ func (c *Client) forgetSubscription(topic string) {
 }
 
 func (c *Client) resubscribeAll() {
-	if c == nil || c.cli == nil {
+	if c == nil || c.transport == nil {
 		return
 	}
 
@@ -280,12 +407,10 @@ func (c *Client) resubscribeAll() {
 		if strings.TrimSpace(topic) == "" || sub.cb == nil {
 			continue
 		}
-		tok := c.cli.Subscribe(topic, sub.qos, sub.cb)
-		tok.Wait()
-		if err := tok.Error(); err != nil {
+		if err := c.transport.Subscribe(topic, sub.opts.QoS, sub.cb); err != nil {
 			slog.Warn("mqtt resubscribe failed", "topic", topic, "error", err)
 		} else {
-			slog.Info("mqtt resubscribed", "topic", topic, "qos", sub.qos)
+			slog.Info("mqtt resubscribed", "topic", topic, "qos", sub.opts.QoS, "mode", sub.opts.Mode, "group", sub.opts.Group)
 		}
 	}
 }

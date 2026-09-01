@@ -1,0 +1,10 @@
+services:
+  postgres:
+    volumes:
+      - postgres-ci-data:/var/lib/postgresql/data
+
+  zigbee2mqtt:
+    profiles: ["hardware"]
+
+volumes:
+  postgres-ci-data:

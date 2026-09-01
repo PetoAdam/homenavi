@@ -1,0 +1,53 @@
+# Keeps the HA smoke test within GitHub-hosted runner capacity while exercising
+# the same Sentinel, EMQX, PostgreSQL, and three-replica core-service paths.
+services:
+  frontend:
+    enabled: false
+  api-gateway:
+    enabled: false
+  auth-service:
+    enabled: false
+  user-service:
+    enabled: false
+  dashboard-service:
+    enabled: false
+  email-service:
+    enabled: false
+  profile-picture-service:
+    enabled: false
+  minio:
+    enabled: false
+  zigbee-adapter:
+    enabled: false
+  mock-adapter:
+    enabled: false
+  thread-adapter:
+    enabled: false
+  zigbee2mqtt:
+    enabled: false
+  weather-service:
+    enabled: false
+  device-hub:
+    replicas: 3
+    env:
+      DEVICE_HUB_MQTT_SHARED_GROUP: device-hub-ingest
+  entity-registry-service:
+    replicas: 3
+    env:
+      ENTITY_REGISTRY_MQTT_SHARED_GROUP: entity-registry-autoimport
+  history-service:
+    replicas: 3
+    env:
+      HISTORY_SERVICE_MQTT_SHARED_GROUP: history-ingest
+  automation-service:
+    replicas: 3
+    env:
+      AUTOMATION_SERVICE_MQTT_SHARED_GROUP: automation-events
+  integration-proxy:
+    replicas: 3
+
+mqtt:
+  brokerKind: emqx
+
+redis:
+  mode: sentinel

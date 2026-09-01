@@ -62,6 +62,24 @@ type PendingCorrelation struct {
 	ExpiresAt   time.Time        `gorm:"index:idx_pending_correlations_expires_at;not null" json:"expires_at"`
 }
 
+// TriggerCooldown serializes state-trigger cooldown claims across automation-service replicas.
+type TriggerCooldown struct {
+	WorkflowID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"workflow_id"`
+	TriggerNodeID string    `gorm:"primaryKey;type:varchar(128)" json:"trigger_node_id"`
+	ExpiresAt     time.Time `gorm:"index:idx_trigger_cooldowns_expires_at;not null" json:"expires_at"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// ScheduledTriggerClaim ensures a scheduled occurrence runs once across all
+// automation-service replicas.
+type ScheduledTriggerClaim struct {
+	WorkflowID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"workflow_id"`
+	TriggerNodeID string    `gorm:"primaryKey;type:varchar(128)" json:"trigger_node_id"`
+	OccurredAt    time.Time `gorm:"primaryKey;index:idx_scheduled_trigger_claims_occurred_at;not null" json:"occurred_at"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type hdpDeviceRecord struct {
 	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Protocol   string    `gorm:"column:protocol"`

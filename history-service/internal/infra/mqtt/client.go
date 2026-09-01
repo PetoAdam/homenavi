@@ -11,16 +11,15 @@ type Client struct {
 	client *mqttx.Client
 }
 
-type Message struct {
+type Message interface {
 	mqttx.Message
 }
 
-func (m Message) Retained() bool { return m.Message.Retained() }
-
-func Connect(brokerURL, clientID string) (*Client, error) {
+func Connect(cfg mqttx.Config) (*Client, error) {
 	cli, err := mqttx.Connect(mqttx.Options{
-		BrokerURL:             brokerURL,
-		ClientID:              clientID,
+		BrokerURL:             cfg.BrokerURL,
+		BrokerKind:            cfg.BrokerKind,
+		ClientID:              cfg.ClientID,
 		ClientIDPrefix:        "history-service",
 		AutoReconnect:         true,
 		ConnectRetry:          true,
@@ -36,8 +35,14 @@ func Connect(brokerURL, clientID string) (*Client, error) {
 }
 
 func (c *Client) Subscribe(topic string, handler func(Message)) error {
-	return c.client.SubscribeFuncWithQoS(topic, 1, func(msg mqttx.Message) {
-		handler(Message{Message: msg})
+	return c.client.SubscribeFuncWithOptions(mqttx.SubscriptionOptions{Topic: topic, QoS: 1}, func(msg mqttx.Message) {
+		handler(msg)
+	})
+}
+
+func (c *Client) SubscribeShared(group, topic string, handler func(Message)) error {
+	return c.client.SubscribeFuncWithOptions(mqttx.SubscriptionOptions{Topic: topic, QoS: 1, Mode: mqttx.SubscriptionModeShared, Group: group}, func(msg mqttx.Message) {
+		handler(msg)
 	})
 }
 

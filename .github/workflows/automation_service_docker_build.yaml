@@ -1,4 +1,4 @@
-name: Build Automation Service Docker Image
+name: Verify and Package Automation Service Container
 
 on:
   push:

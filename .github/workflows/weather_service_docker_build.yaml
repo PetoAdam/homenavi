@@ -1,4 +1,4 @@
-name: Build Weather Service Docker Image
+name: Verify and Package Weather Service Container
 
 on:
   push:

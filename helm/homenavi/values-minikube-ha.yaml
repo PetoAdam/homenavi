@@ -1,0 +1,33 @@
+# Fresh Minikube HA validation profile.
+# Singleton brokers, storage, adapters, and user-facing/support services retain
+# their chart defaults; stateless core services are deliberately scaled to 3.
+services:
+  api-gateway:
+    replicas: 3
+  auth-service:
+    replicas: 3
+  user-service:
+    replicas: 3
+  dashboard-service:
+    replicas: 3
+  device-hub:
+    replicas: 3
+    env:
+      DEVICE_HUB_MQTT_SHARED_GROUP: device-hub-ingest
+  entity-registry-service:
+    replicas: 3
+    env:
+      ENTITY_REGISTRY_MQTT_SHARED_GROUP: entity-registry-autoimport
+  history-service:
+    replicas: 3
+    env:
+      HISTORY_SERVICE_MQTT_SHARED_GROUP: history-ingest
+  automation-service:
+    replicas: 3
+    env:
+      AUTOMATION_SERVICE_MQTT_SHARED_GROUP: automation-events
+  integration-proxy:
+    replicas: 3
+
+mqtt:
+  brokerKind: emqx

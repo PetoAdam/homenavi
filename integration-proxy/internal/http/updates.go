@@ -14,7 +14,16 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	dbinfra "github.com/PetoAdam/homenavi/integration-proxy/internal/infra/db"
 )
+
+func updateStatusFromDB(status dbinfra.UpdateStatus) integrationUpdateStatus {
+	return integrationUpdateStatus{ID: status.ID, InstalledVersion: status.InstalledVersion, LatestVersion: status.LatestVersion, UpdateAvailable: status.UpdateAvailable, AutoUpdate: status.AutoUpdate, CheckedAt: status.CheckedAt, Error: status.Error, InProgress: status.InProgress}
+}
+
+func updateStatusToDB(status integrationUpdateStatus) dbinfra.UpdateStatus {
+	return dbinfra.UpdateStatus{ID: status.ID, InstalledVersion: status.InstalledVersion, LatestVersion: status.LatestVersion, UpdateAvailable: status.UpdateAvailable, AutoUpdate: status.AutoUpdate, CheckedAt: status.CheckedAt, Error: status.Error, InProgress: status.InProgress, UpdatedAt: time.Now().UTC()}
+}
 
 func (s *Server) initUpdateState(ic config.IntegrationConfig) {
 	id := strings.TrimSpace(ic.ID)
@@ -37,9 +46,30 @@ func (s *Server) initUpdateState(ic config.IntegrationConfig) {
 	state.InProgress = s.updating[id]
 	s.updates[id] = state
 	s.mu.Unlock()
+	if s.stateRepo != nil {
+		_, err := s.stateRepo.MutateUpdateStatus(context.Background(), id, func(existing *dbinfra.UpdateStatus) error {
+			existing.InstalledVersion = state.InstalledVersion
+			existing.AutoUpdate = state.AutoUpdate
+			return nil
+		})
+		if err != nil {
+			s.logger.Printf("update state initialization failed id=%s err=%v", id, err)
+		}
+	}
 }
 
 func (s *Server) copyUpdateStates() []integrationUpdateStatus {
+	if s.stateRepo != nil {
+		statuses, err := s.stateRepo.ListUpdateStatuses(context.Background())
+		if err == nil {
+			out := make([]integrationUpdateStatus, 0, len(statuses))
+			for _, status := range statuses {
+				out = append(out, updateStatusFromDB(status))
+			}
+			return out
+		}
+		s.logger.Printf("update state list failed err=%v", err)
+	}
 	s.mu.RLock()
 	ids := make([]string, 0, len(s.updates))
 	for id := range s.updates {
@@ -62,6 +92,18 @@ func (s *Server) setUpdateState(id string, apply func(*integrationUpdateStatus))
 	if id == "" {
 		return
 	}
+	if s.stateRepo != nil {
+		_, err := s.stateRepo.MutateUpdateStatus(context.Background(), id, func(persisted *dbinfra.UpdateStatus) error {
+			state := updateStatusFromDB(*persisted)
+			apply(&state)
+			*persisted = updateStatusToDB(state)
+			return nil
+		})
+		if err != nil {
+			s.logger.Printf("update state persistence failed id=%s err=%v", id, err)
+		}
+		return
+	}
 	s.mu.Lock()
 	state := s.updates[id]
 	state.ID = id
@@ -75,6 +117,13 @@ func (s *Server) startUpdate(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return false
+	}
+	if s.stateRepo != nil {
+		claimed, err := s.stateRepo.ClaimUpdate(context.Background(), id)
+		if err != nil {
+			s.logger.Printf("update claim failed id=%s err=%v", id, err)
+		}
+		return claimed
 	}
 	s.mu.Lock()
 	if s.updating[id] {
@@ -94,6 +143,19 @@ func (s *Server) startUpdate(id string) bool {
 func (s *Server) finishUpdate(id string, errMsg string) {
 	id = strings.TrimSpace(id)
 	if id == "" {
+		return
+	}
+	if s.stateRepo != nil {
+		_, err := s.stateRepo.MutateUpdateStatus(context.Background(), id, func(state *dbinfra.UpdateStatus) error {
+			now := time.Now().UTC()
+			state.InProgress = false
+			state.CheckedAt = &now
+			state.Error = strings.TrimSpace(errMsg)
+			return nil
+		})
+		if err != nil {
+			s.logger.Printf("update finish persistence failed id=%s err=%v", id, err)
+		}
 		return
 	}
 	now := time.Now().UTC()

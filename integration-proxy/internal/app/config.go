@@ -3,6 +3,7 @@ package app
 import (
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/dbx"
 	"github.com/PetoAdam/homenavi/shared/envx"
 )
 
@@ -14,6 +15,7 @@ type Config struct {
 	RefreshInterval     time.Duration
 	UpdateCheckInterval time.Duration
 	JWTPublicKeyPath    string
+	DB                  dbx.PostgresConfig
 }
 
 func LoadConfig() Config {
@@ -24,5 +26,6 @@ func LoadConfig() Config {
 		RefreshInterval:     envx.Duration("INTEGRATIONS_REFRESH_INTERVAL", 30*time.Second),
 		UpdateCheckInterval: envx.Duration("INTEGRATIONS_UPDATE_CHECK_INTERVAL", 15*time.Minute),
 		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),
+		DB:                  dbx.LoadPostgresConfig(dbx.PostgresConfig{User: "postgres", DBName: "homenavi", Host: "postgres", Port: "5432", SSLMode: "disable"}),
 	}
 }

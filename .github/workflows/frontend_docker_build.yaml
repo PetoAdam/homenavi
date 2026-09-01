@@ -1,4 +1,4 @@
-name: Build frontend Docker Image
+name: Verify and Package Frontend Container
 
 on:
   push:

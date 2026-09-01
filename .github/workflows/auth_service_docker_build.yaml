@@ -1,4 +1,4 @@
-name: Build Auth Service Docker Image
+name: Verify and Package Auth Service Container
 
 on:
   push:

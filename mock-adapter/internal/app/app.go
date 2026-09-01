@@ -9,7 +9,7 @@ import (
 
 	"github.com/PetoAdam/homenavi/mock-adapter/internal/adapter"
 	httptransport "github.com/PetoAdam/homenavi/mock-adapter/internal/http"
-	"github.com/PetoAdam/homenavi/shared/mqttx"
+	mqttinfra "github.com/PetoAdam/homenavi/mock-adapter/internal/infra/mqtt"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
 )
 
@@ -17,13 +17,13 @@ import (
 type App struct {
 	server      *http.Server
 	adapter     *adapter.Service
-	mqttClient  *mqttx.Client
+	mqttClient  *mqttinfra.Client
 	shutdownObs func()
 	logger      *slog.Logger
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
-	mqttClient, err := mqttx.Connect(mqttx.Options{BrokerURL: cfg.MQTT.BrokerURL, ClientIDPrefix: "mock-adapter"})
+	mqttClient, err := mqttinfra.Connect(cfg.MQTT, "mock-adapter")
 	if err != nil {
 		return nil, fmt.Errorf("connect mqtt: %w", err)
 	}

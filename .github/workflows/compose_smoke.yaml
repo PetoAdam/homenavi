@@ -1,0 +1,103 @@
+name: Docker Compose Smoke
+
+on:
+  pull_request:
+    paths:
+      - "docker-compose.yml"
+      - "docker-compose.ci.yml"
+      - ".env.ci"
+      - ".env.example"
+      - "**/Dockerfile"
+      - "shared/**"
+      - "frontend/**"
+      - "nginx/**"
+      - "emqx/**"
+      - "scripts/**"
+      - "test/smoke/**"
+      - "api-gateway/test/**"
+      - "api-gateway/**"
+      - "auth-service/**"
+      - "user-service/**"
+      - "device-hub/**"
+      - "entity-registry-service/**"
+      - "history-service/**"
+      - "automation-service/**"
+      - "integration-proxy/**"
+      - ".github/workflows/compose_smoke.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose.yml"
+      - "docker-compose.ci.yml"
+      - ".env.ci"
+      - ".env.example"
+      - "**/Dockerfile"
+      - "shared/**"
+      - "frontend/**"
+      - "nginx/**"
+      - "emqx/**"
+      - "scripts/**"
+      - "test/smoke/**"
+      - "api-gateway/test/**"
+      - "api-gateway/**"
+      - "auth-service/**"
+      - "user-service/**"
+      - "device-hub/**"
+      - "entity-registry-service/**"
+      - "history-service/**"
+      - "automation-service/**"
+      - "integration-proxy/**"
+      - ".github/workflows/compose_smoke.yaml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT: homenavi-compose-ci-${{ github.run_id }}
+      HN_VERSION: ci-${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render Compose deployment
+        run: |
+          COMPOSE_PROJECT_NAME="$PROJECT" docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml config --quiet
+
+      - name: Build and start stack
+        run: |
+          COMPOSE_PROJECT_NAME="$PROJECT" docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up --build --detach
+
+      - name: Verify public health routes
+        run: |
+          set -euo pipefail
+          for path in /health /api/gateway/health; do
+            for attempt in $(seq 1 60); do
+              if curl --fail --silent --show-error "http://127.0.0.1:18080${path}"; then
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "Timed out waiting for ${path}" >&2
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+          COMPOSE_PROJECT_NAME="$PROJECT" docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml ps --status running
+
+      - name: Run authentication smoke flow
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest requests paho-mqtt
+          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_PORT=11883 pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          COMPOSE_PROJECT_NAME="$PROJECT" docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml ps --all
+          COMPOSE_PROJECT_NAME="$PROJECT" docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml logs --no-color
+
+      - name: Remove stack
+        if: always()
+        run: COMPOSE_PROJECT_NAME="$PROJECT" docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down --volumes --remove-orphans

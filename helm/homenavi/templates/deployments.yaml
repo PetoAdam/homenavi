@@ -50,6 +50,10 @@ spec:
       {{- end }}
       {{- $svcEnv := default (dict) $svc.env }}
       {{- $svcEnvValueFrom := default (dict) $svc.envValueFrom }}
+      {{- $usesRedis := hasKey $svcEnv "REDIS_MODE" }}
+      {{- $injectRedisAddr := and $usesRedis (not (hasKey $svcEnv "REDIS_ADDR")) (not (hasKey $svcEnvValueFrom "REDIS_ADDR")) }}
+      {{- $injectRedisMasterName := and $usesRedis (not (hasKey $svcEnv "REDIS_MASTER_NAME")) (not (hasKey $svcEnvValueFrom "REDIS_MASTER_NAME")) }}
+      {{- $injectRedisSentinelAddrs := and $usesRedis (not (hasKey $svcEnv "REDIS_SENTINEL_ADDRS")) (not (hasKey $svcEnvValueFrom "REDIS_SENTINEL_ADDRS")) }}
       {{- $usesMQTT := default false $svc.usesMQTT }}
       {{- $injectMQTTWebsocketUpstream := default false $svc.injectMQTTWebsocketUpstream }}
       {{- $otelTracesEndpoint := trim (default "" $.Values.global.otelExporterOtlpTracesEndpoint) }}
@@ -84,7 +88,7 @@ spec:
       {{- $serviceDependencies = append $serviceDependencies (dict "host" $mqttDepHost "port" $mqttDepPort) }}
       {{- end }}
       {{- end }}
-      {{- if and (eq (include "homenavi.redisProvider" $) "bundled") (hasKey $svcEnv "REDIS_MODE") }}
+      {{- if and (eq (include "homenavi.redisProvider" $) "bundled") $usesRedis }}
       {{- $serviceDependencies = append $serviceDependencies (dict "host" (include "homenavi.redisDependencyHost" $) "port" (include "homenavi.redisDependencyPort" $)) }}
       {{- end }}
       {{- if and (eq (len $serviceDependencies) 0) (ne $name "postgres") (hasKey $svcEnv "POSTGRES_HOST") }}
@@ -253,6 +257,8 @@ spec:
             {{- if $usesMQTT }}
             - name: MQTT_BROKER_URL
               value: {{ include "homenavi.mqttBrokerURL" $ | quote }}
+            - name: MQTT_BROKER_KIND
+              value: {{ include "homenavi.mqttBrokerKind" $ | quote }}
             {{- end }}
             {{- if $injectMQTTWebsocketUpstream }}
             - name: MQTT_WEBSOCKET_UPSTREAM_URL
@@ -261,6 +267,18 @@ spec:
             {{- if $injectOTLPTracesEndpoint }}
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
               value: {{ $otelTracesEndpoint | quote }}
+            {{- end }}
+            {{- if $injectRedisAddr }}
+            - name: REDIS_ADDR
+              value: {{ include "homenavi.redisAddr" $ | quote }}
+            {{- end }}
+            {{- if $injectRedisMasterName }}
+            - name: REDIS_MASTER_NAME
+              value: {{ include "homenavi.redisMasterName" $ | quote }}
+            {{- end }}
+            {{- if $injectRedisSentinelAddrs }}
+            - name: REDIS_SENTINEL_ADDRS
+              value: {{ include "homenavi.redisSentinelAddrs" $ | quote }}
             {{- end }}
             {{- range $envKey, $envVal := $svc.env }}
             {{- $renderedVal := printf "%v" $envVal }}
