@@ -107,19 +107,22 @@ def wait_for_pairing_terminal_or_absence(
     *,
     timeout: float = 12.0,
 ) -> dict[str, Any] | None:
-    def _poll() -> dict[str, Any] | None | bool:
+    absent: dict[str, Any] = {"absent": True}
+
+    def _poll() -> dict[str, Any] | bool:
         current = find_pairing(list_pairings(session, gateway_url, headers), session_id)
         if current is None:
-            return None
+            return absent
         if current.get("status") in statuses:
             return current
         return False
 
-    return wait_until(
+    result = wait_until(
         _poll,
         timeout=timeout,
         message=f"pairing {session_id} did not reach {sorted(statuses)} or disappear",
     )
+    return None if result is absent else result
 
 
 def stop_pairing(session: requests.Session, gateway_url: str, headers: dict[str, str], protocol: str) -> None:
