@@ -52,7 +52,7 @@ jobs:
         run: |
           kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.1.yaml
           kubectl wait --for=condition=Established crd/clusters.postgresql.cnpg.io --timeout=3m
-          kubectl -n cnpg-system rollout status deployment/cnpg-cloudnative-pg --timeout=3m
+          kubectl -n cnpg-system rollout status deployment -l app.kubernetes.io/name=cloudnative-pg --timeout=3m
 
       - name: Lint and render HA profile
         run: |

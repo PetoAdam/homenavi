@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSharedWebSocket, wsUrlForPath } from '../../../services/realtime/sharedWebSocket';
+import { isTriggerRunEvent } from './runStreamUtils';
 
 /**
  * WebSocket-driven live run highlighting.
@@ -129,10 +130,16 @@ export default function useRunStream({ onToast, onError } = {}) {
         }
 
         if (type === 'node_finished') {
-          if (status === 'success') {
-            setLiveNodeState(nodeId, 'done', { clearAfterMs: 1100 });
+          const terminalState = status === 'success' ? 'done' : 'failed';
+          const clearAfterMs = status === 'success' ? 1100 : 2200;
+          // Trigger nodes complete synchronously. Defer their terminal state two
+          // frames so the preceding node_started highlight is painted first.
+          if (isTriggerRunEvent(msg)) {
+            window.requestAnimationFrame(() => {
+              window.requestAnimationFrame(() => setLiveNodeState(nodeId, terminalState, { clearAfterMs }));
+            });
           } else {
-            setLiveNodeState(nodeId, 'failed', { clearAfterMs: 2200 });
+            setLiveNodeState(nodeId, terminalState, { clearAfterMs });
           }
           return;
         }
