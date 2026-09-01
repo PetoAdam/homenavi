@@ -4,11 +4,11 @@ services:
   frontend:
     enabled: false
   api-gateway:
-    enabled: false
+    enabled: true
   auth-service:
-    enabled: false
+    enabled: true
   user-service:
-    enabled: false
+    enabled: true
   dashboard-service:
     enabled: false
   email-service:
@@ -20,7 +20,7 @@ services:
   zigbee-adapter:
     enabled: false
   mock-adapter:
-    enabled: false
+    enabled: true
   thread-adapter:
     enabled: false
   zigbee2mqtt:

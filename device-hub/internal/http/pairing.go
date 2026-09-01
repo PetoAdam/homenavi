@@ -364,6 +364,7 @@ func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
 		}
 		_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 		s.emitPairingEvent(snapshot)
+		s.completePairingLifecycle(snapshot)
 		return &snapshot, nil
 	}
 	s.pairingMu.Lock()
@@ -463,6 +464,7 @@ func (s *Server) handlePairingTimeout(protocol, sessionID string) {
 		if changed {
 			_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
 			s.emitPairingEvent(snapshot)
+			s.completePairingLifecycle(snapshot)
 		}
 		return
 	}

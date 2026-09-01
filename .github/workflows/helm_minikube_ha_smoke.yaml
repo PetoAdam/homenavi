@@ -6,11 +6,16 @@ on:
       - "helm/homenavi/**"
       - "shared/mqttx/**"
       - "shared/redisx/**"
+      - "test/smoke/**"
+      - "api-gateway/**"
+      - "auth-service/**"
+      - "user-service/**"
       - "device-hub/**"
       - "entity-registry-service/**"
       - "history-service/**"
       - "automation-service/**"
       - "integration-proxy/**"
+      - "mock-adapter/**"
       - ".github/workflows/helm_minikube_ha_smoke.yaml"
   push:
     branches:
@@ -19,17 +24,22 @@ on:
       - "helm/homenavi/**"
       - "shared/mqttx/**"
       - "shared/redisx/**"
+      - "test/smoke/**"
+      - "api-gateway/**"
+      - "auth-service/**"
+      - "user-service/**"
       - "device-hub/**"
       - "entity-registry-service/**"
       - "history-service/**"
       - "automation-service/**"
       - "integration-proxy/**"
+      - "mock-adapter/**"
       - ".github/workflows/helm_minikube_ha_smoke.yaml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NAMESPACE: homenavi-ha-smoke
       RELEASE: homenavi-ha-smoke
@@ -72,6 +82,10 @@ jobs:
         run: |
           set -euo pipefail
           kubectl -n "$NAMESPACE" rollout status statefulset/$RELEASE-redis --timeout=3m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-api-gateway --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-auth-service --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-user-service --timeout=4m
+          kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-mock-adapter --timeout=4m
           kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-device-hub --timeout=4m
           kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-entity-registry-service --timeout=4m
           kubectl -n "$NAMESPACE" rollout status deployment/$RELEASE-history-service --timeout=4m
@@ -80,6 +94,9 @@ jobs:
           kubectl -n "$NAMESPACE" wait --for=jsonpath='{.status.readyInstances}'=3 cluster.postgresql.cnpg.io/$RELEASE-postgres --timeout=4m
           for service in device-hub entity-registry-service history-service automation-service; do
             kubectl -n "$NAMESPACE" get deployment "$RELEASE-$service" -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 3
+          done
+          for service in api-gateway auth-service user-service mock-adapter; do
+            kubectl -n "$NAMESPACE" get deployment "$RELEASE-$service" -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 1
           done
 
       - name: Verify Redis Sentinel and MQTT shared groups
@@ -117,12 +134,41 @@ jobs:
             kubectl -n "$NAMESPACE" get deployment "$deployment" -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 3
           done
 
+      - name: Run HA runtime smoke flows
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" port-forward svc/$RELEASE-api-gateway 18080:8080 >/tmp/homenavi-ha-gateway.log 2>&1 &
+          gateway_pid=$!
+          kubectl -n "$NAMESPACE" port-forward svc/$RELEASE-emqx 11883:1883 >/tmp/homenavi-ha-emqx.log 2>&1 &
+          mqtt_pid=$!
+          cleanup() {
+            kill "$gateway_pid" "$mqtt_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for path in /health /api/gateway/health /api/auth/health /api/hdp/health /api/ers/health /api/history/health /api/automation/health; do
+            for attempt in $(seq 1 60); do
+              if curl --fail --silent --show-error "http://127.0.0.1:18080${path}" >/dev/null; then
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "Timed out waiting for ${path}" >&2
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+          python -m pip install --upgrade pip
+          python -m pip install pytest requests paho-mqtt
+          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_HOST=127.0.0.1 HOMENAVI_MQTT_PORT=11883 pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_ha_runtime_services.py
+
       - name: Collect diagnostics on failure
         if: failure()
         run: |
           kubectl -n "$NAMESPACE" get all -o wide
           kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
           kubectl -n "$NAMESPACE" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/instance="$RELEASE" || true
+          test -f /tmp/homenavi-ha-gateway.log && cat /tmp/homenavi-ha-gateway.log || true
+          test -f /tmp/homenavi-ha-emqx.log && cat /tmp/homenavi-ha-emqx.log || true
 
       - name: Remove HA smoke deployment
         if: always()

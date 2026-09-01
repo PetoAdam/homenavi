@@ -215,6 +215,7 @@ The common setup lives in the shared observability package and is wired in each 
 - MQTT clients, broker topology, shared consumers, and Mosquitto compatibility: [doc/mqtt_architecture.md](doc/mqtt_architecture.md)
 - Local developer setup: [doc/local_build.md](doc/local_build.md)
 - Frontend state conventions: [doc/frontend-state-architecture-guide.md](doc/frontend-state-architecture-guide.md)
+- Frontend design-system extraction plan: [doc/frontend_ui_primitives_package_plan.md](doc/frontend_ui_primitives_package_plan.md)
 - Kubernetes runbook: [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md)
 - Screenshot gallery: [doc/gallery.md](doc/gallery.md)
 
