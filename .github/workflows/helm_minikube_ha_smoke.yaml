@@ -145,7 +145,7 @@ jobs:
             kill "$gateway_pid" "$mqtt_pid" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
-          for path in /health /api/gateway/health /api/auth/health /api/hdp/health /api/ers/health /api/history/health /api/automation/health; do
+          for path in /health /api/gateway/health; do
             for attempt in $(seq 1 60); do
               if ! kill -0 "$gateway_pid" 2>/dev/null; then
                 cat /tmp/homenavi-ha-gateway.log >&2 || true
@@ -161,9 +161,50 @@ jobs:
               sleep 2
             done
           done
-          python -m pip install --upgrade pip
-          python -m pip install pytest requests paho-mqtt
-          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_HOST=127.0.0.1 HOMENAVI_MQTT_PORT=11883 pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_ha_runtime_services.py
+          admin_email="${HOMENAVI_ADMIN_EMAIL:-admin@example.com}"
+          admin_password="${HOMENAVI_ADMIN_PASSWORD:-admin}"
+          admin_token=""
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$gateway_pid" 2>/dev/null; then
+              cat /tmp/homenavi-ha-gateway.log >&2 || true
+              exit 1
+            fi
+            login_status=$(curl --silent --show-error --output /tmp/homenavi-ha-login.json --write-out '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              -d "{\"email\":\"$admin_email\",\"password\":\"$admin_password\"}" \
+              http://127.0.0.1:18080/api/auth/login/start || true)
+            if [ "$login_status" = "200" ]; then
+              admin_token=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], "r", encoding="utf-8")).get("access_token", ""))' /tmp/homenavi-ha-login.json)
+              if [ -n "$admin_token" ]; then
+                break
+              fi
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              cat /tmp/homenavi-ha-login.json >&2 || true
+              echo 'Timed out waiting for admin login' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          for path in /api/auth/health /api/hdp/health /api/ers/health /api/history/health /api/automation/health; do
+            for attempt in $(seq 1 60); do
+              if ! kill -0 "$gateway_pid" 2>/dev/null; then
+                cat /tmp/homenavi-ha-gateway.log >&2 || true
+                exit 1
+              fi
+              if curl --fail --silent --show-error -H "Authorization: Bearer $admin_token" "http://127.0.0.1:18080${path}" >/dev/null; then
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "Timed out waiting for ${path}" >&2
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest requests paho-mqtt
+          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_HOST=127.0.0.1 HOMENAVI_MQTT_PORT=11883 HOMENAVI_ADMIN_EMAIL="$admin_email" HOMENAVI_ADMIN_PASSWORD="$admin_password" pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_ha_runtime_services.py
 
       - name: Collect diagnostics on failure
         if: failure()
