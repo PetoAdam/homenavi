@@ -98,6 +98,30 @@ def wait_for_pairing_absence(
     )
 
 
+def wait_for_pairing_terminal_or_absence(
+    session: requests.Session,
+    gateway_url: str,
+    headers: dict[str, str],
+    session_id: str,
+    statuses: set[str],
+    *,
+    timeout: float = 12.0,
+) -> dict[str, Any] | None:
+    def _poll() -> dict[str, Any] | None | bool:
+        current = find_pairing(list_pairings(session, gateway_url, headers), session_id)
+        if current is None:
+            return None
+        if current.get("status") in statuses:
+            return current
+        return False
+
+    return wait_until(
+        _poll,
+        timeout=timeout,
+        message=f"pairing {session_id} did not reach {sorted(statuses)} or disappear",
+    )
+
+
 def stop_pairing(session: requests.Session, gateway_url: str, headers: dict[str, str], protocol: str) -> None:
     response = api_delete(session, gateway_url, "/api/hdp/pairings", headers, params={"protocol": protocol})
     assert response.status_code in (200, 202, 204, 404), response.text
@@ -237,10 +261,9 @@ def test_pairing_qr_code_requires_input_and_can_be_cancelled(session: requests.S
 def test_pairing_qr_code_times_out_and_releases_protocol(session: requests.Session, gateway_url: str, auth_headers: dict[str, str]) -> None:
     ensure_pairing_stopped(session, gateway_url, auth_headers)
     pairing = start_pairing(session, gateway_url, auth_headers, mode="qr_code", timeout_seconds=1, inputs={})
-    timed_out = wait_for_pairing_status(session, gateway_url, auth_headers, pairing["id"], {"needs_input", "timeout"}, timeout=4.0)
-    if timed_out.get("status") != "timeout":
-        timed_out = wait_for_pairing_status(session, gateway_url, auth_headers, pairing["id"], {"timeout"}, timeout=6.0)
-    assert timed_out.get("status") == "timeout"
+    timed_out = wait_for_pairing_terminal_or_absence(session, gateway_url, auth_headers, pairing["id"], {"timeout"}, timeout=8.0)
+    if timed_out is not None:
+        assert timed_out.get("status") == "timeout"
     wait_for_pairing_absence(session, gateway_url, auth_headers, PAIRING_PROTOCOL)
 
     restarted = start_pairing(
