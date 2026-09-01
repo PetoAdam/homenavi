@@ -27,7 +27,7 @@ const ResponsiveGridLayout = WidthProvider(Responsive);
 // and the permanent sidebar reduces the measured container width.
 //
 const BREAKPOINTS = { xl: 1500, lg: 1200, md: 1080, sm: 720, xxs: 0 };
-const COLS = { xl: 4, lg: 4, md: 3, sm: 2, xxs: 1 };
+const COLS = { xl: 4, lg: 4, md: 4, sm: 2, xxs: 1 };
 const ROW_HEIGHT = 56; // Fixed row height for consistent snapping
 const MARGIN = [16, 16];
 
