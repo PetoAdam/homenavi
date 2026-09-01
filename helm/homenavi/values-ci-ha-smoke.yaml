@@ -1,12 +1,23 @@
 # Keeps the HA smoke test within GitHub-hosted runner capacity while exercising
-# the same Sentinel, EMQX, PostgreSQL, and three-replica core-service paths.
+# Sentinel, EMQX, three-instance PostgreSQL, and the three-replica stateless
+# service paths covered by the HA checks and runtime smoke tests.
 services:
   frontend:
     enabled: false
   api-gateway:
     enabled: true
+    dependsOn:
+      - host: auth-service
+        port: 8000
+      - host: user-service
+        port: 8001
   auth-service:
     enabled: true
+    dependsOn:
+      - host: user-service
+        port: 8001
+      - host: redis
+        port: 6379
   user-service:
     enabled: true
   dashboard-service:
@@ -16,6 +27,8 @@ services:
   profile-picture-service:
     enabled: false
   minio:
+    enabled: false
+  echo-service:
     enabled: false
   zigbee-adapter:
     enabled: false
@@ -44,7 +57,9 @@ services:
     env:
       AUTOMATION_SERVICE_MQTT_SHARED_GROUP: automation-events
   integration-proxy:
-    replicas: 3
+    replicas: 1
+  jaeger:
+    enabled: false
 
 mqtt:
   brokerKind: emqx
