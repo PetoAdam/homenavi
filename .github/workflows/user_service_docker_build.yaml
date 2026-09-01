@@ -1,4 +1,4 @@
-name: Build User Service Docker Image
+name: Verify and Package User Service Container
 
 on:
   push:

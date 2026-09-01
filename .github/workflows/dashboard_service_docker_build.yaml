@@ -1,4 +1,4 @@
-name: Build Dashboard Service Docker Image
+name: Verify and Package Dashboard Service Container
 
 on:
   push:

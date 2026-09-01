@@ -1,4 +1,4 @@
-name: Build Zigbee Adapter Docker Image
+name: Verify and Package Zigbee Adapter Container
 
 on:
   push:

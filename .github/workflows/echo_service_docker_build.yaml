@@ -1,4 +1,4 @@
-name: Build Echo Service Docker Image
+name: Verify and Package Echo Service Container
 
 on:
   push:

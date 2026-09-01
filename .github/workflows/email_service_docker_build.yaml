@@ -1,4 +1,4 @@
-name: Build Email Service Docker Image
+name: Verify and Package Email Service Container
 
 on:
   push:

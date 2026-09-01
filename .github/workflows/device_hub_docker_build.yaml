@@ -1,4 +1,4 @@
-name: Build Device Hub Docker Image
+name: Verify and Package Device Hub Container
 
 on:
   push:

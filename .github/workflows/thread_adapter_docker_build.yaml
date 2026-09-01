@@ -1,4 +1,4 @@
-name: Build Mock Adapter Docker Image
+name: Verify and Package Thread Adapter Container
 
 on:
   push:

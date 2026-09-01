@@ -1,4 +1,4 @@
-name: Build Integration Proxy Docker Image
+name: Verify and Package Integration Proxy Container
 
 on:
   push:
