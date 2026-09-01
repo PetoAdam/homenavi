@@ -137,9 +137,9 @@ jobs:
       - name: Run HA runtime smoke flows
         run: |
           set -euo pipefail
-          kubectl -n "$NAMESPACE" port-forward svc/$RELEASE-api-gateway 18080:8080 >/tmp/homenavi-ha-gateway.log 2>&1 &
+          kubectl -n "$NAMESPACE" port-forward svc/api-gateway 18080:8080 >/tmp/homenavi-ha-gateway.log 2>&1 &
           gateway_pid=$!
-          kubectl -n "$NAMESPACE" port-forward svc/$RELEASE-emqx 11883:1883 >/tmp/homenavi-ha-emqx.log 2>&1 &
+          kubectl -n "$NAMESPACE" port-forward svc/emqx 11883:1883 >/tmp/homenavi-ha-emqx.log 2>&1 &
           mqtt_pid=$!
           cleanup() {
             kill "$gateway_pid" "$mqtt_pid" >/dev/null 2>&1 || true
@@ -147,6 +147,10 @@ jobs:
           trap cleanup EXIT
           for path in /health /api/gateway/health /api/auth/health /api/hdp/health /api/ers/health /api/history/health /api/automation/health; do
             for attempt in $(seq 1 60); do
+              if ! kill -0 "$gateway_pid" 2>/dev/null; then
+                cat /tmp/homenavi-ha-gateway.log >&2 || true
+                exit 1
+              fi
               if curl --fail --silent --show-error "http://127.0.0.1:18080${path}" >/dev/null; then
                 break
               fi
