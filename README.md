@@ -10,7 +10,8 @@
   <a href="#quickstart">Quickstart</a> •
   <a href="doc/architecture_diagram.md">Architecture</a> •
   <a href="doc/gallery.md">Gallery</a> •
-  <a href="https://github.com/PetoAdam/homenavi/issues">Issues</a>
+  <a href="https://github.com/PetoAdam/homenavi/issues">Issues</a> •
+  <a href="https://discord.gg/NhrYCtgNWk">Discord</a>
 </p>
 
 <p align="center">
