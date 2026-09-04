@@ -107,3 +107,36 @@ func TestPutMyDashboardReturnsConflict(t *testing.T) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
 }
+
+func TestDefaultDashboardDocUsesCurrentBreakpointShapes(t *testing.T) {
+	doc := defaultDashboardDoc()
+
+	if got := len(doc.Items); got != 4 {
+		t.Fatalf("expected 4 default dashboard items, got %d", got)
+	}
+
+	assertMaxRight := func(bp string, want int) {
+		t.Helper()
+		items := doc.Layouts[bp]
+		if len(items) == 0 {
+			t.Fatalf("expected layout for breakpoint %q", bp)
+		}
+		maxRight := 0
+		for _, item := range items {
+			x, _ := item["x"].(int)
+			w, _ := item["w"].(int)
+			if x+w > maxRight {
+				maxRight = x + w
+			}
+		}
+		if maxRight != want {
+			t.Fatalf("expected %s maxRight %d, got %d", bp, want, maxRight)
+		}
+	}
+
+	assertMaxRight("xl", 4)
+	assertMaxRight("lg", 4)
+	assertMaxRight("md", 4)
+	assertMaxRight("sm", 2)
+	assertMaxRight("xxs", 1)
+}

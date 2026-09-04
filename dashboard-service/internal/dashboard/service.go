@@ -198,10 +198,37 @@ func defaultDashboardDoc() DashboardDoc {
 	w2 := uuid.New().String()
 	w3 := uuid.New().String()
 	w4 := uuid.New().String()
-	base := []map[string]any{{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8}, {"i": w2, "x": 1, "y": 0, "w": 1, "h": 8}, {"i": w3, "x": 2, "y": 0, "w": 1, "h": 8}, {"i": w4, "x": 0, "y": 8, "w": 3, "h": 10}}
-	layouts := map[string][]map[string]any{}
-	for _, bp := range []string{"lg", "md", "sm", "xs", "xxs"} {
-		layouts[bp] = base
+	layouts := map[string][]map[string]any{
+		"xl": {
+			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
+			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
+			{"i": w3, "x": 2, "y": 0, "w": 1, "h": 8},
+			{"i": w4, "x": 3, "y": 0, "w": 1, "h": 10},
+		},
+		"lg": {
+			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
+			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
+			{"i": w3, "x": 2, "y": 0, "w": 1, "h": 8},
+			{"i": w4, "x": 3, "y": 0, "w": 1, "h": 10},
+		},
+		"md": {
+			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
+			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
+			{"i": w3, "x": 2, "y": 0, "w": 1, "h": 8},
+			{"i": w4, "x": 3, "y": 0, "w": 1, "h": 10},
+		},
+		"sm": {
+			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
+			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
+			{"i": w3, "x": 0, "y": 8, "w": 1, "h": 8},
+			{"i": w4, "x": 1, "y": 8, "w": 1, "h": 10},
+		},
+		"xxs": {
+			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
+			{"i": w2, "x": 0, "y": 8, "w": 1, "h": 8},
+			{"i": w3, "x": 0, "y": 16, "w": 1, "h": 8},
+			{"i": w4, "x": 0, "y": 24, "w": 1, "h": 10},
+		},
 	}
 	items := []map[string]any{{"instance_id": w1, "widget_type": "homenavi.weather", "enabled": true, "settings": map[string]any{}}, {"instance_id": w2, "widget_type": "homenavi.device", "enabled": true, "settings": map[string]any{}}, {"instance_id": w3, "widget_type": "homenavi.automation.manual_trigger", "enabled": true, "settings": map[string]any{}}, {"instance_id": w4, "widget_type": "homenavi.map", "enabled": true, "settings": map[string]any{}}}
 	return DashboardDoc{Layouts: layouts, Items: items}
