@@ -23,6 +23,12 @@ describe('useDevicesViewStore', () => {
     expect(useDevicesViewStore.getState().metadataMode).toBe('rest');
   });
 
+  it('toggles group by room via updater function', () => {
+    const { setGroupByRoom } = useDevicesViewStore.getState();
+    setGroupByRoom((prev) => !prev);
+    expect(useDevicesViewStore.getState().groupByRoom).toBe(false);
+  });
+
   it('normalizes invalid metadata mode to ws', () => {
     const { setMetadataMode } = useDevicesViewStore.getState();
     setMetadataMode('invalid');

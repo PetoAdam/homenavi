@@ -33,7 +33,8 @@ export const useDevicesViewStore = create((set) => ({
   },
   setGroupByRoom: (nextValue) => {
     applyAndPersist(set, (state) => {
-      const normalized = normalizeDevicesListPrefs({ ...state, groupByRoom: nextValue });
+      const resolved = typeof nextValue === 'function' ? nextValue(state.groupByRoom) : nextValue;
+      const normalized = normalizeDevicesListPrefs({ ...state, groupByRoom: resolved });
       return { groupByRoom: normalized.groupByRoom };
     });
   },
