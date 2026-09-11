@@ -19,6 +19,7 @@ import useAutomationCanvas from './hooks/useAutomationCanvas';
 import useAutomationConnectMode from './hooks/useAutomationConnectMode';
 import useAutomationEditorLoader from './hooks/useAutomationEditorLoader';
 import useAutomationHotkeys from './hooks/useAutomationHotkeys';
+import useAutoAttachRunningRun from './hooks/useAutoAttachRunningRun';
 import useAutomationWorkflowActions from './hooks/useAutomationWorkflowActions';
 import useErsInventory from '../../hooks/useErsInventory';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
@@ -302,6 +303,17 @@ function Automation() {
     onError: setErr,
   });
 
+  useAutoAttachRunningRun({
+    accessToken,
+    selectedWorkflow,
+    runs,
+    fetchRuns,
+    clearLiveRunHighlights,
+    closeRunWs,
+    startRunStream,
+    getRun,
+  });
+
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState('');
   const isDirty = useMemo(() => {
     try {
@@ -532,7 +544,7 @@ function Automation() {
         runId,
         accessToken,
         workflowId: selectedWorkflow.id,
-        refreshRuns: (workflowId) => fetchRuns(workflowId, 5),
+        refreshRuns: (workflowId) => fetchRuns(workflowId, 5, { silent: true }),
         getRun,
       });
     } else {
@@ -567,7 +579,7 @@ function Automation() {
         runId,
         accessToken,
         workflowId,
-        refreshRuns: (id) => fetchRuns(id, 5),
+        refreshRuns: (id) => fetchRuns(id, 5, { silent: true }),
         getRun,
       });
       return;

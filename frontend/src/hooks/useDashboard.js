@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDashboard, updateDashboard, getWidgetCatalog } from '../services/dashboardService';
-import { getWidgetDefaultHeight, listLocalWidgetCatalog } from '../components/Home/Dashboard/widgetRegistry';
+import {
+  buildDenseLayout,
+  DASHBOARD_COLUMN_MODES,
+  normalizeLayoutHeightsByMode,
+  parseDashboardDocShape,
+  serializeDashboardDoc,
+} from '../components/Home/Dashboard/dashboardLayoutModel';
+import {
+  getWidgetDefaultHeight,
+  getWidgetPreferredWidth,
+  listLocalWidgetCatalog,
+} from '../components/Home/Dashboard/widgetRegistry';
 import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
 import { queryKeys } from '../state/queryKeys';
 
@@ -28,21 +39,18 @@ export function dashboardScopeFromAccessToken(accessToken) {
 }
 
 export function parseDashboardDoc(dashboard) {
-  if (!dashboard || !dashboard.doc) return { layouts: {}, items: [] };
+  if (!dashboard || !dashboard.doc) return parseDashboardDocShape({});
 
   let doc = dashboard.doc;
   if (typeof doc === 'string') {
     try {
       doc = JSON.parse(doc);
     } catch {
-      return { layouts: {}, items: [] };
+      return parseDashboardDocShape({});
     }
   }
 
-  return {
-    layouts: doc.layouts || {},
-    items: Array.isArray(doc.items) ? doc.items : [],
-  };
+  return parseDashboardDocShape(doc);
 }
 
 export function mergeWidgetCatalogData(remoteData) {
@@ -58,6 +66,11 @@ export function applyPendingDashboardDoc(dashboard, pendingDoc) {
     ...dashboard,
     doc: pendingDoc,
   };
+}
+
+export function getDashboardVersionForSave(cachedDashboard, fallbackDashboard) {
+  const version = cachedDashboard?.layout_version ?? fallbackDashboard?.layout_version;
+  return Number.isFinite(version) ? version : null;
 }
 
 export function shouldPersistDashboardCache({ queryEnabled, dashboard, pendingDoc }) {
@@ -103,6 +116,7 @@ export default function useDashboard({ enabled, accessToken }) {
   const queryClient = useQueryClient();
   const saveTimeoutRef = useRef(null);
   const pendingDocRef = useRef(null);
+  const inFlightDocRef = useRef(null);
   const scope = useMemo(() => dashboardScopeFromAccessToken(accessToken), [accessToken]);
   const cacheKey = accessToken ? `homenavi:dashboard:${scope}` : '';
   const queryEnabled = Boolean(enabled && accessToken);
@@ -128,10 +142,42 @@ export default function useDashboard({ enabled, accessToken }) {
   }, [catalogQuery.data, queryEnabled]);
   const doc = parseDashboardDoc(dashboard);
 
+  const buildLayoutsForItems = useCallback((items, sourceLayoutsByCols) => {
+    const safeItems = Array.isArray(items) ? items : [];
+    const instanceIds = safeItems.map((item) => item?.instance_id).filter(Boolean);
+    const widgetTypeByInstanceId = new Map();
+    const defaultHeightByInstanceId = new Map();
+
+    safeItems.forEach((item) => {
+      if (!item?.instance_id) return;
+      widgetTypeByInstanceId.set(item.instance_id, item.widget_type);
+      defaultHeightByInstanceId.set(
+        item.instance_id,
+        getWidgetDefaultHeight(item.widget_type, catalog),
+      );
+    });
+
+    const nextLayouts = {};
+    DASHBOARD_COLUMN_MODES.forEach((columnMode) => {
+      nextLayouts[columnMode] = buildDenseLayout({
+        sourceLayout: sourceLayoutsByCols?.[columnMode] || [],
+        instanceIds,
+        columnMode,
+        widgetTypeByInstanceId,
+        preferredWidthForType: (widgetType, cols) => getWidgetPreferredWidth(widgetType, catalog, String(cols)),
+        defaultHeightByInstanceId,
+      });
+    });
+
+    return nextLayouts;
+  }, [catalog]);
+
   const reload = useCallback(async () => {
     if (!queryEnabled) return;
     await Promise.all([dashboardQuery.refetch(), catalogQuery.refetch()]);
   }, [catalogQuery, dashboardQuery, queryEnabled]);
+
+  const flushPendingSaveRef = useRef(() => {});
 
   const saveMutation = useMutation({
     mutationFn: async ({ currentVersion, newDoc }) => {
@@ -144,9 +190,10 @@ export default function useDashboard({ enabled, accessToken }) {
       }
       throw new Error(response?.error || 'Failed to save dashboard');
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
       if (result.conflict) {
         const pendingDoc = pendingDocRef.current;
+        inFlightDocRef.current = null;
         const [{ data: reloadedDashboard }] = await Promise.all([
           dashboardQuery.refetch(),
           catalogQuery.refetch(),
@@ -156,17 +203,43 @@ export default function useDashboard({ enabled, accessToken }) {
             queryKeys.dashboard.me(scope),
             applyPendingDashboardDoc(reloadedDashboard, pendingDoc),
           );
+          flushPendingSaveRef.current();
         }
         return;
       }
-      queryClient.setQueryData(queryKeys.dashboard.me(scope), result.dashboard);
-      writeStaleResourceCache(cacheKey, {
-        dashboard: result.dashboard,
-        catalog,
-      });
-      pendingDocRef.current = null;
+
+      inFlightDocRef.current = null;
+      if (pendingDocRef.current === variables.newDoc) {
+        queryClient.setQueryData(queryKeys.dashboard.me(scope), result.dashboard);
+        writeStaleResourceCache(cacheKey, {
+          dashboard: result.dashboard,
+          catalog,
+        });
+        pendingDocRef.current = null;
+        return;
+      }
+
+      queryClient.setQueryData(
+        queryKeys.dashboard.me(scope),
+        applyPendingDashboardDoc(result.dashboard, pendingDocRef.current),
+      );
+      flushPendingSaveRef.current();
     },
   });
+
+  const flushPendingSave = useCallback(() => {
+    if (!pendingDocRef.current || inFlightDocRef.current) return;
+
+    const currentDashboard = queryClient.getQueryData(queryKeys.dashboard.me(scope));
+    const currentVersion = getDashboardVersionForSave(currentDashboard, dashboard);
+    if (!Number.isFinite(currentVersion)) return;
+
+    const docToSave = pendingDocRef.current;
+    inFlightDocRef.current = docToSave;
+    void saveMutation.mutateAsync({ currentVersion, newDoc: docToSave });
+  }, [dashboard, queryClient, saveMutation, scope]);
+
+  flushPendingSaveRef.current = flushPendingSave;
 
   useEffect(() => {
     if (!queryEnabled) {
@@ -196,14 +269,16 @@ export default function useDashboard({ enabled, accessToken }) {
     const { immediate = false } = options;
     
     if (!dashboard) return;
+
+    const serializedDoc = serializeDashboardDoc(newDoc);
     
-    pendingDocRef.current = newDoc;
+    pendingDocRef.current = serializedDoc;
     const currentVersion = dashboard.layout_version;
     
     // Optimistic update
     queryClient.setQueryData(queryKeys.dashboard.me(scope), (prev) => (prev ? {
       ...prev,
-      doc: newDoc,
+      doc: serializedDoc,
     } : prev));
     
     if (saveTimeoutRef.current) {
@@ -211,15 +286,13 @@ export default function useDashboard({ enabled, accessToken }) {
     }
     
     if (immediate) {
-      void saveMutation.mutateAsync({ currentVersion, newDoc });
+      flushPendingSave();
     } else {
       saveTimeoutRef.current = setTimeout(() => {
-        if (pendingDocRef.current) {
-          void saveMutation.mutateAsync({ currentVersion, newDoc: pendingDocRef.current });
-        }
+        flushPendingSave();
       }, SAVE_DEBOUNCE_MS);
     }
-  }, [dashboard, queryClient, saveMutation, scope]);
+  }, [dashboard, flushPendingSave, queryClient, scope]);
   
   // Flush any pending saves (call when leaving edit mode)
   const flushSave = useCallback(() => {
@@ -229,18 +302,15 @@ export default function useDashboard({ enabled, accessToken }) {
     }
     
     if (pendingDocRef.current && dashboard) {
-      void saveMutation.mutateAsync({
-        currentVersion: dashboard.layout_version,
-        newDoc: pendingDocRef.current,
-      });
+      flushPendingSave();
     }
-  }, [dashboard, saveMutation]);
+  }, [dashboard, flushPendingSave]);
   
   // Update layout (from grid changes)
   const updateLayouts = useCallback((newLayouts) => {
     const newDoc = {
       ...doc,
-      layouts: newLayouts,
+      layoutsByCols: newLayouts,
     };
     saveDoc(newDoc);
   }, [doc, saveDoc]);
@@ -256,21 +326,19 @@ export default function useDashboard({ enabled, accessToken }) {
       settings: initialSettings,
     };
     
-    // Add to all layouts at position 0,0 (will be compacted)
-    const newLayouts = { ...doc.layouts };
-
-    const breakpoints = Object.keys(newLayouts || {});
-    const targetBps = breakpoints.length > 0 ? breakpoints : ['lg', 'md', 'sm', 'xxs'];
+    const nextItems = [...doc.items, newItem];
     const defaultH = getWidgetDefaultHeight(widgetType, catalog);
-
-    targetBps.forEach((bp) => {
-      const existing = Array.isArray(newLayouts[bp]) ? newLayouts[bp] : [];
-      newLayouts[bp] = [{ i: instanceId, x: 0, y: 0, w: 1, h: defaultH }, ...existing];
+    const nextLayouts = buildLayoutsForItems(nextItems, {
+      ...doc.layoutsByCols,
+      '4': [{ i: instanceId, x: 0, y: 0, w: Math.min(2, 4), h: defaultH }, ...(doc.layoutsByCols?.['4'] || [])],
+      '3': [{ i: instanceId, x: 0, y: 0, w: Math.min(getWidgetPreferredWidth(widgetType, catalog, '3'), 3), h: defaultH }, ...(doc.layoutsByCols?.['3'] || [])],
+      '2': [{ i: instanceId, x: 0, y: 0, w: Math.min(getWidgetPreferredWidth(widgetType, catalog, '2'), 2), h: defaultH }, ...(doc.layoutsByCols?.['2'] || [])],
+      '1': [{ i: instanceId, x: 0, y: 0, w: 1, h: defaultH }, ...(doc.layoutsByCols?.['1'] || [])],
     });
     
     const newDoc = {
-      layouts: newLayouts,
-      items: [...doc.items, newItem],
+      layoutsByCols: nextLayouts,
+      items: nextItems,
     };
     
     saveDoc(newDoc);
@@ -281,14 +349,14 @@ export default function useDashboard({ enabled, accessToken }) {
   const removeWidget = useCallback((instanceId) => {
     const newLayouts = {};
     
-    Object.entries(doc.layouts).forEach(([bp, items]) => {
-      newLayouts[bp] = items.filter((item) => item.i !== instanceId);
+    Object.entries(doc.layoutsByCols).forEach(([columnMode, items]) => {
+      newLayouts[columnMode] = items.filter((item) => item.i !== instanceId);
     });
     
     const newItems = doc.items.filter((item) => item.instance_id !== instanceId);
     
     const newDoc = {
-      layouts: newLayouts,
+      layoutsByCols: newLayouts,
       items: newItems,
     };
     
@@ -326,6 +394,7 @@ export default function useDashboard({ enabled, accessToken }) {
     saving: saveMutation.isPending,
     error: queryEnabled ? (saveMutation.error?.message || dashboardQuery.error?.message || '') : '',
     reload,
+    saveParsedDoc: saveDoc,
     updateLayouts,
     addWidget,
     removeWidget,

@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { listRuns, listWorkflows } from '../../../services/automationService';
+
+const RUNS_POLL_INTERVAL_MS = 3000;
 
 export default function useAutomationLists({ accessToken, onError } = {}) {
   const [loading, setLoading] = useState(false);
@@ -92,12 +94,17 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     await Promise.all([fetchWorkflows()]);
   };
 
-  const fetchRuns = async (workflowId, runLimit = runsLimit) => {
+  const fetchRuns = useCallback(async (workflowId, runLimit = runsLimit, options = {}) => {
     if (!accessToken || !workflowId) return [];
+    const { silent = false } = options || {};
     const safeLimit = Math.max(1, Number(runLimit) || 5);
-    setRunsLoading(true);
+    if (!silent) {
+      setRunsLoading(true);
+    }
     const res = await listRuns(workflowId, accessToken, safeLimit + 1);
-    setRunsLoading(false);
+    if (!silent) {
+      setRunsLoading(false);
+    }
     if (res.success) {
       const fetched = Array.isArray(res.data?.runs) ? res.data.runs : [];
       const hasMore = fetched.length > safeLimit;
@@ -109,7 +116,7 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     setRuns([]);
     setRunsHasMore(false);
     return [];
-  };
+  }, [accessToken, runsLimit]);
 
   useEffect(() => {
     fetchWorkflows();
@@ -127,6 +134,14 @@ export default function useAutomationLists({ accessToken, onError } = {}) {
     fetchRuns(selectedId, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId || !accessToken || typeof window === 'undefined') return undefined;
+    const intervalId = window.setInterval(() => {
+      fetchRuns(selectedId, runsLimit, { silent: true });
+    }, RUNS_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [accessToken, fetchRuns, runsLimit, selectedId]);
 
   return {
     loading,

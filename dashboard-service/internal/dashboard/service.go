@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -198,32 +199,26 @@ func defaultDashboardDoc() DashboardDoc {
 	w2 := uuid.New().String()
 	w3 := uuid.New().String()
 	w4 := uuid.New().String()
-	layouts := map[string][]map[string]any{
-		"xl": {
+	layoutsByCols := map[string][]map[string]any{
+		"4": {
 			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
 			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
 			{"i": w3, "x": 2, "y": 0, "w": 1, "h": 8},
 			{"i": w4, "x": 3, "y": 0, "w": 1, "h": 10},
 		},
-		"lg": {
+		"3": {
 			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
 			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
 			{"i": w3, "x": 2, "y": 0, "w": 1, "h": 8},
-			{"i": w4, "x": 3, "y": 0, "w": 1, "h": 10},
+			{"i": w4, "x": 0, "y": 8, "w": 2, "h": 10},
 		},
-		"md": {
-			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
-			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
-			{"i": w3, "x": 2, "y": 0, "w": 1, "h": 8},
-			{"i": w4, "x": 3, "y": 0, "w": 1, "h": 10},
-		},
-		"sm": {
+		"2": {
 			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
 			{"i": w2, "x": 1, "y": 0, "w": 1, "h": 8},
 			{"i": w3, "x": 0, "y": 8, "w": 1, "h": 8},
 			{"i": w4, "x": 1, "y": 8, "w": 1, "h": 10},
 		},
-		"xxs": {
+		"1": {
 			{"i": w1, "x": 0, "y": 0, "w": 1, "h": 8},
 			{"i": w2, "x": 0, "y": 8, "w": 1, "h": 8},
 			{"i": w3, "x": 0, "y": 16, "w": 1, "h": 8},
@@ -231,13 +226,125 @@ func defaultDashboardDoc() DashboardDoc {
 		},
 	}
 	items := []map[string]any{{"instance_id": w1, "widget_type": "homenavi.weather", "enabled": true, "settings": map[string]any{}}, {"instance_id": w2, "widget_type": "homenavi.device", "enabled": true, "settings": map[string]any{}}, {"instance_id": w3, "widget_type": "homenavi.automation.manual_trigger", "enabled": true, "settings": map[string]any{}}, {"instance_id": w4, "widget_type": "homenavi.map", "enabled": true, "settings": map[string]any{}}}
-	return DashboardDoc{Layouts: layouts, Items: items}
+	return DashboardDoc{LayoutsByCols: layoutsByCols, Items: items}
+}
+
+type legacyDashboardDoc struct {
+	Layouts map[string][]map[string]any `json:"layouts"`
+	Items   []map[string]any            `json:"items"`
+}
+
+func normalizeLegacyLayoutsByCols(layouts map[string][]map[string]any) map[string][]map[string]any {
+	next := map[string][]map[string]any{
+		"4": {},
+		"3": {},
+		"2": {},
+		"1": {},
+	}
+	if len(layouts) == 0 {
+		return next
+	}
+
+	copyLayout := func(items []map[string]any) []map[string]any {
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			clone := map[string]any{}
+			for key, value := range item {
+				clone[key] = value
+			}
+			out = append(out, clone)
+		}
+		return out
+	}
+
+	getMaxRight := func(items []map[string]any) int {
+		maxRight := 0
+		for _, item := range items {
+			x, _ := toInt(item["x"])
+			w, _ := toInt(item["w"])
+			if x+w > maxRight {
+				maxRight = x + w
+			}
+		}
+		return maxRight
+	}
+
+	lg := copyLayout(layouts["lg"])
+	md := copyLayout(layouts["md"])
+	sm := copyLayout(layouts["sm"])
+	xxs := copyLayout(layouts["xxs"])
+	xl := copyLayout(layouts["xl"])
+	xs := copyLayout(layouts["xs"])
+
+	if len(xl) > 0 {
+		next["4"] = xl
+	} else if len(lg) > 0 {
+		next["4"] = lg
+	} else if len(md) > 0 {
+		next["4"] = md
+	}
+
+	if len(md) > 0 && getMaxRight(md) <= 3 {
+		next["3"] = md
+	} else if len(lg) > 0 && getMaxRight(lg) <= 3 {
+		next["3"] = lg
+	}
+
+	if len(sm) > 0 {
+		next["2"] = sm
+	}
+	if len(xxs) > 0 {
+		next["1"] = xxs
+	} else if len(xs) > 0 {
+		next["1"] = xs
+	}
+
+	return next
+}
+
+func toInt(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case json.Number:
+		i, err := v.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i), true
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, false
+		}
+		return i, true
+	default:
+		return 0, false
+	}
 }
 
 func cloneDashboardDoc(raw datatypes.JSON) (datatypes.JSON, error) {
 	var defDoc DashboardDoc
 	if err := json.Unmarshal(raw, &defDoc); err != nil {
 		return nil, err
+	}
+	if len(defDoc.LayoutsByCols) == 0 {
+		var legacy legacyDashboardDoc
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return nil, err
+		}
+		defDoc.LayoutsByCols = normalizeLegacyLayoutsByCols(legacy.Layouts)
+		if len(defDoc.Items) == 0 {
+			defDoc.Items = legacy.Items
+		}
 	}
 	newLayouts := map[string][]map[string]any{}
 	newItems := []map[string]any{}
@@ -260,7 +367,7 @@ func cloneDashboardDoc(raw datatypes.JSON) (datatypes.JSON, error) {
 		}
 		newItems = append(newItems, map[string]any{"instance_id": newID, "widget_type": widgetType, "enabled": enabled, "settings": settings})
 	}
-	for bp, items := range defDoc.Layouts {
+	for bp, items := range defDoc.LayoutsByCols {
 		next := make([]map[string]any, 0, len(items))
 		for _, layoutItem := range items {
 			oldID, _ := layoutItem["i"].(string)
@@ -277,7 +384,7 @@ func cloneDashboardDoc(raw datatypes.JSON) (datatypes.JSON, error) {
 		}
 		newLayouts[bp] = next
 	}
-	cloned := DashboardDoc{Layouts: newLayouts, Items: newItems}
+	cloned := DashboardDoc{LayoutsByCols: newLayouts, Items: newItems}
 	buf, err := json.Marshal(cloned)
 	if err != nil {
 		return nil, err

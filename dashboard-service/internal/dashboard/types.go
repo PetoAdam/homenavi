@@ -40,8 +40,8 @@ type WidgetEntry struct {
 
 // DashboardDoc is the JSON document stored in Dashboard.Doc.
 type DashboardDoc struct {
-	Layouts map[string][]map[string]any `json:"layouts"`
-	Items   []map[string]any            `json:"items"`
+	LayoutsByCols map[string][]map[string]any `json:"layouts_by_cols"`
+	Items         []map[string]any            `json:"items"`
 }
 
 type WeatherResponse struct {

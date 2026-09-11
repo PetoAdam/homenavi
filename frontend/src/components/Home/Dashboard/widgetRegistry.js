@@ -20,6 +20,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Weather',
     description: 'Current weather and forecast.',
     default_height: 5,
+    preferred_span_by_cols: { '4': 2, '3': 2, '2': 2, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -28,6 +29,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Map',
     description: 'Home map and device locations.',
     default_height: 5,
+    preferred_span_by_cols: { '4': 2, '3': 2, '2': 2, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -36,6 +38,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Device',
     description: 'A single device tile.',
     default_height: 4,
+    preferred_span_by_cols: { '4': 1, '3': 1, '2': 1, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -44,6 +47,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Device Graph',
     description: 'Graph a device metric over time.',
     default_height: 5,
+    preferred_span_by_cols: { '4': 2, '3': 2, '2': 2, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -52,6 +56,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Quick Controls',
     description: 'Toggle multiple devices from one widget.',
     default_height: 4,
+    preferred_span_by_cols: { '4': 1, '3': 1, '2': 1, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -60,6 +65,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Group Controls',
     description: 'Toggle grouped devices together.',
     default_height: 4,
+    preferred_span_by_cols: { '4': 2, '3': 2, '2': 2, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -68,6 +74,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Automation',
     description: 'Manually trigger an automation workflow.',
     default_height: 3,
+    preferred_span_by_cols: { '4': 1, '3': 1, '2': 1, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -122,6 +129,22 @@ export function getWidgetDefaultHeight(widgetType, catalog) {
   const C = WIDGET_RENDERERS[widgetType];
   if (!C) return 4;
   return clampWidgetHeight(C.defaultHeight);
+}
+
+export function getWidgetPreferredWidth(widgetType, catalog, columnMode) {
+  const meta = findCatalogEntry(widgetType, catalog);
+  const spans = meta?.preferred_span_by_cols || meta?.preferredSpanByCols;
+  if (spans && Object.prototype.hasOwnProperty.call(spans, columnMode)) {
+    const n = Number(spans[columnMode]);
+    if (Number.isFinite(n) && n > 0) return Math.round(n);
+  }
+
+  const cols = Number.parseInt(String(columnMode), 10);
+  if (widgetType === 'homenavi.weather' || widgetType === 'homenavi.map' || widgetType === 'homenavi.device.graph' || widgetType === 'homenavi.group.controls') {
+    return Number.isFinite(cols) && cols >= 2 ? 2 : 1;
+  }
+
+  return 1;
 }
 
 export function listKnownWidgetTypes(catalog) {

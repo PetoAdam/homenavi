@@ -5,7 +5,7 @@ export function dashboardUiInitialState() {
     settingsModalOpen: false,
     selectedWidgetId: null,
     dragOverTrash: false,
-    currentBreakpoint: 'lg',
+    currentBreakpoint: '3',
     desiredRowsByInstanceId: {},
   };
 }

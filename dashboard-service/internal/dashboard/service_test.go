@@ -108,18 +108,18 @@ func TestPutMyDashboardReturnsConflict(t *testing.T) {
 	}
 }
 
-func TestDefaultDashboardDocUsesCurrentBreakpointShapes(t *testing.T) {
+func TestDefaultDashboardDocUsesCurrentColumnModeShapes(t *testing.T) {
 	doc := defaultDashboardDoc()
 
 	if got := len(doc.Items); got != 4 {
 		t.Fatalf("expected 4 default dashboard items, got %d", got)
 	}
 
-	assertMaxRight := func(bp string, want int) {
+	assertMaxRight := func(mode string, want int) {
 		t.Helper()
-		items := doc.Layouts[bp]
+		items := doc.LayoutsByCols[mode]
 		if len(items) == 0 {
-			t.Fatalf("expected layout for breakpoint %q", bp)
+			t.Fatalf("expected layout for column mode %q", mode)
 		}
 		maxRight := 0
 		for _, item := range items {
@@ -130,13 +130,42 @@ func TestDefaultDashboardDocUsesCurrentBreakpointShapes(t *testing.T) {
 			}
 		}
 		if maxRight != want {
-			t.Fatalf("expected %s maxRight %d, got %d", bp, want, maxRight)
+			t.Fatalf("expected %s maxRight %d, got %d", mode, want, maxRight)
 		}
 	}
 
-	assertMaxRight("xl", 4)
-	assertMaxRight("lg", 4)
-	assertMaxRight("md", 4)
-	assertMaxRight("sm", 2)
-	assertMaxRight("xxs", 1)
+	assertMaxRight("4", 4)
+	assertMaxRight("3", 3)
+	assertMaxRight("2", 2)
+	assertMaxRight("1", 1)
+}
+
+func TestCloneDashboardDocNormalizesLegacyBreakpointLayouts(t *testing.T) {
+	raw := datatypes.JSON([]byte(`{
+		"items":[{"instance_id":"legacy-weather","widget_type":"homenavi.weather","enabled":true,"settings":{}}],
+		"layouts":{"lg":[{"i":"legacy-weather","x":0,"y":0,"w":1,"h":8}],"sm":[{"i":"legacy-weather","x":0,"y":0,"w":1,"h":8}]}
+	}`))
+
+	cloned, err := cloneDashboardDoc(raw)
+	if err != nil {
+		t.Fatalf("cloneDashboardDoc: %v", err)
+	}
+
+	var doc DashboardDoc
+	if err := json.Unmarshal(cloned, &doc); err != nil {
+		t.Fatalf("unmarshal cloned doc: %v", err)
+	}
+
+	if len(doc.LayoutsByCols["4"]) != 1 {
+		t.Fatalf("expected cloned 4-column layout, got %d items", len(doc.LayoutsByCols["4"]))
+	}
+	if len(doc.LayoutsByCols["3"]) != 1 {
+		t.Fatalf("expected cloned 3-column fallback layout, got %d items", len(doc.LayoutsByCols["3"]))
+	}
+	if len(doc.LayoutsByCols["2"]) != 1 {
+		t.Fatalf("expected cloned 2-column layout, got %d items", len(doc.LayoutsByCols["2"]))
+	}
+	if len(doc.Items) != 1 {
+		t.Fatalf("expected cloned items, got %d", len(doc.Items))
+	}
 }

@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSharedWebSocket, wsUrlForPath } from '../../../services/realtime/sharedWebSocket';
-import { isTriggerRunEvent } from './runStreamUtils';
+import { deriveLiveRunNodeStatesFromRunPayload, isTriggerRunEvent } from './runStreamUtils';
+
+const RUN_HIGHLIGHT_CLEAR_GRACE_MS = 5000;
+const TRIGGER_ACTIVE_MIN_MS = 700;
+
+function mergeNodeStates(prev, updates) {
+  const current = prev || {};
+  const nextEntries = Object.entries(updates || {});
+  if (nextEntries.length === 0) return current;
+
+  let changed = false;
+  const next = { ...current };
+  nextEntries.forEach(([key, value]) => {
+    if (next[key] === value) return;
+    next[key] = value;
+    changed = true;
+  });
+  return changed ? next : current;
+}
 
 /**
  * WebSocket-driven live run highlighting.
@@ -15,6 +33,8 @@ export default function useRunStream({ onToast, onError } = {}) {
   const runWsCleanupRef = useRef(null);
   const liveRunRef = useRef({ runId: null, finished: false });
   const pollTokenRef = useRef(0);
+  const clearAllHighlightsTimerRef = useRef(null);
+  const nodeActivatedAtRef = useRef(new Map());
 
   const onToastRef = useRef(onToast);
   const onErrorRef = useRef(onError);
@@ -26,10 +46,15 @@ export default function useRunStream({ onToast, onError } = {}) {
   }, [onError]);
 
   const clearLiveRunHighlights = useCallback(() => {
+    if (clearAllHighlightsTimerRef.current) {
+      window.clearTimeout(clearAllHighlightsTimerRef.current);
+      clearAllHighlightsTimerRef.current = null;
+    }
     for (const t of liveRunTimersRef.current.values()) {
       window.clearTimeout(t);
     }
     liveRunTimersRef.current.clear();
+    nodeActivatedAtRef.current.clear();
     setLiveRunNodeStates({});
     liveRunRef.current = { runId: null, finished: false };
   }, []);
@@ -43,6 +68,18 @@ export default function useRunStream({ onToast, onError } = {}) {
     runWsCleanupRef.current = null;
   }, []);
 
+  const scheduleClearAllHighlights = useCallback((delayMs = RUN_HIGHLIGHT_CLEAR_GRACE_MS) => {
+    if (clearAllHighlightsTimerRef.current) {
+      window.clearTimeout(clearAllHighlightsTimerRef.current);
+      clearAllHighlightsTimerRef.current = null;
+    }
+    clearAllHighlightsTimerRef.current = window.setTimeout(() => {
+      clearAllHighlightsTimerRef.current = null;
+      closeRunWs();
+      clearLiveRunHighlights();
+    }, delayMs);
+  }, [clearLiveRunHighlights, closeRunWs]);
+
   const setLiveNodeState = (nodeId, state, { clearAfterMs } = {}) => {
     const id = String(nodeId || '').trim();
     if (!id) return;
@@ -53,7 +90,11 @@ export default function useRunStream({ onToast, onError } = {}) {
       liveRunTimersRef.current.delete(id);
     }
 
-    setLiveRunNodeStates((prev) => ({ ...prev, [id]: state }));
+    if (state === 'active') {
+      nodeActivatedAtRef.current.set(id, Date.now());
+    }
+
+    setLiveRunNodeStates((prev) => mergeNodeStates(prev, { [id]: state }));
 
     if (Number.isFinite(clearAfterMs) && clearAfterMs > 0) {
       const t = window.setTimeout(() => {
@@ -79,6 +120,15 @@ export default function useRunStream({ onToast, onError } = {}) {
     const id = String(runId || '').trim();
     if (!id) return;
 
+    if (clearAllHighlightsTimerRef.current) {
+      window.clearTimeout(clearAllHighlightsTimerRef.current);
+      clearAllHighlightsTimerRef.current = null;
+    }
+
+    if (liveRunRef.current.runId === id && !liveRunRef.current.finished) {
+      return;
+    }
+
     pollTokenRef.current += 1;
     const token = pollTokenRef.current;
 
@@ -90,6 +140,26 @@ export default function useRunStream({ onToast, onError } = {}) {
       } catch {
         // ignore
       }
+    };
+
+    const syncLiveNodeStatesFromRunPayload = (payload) => {
+      const nextStates = deriveLiveRunNodeStatesFromRunPayload(payload);
+      if (Object.keys(nextStates).length === 0) return;
+      setLiveRunNodeStates((prev) => mergeNodeStates(prev, nextStates));
+    };
+
+    const finalizeRun = (status, errorMessage = '') => {
+      liveRunRef.current = { ...liveRunRef.current, finished: true };
+      if (status === 'success') {
+        onToastRef.current?.('Run complete');
+      } else {
+        if (errorMessage) {
+          onErrorRef.current?.(errorMessage);
+        }
+        onToastRef.current?.('Run failed');
+      }
+      safeRefreshRuns();
+      scheduleClearAllHighlights();
     };
 
     // Connect WebSocket for live step events.
@@ -131,28 +201,32 @@ export default function useRunStream({ onToast, onError } = {}) {
 
         if (type === 'node_finished') {
           const terminalState = status === 'success' ? 'done' : 'failed';
-          const clearAfterMs = status === 'success' ? 1100 : 2200;
           // Trigger nodes complete synchronously. Defer their terminal state two
           // frames so the preceding node_started highlight is painted first.
           if (isTriggerRunEvent(msg)) {
+            const activeSince = nodeActivatedAtRef.current.get(nodeId) ?? Date.now();
+            const remainingActiveMs = Math.max(0, TRIGGER_ACTIVE_MIN_MS - (Date.now() - activeSince));
             window.requestAnimationFrame(() => {
-              window.requestAnimationFrame(() => setLiveNodeState(nodeId, terminalState, { clearAfterMs }));
+              window.requestAnimationFrame(() => {
+                if (remainingActiveMs > 0) {
+                  const t = window.setTimeout(() => {
+                    liveRunTimersRef.current.delete(nodeId);
+                    setLiveNodeState(nodeId, terminalState);
+                  }, remainingActiveMs);
+                  liveRunTimersRef.current.set(nodeId, t);
+                  return;
+                }
+                setLiveNodeState(nodeId, terminalState);
+              });
             });
           } else {
-            setLiveNodeState(nodeId, terminalState, { clearAfterMs });
+            setLiveNodeState(nodeId, terminalState);
           }
           return;
         }
 
         if (type === 'run_finished') {
-          liveRunRef.current = { ...liveRunRef.current, finished: true };
-          if (status === 'success') {
-            onToastRef.current?.('Run complete');
-          } else {
-            onErrorRef.current?.(String(msg.error || 'Run failed'));
-            onToastRef.current?.('Run failed');
-          }
-          safeRefreshRuns();
+          finalizeRun(status, String(msg.error || 'Run failed'));
         }
       });
 
@@ -167,12 +241,11 @@ export default function useRunStream({ onToast, onError } = {}) {
 
         const rr = await getRun(current.runId, accessToken);
         if (rr?.success) {
+          syncLiveNodeStatesFromRunPayload(rr.data);
           const status = String(rr.data?.run?.status || '').toLowerCase();
           if (status && status !== 'running') {
-            liveRunRef.current = { ...current, finished: true };
-            onToastRef.current?.(status === 'success' ? 'Run complete' : 'Run finished');
+            finalizeRun(status, String(rr.data?.run?.error || 'Run failed'));
           }
-          safeRefreshRuns();
         }
       });
 
@@ -197,11 +270,10 @@ export default function useRunStream({ onToast, onError } = {}) {
 
         const rr = await getRun(current.runId, accessToken);
         if (rr?.success) {
+          syncLiveNodeStatesFromRunPayload(rr.data);
           const status = String(rr.data?.run?.status || '').toLowerCase();
           if (status && status !== 'running') {
-            liveRunRef.current = { ...current, finished: true };
-            onToastRef.current?.(status === 'success' ? 'Run complete' : 'Run finished');
-            safeRefreshRuns();
+            finalizeRun(status, String(rr.data?.run?.error || 'Run failed'));
             return;
           }
         }

@@ -19,6 +19,7 @@ import {
   applyPendingDashboardDoc,
   dashboardQueryOptions,
   fetchWidgetCatalogData,
+  getDashboardVersionForSave,
   mergeWidgetCatalogData,
   parseDashboardDoc,
   shouldPersistDashboardCache,
@@ -27,11 +28,23 @@ import { queryKeys } from '../state/queryKeys';
 
 describe('parseDashboardDoc', () => {
   it('parses string docs and falls back safely', () => {
-    expect(parseDashboardDoc({ doc: '{"layouts":{"lg":[]},"items":[{"instance_id":"1"}]}' })).toEqual({
-      layouts: { lg: [] },
+    expect(parseDashboardDoc({ doc: '{"layouts_by_cols":{"4":[]},"items":[{"instance_id":"1"}]}' })).toEqual({
+      layoutsByCols: { '4': [], '3': [], '2': [], '1': [] },
       items: [{ instance_id: '1' }],
     });
-    expect(parseDashboardDoc({ doc: 'not-json' })).toEqual({ layouts: {}, items: [] });
+    expect(parseDashboardDoc({ doc: '{"layouts":{"lg":[{"i":"1","x":0,"y":0,"w":1,"h":4}]},"items":[{"instance_id":"1"}]}' })).toEqual({
+      layoutsByCols: {
+        '4': [{ i: '1', x: 0, y: 0, w: 1, h: 4, minW: 1, minH: 2 }],
+        '3': [{ i: '1', x: 0, y: 0, w: 1, h: 4, minW: 1, minH: 2 }],
+        '2': [],
+        '1': [],
+      },
+      items: [{ instance_id: '1' }],
+    });
+    expect(parseDashboardDoc({ doc: 'not-json' })).toEqual({
+      layoutsByCols: { '4': [], '3': [], '2': [], '1': [] },
+      items: [],
+    });
   });
 });
 
@@ -76,11 +89,11 @@ describe('widget catalog helpers', () => {
 describe('dashboard conflict and cache helpers', () => {
   it('reapplies a pending doc onto a freshly loaded dashboard snapshot', () => {
     expect(applyPendingDashboardDoc(
-      { layout_version: 4, doc: { layouts: { lg: [] }, items: [] }, title: 'Main' },
-      { layouts: { lg: [{ i: 'widget-1' }] }, items: [{ instance_id: 'widget-1' }] },
+      { layout_version: 4, doc: { layouts_by_cols: { '4': [] }, items: [] }, title: 'Main' },
+      { layouts_by_cols: { '4': [{ i: 'widget-1' }], '3': [], '2': [], '1': [] }, items: [{ instance_id: 'widget-1' }] },
     )).toEqual({
       layout_version: 4,
-      doc: { layouts: { lg: [{ i: 'widget-1' }] }, items: [{ instance_id: 'widget-1' }] },
+      doc: { layouts_by_cols: { '4': [{ i: 'widget-1' }], '3': [], '2': [], '1': [] }, items: [{ instance_id: 'widget-1' }] },
       title: 'Main',
     });
   });
@@ -89,7 +102,7 @@ describe('dashboard conflict and cache helpers', () => {
     expect(shouldPersistDashboardCache({
       queryEnabled: true,
       dashboard: { id: 'dash-1' },
-      pendingDoc: { layouts: {}, items: [] },
+      pendingDoc: { layouts_by_cols: { '4': [], '3': [], '2': [], '1': [] }, items: [] },
     })).toBe(false);
 
     expect(shouldPersistDashboardCache({
@@ -97,5 +110,19 @@ describe('dashboard conflict and cache helpers', () => {
       dashboard: { id: 'dash-1' },
       pendingDoc: null,
     })).toBe(true);
+  });
+
+  it('prefers the freshest cached dashboard version when saving pending docs', () => {
+    expect(getDashboardVersionForSave(
+      { layout_version: 5 },
+      { layout_version: 4 },
+    )).toBe(5);
+
+    expect(getDashboardVersionForSave(
+      null,
+      { layout_version: 4 },
+    )).toBe(4);
+
+    expect(getDashboardVersionForSave(null, null)).toBeNull();
   });
 });

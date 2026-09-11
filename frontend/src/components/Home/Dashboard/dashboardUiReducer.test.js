@@ -18,8 +18,8 @@ describe('dashboardUiReducer', () => {
   it('updates breakpoint and desired row sizing state', () => {
     const base = dashboardUiInitialState();
 
-    const breakpointState = dashboardUiReducer(base, { type: 'set-current-breakpoint', value: 'sm' });
-    expect(breakpointState.currentBreakpoint).toBe('sm');
+    const breakpointState = dashboardUiReducer(base, { type: 'set-current-breakpoint', value: '2' });
+    expect(breakpointState.currentBreakpoint).toBe('2');
 
     const rowState = dashboardUiReducer(breakpointState, {
       type: 'set-desired-row-height',

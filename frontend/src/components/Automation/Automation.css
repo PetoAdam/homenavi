@@ -1570,16 +1570,19 @@
   }
 }
 
-.automation-node.run-active {
-  border-color: var(--color-primary);
-  animation: automation-run-highlight 900ms ease-out;
-}
-
+.automation-node.run-active,
 .automation-node.run-live-active {
   border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-surface-card) 82%, var(--color-primary) 18%);
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--color-primary) 50%, transparent),
     0 10px 28px rgba(0, 0, 0, 0.35);
+  animation: automation-run-highlight 900ms ease-out infinite;
+}
+
+.automation-node.run-live-active .automation-node-header,
+.automation-node.run-active .automation-node-header {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 @keyframes automation-run-fade {
@@ -1598,12 +1601,14 @@
 }
 
 .automation-node.run-live-done {
-  border-color: var(--color-primary);
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-surface-card) 88%, var(--color-success) 12%);
   animation: automation-run-fade 1100ms ease-out;
 }
 
 .automation-node.run-live-failed {
-  border-color: var(--color-primary);
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-surface-card) 88%, var(--color-danger) 12%);
   animation: automation-run-fade 1800ms ease-out;
 }
 
