@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      HN_VERSION: ci-${{ github.sha }}
       NAMESPACE: homenavi-ha-smoke
       RELEASE: homenavi-ha-smoke
 
@@ -58,6 +59,52 @@ jobs:
           cpus: 4
           memory: 6000mb
 
+      - name: Build commit-scoped service images
+        run: |
+          set -euo pipefail
+          eval "$(minikube docker-env)"
+          for service in api-gateway auth-service user-service mock-adapter device-hub entity-registry-service history-service automation-service integration-proxy; do
+            docker build \
+              --tag "ghcr.io/petoadam/homenavi-${service}:${HN_VERSION}" \
+              --file "./${service}/Dockerfile" \
+              .
+          done
+
+      - name: Prepare local image overrides
+        run: |
+          cat <<EOF >/tmp/homenavi-ha-local-images.yaml
+          global:
+            imageTag: ${HN_VERSION}
+          services:
+            api-gateway:
+              image:
+                pullPolicy: Never
+            auth-service:
+              image:
+                pullPolicy: Never
+            user-service:
+              image:
+                pullPolicy: Never
+            mock-adapter:
+              image:
+                pullPolicy: Never
+            device-hub:
+              image:
+                pullPolicy: Never
+            entity-registry-service:
+              image:
+                pullPolicy: Never
+            history-service:
+              image:
+                pullPolicy: Never
+            automation-service:
+              image:
+                pullPolicy: Never
+            integration-proxy:
+              image:
+                pullPolicy: Never
+          EOF
+
       - name: Install CloudNativePG operator
         run: |
           kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.1.yaml
@@ -66,8 +113,8 @@ jobs:
 
       - name: Lint and render HA profile
         run: |
-          helm lint ./helm/homenavi -f ./helm/homenavi/values-ci-ha-smoke.yaml
-          helm template homenavi ./helm/homenavi -f ./helm/homenavi/values-ci-ha-smoke.yaml > /tmp/homenavi-ha.yaml
+          helm lint ./helm/homenavi -f ./helm/homenavi/values-ci-ha-smoke.yaml -f /tmp/homenavi-ha-local-images.yaml
+          helm template homenavi ./helm/homenavi -f ./helm/homenavi/values-ci-ha-smoke.yaml -f /tmp/homenavi-ha-local-images.yaml > /tmp/homenavi-ha.yaml
           grep -q 'name: REDIS_MASTER_NAME' /tmp/homenavi-ha.yaml
           grep -q 'name: REDIS_SENTINEL_ADDRS' /tmp/homenavi-ha.yaml
 
@@ -76,6 +123,7 @@ jobs:
           helm upgrade --install "$RELEASE" ./helm/homenavi \
             --namespace "$NAMESPACE" --create-namespace \
             --values ./helm/homenavi/values-ci-ha-smoke.yaml \
+            --values /tmp/homenavi-ha-local-images.yaml \
             --wait --timeout 12m
 
       - name: Verify high-availability workloads
