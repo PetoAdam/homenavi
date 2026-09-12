@@ -62,9 +62,8 @@ jobs:
       - name: Build commit-scoped service images
         run: |
           set -euo pipefail
-          eval "$(minikube docker-env)"
           for service in api-gateway auth-service user-service mock-adapter device-hub entity-registry-service history-service automation-service integration-proxy; do
-            docker build \
+            minikube image build \
               --tag "ghcr.io/petoadam/homenavi-${service}:${HN_VERSION}" \
               --file "./${service}/Dockerfile" \
               .
