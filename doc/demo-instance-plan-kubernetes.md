@@ -1,61 +1,81 @@
-# Homenavi Public Demo Instance Plan v2
+# Homenavi Public Demo Instance Plan v3
 
 ## Objective
-Build a Kubernetes-deployed public demo that feels finished on first visit, stays safe under abuse, and does not require visitors to configure anything before they see value.
+Build a public Homenavi demo that deploys cleanly on Kubernetes, feels complete on first visit, stays bounded under abuse, and reflects the current platform instead of the older pre-runtime proposal.
 
 The demo should:
-- Auto-create a demo user on first visit.
-- Show a polished, already-configured dashboard immediately.
-- Include preconfigured devices, rooms/map, groups, and automations.
-- Keep integrations browseable but read-only.
-- Block sensitive actions while keeping the UX smooth.
-- Track demo usage and retain only recent active visitors.
-- Run on its own branch and deploy cleanly to Kubernetes.
+- Auto-create or auto-bootstrap a temporary demo identity.
+- Land on a polished, already-seeded smart-home view.
+- Expose integrations and marketplace content in a safe read-only mode.
+- Block destructive and security-sensitive actions in both UI and backend.
+- Track active visitors and prune stale demo tenants.
+- Reuse the platform work that already exists in the repo today.
 
 ---
 
-## Recommended branch strategy
+## What Changed Since v2 Was Written
 
-Use a dedicated branch for the demo variant:
-- `demo/public-instance`
+The original document was added in commit `f224d47`. Since then, the platform changed in important ways that affect the demo plan:
 
-Suggested release flow:
-- Develop demo features only on the demo branch.
-- Deploy the demo branch to a dedicated Kubernetes namespace.
-- Tag demo releases separately from mainline releases.
+### Already in place now
+- Homenavi has a real Kubernetes deployment path via `helm/homenavi`, not just a conceptual one.
+- `integration-proxy` is now a first-class runtime with `compose`, `helm`, and `gitops` modes.
+- `gitops` mode already enforces read-only behavior for integration mutations, which is directly useful for a public demo.
+- The frontend now has a real integrations and marketplace admin surface, reusable integration cards, snackbars, and a stronger visual system.
+- `dashboard-service` now stores a richer dashboard document using `layouts_by_cols`, which is a better basis for a curated demo dashboard.
+- Core observability and HA deployment work have advanced significantly, so demo operations can build on the current Helm/metrics/tracing model rather than inventing a side path.
 
----
+### Still not in place yet
+- There is no demo identity/session flow in the current auth or user stack.
+- There is no explicit demo user metadata or janitor cleanup path.
+- The default dashboard is still a generic starter layout, not a demo-specific seeded experience.
+- `mock-adapter` is still a placeholder heartbeat/pairing implementation, not a rich household simulator.
+- There is no dedicated demo Helm values file, namespace overlay, or demo CronJob yet.
 
-## Short answer on server capacity
-
-For an i5-6500, 16 GB DDR4, and M.2 SSD:
-- 1000-2000 total demo visitor records is realistic if the system is cleaning up inactive users and the workload is mostly cached/read-heavy.
-- 1000-2000 concurrent active visitors is not a safe assumption.
-- A more realistic target is 100-300 active visitors with modest real-time activity, assuming the demo devices are simulated and the database write rate is controlled.
-
-What is likely to matter most:
-- PostgreSQL write churn from activity tracking.
-- MQTT/event fan-out from simulated devices.
-- Frontend/API cache effectiveness.
-- The number of active dashboards polling live data.
-
-Practical cap recommendation:
-- Set the demo hard cap around 1500 total live demo users.
-- Keep active sessions bounded with a 15-minute inactivity window.
-- If you want extra headroom, allow 2000 total records only when the janitor is aggressively pruning older inactive demo users.
-
-The M.2 SSD is fine. The limiting factors are more likely to be RAM and service chatter than storage speed.
+### Practical implication
+The updated plan should no longer describe the whole runtime as future work. The runtime, marketplace, dashboard framework, and cluster deployment path already exist. The missing work is specifically the public-demo layer on top of them.
 
 ---
 
-## Updated architecture
+## Current-State Snapshot
+
+| Area | Current state in repo | Demo implication |
+|---|---|---|
+| Kubernetes deployment | Helm chart exists in `helm/homenavi` with real service values and HA validation profiles | Demo should be an overlay, not a parallel deployment model |
+| Integration runtime | `integration-proxy` supports `compose`, `helm`, and `gitops` runtime modes | Public demo should use `gitops` to make integration browsing safe by default |
+| Marketplace UI | Frontend already has installed/marketplace views and integration cards | Public demo can reuse the current integrations UX with a demo-specific restriction layer |
+| Dashboard model | `dashboard-service` has a persisted default dashboard with `layouts_by_cols` and widget catalog support | Curated demo dashboards can extend the existing model rather than invent new storage |
+| Frontend styling | The app already has a recognizable slate-and-emerald glass UI system | Demo should preserve that styling so the public experience matches the real product |
+| Mock devices | `mock-adapter` is still a placeholder with heartbeat and command hooks | A realistic demo still needs a richer simulator pass |
+| Observability | Core services and Helm paths have moved well beyond the old planning stage | Demo operations should use existing health, metrics, and deployment practices |
+
+---
+
+## Recommended Branch And Environment Strategy
+
+Keep the dedicated demo delivery path, but reduce branch-only divergence where possible.
+
+Recommended branch strategy:
+- `demo/public-instance` remains the integration branch for the public demo variant.
+- Demo-specific behavior should be mostly flag-driven so fixes can flow from `main` without constant cherry-picking.
+- The branch should primarily hold demo values, seeded content, and demo UX restrictions, not a forked platform architecture.
+
+Recommended environment split:
+- Namespace: `homenavi-demo`
+- Public host: `demo.homenavi.org`
+- Product site host: `www.homenavi.org`
+- Marketplace host remains separate from the live demo runtime
+
+---
+
+## Updated Architecture
 
 ```mermaid
 flowchart LR
-  Visitor[Visitor Browser] --> FE[Frontend Demo Mode]
+  Visitor[Visitor Browser] --> FE[Frontend with Demo Guardrails]
   FE --> GW[API Gateway]
 
-  GW --> AUTH[auth-service\nDemo session + activity tracking]
+  GW --> AUTH[auth-service]
   AUTH --> USER[user-service]
   AUTH --> REDIS[(Redis)]
   USER --> PG[(PostgreSQL)]
@@ -64,389 +84,696 @@ flowchart LR
   GW --> DH[device-hub]
   GW --> ERS[entity-registry-service]
   GW --> AUTO[automation-service]
+  GW --> HIST[history-service]
   GW --> IP[integration-proxy]
 
-  IP --> MKT[Marketplace read/list]
-  IP -. gitops read-only .-> BLOCK[Install/Update/Uninstall blocked]
+  IP --> MKT[Marketplace data]
+  IP -. read only via gitops .-> BLOCK[Install/Update/Uninstall blocked]
 
   MOCK[mock-adapter simulator] <--> MQTT[(EMQX)]
   DH <--> MQTT
   ERS <--> MQTT
   AUTO <--> MQTT
+  HIST --> PG
 
-  JANITOR[Demo janitor CronJob] --> USER
-  JANITOR --> PG
-  ANALYTICS[Visitor counters + active-user rollups] --> PG
-  ANALYTICS --> GRAFANA[Ops dashboard]
+  JANITOR[Demo cleanup CronJob] --> USER
+  JANITOR --> REDIS
+  ANALYTICS[Visitor rollups] --> PG
+  OPS[Prometheus and tracing] --> GRAFANA[Ops views]
 ```
 
 ---
 
-## Design pillars
+## Foundations We Should Reuse Instead Of Rebuilding
 
-### 1. First visit must feel prebuilt
-The demo should not look like a clean installation. It should look like someone already set up a functional smart-home environment.
+### 1. Integration read-only mode
+This is no longer theoretical. `integration-proxy` already supports `INTEGRATIONS_RUNTIME_MODE=gitops`, and mutation paths are rejected in that mode.
 
-That means the first screen should already contain:
-- A polished dashboard with meaningful widgets.
-- Rooms and a visual map with labeled zones.
-- Device tiles showing live states.
-- Groups and automations already populated.
-- One or two obvious “wow” interactions that visitors can try instantly.
+Use that directly for the public demo:
+- Visitors can browse installed integrations and marketplace metadata.
+- Install, update, uninstall, and restart actions remain visible but unavailable.
+- Backend enforcement already has a natural home in `integration-proxy`.
 
-### 2. Demo users should be temporary but not too temporary
-Visitors should not need accounts, but the system still needs a stable identity to keep state during a session.
+### 2. Existing frontend visual system
+The public demo should keep the same brand language as the app:
+- Slate/dark layered surfaces from `frontend/src/colors.css`
+- Glass panels/cards/pills
+- Integration cards and hero-card patterns already used in About and Admin surfaces
+- Snackbar-based feedback instead of dead-end disabled UIs
 
-The demo flow should use:
-- One demo user per visitor session.
-- A `last_active_at` value updated from authenticated API traffic and kept in Redis.
+### 3. Current dashboard model
+The dashboard no longer needs a schema redesign first.
 
-For lower database load, the hot interaction timestamp should live in Redis only.
-PostgreSQL should store durable creation metadata and optional rollups, not a write on every request.
+What exists now:
+- `dashboard-service` already provisions a default dashboard if none exists.
+- The stored dashboard document already supports responsive layouts by column count.
+- Widget catalog merging with integration-provided widgets already exists.
 
-The simplest useful metric is:
-- one row per created demo user with `created_at`
-- one Redis-backed `last_active_at` value updated from authenticated API traffic
+What is still missing for demo use:
+- A truly curated seeded dashboard document
+- Prewired device/widget settings
+- Associated seeded rooms, groups, and automations
 
-That is enough to report:
-- unique visitors overall
-- unique visitors per hour/day/week/month
-- currently active visitors in the last 15 minutes
-- churn and retention curves
+### 4. Current Kubernetes and ops path
+Use the same Helm baseline, health checks, metrics, and tracing conventions as the main platform.
 
----
-
-## Core behavior changes
-
-### A. Auto-create demo accounts on visit
-
-- Mark the user as demo-only.
-- Store `created_at` and an expiration timestamp in PostgreSQL.
-- Keep `last_active_at` in Redis as the live source of truth for cleanup.
-- If desired, snapshot the Redis state into PostgreSQL on a slower cadence for reporting.
-- Do not show signup/login flows in the public demo.
-
-Add a small activity update path that records the most recent authenticated API call for the current JWT user.
-
-Recommended approach:
-- On authenticated requests, update `last_active_at` in Redis only.
-- Give the Redis key a TTL slightly longer than the inactivity window.
-- A 1-2 minute debounce window is enough if you want to reduce Redis churn further.
-
-Best implementation shape:
-- API gateway or auth middleware captures the active user ID from the JWT.
-- Emit the activity update to a Redis key such as `demo:last_active:<user_id>`.
-- Optionally batch-flush summaries to PostgreSQL every few minutes if you want trend charts.
-
-Why this is better than only using creation time:
-- A visitor who keeps the site open should not be purged while active.
-- It gives you accurate "currently active" and "recent visitor" reporting.
-
-1. Delete the current demo user.
-2. Clear local tokens and app state.
-3. Create a fresh demo session.
-4. Reload the app into a clean demo state.
-
-If deletion fails:
-- Still clear local state and create a fresh demo session.
-
-This keeps the demo feeling endless and avoids sticky broken states.
+Do not build a demo deployment with a one-off manifest tree unless it is only a thin overlay.
 
 ---
 
-## Cleanup and retention plan
+## Gap Analysis By Workstream
 
-### Demo user fields
-Add explicit demo metadata in the user store:
+### A. Demo identity and session bootstrap
+Status: not implemented yet.
+
+Needed:
+- A public endpoint or bootstrap path that issues a demo-scoped session without signup.
+- A user record marked as demo-owned.
+- Local token rotation behavior on reset/logout.
+
+Recommended shape:
+- Add a dedicated demo bootstrap endpoint in `auth-service`.
+- Persist demo user metadata in `user-service`.
+- Keep the frontend bootstrap path isolated behind `VITE_DEMO_MODE=true`.
+
+Recommended demo metadata:
 - `is_demo`
 - `created_at`
 - `demo_expires_at`
-- optional `visitor_key_hash` if you want a repeat-visitor correlation without storing raw browser identifiers
+- optional `visitor_key_hash`
 
-Redis hot state:
-- Keep `last_active_at` in Redis as the live source of truth for cleanup.
-- If desired, snapshot the Redis state into PostgreSQL on a slower cadence for reporting.
+### B. Activity tracking and cleanup
+Status: not implemented yet.
 
-### Cleanup rules
-Use both of these rules:
-- Inactivity rule: delete demo users inactive for more than 15 minutes.
-- Capacity rule: keep the total live demo user count under the hard cap.
+Needed:
+- Per-user `last_active_at` stored in Redis.
+- Debounced activity writes from authenticated traffic.
+- A janitor job that deletes stale demo users and their associated demo-owned data.
 
-Recommended limits:
-- Inactive TTL: 15 minutes.
-- Hard cap: 1500 live demo users.
-- Upper ceiling only if necessary: 2000 live demo users.
+Recommended rules:
+- Inactivity TTL: 15 minutes
+- Hard cap: 1500 live demo users
+- Emergency ceiling: 2000 only if aggressive cleanup is active
 
-How to interpret the cap:
-- This is the maximum retained demo-user population, not a concurrency target.
-- If your demo is popular, older inactive users should be pruned first.
+Recommended cleanup order:
+1. Remove demo users whose Redis activity key is older than the inactivity window.
+2. If still above the cap, remove the oldest inactive demo users first.
+3. Never delete non-demo users.
 
-Janitor algorithm:
-- Prefer deleting users where the Redis `last_active_at` is older than 15 minutes.
-- If count is still above the cap, delete the oldest inactive demo users until you are back under the limit.
-- Never delete non-demo users.
+### C. Curated seeded demo world
+Status: partially enabled by the current platform, but not seeded yet.
 
-### Practical caution
-Because the demo should feel persistent, do not use creation time alone.
-Use `last_active_at` as the primary deletion gate.
+Platform support already exists for:
+- persisted dashboard defaults
+- rooms and map metadata
+- groups and selectors
+- automations and manual triggers
+- integration-provided widgets
 
----
+Still needed:
+- a seeded household dataset
+- a demo-specific default dashboard document
+- device/widget bindings that look meaningful on first load
 
-## Default dashboard and preconfigured demo world
+Suggested seeded entities:
+- Rooms: living room, kitchen, bedroom, hallway, patio
+- Groups: lights, climate, security, media
+- Automations: morning warmup, away mode, evening scene, motion hallway lights
+- Devices: thermostat, dimmer, lock, plug, smart bulb, motion sensor, contact sensor, fan
 
-### Dashboard goal
-Make the dashboard look alive, polished, and already tuned.
+### D. Read-only guardrails
+Status: integration runtime path already exists; broader demo policy still missing.
 
-It should not resemble a starter template or blank home screen.
+Keep visible:
+- integration detail pages
+- marketplace views
+- add-device and device-detail surfaces
+- account/settings views where browsing still teaches the product
 
-### Recommended first-load layout
-Use a curated dashboard with these sections:
-- Hero status strip: home mode, occupancy, alarm status, weather, energy snapshot.
-- Room/device panel: kitchen, living room, bedroom, hallway.
-- Live devices section: lights, sensor, climate, lock, plug.
-- Map or floorplan: labeled zones with device markers.
-- Automation card area: active routines and scheduled scenes.
-- Activity timeline: recent motion, temperature, and command events.
-- Quick actions: evening mode, all-off, movie mode, away mode.
+Block mutations in both frontend and backend:
+- add/delete device
+- password changes
+- 2FA enablement
+- integration install/update/uninstall/restart
+- destructive automation or inventory admin actions unless explicitly allowed for the demo script
 
-### Default content to seed
-Add these demo entities on first boot:
-- rooms / zones
-- groups
-- automations
-- devices
-- dashboard widgets
+Feedback pattern:
+- keep the panel open
+- disable the final mutation control
+- show a branded snackbar
+- optionally show inline helper text
 
-Suggested demo entities:
-- Rooms: living room, kitchen, bedroom, hallway, patio.
-- Groups: lights, climate, security, media.
-- Automations: good morning, away mode, evening scene, motion hallway lights.
-- Devices: smart bulb, dimmer, thermostat, contact sensor, motion sensor, plug, door lock, fan.
+Suggested copy:
+- "Unavailable in public demo"
+- "This action is disabled in the live demo environment"
+- "Browsing is enabled here, but changes are blocked"
 
-### Implementation target
-The clean-install default dashboard should be replaced with a curated seeded layout in the demo variant.
+### E. Simulator depth
+Status: not implemented yet.
 
-Touchpoints:
-- [dashboard-service/internal/dashboard/service.go](dashboard-service/internal/dashboard/service.go)
-- [dashboard-service/internal/http/dashboard_handler.go](dashboard-service/internal/http/dashboard_handler.go)
+Current state:
+- `mock-adapter` publishes adapter presence and handles command/pairing hooks.
+- It is still explicitly a placeholder, not a rich smart-home simulation.
 
-### Suggested UX polish
-- Use a few high-contrast widgets at the top.
-- Preconfigure meaningful labels and icons.
-- Ensure the first screen has live data without requiring a setup step.
+Needed:
+- device personas with stable identities
+- timed state changes
+- scene transitions that demonstrate automations
+- plausible telemetry for dashboard widgets and charts
 
----
-
-## Device, map, group, and automation seeding
-
-The demo should boot with a complete miniature household.
-
-### Seed plan
-- Device registry should include a fixed baseline set of demo devices.
-- Map should already show rooms and the devices placed into them.
-- Groups should already exist and match the visual layout.
-- Automations should already be connected to the demo devices.
-
-### Suggested runtime behavior
-- Device state changes should be driven by a simulator.
-- Automations should visibly fire in response to those states.
-- The map should reflect device state and presence in real time.
-
-### Suggested demo scenes
-- Morning: lights on, coffee plug on, temperature rising.
-- Leaving home: doors locked, lights off, security on.
-- Evening: warm lights, music scene, occupancy in living room.
+Suggested scene loops:
+- Morning: thermostat ramps, kitchen plug turns on, hallway motion clears
+- Leaving home: all lights off, lock engaged, occupancy false
+- Evening: living room warm light, media group active, patio light on
 
 ---
 
-## UI restrictions and snackbar behavior
+## Current Touchpoints
 
-### Keep the UI usable
-Do not hide the UI completely for disabled flows.
+Use these files as the primary implementation anchors:
 
-Keep these elements visible:
-- Add device modal
-- Device details screen
-- Integration detail screens
-- Settings popovers
-- Admin pages where read-only browsing makes sense
-
-### Disable action buttons
-Disable the action that would actually mutate the system:
-- add device
-- delete device
-- change password
-- enable 2FA
-- install integration
-- uninstall integration
-- update integration
-- restart integration
-
-### User feedback pattern
-When a user clicks a blocked action:
-- keep the modal/panel open
-- disable the confirm action
-- show a snackbar with a short explanation
-- optionally show inline helper text under the disabled control
-
-Example text:
-- "Unavailable in demo version"
-- "This action is disabled in the public demo"
-- "You can browse this screen, but changes are not allowed"
-
-### Styling suggestion
-Use a distinct disabled state rather than the default gray-only browser look.
-The goal is to make the restriction feel intentional and branded, not broken.
+- `dashboard-service/internal/dashboard/service.go`
+  Current default dashboard provisioning and widget catalog merge.
+- `dashboard-service/internal/dashboard/types.go`
+  Current `layouts_by_cols` document model used for seeded defaults.
+- `integration-proxy/internal/http/runtime_modes.go`
+  Current runtime-mode handling and `gitops` read-only enforcement.
+- `frontend/src/components/Admin/IntegrationsAdmin.jsx`
+  Current marketplace and installed integrations UX surface.
+- `frontend/src/components/common/IntegrationCard/IntegrationCard.css`
+  Reusable visual pattern for public-facing integration surfaces.
+- `frontend/src/components/About/About.css`
+  Best current example of a polished Homenavi marketing-style card/hero treatment.
+- `frontend/src/colors.css`
+  Shared color and surface tokens that the demo and website should continue using.
+- `mock-adapter/internal/adapter/service.go`
+  Current placeholder adapter that must evolve into the demo simulator.
+- `helm/homenavi/values.yaml`
+  Current baseline Helm service configuration.
+- `helm/homenavi/templates/integration-proxy-config.yaml`
+  Current integration-proxy bootstrap configuration path.
 
 ---
 
-## Analytics and visitor counting
+## Revised Kubernetes Plan
 
-### Minimum viable visitor tracking
-The simplest and most robust metric source is new demo-user creation.
+This should now be implemented as a Helm overlay, not as a fresh deployment concept.
 
-Store:
-- created timestamp
-- last active timestamp in Redis
-- optional session metadata like user agent bucket or coarse region if you need it
-
-That gives you the visitor counts you asked for without adding complicated tracking.
-
-### Useful dashboards
-Expose an internal admin view or metrics dashboard with:
-- total demo users created
-- demo users created in the last hour
-- demo users created in the last 24 hours
-- demo users created in the last 7 days
-- active demo users in the last 15 minutes
-- deleted demo users per janitor run
-- current total live demo users
-
-### Recommended schema shape
-You can implement this in either the user table or a separate analytics table.
-
-Best practical option:
-- Keep user identity fields on the user row.
-- Add a tiny event/rollup table for daily counts if you want trend charts.
-- Keep real-time interaction timestamps in Redis so the database only stores durable summaries.
-
-### Privacy note
-You do not need to store precise personal identity for visitor analytics.
-Demo-session identity plus timestamps is enough.
-
----
-
-## Kubernetes deployment plan
-
-This demo variant should target Kubernetes first, not Docker Compose.
-
-### Recommended Kubernetes layout
-- Dedicated namespace: `homenavi-demo`
-- Dedicated Helm values file: `values-demo.yaml`
-- Demo-only CronJob for janitor cleanup
-- Optional CronJob for daily analytics rollups
-- Separate Ingress host for the public demo
-
-### Demo-specific configuration
-Set these kinds of runtime flags in the demo values file:
+### Demo values file
+Add a dedicated values file such as `helm/homenavi/values-demo.yaml` with at least:
 - `DEMO_MODE=true`
 - `VITE_DEMO_MODE=true`
 - `INTEGRATIONS_RUNTIME_MODE=gitops`
 - `DEMO_USER_TTL_MINUTES=15`
 - `DEMO_USER_HARD_CAP=1500`
 - `DEMO_ACTIVITY_WRITE_DEBOUNCE_SECONDS=60`
-- `MOCK_ADAPTER_SIM_MODE=rich`
-- `MOCK_ADAPTER_DEVICE_COUNT=<seeded count>`
+- simulator-specific flags for the richer mock household
 
 ### Kubernetes objects to add or override
-- Deployment/StatefulSet overrides for demo mode
-- CronJob for janitor cleanup
-- CronJob for metrics rollup if you want long-term visitor stats
-- Secret/config map for demo-specific flags
-- Ingress and certificate config for the demo host
+- namespace-specific values overlay
+- public demo ingress
+- demo janitor CronJob
+- optional analytics rollup CronJob
+- config/secret entries for demo feature flags
 
-### Operational recommendation
-Keep demo state in the same databases as the platform if needed, but isolate the demo namespace and flag set so it is easy to reset without touching production-like environments.
-
----
-
-## Implementation plan
-
-### Phase 1: Demo identity and activity tracking
-- Add public demo session creation.
-- Add last-active tracking for authenticated requests.
-- Add demo logout rotation.
-- Add hard-block policy for sensitive auth actions.
-
-### Phase 2: Rich seeded world
-- Replace the default dashboard with a curated demo layout.
-- Seed rooms, map, groups, devices, and automations.
-- Make the first screen feel already configured.
-
-### Phase 3: Simulator and UI polish
-- Expand mock-adapter into a real demo simulator.
-- Add snackbar messaging and disabled-action styling.
-- Keep popups/screens available but read-only for blocked flows.
-
-### Phase 4: Cleanup and analytics
-- Add janitor cleanup using Redis `last_active_at`.
-- Add hard-cap enforcement.
-- Add visitor count rollups and simple admin reporting.
-
-### Phase 5: Kubernetes packaging
-- Add demo Helm values.
-- Add demo namespace, ingress, and CronJobs.
-- Add operational runbook for reset/reseed.
+### Operational guidance
+- Keep the demo environment isolated by namespace, host, and values.
+- Prefer shared base charts with demo-only overrides.
+- Make reseeding and cleanup safe to rerun.
 
 ---
 
-## Suggested service-level ownership
-- auth-service: demo session, logout rotation, activity tracking hooks, demo-only auth guards.
-- user-service: demo user metadata, janitor cleanup, visitor metrics source.
-- dashboard-service: curated seeded dashboard and default layout.
-- device-hub / entity-registry-service / automation-service: demo world bootstrap and safe read/write policy.
-- mock-adapter: rich simulated devices and automations.
-- integration-proxy: read-only marketplace mode via gitops.
-- frontend: demo bootstrap, snackbar behavior, disabled-action styling, no-account UX.
-- Kubernetes manifests: demo namespace, cronjobs, values file, ingress.
+## Acceptance Criteria
+
+- First visit creates or restores a demo session automatically.
+- The first dashboard looks intentionally configured, not blank.
+- Devices, groups, map data, and automations are already present.
+- Integration marketplace browsing works, but mutations are blocked.
+- Authenticated API activity updates demo presence in Redis.
+- Janitor cleanup removes stale demo users and enforces the hard cap.
+- The frontend explains blocked actions clearly with branded feedback.
+- Demo deployment uses the existing Helm path plus a demo overlay.
 
 ---
 
-## Acceptance criteria
-- First visit creates a demo user automatically.
-- Dashboard immediately looks configured and interesting.
-- Devices, groups, map, and automations are already present.
-- The app records last active API usage for each demo visitor.
-- The janitor keeps only active or recently active demo users.
-- The system remains bounded at roughly 1500 live demo users, with 2000 as a ceiling only if needed.
-- Blocked actions stay visible but clearly unavailable in the demo.
-- Snackbar feedback explains why an action is disabled.
-- Visitor counts can be reported overall and by timeframe.
-- Integration marketplace remains visible, but install/update/uninstall/restart are blocked.
-- The whole demo ships from a dedicated Kubernetes-oriented branch and values set.
+## Recommended Execution Order
+
+1. Add demo bootstrap/session support in auth-service and user-service.
+2. Add Redis activity tracking and janitor cleanup.
+3. Create the seeded demo dataset and curated dashboard document.
+4. Expand `mock-adapter` into a meaningful simulator.
+5. Add frontend read-only guardrails and snackbar messaging.
+6. Add `values-demo.yaml`, ingress, and CronJobs for Kubernetes.
+7. Add lightweight demo analytics and internal reporting.
 
 ---
 
-## Risk register
+## Short Conclusion
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Too many active demo visitors | DB and API pressure | 15-minute inactivity cleanup + hard cap + write debounce |
-| Users get deleted while still browsing | Bad UX | Track `last_active_at` from authenticated API calls |
-| Dashboard still feels too plain | Visitors leave quickly | Seed a curated layout with live device state and quick actions |
-| UI restrictions are bypassed via API | Security/demo integrity | Enforce restrictions in backend, not just the frontend |
-| Analytics become expensive | Resource waste | Use user creation timestamps plus small rollups only |
-| K8s deployment is hard to reset | Ops friction | Separate namespace, demo-only values, and clean CronJobs |
+The old document treated nearly everything as future work. That is no longer accurate.
+
+Today, Homenavi already has the runtime, marketplace surfaces, dashboard persistence model, frontend visual language, and Kubernetes baseline needed for a public demo. The remaining task is to build a thin but deliberate public-demo layer: demo identity, bounded retention, seeded content, richer simulated devices, and explicit read-only policy.
+
+*** Add File: /home/adam/Projects/homenavi-website/website-product-plan.md
+# Homenavi Website Product Plan
+
+## Objective
+Build a real product website for Homenavi at `www.homenavi.org` that feels like the public face of the platform rather than a repackaged app shell.
+
+The site should:
+- Reuse most of the current Homenavi visual language.
+- Introduce a strong landing page with clear product positioning.
+- Offer a prominent entry point to the live demo instance.
+- Showcase integrations and marketplace content.
+- Provide guides, onboarding, and support content for real users.
+- Give Homenavi a credible product narrative for visitors who are not yet ready to self-host.
 
 ---
 
-## What I would build first
+## Current Starting Point
 
-If this were the implementation order, I would do it like this:
-1. Demo session endpoint + demo-only auth bootstrap.
-2. `last_active_at` tracking and janitor cleanup.
-3. Curated seeded dashboard, devices, groups, map, and automations.
-4. Mock-adapter simulator improvements.
-5. Frontend disabled-action snackbar and styling.
-6. Kubernetes demo values, namespace, ingress, and CronJobs.
-7. Visitor analytics reporting view.
+The target repo `/home/adam/Projects/homenavi-website` is effectively empty today.
+
+That means this project should start as a clean website build, but it should not invent a new visual identity. The current app already provides strong inputs that should be reused:
+
+- color tokens and gradients from `frontend/src/colors.css`
+- glass-card and pill treatment from the main app
+- integration card patterns from the current marketplace/admin UI
+- hero-card treatment from the About page
+- product feature language from the main `README.md`
+
+---
+
+## Product Positioning
+
+The website should answer three visitor questions quickly:
+
+1. What is Homenavi?
+2. Why would I use it instead of a closed smart-home stack?
+3. How do I try it right now?
+
+Recommended positioning:
+- Open smart-home platform
+- Integration-first architecture
+- Realtime dashboard, automation, and device inventory in one system
+- Self-hostable, but approachable
+- Extensible for both users and integration developers
+
+Tone:
+- technical but welcoming
+- product-focused, not academic
+- confident without overselling maturity
+
+---
+
+## Design Direction
+
+### Visual reuse from the current app
+Preserve these brand anchors:
+- deep slate backgrounds
+- emerald primary accent
+- translucent glass surfaces
+- rounded cards and pill navigation
+- bold, clean product headings
+
+### What should change for the website
+The website needs more breathing room and stronger editorial layout than the application shell.
+
+Recommended website-specific adjustments:
+- larger hero typography
+- wider content rhythm and section spacing
+- more screenshot-led storytelling
+- cleaner content columns for docs and guides
+- more contrast between marketing content and app UI screenshots
+
+### Design rule
+The website should look like it belongs to the same product family as the app, but it should not feel like the dashboard copied into a homepage.
+
+---
+
+## Site Map
+
+```mermaid
+flowchart TD
+  Home[Home / Landing]
+  Features[Platform Features]
+  Integrations[Integrations]
+  Marketplace[Marketplace]
+  Demo[Live Demo]
+  Guides[Guides & Docs]
+  Community[Community]
+  Changelog[Changelog]
+  About[About Project]
+
+  Home --> Features
+  Home --> Integrations
+  Home --> Marketplace
+  Home --> Demo
+  Home --> Guides
+  Home --> Community
+  Home --> Changelog
+  Home --> About
+
+  Guides --> Quickstart[Quickstart]
+  Guides --> SelfHosting[Self-hosting]
+  Guides --> IntegrationsGuide[Integration Setup Guides]
+  Guides --> AutomationsGuide[Automation Guides]
+  Guides --> Troubleshooting[Troubleshooting]
+```
+
+---
+
+## Core Pages
+
+### 1. Home / landing page
+Purpose:
+- establish the product story
+- show the product visually
+- route visitors to the right next step
+
+Recommended sections:
+- Hero with headline, short subcopy, and two primary CTAs
+- Screenshot or short product montage
+- Core value strip: devices, automations, dashboards, integrations
+- Architecture/value section for power users
+- Marketplace spotlight section
+- Demo teaser section
+- Quickstart section for self-hosters
+- Social proof or project trust signals
+- Footer with docs, GitHub, Discord, demo, marketplace
+
+Primary CTAs:
+- `Try live demo`
+- `Self-host Homenavi`
+
+Secondary CTAs:
+- `Browse integrations`
+- `Read the guides`
+
+### 2. Features page
+Focus on the major product pillars:
+- realtime devices
+- dashboards and widgets
+- inventory and map
+- automation engine
+- integrations runtime
+- observability and deployment path
+
+This should use screenshots and short diagrams rather than only text.
+
+### 3. Integrations page
+Purpose:
+- explain how integrations work
+- show available categories and examples
+- route users to install docs and marketplace entries
+
+Recommended sections:
+- verified integrations
+- community integrations
+- integration developer path
+- runtime modes and deployment expectations
+
+### 4. Marketplace page
+Purpose:
+- expose the Homenavi integration catalog in a product-friendly way
+- support search/filter/badges
+- link to detailed integration pages
+
+Recommended behavior:
+- fetch or prebuild from marketplace API metadata
+- surface verified, featured, and trending integrations
+- show version, publisher, capabilities, and screenshots
+- provide install docs link rather than in-browser install for the product site
+
+### 5. Demo page
+Purpose:
+- set expectations for the live demo
+- explain what is interactive and what is read-only
+- provide direct entry to `demo.homenavi.org`
+
+Recommended sections:
+- live demo CTA block
+- what you can explore
+- what is intentionally disabled
+- note about temporary demo sessions
+- fallback path if the demo is temporarily offline
+
+### 6. Guides and docs
+Purpose:
+- support users after discovery
+- reduce GitHub README overload
+- turn product interest into successful usage
+
+Recommended guide structure:
+- Quickstart
+- Local Docker setup
+- Kubernetes install
+- Device and map setup
+- Dashboard customization
+- Automation basics
+- Integrations install and update flow
+- Troubleshooting and FAQ
+
+### 7. Community / about
+Purpose:
+- explain project background
+- link to GitHub, issues, Discord, and roadmap
+- humanize the product without turning the page into a personal blog
+
+### 8. Changelog
+Purpose:
+- show project momentum
+- surface releases and notable features
+- improve trust for evaluators
+
+---
+
+## Landing Page Content Plan
+
+### Hero
+Draft direction:
+- Headline: `Your smart home, on your terms.`
+- Supporting copy: `Homenavi combines realtime device control, dashboards, automation, and an integration marketplace in one self-hostable platform.`
+
+Hero CTAs:
+- `Try the live demo`
+- `View deployment guide`
+
+Hero media:
+- main dashboard screenshot
+- optional subtle animated highlight overlays
+
+### Value blocks
+Recommended four-block structure:
+- Realtime control
+- Visual dashboards
+- Automation workflows
+- Integration marketplace
+
+### Proof section
+Use concise facts drawn from the current platform:
+- microservice architecture
+- MQTT/HDP realtime plane
+- Docker and Kubernetes deployment paths
+- integration runtime with marketplace model
+
+### Demo strip
+The landing page should include a clear callout for the public demo:
+- direct demo link
+- note that no setup is required
+- note that some actions are disabled in the demo
+
+### Self-hosting strip
+For users ready to install:
+- Docker Compose quickstart
+- Helm/Kubernetes path
+- links to more detailed guides
+
+---
+
+## Design System Reuse Plan
+
+Use the current app as the starting source of truth.
+
+### Reuse immediately
+- color tokens from `frontend/src/colors.css`
+- card surfaces inspired by `GlassCard`
+- pill navigation inspired by `GlassPill`
+- section headers inspired by `PageHeader`
+- integration visual treatment inspired by `IntegrationCard`
+
+### Adapt for the website
+- create page-width containers and a spacing scale suited to editorial layouts
+- build a marketing hero variant of the glass card
+- define a screenshot frame component
+- define a docs article layout component
+
+### Suggested rule for reuse
+Copy the visual primitives first. Only extract a shared package later if both repos start changing those primitives in parallel often enough to justify it.
+
+---
+
+## Technical Architecture Recommendation
+
+Use a framework optimized for marketing, docs, and SEO rather than duplicating the application shell.
+
+Recommended stack:
+- Next.js with App Router
+- React
+- TypeScript
+- MDX for guides and long-form docs
+- static generation for most marketing pages
+- server-side or build-time fetches for marketplace content
+
+Why this fits:
+- SEO matters for the public website
+- content pages and guides benefit from MDX
+- screenshot-heavy landing pages benefit from image optimization
+- React makes reuse of component ideas from the main app straightforward
+
+If strict stack reuse matters more than SEO convenience, Vite + React is still viable, but the default recommendation for the website is Next.js.
+
+---
+
+## Data And Content Sources
+
+### Content managed in the website repo
+- landing page copy
+- feature descriptions
+- guides and FAQs
+- community/about content
+- changelog summaries
+
+### Content sourced from existing Homenavi systems
+- integration catalog metadata from marketplace APIs
+- screenshots from the main app
+- release/version metadata from GitHub releases or repo tags
+- selected architecture facts from the main repo docs
+
+### Synchronization rule
+Do not make the product website depend on the application being online for basic rendering. Prefer build-time fetch and cache for marketplace content, with graceful fallback if the API is unavailable.
+
+---
+
+## Demo Integration On The Website
+
+The demo link should be treated as a primary product action, not buried in docs.
+
+Recommended placements:
+- hero CTA on the home page
+- persistent top-nav link
+- dedicated demo page
+- footer CTA
+
+Recommended behavior:
+- if the demo is healthy, route directly to `demo.homenavi.org`
+- if degraded, show a lightweight status note and alternative screenshot/video content
+
+Recommended copy constraints:
+- explain that the demo is temporary
+- explain that some sensitive actions are intentionally disabled
+- keep the promise clear: visitors can explore without setup
+
+---
+
+## Guides And User Support Plan
+
+The website should become the user-facing home for practical guidance, not just a marketing shell.
+
+### Minimum guide set
+- Getting started
+- Install with Docker Compose
+- Install with Helm
+- Add and manage devices
+- Configure dashboards
+- Build automations
+- Browse and install integrations
+- Troubleshooting
+- FAQ
+
+### Documentation style
+- short pages with real screenshots
+- explicit prerequisites
+- clear command blocks
+- cross-links between concept and task pages
+
+### Support surfaces
+- searchable guides index
+- version-aware docs if releases stabilize further
+- community links to GitHub and Discord
+
+---
+
+## Marketplace And Integration Features For The Site
+
+This should be more than a static list.
+
+Recommended marketplace experience:
+- searchable grid of integrations
+- featured and verified badges
+- publisher details
+- screenshots and descriptions
+- capability tags such as widgets, automations, device support, setup UI
+- direct links to install/setup docs
+
+Recommended integration detail page structure:
+- overview
+- screenshots
+- capabilities
+- requirements
+- install path
+- setup path
+- troubleshooting links
+
+This gives the website real product depth without mixing it up with the app's in-cluster installation workflow.
+
+---
+
+## Delivery Plan
+
+### Phase 1: Foundation
+- initialize the website project
+- import the current visual tokens and core UI primitives
+- build layout, nav, footer, and content scaffolding
+
+### Phase 2: Marketing surface
+- build landing page
+- add features page
+- add demo page and CTA routing
+
+### Phase 3: Content and support
+- add guides/docs section with MDX
+- migrate core user-facing setup content from the main repo docs into website-friendly guides
+
+### Phase 4: Marketplace experience
+- add marketplace listing and integration detail pages
+- wire build-time data fetching and caching
+
+### Phase 5: Polish and launch
+- responsive QA
+- SEO metadata
+- analytics
+- accessibility pass
+- deploy to `www.homenavi.org`
+
+---
+
+## Success Criteria
+
+- Visitors understand what Homenavi is within one screen.
+- The landing page presents both a product story and a working next step.
+- The live demo is easy to find and clearly explained.
+- Integrations and marketplace content feel like a first-class part of the product.
+- Users can find practical setup guides without being dropped straight into raw repo docs.
+- The visual language feels recognizably Homenavi, not like a separate product.
+
+---
+
+## Recommendation
+
+Build the website as a proper product surface with three equal priorities:
+- product narrative
+- live demo entry
+- practical user guidance
+
+The current app already contains the visual DNA needed to make this site feel coherent. The website should reuse that DNA, widen it into a more editorial layout, and turn Homenavi from a repo-first project into a product people can understand, try, and adopt.
