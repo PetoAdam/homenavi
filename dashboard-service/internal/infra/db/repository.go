@@ -96,6 +96,10 @@ func (r *Repository) CreateDashboard(ctx context.Context, d *dashboard.Dashboard
 	return r.db.WithContext(ctx).Create(&record).Error
 }
 
+func (r *Repository) DeleteUserDashboard(ctx context.Context, userID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("scope = ? AND owner_user_id = ?", "user", userID).Delete(&dashboardRecord{}).Error
+}
+
 func (r *Repository) UpdateUserDashboardDoc(ctx context.Context, userID uuid.UUID, expectedVersion int, nextDoc datatypes.JSON) (*dashboard.Dashboard, error) {
 	res := r.db.WithContext(ctx).Model(&dashboardRecord{}).Where("scope = ? AND owner_user_id = ? AND layout_version = ?", "user", userID, expectedVersion).Updates(map[string]any{"doc": nextDoc, "layout_version": expectedVersion + 1})
 	if res.Error != nil {

@@ -37,15 +37,17 @@ func (h *UsersHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
 		return
 	}
-	if req.Role != "" && req.Role != "user" {
+	actor := actorFromRequest(r)
+	if req.Role != "" && req.Role != "user" && actor.Role != "service" {
 		slog.Warn("attempted elevated role on signup ignored", "requested_role", req.Role, "email", req.Email)
 	}
-	user, err := h.service.Create(r.Context(), users.CreateInput{
+	user, err := h.service.Create(r.Context(), actor, users.CreateInput{
 		UserName:          req.UserName,
 		Email:             req.Email,
 		Password:          req.Password,
 		FirstName:         req.FirstName,
 		LastName:          req.LastName,
+		Role:              req.Role,
 		GoogleID:          req.GoogleID,
 		ProfilePictureURL: req.ProfilePictureURL,
 	})
@@ -122,7 +124,7 @@ func (h *UsersHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actor := actorFromRequest(r)
-	if actor.Role != "resident" && actor.Role != "admin" {
+	if actor.Role != "resident" && actor.Role != "admin" && actor.Role != "service" {
 		writeJSONError(w, http.StatusForbidden, "forbidden", nil)
 		return
 	}

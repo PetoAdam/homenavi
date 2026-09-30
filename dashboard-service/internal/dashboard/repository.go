@@ -11,6 +11,7 @@ import (
 type Repository interface {
 	GetDefaultDashboard(context.Context) (*Dashboard, error)
 	GetUserDashboard(context.Context, uuid.UUID) (*Dashboard, error)
+	DeleteUserDashboard(context.Context, uuid.UUID) error
 	CreateDashboard(context.Context, *Dashboard) error
 	UpdateUserDashboardDoc(context.Context, uuid.UUID, int, datatypes.JSON) (*Dashboard, error)
 	UpsertDefaultDashboard(context.Context, string, any) (*Dashboard, error)

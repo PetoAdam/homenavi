@@ -34,7 +34,22 @@ func NewUserClient(cfg UserConfig) *UserClient {
 
 func (c *UserClient) CreateUser(req *authtransport.SignupRequest) (*User, error) {
 	userReq := map[string]any{"user_name": req.UserName, "email": req.Email, "password": req.Password, "first_name": req.FirstName, "last_name": req.LastName}
-	return c.createUserFromMap(userReq)
+	return c.createUserFromMap(userReq, "")
+}
+
+func (c *UserClient) CreateResidentDemoUser(userName, email, password, firstName, lastName string) (*User, error) {
+	token, err := c.issueInternalToken("")
+	if err != nil {
+		return nil, errors.InternalServerError("failed to issue internal token", err)
+	}
+	return c.createUserFromMap(map[string]any{
+		"user_name":  userName,
+		"email":      email,
+		"password":   password,
+		"first_name": firstName,
+		"last_name":  lastName,
+		"role":       "resident",
+	}, token)
 }
 
 func (c *UserClient) ValidateCredentials(email, password string) (*User, error) {
@@ -158,6 +173,14 @@ func (c *UserClient) DeleteUser(userID string, jwtToken string) error {
 	return nil
 }
 
+func (c *UserClient) DeleteUserInternal(userID string) error {
+	token, err := c.issueInternalToken(userID)
+	if err != nil {
+		return errors.InternalServerError("failed to issue internal token", err)
+	}
+	return c.DeleteUser(userID, token)
+}
+
 func (c *UserClient) GetUserByGoogleID(googleID string) (*User, error) {
 	token, _ := c.issueInternalToken("")
 	resp, err := c.makeRequest(http.MethodGet, "/users?google_id="+url.QueryEscape(googleID), nil, token)
@@ -197,7 +220,7 @@ func (c *UserClient) CreateGoogleUser(userInfo *GoogleUserInfo) (*User, error) {
 		"role":                "user",
 		"google_id":           userInfo.ID,
 		"profile_picture_url": userInfo.Picture,
-	})
+	}, "")
 }
 
 func (c *UserClient) ListUsers(values url.Values, bearer string) ([]User, map[string]interface{}, error) {
@@ -226,13 +249,21 @@ func (c *UserClient) ListUsers(values url.Values, bearer string) ([]User, map[st
 	return raw.Users, meta, nil
 }
 
-func (c *UserClient) createUserFromMap(userReq map[string]interface{}) (*User, error) {
+func (c *UserClient) ListUsersInternal(values url.Values) ([]User, map[string]interface{}, error) {
+	token, err := c.issueInternalToken("")
+	if err != nil {
+		return nil, nil, errors.InternalServerError("failed to issue internal token", err)
+	}
+	return c.ListUsers(values, "Bearer "+token)
+}
+
+func (c *UserClient) createUserFromMap(userReq map[string]interface{}, jwtToken string) (*User, error) {
 	body, err := json.Marshal(userReq)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to marshal user request", err)
 	}
 
-	resp, err := c.makeRequest(http.MethodPost, "/users", body, "")
+	resp, err := c.makeRequest(http.MethodPost, "/users", body, jwtToken)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to create user", err)
 	}

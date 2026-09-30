@@ -1,0 +1,4 @@
+integrations:
+  - id: spotify
+    upstream: http://spotify:8099
+    version: 1.0.9

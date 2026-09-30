@@ -13,6 +13,7 @@ import (
 // Routes groups auth-service HTTP handlers.
 type Routes struct {
 	HandleSignup               http.HandlerFunc
+	HandleDemoBootstrap        http.HandlerFunc
 	HandleLoginStart           http.HandlerFunc
 	HandleLoginFinish          http.HandlerFunc
 	HandleRefresh              http.HandlerFunc
@@ -56,6 +57,7 @@ func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer)
 
 	r.Route("/api/auth", func(r chi.Router) {
 		r.Post("/signup", orNotImplemented(routes.HandleSignup))
+		r.Post("/demo/bootstrap", orNotImplemented(routes.HandleDemoBootstrap))
 		r.Post("/login/start", orNotImplemented(routes.HandleLoginStart))
 		r.Post("/login/finish", orNotImplemented(routes.HandleLoginFinish))
 		r.Post("/refresh", orNotImplemented(routes.HandleRefresh))

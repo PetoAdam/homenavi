@@ -29,10 +29,12 @@ import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
 import ColorPickerControl from '../common/ColorPickerControl/ColorPickerControl';
 import { normalizeColorHex } from '../../utils/colorHex';
+import { blockPublicDemoAction, isPublicDemoModeEnabled } from '../../utils/demoMode';
 import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
 import { formatBinaryStateValue as formatBinaryStateValueShared } from '../../utils/stateFormat';
 import BaseModal from '../common/BaseModal/BaseModal';
+import Snackbar from '../common/Snackbar/Snackbar';
 
 const ICON_BY_CAP = {
   temperature: faThermometerHalf,
@@ -959,6 +961,8 @@ export default function DeviceTile({
   const [deleteError, setDeleteError] = useState(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [forceDelete, setForceDelete] = useState(false);
+  const [demoToast, setDemoToast] = useState('');
+  const demoModeEnabled = isPublicDemoModeEnabled();
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const iconMenuRef = useRef(null);
   const actionMenuRef = useRef(null);
@@ -1226,9 +1230,12 @@ export default function DeviceTile({
     setDeleteError(null);
   }, [deletePending]);
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback((event) => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, event, onBlocked: setDemoToast })) {
+      return;
+    }
     handleDelete({ force: forceDelete });
-  }, [forceDelete, handleDelete]);
+  }, [demoModeEnabled, forceDelete, handleDelete]);
 
   const toggleActionMenu = useCallback(() => {
     if (!onRename && !onDelete) return;
@@ -1743,6 +1750,7 @@ export default function DeviceTile({
       </div>
       </GlassCard>
       {deleteModal}
+      <Snackbar message={demoToast} onClose={() => setDemoToast('')} />
     </>
   );
 }

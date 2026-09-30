@@ -21,6 +21,9 @@ function indexDevice(map, device) {
   addLookupEntry(map, device.id, device);
   addLookupEntry(map, device.ersId, device);
   addLookupEntry(map, device.hdpId, device);
+  addLookupEntry(map, device.device_id, device);
+  addLookupEntry(map, device.externalId, device);
+  addLookupEntry(map, device.external_id, device);
   arrayOrEmpty(device.hdpIds).forEach((value) => addLookupEntry(map, value, device));
 }
 

@@ -56,6 +56,14 @@ export async function signup(firstName, lastName, userName, email, password) {
   return { success: true, user: res.data };
 }
 
+export async function bootstrapDemoSession() {
+  const res = await http.post(`${AUTH_BASE}/demo/bootstrap`, {});
+  if (!res.success) return { success: false, error: res.error };
+  const d = res.data || {};
+  if (d.access_token) setHttpAccessToken(d.access_token);
+  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
+}
+
 export async function refreshToken(refreshToken) {
   const res = await http.post(`${AUTH_BASE}/refresh`, { refresh_token: refreshToken });
   if (!res.success) return { success: false, error: res.error };
@@ -159,6 +167,7 @@ export default {
   login,
   finish2FA,
   signup,
+  bootstrapDemoSession,
   refreshToken,
   logout,
   getMe,

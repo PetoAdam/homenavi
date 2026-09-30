@@ -25,13 +25,13 @@ func NewRootRouter(wsRouter, mainRouter http.Handler) http.Handler {
 	return mux
 }
 
-func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) http.Handler {
+func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey, tracker *apiMiddleware.DemoActivityTracker) http.Handler {
 	r := chi.NewRouter()
-	registerConfiguredRoutes(r, cfg, redisClient, pubKey)
+	registerConfiguredRoutes(r, cfg, redisClient, pubKey, tracker)
 	return r
 }
 
-func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey, promHandler http.Handler, tracer oteltrace.Tracer, corsAllowOrigins string) http.Handler {
+func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey, promHandler http.Handler, tracer oteltrace.Tracer, corsAllowOrigins string, tracker *apiMiddleware.DemoActivityTracker) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -51,7 +51,7 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	registerConfiguredRoutes(r, cfg, redisClient, pubKey)
+	registerConfiguredRoutes(r, cfg, redisClient, pubKey, tracker)
 
 	r.Get("/api/gateway/routes", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(cfg.Routes)
@@ -67,14 +67,14 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey
 	return r
 }
 
-func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) {
+func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey, tracker *apiMiddleware.DemoActivityTracker) {
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {
 		case "websocket", "websocket-mqtt":
-			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeWebSocketProxyHandler(route))
+			h = wrapWithAccessControl(pubKey, tracker, route.Access, proxy.MakeWebSocketProxyHandler(route))
 		default:
-			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeRestProxyHandler(route))
+			h = wrapWithAccessControl(pubKey, tracker, route.Access, proxy.MakeRestProxyHandler(route))
 		}
 
 		if route.RateLimit != nil {
@@ -95,16 +95,16 @@ func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redi
 	}
 }
 
-func wrapWithAccessControl(pubKey *rsa.PublicKey, access string, next http.Handler) http.Handler {
+func wrapWithAccessControl(pubKey *rsa.PublicKey, tracker *apiMiddleware.DemoActivityTracker, access string, next http.Handler) http.Handler {
 	switch access {
 	case "public":
 		return next
 	case "auth":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(next)
+		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey, tracker)(next)
 	case "resident":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
+		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey, tracker)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
 	case "admin":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
+		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey, tracker)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
 	default:
 		return next
 	}

@@ -14,6 +14,7 @@ import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
 import GalleryCarousel from '../../common/GalleryCarousel/GalleryCarousel';
 import BaseModal from '../../common/BaseModal/BaseModal';
 import GlassSwitch from '../../common/GlassSwitch/GlassSwitch';
+import { blockPublicDemoAction } from '../../../utils/demoMode';
 
 export default function InstalledIntegrationModal({
   integration,
@@ -40,8 +41,18 @@ export default function InstalledIntegrationModal({
   setupCapable,
   onOpenSetup,
   resolveFaIcon,
+  demoModeEnabled = false,
+  onDemoBlocked,
+  viewOnlyMode = false,
 }) {
   if (!integration) return null;
+
+  const handleDemoMutation = (event, action) => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, event, onBlocked: onDemoBlocked })) {
+      return;
+    }
+    action();
+  };
 
   const iconRaw = integration.icon || '';
   const fa = resolveFaIcon(iconRaw) || resolveFaIcon(integration.id) || faPlug;
@@ -164,12 +175,12 @@ export default function InstalledIntegrationModal({
                 <div className="integrations-admin-card-title">Manage</div>
                 <div className="integrations-admin-modal-actions-main">
                   <Button
-                    onClick={() => onUpdateIntegration(integration.id)}
+                    onClick={(event) => handleDemoMutation(event, () => onUpdateIntegration(integration.id))}
                     disabled={!updateAvailable || updateBusy}
                   >
                     {updateBusy ? 'Updating…' : 'Update integration'}
                   </Button>
-                  {setupCapable ? (
+                  {setupCapable && !viewOnlyMode ? (
                     <Button
                       variant="secondary"
                       onClick={onOpenSetup}
@@ -179,22 +190,24 @@ export default function InstalledIntegrationModal({
                   ) : null}
                   <Button
                     variant="secondary"
-                    onClick={() => onRestartIntegration(integration.id)}
+                    onClick={(event) => handleDemoMutation(event, () => onRestartIntegration(integration.id))}
                     disabled={restarting[integration.id]}
                   >
                     {restarting[integration.id] ? 'Restarting…' : 'Restart integration'}
                   </Button>
                 </div>
-                <div className="integrations-admin-modal-actions-sub">
-                  <Button
-                    variant="ghost"
-                    className="integrations-admin-action-danger"
-                    onClick={() => onUninstallIntegration(integration.id)}
-                    disabled={uninstalling[integration.id]}
-                  >
-                    {uninstalling[integration.id] ? 'Removing…' : 'Remove'}
-                  </Button>
-                </div>
+                {!viewOnlyMode ? (
+                  <div className="integrations-admin-modal-actions-sub">
+                    <Button
+                      variant="ghost"
+                      className="integrations-admin-action-danger"
+                      onClick={(event) => handleDemoMutation(event, () => onUninstallIntegration(integration.id))}
+                      disabled={uninstalling[integration.id]}
+                    >
+                      {uninstalling[integration.id] ? 'Removing…' : 'Remove'}
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="integrations-admin-autoupdate-toggle integrations-admin-autoupdate-toggle--modal">
                   <GlassSwitch
                     checked={autoUpdate}
@@ -222,12 +235,12 @@ export default function InstalledIntegrationModal({
                 <div className="integrations-admin-card-title">Manage</div>
                 <div className="integrations-admin-modal-actions-main integrations-admin-secret-actions">
                   <Button
-                    onClick={() => onUpdateIntegration(integration.id)}
+                    onClick={(event) => handleDemoMutation(event, () => onUpdateIntegration(integration.id))}
                     disabled={!updateAvailable || updateBusy}
                   >
                     {updateBusy ? 'Updating…' : 'Update integration'}
                   </Button>
-                  {setupCapable ? (
+                  {setupCapable && !viewOnlyMode ? (
                     <Button
                       variant="secondary"
                       onClick={onOpenSetup}
@@ -237,22 +250,24 @@ export default function InstalledIntegrationModal({
                   ) : null}
                   <Button
                     variant="secondary"
-                    onClick={() => onRestartIntegration(integration.id)}
+                    onClick={(event) => handleDemoMutation(event, () => onRestartIntegration(integration.id))}
                     disabled={restarting[integration.id]}
                   >
                     {restarting[integration.id] ? 'Restarting…' : 'Restart integration'}
                   </Button>
                 </div>
-                <div className="integrations-admin-modal-actions-sub">
-                  <Button
-                    variant="ghost"
-                    className="integrations-admin-action-danger"
-                    onClick={() => onUninstallIntegration(integration.id)}
-                    disabled={uninstalling[integration.id]}
-                  >
-                    {uninstalling[integration.id] ? 'Removing…' : 'Remove'}
-                  </Button>
-                </div>
+                {!viewOnlyMode ? (
+                  <div className="integrations-admin-modal-actions-sub">
+                    <Button
+                      variant="ghost"
+                      className="integrations-admin-action-danger"
+                      onClick={(event) => handleDemoMutation(event, () => onUninstallIntegration(integration.id))}
+                      disabled={uninstalling[integration.id]}
+                    >
+                      {uninstalling[integration.id] ? 'Removing…' : 'Remove'}
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="integrations-admin-autoupdate-toggle integrations-admin-autoupdate-toggle--modal">
                   <GlassSwitch
                     checked={autoUpdate}
@@ -276,7 +291,7 @@ export default function InstalledIntegrationModal({
 
               <div className="integrations-admin-modal-section">
                 <div className="integrations-admin-card-title">Secrets</div>
-                <div className="integrations-admin-card-subtitle">Write-only fields. Values are never read back.</div>
+                <div className="integrations-admin-card-subtitle">{viewOnlyMode ? 'Demo users can inspect secret requirements, but cannot edit setup.' : 'Write-only fields. Values are never read back.'}</div>
                 {pendingSecretsId === integration.id ? (
                   <div className="integrations-admin-secret-callout">
                     This integration requires secrets. Please add them now to finish setup.
@@ -314,7 +329,8 @@ export default function InstalledIntegrationModal({
                             type="password"
                             className={`integrations-admin-input${missing ? ' integrations-admin-input--error' : ''}`}
                             value={(secretValues[integration.id] || {})[spec.key] || ''}
-                            placeholder="Enter secret"
+                            placeholder={viewOnlyMode ? 'Hidden in demo view' : 'Enter secret'}
+                            readOnly={viewOnlyMode}
                             onChange={(e) => onSecretChange(integration.id, spec.key, e.target.value)}
                           />
                         </label>
@@ -324,19 +340,21 @@ export default function InstalledIntegrationModal({
                 ) : (
                   <div className="integrations-admin-empty">No secrets declared.</div>
                 )}
-                <div className="integrations-admin-item-actions">
-                  <Button
-                    onClick={() => onSaveSecrets(integration.id)}
-                    disabled={saving[integration.id]}
-                  >
-                    {saving[integration.id] ? 'Saving…' : 'Save & restart'}
-                  </Button>
-                  {normalizeSecrets(integration.secrets).length ? (
-                    <Button variant="secondary" onClick={onSetupLater}>
-                      Set up later
+                {!viewOnlyMode ? (
+                  <div className="integrations-admin-item-actions">
+                    <Button
+                      onClick={(event) => handleDemoMutation(event, () => onSaveSecrets(integration.id))}
+                      disabled={saving[integration.id]}
+                    >
+                      {saving[integration.id] ? 'Saving…' : 'Save & restart'}
                     </Button>
-                  ) : null}
-                </div>
+                    {normalizeSecrets(integration.secrets).length ? (
+                      <Button variant="secondary" onClick={onSetupLater}>
+                        Set up later
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </>
           )}

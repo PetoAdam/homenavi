@@ -71,9 +71,47 @@ func (f *fakeRepo) Delete(_ context.Context, _ uuid.UUID) error { return nil }
 
 func TestCreateRequiresPasswordOrGoogleID(t *testing.T) {
 	svc := NewService(newFakeRepo())
-	_, err := svc.Create(context.Background(), CreateInput{UserName: "alice", Email: "a@example.com"})
+	_, err := svc.Create(context.Background(), Actor{}, CreateInput{UserName: "alice", Email: "a@example.com"})
 	if !errors.Is(err, ErrPasswordOrGoogleIDRequired) {
 		t.Fatalf("expected ErrPasswordOrGoogleIDRequired, got %v", err)
+	}
+}
+
+func TestCreateAllowsResidentRoleForServiceActor(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo)
+	user, err := svc.Create(context.Background(), Actor{Role: "service"}, CreateInput{
+		UserName:  "demo_visitor",
+		Email:     "demo@example.com",
+		Password:  "secret",
+		FirstName: "Demo",
+		LastName:  "Visitor",
+		Role:      "resident",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if user.Role != "resident" {
+		t.Fatalf("expected resident role, got %q", user.Role)
+	}
+}
+
+func TestCreateIgnoresResidentRoleForPublicActor(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo)
+	user, err := svc.Create(context.Background(), Actor{}, CreateInput{
+		UserName:  "demo_visitor",
+		Email:     "demo@example.com",
+		Password:  "secret",
+		FirstName: "Demo",
+		LastName:  "Visitor",
+		Role:      "resident",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if user.Role != "user" {
+		t.Fatalf("expected public create to keep user role, got %q", user.Role)
 	}
 }
 

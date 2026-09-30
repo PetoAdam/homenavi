@@ -1,7 +1,9 @@
 package observability
 
 import (
+	"bufio"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -76,5 +78,36 @@ func TestWithMetricsEndpointExposesMetricsAndWrapsOtherRoutes(t *testing.T) {
 	wrapped.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if rr.Header().Get("Trace-ID") == "" {
 		t.Fatal("expected traced route to set Trace-ID")
+	}
+}
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (r *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	serverConn, clientConn := net.Pipe()
+	reader := bufio.NewReader(serverConn)
+	writer := bufio.NewWriter(serverConn)
+	return clientConn, bufio.NewReadWriter(reader, writer), nil
+}
+
+func TestWrapHandlerPreservesHijacker(t *testing.T) {
+	tp := trace.NewTracerProvider()
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	h := WrapHandler(tp.Tracer("test"), "test-service", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := w.(http.Hijacker); !ok {
+			t.Fatal("expected wrapped response writer to preserve http.Hijacker")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/ers", nil)
+	rr := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rr.Code)
 	}
 }

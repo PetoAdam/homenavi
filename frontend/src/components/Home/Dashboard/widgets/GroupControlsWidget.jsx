@@ -35,7 +35,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
 
   const { devices: realtimeDevices, loading: hdpLoading, connectionInfo } = useDeviceHubDevices({
     enabled: Boolean(isResidentOrAdmin),
-    metadataMode: 'ws',
+    metadataMode: 'rest',
     accessToken,
     authReady: Boolean(accessToken) && !bootstrapping,
   });

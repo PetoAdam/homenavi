@@ -13,6 +13,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("ENTITY_REGISTRY_MQTT_SHARED_GROUP", "entity-registry-autoimport")
 	t.Setenv("DEVICE_HUB_URL", "http://device-hub:8090")
 	t.Setenv("ENTITY_REGISTRY_AUTO_IMPORT", "false")
+	t.Setenv("DEMO_MODE", "true")
 	t.Setenv("POSTGRES_USER", "postgres")
 	t.Setenv("POSTGRES_PASSWORD", "secret")
 	t.Setenv("POSTGRES_DB", "entity_registry")
@@ -34,6 +35,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if cfg.AutoImport {
 		t.Fatalf("expected auto import to be disabled")
+	}
+	if !cfg.DemoMode {
+		t.Fatalf("expected demo mode to be enabled")
 	}
 	if cfg.DB.DBName != "entity_registry" || cfg.DB.Host != "db" {
 		t.Fatalf("unexpected db config: %#v", cfg.DB)

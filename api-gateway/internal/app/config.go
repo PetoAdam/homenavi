@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
 	"github.com/PetoAdam/homenavi/shared/envx"
@@ -15,6 +16,8 @@ type Config struct {
 	JWTPublicKeyPath string
 	Redis            redisx.Config
 	CORSAllowOrigins string
+	DemoActivityDebounce time.Duration
+	DemoActivityTTL      time.Duration
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -36,6 +39,14 @@ func LoadConfig(args []string) (Config, error) {
 		JWTPublicKeyPath: envx.String("JWT_PUBLIC_KEY_PATH", gatewayConfig.JWTPublicKeyPath),
 		Redis:            redisConfig,
 		CORSAllowOrigins: envx.String("CORS_ALLOW_ORIGINS", ""),
+		DemoActivityDebounce: envx.Duration("DEMO_SESSION_ACTIVITY_DEBOUNCE", 60*time.Second),
+		DemoActivityTTL:      envx.Duration("DEMO_SESSION_ACTIVITY_TTL", 15*time.Minute),
+	}
+	if cfg.DemoActivityDebounce <= 0 {
+		cfg.DemoActivityDebounce = 60 * time.Second
+	}
+	if cfg.DemoActivityTTL <= 0 {
+		cfg.DemoActivityTTL = 15 * time.Minute
 	}
 	if strings.TrimSpace(cfg.JWTPublicKeyPath) == "" {
 		return Config{}, fmt.Errorf("JWT_PUBLIC_KEY_PATH not set")

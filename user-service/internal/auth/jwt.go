@@ -34,24 +34,28 @@ func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 func JWTAuthMiddleware(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenStr := ExtractToken(r)
-			if tokenStr == "" {
+			claims, ok := parseClaims(r, pubKey)
+			if !ok {
 				writeJSONError(w, http.StatusUnauthorized, "missing token")
 				return
 			}
-			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (any, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-					return nil, jwt.ErrTokenUnverifiable
-				}
-				return pubKey, nil
-			})
-			if err != nil || !token.Valid {
-				writeJSONError(w, http.StatusUnauthorized, "invalid token")
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey, claims)))
+		})
+	}
+}
+
+// OptionalJWTAuthMiddleware attaches claims when a valid bearer token is present and otherwise leaves the request unauthenticated.
+func OptionalJWTAuthMiddleware(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenStr := ExtractToken(r)
+			if tokenStr == "" {
+				next.ServeHTTP(w, r)
 				return
 			}
-			claims, ok := token.Claims.(*Claims)
+			claims, ok := parseClaims(r, pubKey)
 			if !ok {
-				writeJSONError(w, http.StatusUnauthorized, "invalid claims")
+				writeJSONError(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey, claims)))
@@ -85,6 +89,27 @@ func ExtractToken(r *http.Request) string {
 		return auth[7:]
 	}
 	return ""
+}
+
+func parseClaims(r *http.Request, pubKey *rsa.PublicKey) (*Claims, bool) {
+	tokenStr := ExtractToken(r)
+	if tokenStr == "" {
+		return nil, false
+	}
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, jwt.ErrTokenUnverifiable
+		}
+		return pubKey, nil
+	})
+	if err != nil || !token.Valid {
+		return nil, false
+	}
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return nil, false
+	}
+	return claims, true
 }
 
 func GetClaims(r *http.Request) *Claims {

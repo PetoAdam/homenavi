@@ -16,8 +16,10 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { getWeather } from '../../../../services/dashboardService';
+import { isPublicDemoModeEnabled } from '../../../../utils/demoMode';
 import WidgetShell from '../../../common/WidgetShell/WidgetShell';
 import WeatherDetailView from '../WeatherDetailView';
+import { DEMO_WEATHER_CITY, DEMO_WEATHER_LOCATION_NAME, getDemoWeatherPayload } from './demoWeatherData';
 import './WeatherWidget.css';
 
 // Icon mapping from backend icon strings
@@ -65,6 +67,7 @@ function WeatherWidget({
   onRemove,
 }) {
   const { accessToken } = useAuth();
+  const demoModeEnabled = isPublicDemoModeEnabled();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -80,15 +83,15 @@ function WeatherWidget({
   const [canScrollRight, setCanScrollRight] = useState(false);
 
   // Extract location from settings
-  const lat = settings.lat;
-  const lon = settings.lon;
-  const city = settings.city || settings.location || '';
-  const locationName = settings.location_name;
+  const lat = demoModeEnabled ? undefined : settings.lat;
+  const lon = demoModeEnabled ? undefined : settings.lon;
+  const city = demoModeEnabled ? DEMO_WEATHER_CITY : (settings.city || settings.location || '');
+  const locationName = demoModeEnabled ? DEMO_WEATHER_LOCATION_NAME : settings.location_name;
 
   const unit = (settings.unit || 'c').toString().toLowerCase() === 'f' ? 'f' : 'c';
   const unitSuffix = unit === 'f' ? '°F' : '°C';
 
-  const hasLocation =
+  const hasLocation = demoModeEnabled ||
     (Number.isFinite(Number(lat)) && Number.isFinite(Number(lon))) ||
     (typeof city === 'string' && city.trim().length > 0);
 
@@ -105,6 +108,14 @@ function WeatherWidget({
 
     const fetchData = async () => {
       if (!accessToken) return;
+
+      if (demoModeEnabled) {
+        setData(getDemoWeatherPayload());
+        setError(null);
+        setStatus(null);
+        setLoading(false);
+        return;
+      }
 
       if (!hasLocation) {
         setData(null);
@@ -150,7 +161,7 @@ function WeatherWidget({
     return () => {
       cancelled = true;
     };
-  }, [accessToken, hasLocation, lat, lon, city]);
+  }, [accessToken, city, demoModeEnabled, hasLocation, lat, lon]);
 
   // Drag-to-scroll logic
   const handleMouseDown = useCallback((e) => {
@@ -223,10 +234,10 @@ function WeatherWidget({
       error={error}
       status={status}
       editMode={editMode}
-      onSettings={onSettings}
+      onSettings={demoModeEnabled ? undefined : onSettings}
       onRemove={onRemove}
       onClick={() => {
-        if (editMode) return;
+        if (editMode || demoModeEnabled) return;
         setDetailOpen(true);
       }}
     >
@@ -374,7 +385,7 @@ function WeatherWidget({
         )}
       </div>
 
-      {detailOpen && createPortal(
+      {detailOpen && !demoModeEnabled && createPortal(
         <WeatherDetailView
           instanceId={instanceId}
           initialSettings={settings}

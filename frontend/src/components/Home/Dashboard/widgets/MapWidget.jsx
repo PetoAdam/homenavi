@@ -357,21 +357,22 @@ export default function MapWidget({
                   ? (device.state.on ? 'On' : 'Off')
                   : (isOnline ? '' : 'Offline');
 
-        const stateObj = device?.state && typeof device.state === 'object' ? device.state : null;
-        const favorites = device ? readFavoriteFieldsFromErsMeta(device) : [];
-        const allCaps = [
-          ...(Array.isArray(device?.capabilities) ? device.capabilities : []),
-          ...(Array.isArray(device?.state?.capabilities) ? device.state.capabilities : []),
-        ];
-        const favoriteLines = favorites
-          .map((favoriteKey) => {
-            const raw = favoriteKey && stateObj ? pickStateValue(stateObj, favoriteKey) : undefined;
-            const { valueText, unit } = formatMetricValueAndUnitForKey(favoriteKey, raw, allCaps);
-            const text = valueText ? `${valueText}${unit || ''}` : '';
-            return text ? { key: favoriteKey, text } : null;
-          })
-          .filter(Boolean)
-          .slice(0, 2);
+                const stateObj = device?.state && typeof device.state === 'object' ? device.state : null;
+                const favorites = device ? readFavoriteFieldsFromErsMeta(device) : [];
+                const allCaps = [
+                  ...(Array.isArray(device?.capabilities) ? device.capabilities : []),
+                  ...(Array.isArray(device?.state?.capabilities) ? device.state.capabilities : []),
+                ];
+                const favoriteLines = favorites
+                  .map((favoriteKey) => {
+                    const raw = favoriteKey && stateObj ? pickStateValue(stateObj, favoriteKey) : undefined;
+                    const { valueText, unit } = formatMetricValueAndUnitForKey(favoriteKey, raw, allCaps);
+                    const text = valueText ? `${valueText}${unit || ''}` : '';
+                    return text ? { key: favoriteKey, text } : null;
+                  })
+                  .filter(Boolean)
+                  .slice(0, 2);
+                const stateIsFavorite = deviceState && favorites.includes('on');
                 return (
                   <g key={key}>
                     <circle
@@ -391,7 +392,7 @@ export default function MapWidget({
                       >
                         <tspan x={x}>
                           {deviceName}
-                          {deviceState ? ` · ${deviceState}` : ''}
+                          {deviceState && !stateIsFavorite ? ` · ${deviceState}` : ''}
                         </tspan>
                         {favoriteLines.map((line, idx) => (
                           <tspan

@@ -46,6 +46,7 @@ import {
   integrationsAdminOperationsReducer,
 } from '../../features/integrations/reducers/integrationsAdminOperationsReducer';
 import { queryKeys } from '../../state/queryKeys';
+import { PUBLIC_DEMO_BLOCKED_MESSAGE, isPublicDemoModeEnabled } from '../../utils/demoMode';
 import { hasSetupUiPath, setupRouteForIntegration } from '../../utils/integrationSetup';
 import '../Auth/AuthModal/AuthModal.css';
 import './IntegrationsAdmin.css';
@@ -74,6 +75,7 @@ export default function IntegrationsAdmin() {
   const [marketplaceFilter, setMarketplaceFilter] = useState('all');
   const [marketplaceSort, setMarketplaceSort] = useState('trending');
   const [setupCapabilities, setSetupCapabilities] = useState({});
+  const demoModeEnabled = isPublicDemoModeEnabled();
 
   const {
     activeTab,
@@ -116,6 +118,9 @@ export default function IntegrationsAdmin() {
   }, []);
 
   const isAdmin = user?.role === 'admin';
+  const isResident = user?.role === 'resident';
+  const canView = isAdmin || (demoModeEnabled && isResident);
+  const viewOnlyMode = !isAdmin;
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -128,11 +133,11 @@ export default function IntegrationsAdmin() {
 
   const registryQuery = useIntegrationRegistryQuery(
     { q: debouncedQuery, page, pageSize },
-    { enabled: Boolean(accessToken && isAdmin) }
+    { enabled: Boolean(accessToken && canView) }
   );
 
   const marketplaceDataQuery = useIntegrationMarketplaceQuery({
-    enabled: Boolean(accessToken && isAdmin),
+    enabled: Boolean(accessToken && canView),
   });
   const {
     reloadMutation,
@@ -226,6 +231,10 @@ export default function IntegrationsAdmin() {
   }, [mergedIntegrations, marketplaceIntegrations]);
 
   useEffect(() => {
+    if (viewOnlyMode) {
+      setSetupCapabilities({});
+      return () => {};
+    }
     let cancelled = false;
     const ids = (integrations || []).map((integration) => integration.id).filter(Boolean);
     if (!ids.length) {
@@ -250,7 +259,7 @@ export default function IntegrationsAdmin() {
     return () => {
       cancelled = true;
     };
-  }, [integrations]);
+  }, [integrations, viewOnlyMode]);
 
   const getMarketplaceName = (entry) => entry?.name || entry?.display_name || entry?.id || 'Integration';
   const getMarketplacePublisher = (entry) => entry?.publisher || 'Community';
@@ -352,6 +361,10 @@ export default function IntegrationsAdmin() {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('homenavi:integrations-updated'));
     }
+  }, []);
+
+  const handleDemoBlocked = useCallback((message = PUBLIC_DEMO_BLOCKED_MESSAGE) => {
+    setToast(message);
   }, []);
 
   const refreshRegistryWithRetry = async (maxAttempts = 6, delayMs = 700, allowEmpty = false) => {
@@ -773,11 +786,11 @@ export default function IntegrationsAdmin() {
 
   const displayError = error || registryError;
 
-  if (!isAdmin) {
+  if (!canView) {
     return (
       <UnauthorizedView
-        title="Admin"
-        message="You need admin access to manage integrations."
+        title="Integrations"
+        message="Sign in with the demo resident or an admin account to view integrations."
         className="integrations-admin-page"
       />
     );
@@ -809,6 +822,9 @@ export default function IntegrationsAdmin() {
       setupCapable={hasSetupUiPath(selectedIntegration)}
       onOpenSetup={() => handleOpenSetup(selectedIntegration)}
       resolveFaIcon={resolveFaIcon}
+      demoModeEnabled={demoModeEnabled}
+      onDemoBlocked={handleDemoBlocked}
+      viewOnlyMode={viewOnlyMode}
     />
   ) : null;
 
@@ -825,6 +841,9 @@ export default function IntegrationsAdmin() {
       getMarketplacePublisher={getMarketplacePublisher}
       getMarketplaceVersion={getMarketplaceVersion}
       formatDownloads={formatDownloads}
+      demoModeEnabled={demoModeEnabled}
+      onDemoBlocked={handleDemoBlocked}
+      viewOnlyMode={viewOnlyMode}
     />
   ) : null;
 
@@ -835,7 +854,7 @@ export default function IntegrationsAdmin() {
     <div className="integrations-admin-page">
       <PageHeader
         title="Integrations Admin"
-        subtitle="Manage integrations and prepare for the marketplace."
+        subtitle={viewOnlyMode ? 'Browse installed and marketplace integrations in demo-safe view.' : 'Manage integrations and prepare for the marketplace.'}
       />
 
       <div className="integrations-admin-topnav">
@@ -887,6 +906,9 @@ export default function IntegrationsAdmin() {
           setupCapabilities={setupCapabilities}
           onOpenSetup={handleOpenSetup}
           resolveFaIcon={resolveFaIcon}
+          demoModeEnabled={demoModeEnabled}
+          onDemoBlocked={handleDemoBlocked}
+          viewOnlyMode={viewOnlyMode}
         />
       ) : (
         <MarketplaceSection
@@ -914,6 +936,9 @@ export default function IntegrationsAdmin() {
           getMarketplacePublisher={getMarketplacePublisher}
           getMarketplaceVersion={getMarketplaceVersion}
           formatDownloads={formatDownloads}
+          demoModeEnabled={demoModeEnabled}
+          onDemoBlocked={handleDemoBlocked}
+          viewOnlyMode={viewOnlyMode}
         />
       )}
 

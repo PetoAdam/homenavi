@@ -16,6 +16,7 @@ import Toolbar from '../../common/Toolbar/Toolbar';
 import Button from '../../common/Button/Button';
 import RoleSelect from '../../common/RoleSelect/RoleSelect';
 import SearchBar from '../../common/SearchBar/SearchBar';
+import { blockPublicDemoAction } from '../../../utils/demoMode';
 import { hasSetupUiPath } from '../../../utils/integrationSetup';
 import IntegrationCard, { IntegrationCardHeader } from '../../common/IntegrationCard/IntegrationCard';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
@@ -49,7 +50,17 @@ export default function InstalledIntegrationsSection({
   installStatus,
   onOpenSetup,
   resolveFaIcon,
+  demoModeEnabled = false,
+  onDemoBlocked,
+  viewOnlyMode = false,
 }) {
+  const handleDemoMutation = (event, action) => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, event, onBlocked: onDemoBlocked })) {
+      return;
+    }
+    action();
+  };
+
   return (
     <GlassCard className="integrations-admin-card integrations-admin-card--stack" interactive={false}>
       <div className="integrations-admin-card-header">
@@ -58,7 +69,7 @@ export default function InstalledIntegrationsSection({
             <FontAwesomeIcon icon={faPuzzlePiece} />
             <span>Installed integrations</span>
           </div>
-          <div className="integrations-admin-section-sub">Manage secrets, status, and lifecycle.</div>
+          <div className="integrations-admin-section-sub">{viewOnlyMode ? 'Browse installed integrations and open their runtime pages.' : 'Manage secrets, status, and lifecycle.'}</div>
         </div>
         <Toolbar
           className="integrations-admin-toolbar hn-toolbar--inline"
@@ -173,7 +184,7 @@ export default function InstalledIntegrationsSection({
                     <div className="integrations-admin-card-actions-main">
                       <Button
                         className="integration-card-action-btn integrations-admin-action-primary"
-                        onClick={() => onUpdateIntegration(integration.id)}
+                        onClick={(event) => handleDemoMutation(event, () => onUpdateIntegration(integration.id))}
                         disabled={!updateAvailable || updateBusy}
                       >
                         <span className="btn-icon"><FontAwesomeIcon icon={faDownload} /></span>
@@ -187,7 +198,7 @@ export default function InstalledIntegrationsSection({
                         <span className="btn-icon"><FontAwesomeIcon icon={faCubes} /></span>
                         <span className="btn-label">Manage</span>
                       </Button>
-                      {setupCapable ? (
+                      {setupCapable && !viewOnlyMode ? (
                         <Button
                           variant="secondary"
                           className="integration-card-action-btn"
@@ -202,21 +213,23 @@ export default function InstalledIntegrationsSection({
                       <Button
                         variant="ghost"
                         className="integration-card-action-btn"
-                        onClick={() => onRestartIntegration(integration.id)}
+                        onClick={(event) => handleDemoMutation(event, () => onRestartIntegration(integration.id))}
                         disabled={restartBusy}
                       >
                         <span className="btn-icon"><FontAwesomeIcon icon={faArrowsRotate} /></span>
                         <span className="btn-label">{restartBusy ? 'Restarting…' : 'Restart'}</span>
                       </Button>
-                      <Button
-                        variant="ghost"
-                        className="integration-card-action-btn integrations-admin-action-danger"
-                        onClick={() => onUninstallIntegration(integration.id)}
-                        disabled={uninstalling[integration.id]}
-                      >
-                        <span className="btn-icon"><FontAwesomeIcon icon={faPlug} /></span>
-                        <span className="btn-label">{uninstalling[integration.id] ? 'Removing…' : 'Remove'}</span>
-                      </Button>
+                      {!viewOnlyMode ? (
+                        <Button
+                          variant="ghost"
+                          className="integration-card-action-btn integrations-admin-action-danger"
+                          onClick={(event) => handleDemoMutation(event, () => onUninstallIntegration(integration.id))}
+                          disabled={uninstalling[integration.id]}
+                        >
+                          <span className="btn-icon"><FontAwesomeIcon icon={faPlug} /></span>
+                          <span className="btn-label">{uninstalling[integration.id] ? 'Removing…' : 'Remove'}</span>
+                        </Button>
+                      ) : null}
                     </div>
                     <div className="integrations-admin-autoupdate-toggle integrations-admin-autoupdate-toggle--card" onClick={(e) => e.stopPropagation()}>
                       <GlassSwitch

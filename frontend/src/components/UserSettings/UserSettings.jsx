@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { 
   requestEmailVerify, 
@@ -10,6 +10,8 @@ import {
   generateAvatar,
   uploadProfilePicture
 } from '../../services/authService';
+import Snackbar from '../common/Snackbar/Snackbar';
+import { blockPublicDemoAction, isPublicDemoModeEnabled } from '../../utils/demoMode';
 import './UserSettings.css';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
 import BaseModal from '../common/BaseModal/BaseModal';
@@ -18,6 +20,7 @@ import { userSettingsInitialState, userSettingsReducer } from './userSettingsRed
 export default function UserSettings({ onClose }) {
   const { user, accessToken, handleLogout, refreshUser } = useAuth();
   const [state, dispatch] = useReducer(userSettingsReducer, user, userSettingsInitialState);
+  const [demoToast, setDemoToast] = useState('');
   const {
     emailVerified,
     twoFAEnabled,
@@ -33,6 +36,7 @@ export default function UserSettings({ onClose }) {
     showProfilePictureModal,
     profilePictureFile,
   } = state;
+  const demoModeEnabled = isPublicDemoModeEnabled();
 
   const setStateField = (key, value) => dispatch({ type: 'set-field', key, value });
 
@@ -77,6 +81,7 @@ export default function UserSettings({ onClose }) {
 
   const handle2FASetup = async () => {
     if (!user?.id) return;
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, onBlocked: setDemoToast })) return;
     setStateField('status', 'Setting up 2FA...');
     const resp = await request2FAEmail(user.id, accessToken);
     if (resp.success) {
@@ -89,6 +94,7 @@ export default function UserSettings({ onClose }) {
 
   const handle2FAVerify = async () => {
     if (!user?.id || !twoFACode.trim()) return;
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, onBlocked: setDemoToast })) return;
     setStateField('status', 'Verifying 2FA...');
     const resp = await verify2FAEmail(user.id, twoFACode.trim(), accessToken);
     if (resp.success) {
@@ -138,6 +144,7 @@ export default function UserSettings({ onClose }) {
       setStateField('status', '❌ New password must be at least 8 characters');
       return;
     }
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, onBlocked: setDemoToast })) return;
     setStateField('status', 'Updating password...');
     console.log('Attempting password change...');
     const resp = await changePassword(passwordForm.currentPassword, passwordForm.newPassword, accessToken);
@@ -199,16 +206,17 @@ export default function UserSettings({ onClose }) {
   };
 
   return (
-    <BaseModal
-      open
-      onClose={onClose}
-      dialogClassName="user-settings"
-      closeAriaLabel="Close account settings"
-    >
+    <>
+      <BaseModal
+        open
+        onClose={onClose}
+        dialogClassName="user-settings"
+        closeAriaLabel="Close account settings"
+      >
       <div className="user-settings-header">
         <h2>Account Settings</h2>
       </div>
-      
+
       <div className="user-settings-content-outer">
         <div className="user-settings-content">
           {/* Profile Card */}
@@ -443,55 +451,57 @@ export default function UserSettings({ onClose }) {
       </div>
       
       {/* Profile Picture Modal */}
-      {showProfilePictureModal && (
-        <div className="profile-picture-modal">
-          <div className="profile-picture-modal-content">
-              <h3>Change Profile Picture</h3>
-              
-              <div className="profile-picture-options">
-                <div className="profile-picture-option">
-                  <button onClick={handleGenerateAvatar} className="secondary">
-                    🎨 Generate Pixel Avatar
-                  </button>
-                  <p>Create a unique pixel art avatar</p>
-                </div>
+        {showProfilePictureModal && (
+          <div className="profile-picture-modal">
+            <div className="profile-picture-modal-content">
+                <h3>Change Profile Picture</h3>
                 
-                <div className="profile-picture-divider">or</div>
-                
-                <div className="profile-picture-option">
-                  <input
-                    type="file"
-                    id="profile-picture-upload"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    style={{ display: 'none' }}
-                  />
-                  <label htmlFor="profile-picture-upload" className="upload-label">
-                    📁 Choose Image
-                  </label>
-                  {profilePictureFile && (
-                    <div className="file-selected">
-                      <span>Selected: {profilePictureFile.name}</span>
-                      <button onClick={handleFileUpload}>Upload</button>
-                    </div>
-                  )}
-                  <p>Upload your own image (max 5MB)</p>
+                <div className="profile-picture-options">
+                  <div className="profile-picture-option">
+                    <button onClick={handleGenerateAvatar} className="secondary">
+                      🎨 Generate Pixel Avatar
+                    </button>
+                    <p>Create a unique pixel art avatar</p>
+                  </div>
+
+                  <div className="profile-picture-divider">or</div>
+
+                  <div className="profile-picture-option">
+                    <input
+                      type="file"
+                      id="profile-picture-upload"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      style={{ display: 'none' }}
+                    />
+                    <label htmlFor="profile-picture-upload" className="upload-label">
+                      📁 Choose Image
+                    </label>
+                    {profilePictureFile && (
+                      <div className="file-selected">
+                        <span>Selected: {profilePictureFile.name}</span>
+                        <button onClick={handleFileUpload}>Upload</button>
+                      </div>
+                    )}
+                    <p>Upload your own image (max 5MB)</p>
+                  </div>
                 </div>
-              </div>
-              
-              <button 
-                onClick={() => {
-                  setStateField('showProfilePictureModal', false);
-                  setStateField('profilePictureFile', null);
-                  setStateField('status', '');
-                }} 
-                className="secondary"
-              >
-                Cancel
-              </button>
+
+                <button
+                  onClick={() => {
+                    setStateField('showProfilePictureModal', false);
+                    setStateField('profilePictureFile', null);
+                    setStateField('status', '');
+                  }}
+                  className="secondary"
+                >
+                  Cancel
+                </button>
+            </div>
           </div>
-        </div>
-      )}
-    </BaseModal>
+        )}
+      </BaseModal>
+      <Snackbar message={demoToast} onClose={() => setDemoToast('')} />
+    </>
   );
 }

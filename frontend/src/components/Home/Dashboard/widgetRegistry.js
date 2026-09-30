@@ -1,3 +1,4 @@
+import DemoOverviewWidget from './widgets/DemoOverviewWidget';
 import WeatherWidget from './widgets/WeatherWidget';
 import DeviceWidget from './widgets/DeviceWidget';
 import DeviceGraphWidget from './widgets/DeviceGraphWidget';
@@ -15,6 +16,15 @@ export function clampWidgetHeight(h) {
 // Temporary local catalog for first-party widgets.
 // Later, this should be replaced/augmented by GET /api/widgets/catalog.
 const LOCAL_WIDGET_CATALOG = [
+  {
+    id: 'homenavi.demo.overview',
+    display_name: 'Welcome',
+    description: 'Quick orientation for a fresh Homenavi dashboard.',
+    default_height: 4,
+    preferred_span_by_cols: { '4': 2, '3': 2, '2': 2, '1': 1 },
+    source: 'first_party',
+    verified: true,
+  },
   {
     id: 'homenavi.weather',
     display_name: 'Weather',
@@ -65,7 +75,7 @@ const LOCAL_WIDGET_CATALOG = [
     display_name: 'Group Controls',
     description: 'Toggle grouped devices together.',
     default_height: 4,
-    preferred_span_by_cols: { '4': 2, '3': 2, '2': 2, '1': 1 },
+    preferred_span_by_cols: { '4': 1, '3': 1, '2': 1, '1': 1 },
     source: 'first_party',
     verified: true,
   },
@@ -81,6 +91,7 @@ const LOCAL_WIDGET_CATALOG = [
 ];
 
 const WIDGET_RENDERERS = {
+  'homenavi.demo.overview': DemoOverviewWidget,
   'homenavi.weather': WeatherWidget,
   'homenavi.device': DeviceWidget,
   'homenavi.device.graph': DeviceGraphWidget,
@@ -140,7 +151,7 @@ export function getWidgetPreferredWidth(widgetType, catalog, columnMode) {
   }
 
   const cols = Number.parseInt(String(columnMode), 10);
-  if (widgetType === 'homenavi.weather' || widgetType === 'homenavi.map' || widgetType === 'homenavi.device.graph' || widgetType === 'homenavi.group.controls') {
+  if (widgetType === 'homenavi.weather' || widgetType === 'homenavi.map' || widgetType === 'homenavi.device.graph') {
     return Number.isFinite(cols) && cols >= 2 ? 2 : 1;
   }
 

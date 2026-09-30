@@ -41,6 +41,7 @@ type CreateInput struct {
 	Password          string
 	FirstName         string
 	LastName          string
+	Role              string
 	GoogleID          *string
 	ProfilePictureURL *string
 }

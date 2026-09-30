@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
+	demohttp "github.com/PetoAdam/homenavi/auth-service/internal/http/demo"
 	cacheinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/cache"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/golang-jwt/jwt/v5"
@@ -89,12 +90,17 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) IssueAccessToken(user *clientsinfra.User) (string, error) {
+	return s.issueAccessToken(user, demohttp.IsDemoUser(user))
+}
+
+func (s *Service) issueAccessToken(user *clientsinfra.User, isDemo bool) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":  user.ID,
 		"exp":  time.Now().Add(s.config.AccessTokenTTL).Unix(),
 		"iat":  time.Now().Unix(),
 		"role": user.Role,
 		"name": user.FirstName + " " + user.LastName,
+		"demo": isDemo,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -102,6 +108,10 @@ func (s *Service) IssueAccessToken(user *clientsinfra.User) (string, error) {
 }
 
 func (s *Service) IssueRefreshToken(userID string) (string, error) {
+	return s.issueRefreshToken(userID, false)
+}
+
+func (s *Service) issueRefreshToken(userID string, isDemo bool) (string, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return "", fmt.Errorf("failed to generate random token: %v", err)
@@ -111,6 +121,12 @@ func (s *Service) IssueRefreshToken(userID string) (string, error) {
 	ctx := context.Background()
 	if err := s.cacheStore.Set(ctx, "refresh_token:"+tokenID, userID, s.config.RefreshTokenTTL); err != nil {
 		return "", err
+	}
+	if isDemo {
+		if err := s.cacheStore.Set(ctx, demoRefreshTokenKey(tokenID), "1", s.config.RefreshTokenTTL); err != nil {
+			_ = s.cacheStore.Delete(ctx, "refresh_token:"+tokenID)
+			return "", err
+		}
 	}
 	return tokenID, nil
 }
@@ -194,7 +210,7 @@ func (s *Service) ClearCodeFailures(userID, codeType string) {
 
 func (s *Service) RevokeRefreshToken(token string) error {
 	ctx := context.Background()
-	return s.cacheStore.Delete(ctx, "refresh_token:"+token)
+	return s.cacheStore.Delete(ctx, "refresh_token:"+token, demoRefreshTokenKey(token))
 }
 
 func (s *Service) StoreVerificationCode(codeType, userID, code string) error {
@@ -321,12 +337,13 @@ func (s *Service) GetGoogleAuthURL(state string) string {
 }
 
 func (s *Service) IssueTokenPair(user *clientsinfra.User) (*TokenPair, error) {
-	accessToken, err := s.IssueAccessToken(user)
+	isDemo := demohttp.IsDemoUser(user)
+	accessToken, err := s.issueAccessToken(user, isDemo)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to issue access token", err)
 	}
 
-	refreshToken, err := s.IssueRefreshToken(user.ID)
+	refreshToken, err := s.issueRefreshToken(user.ID, isDemo)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to issue refresh token", err)
 	}
@@ -440,6 +457,7 @@ func (s *Service) RefreshSession(refreshToken string, users UserProvider) (*Toke
 	if err != nil {
 		return nil, errors.Unauthorized("invalid or expired refresh token")
 	}
+	isDemo := s.isDemoRefreshToken(refreshToken)
 
 	_ = s.RevokeRefreshToken(refreshToken)
 
@@ -451,7 +469,30 @@ func (s *Service) RefreshSession(refreshToken string, users UserProvider) (*Toke
 		return nil, errors.NewAppError(423, "account locked", nil).WithField("reason", ReasonAdminLock)
 	}
 
-	return s.IssueTokenPair(user)
+	accessToken, err := s.issueAccessToken(user, isDemo)
+	if err != nil {
+		return nil, errors.InternalServerError("failed to issue access token", err)
+	}
+
+	newRefreshToken, err := s.issueRefreshToken(user.ID, isDemo)
+	if err != nil {
+		return nil, errors.InternalServerError("failed to issue refresh token", err)
+	}
+
+	return &TokenPair{AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
+}
+
+func (s *Service) isDemoRefreshToken(token string) bool {
+	ctx := context.Background()
+	value, err := s.cacheStore.Get(ctx, demoRefreshTokenKey(token))
+	if err != nil {
+		return false
+	}
+	return value == "1"
+}
+
+func demoRefreshTokenKey(token string) string {
+	return "refresh_token_demo:" + token
 }
 
 func timedLockoutError(message, reason string, ttl int64) *errors.AppError {

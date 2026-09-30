@@ -38,6 +38,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init repository: %w", err)
 	}
+	if cfg.DemoMode {
+		if err := repo.SeedDemoHousehold(context.Background()); err != nil {
+			return nil, fmt.Errorf("seed demo household: %w", err)
+		}
+	}
 	underlyingDB, err := database.DB()
 	if err != nil {
 		return nil, fmt.Errorf("resolve sql database: %w", err)

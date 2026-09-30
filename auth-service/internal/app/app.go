@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	demojanitor "github.com/PetoAdam/homenavi/auth-service/internal/demojanitor"
 	httptransport "github.com/PetoAdam/homenavi/auth-service/internal/http"
 	authhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/auth"
 	emailhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/email"
@@ -28,6 +30,8 @@ type App struct {
 	shutdownObs func()
 	authService *authdomain.Service
 	logger      *slog.Logger
+	janitor     *demojanitor.Janitor
+	janitorTick time.Duration
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
@@ -51,19 +55,21 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		CodeLockoutSeconds:      cfg.CodeLockoutSeconds,
 	}, cacheStore)
 	userClient := clientsinfra.NewUserClient(clientsinfra.UserConfig{BaseURL: cfg.UserServiceURL, JWTPrivateKey: cfg.JWTPrivateKey})
+	dashboardClient := clientsinfra.NewDashboardClient(clientsinfra.DashboardConfig{BaseURL: cfg.DashboardServiceURL, JWTPrivateKey: cfg.JWTPrivateKey})
 	emailClient := clientsinfra.NewEmailClient(cfg.EmailServiceURL)
 	profilePictureClient := clientsinfra.NewProfilePictureClient(cfg.ProfilePictureServiceURL)
 
 	signupHandler := authhandlers.NewSignupHandler(userClient)
+	demoBootstrapHandler := authhandlers.NewDemoBootstrapHandler(authService, userClient)
 	loginHandler := authhandlers.NewLoginHandler(authService, userClient, emailClient)
 	refreshHandler := authhandlers.NewRefreshHandler(authService, userClient)
 	logoutHandler := authhandlers.NewLogoutHandler(authService)
 	passwordResetHandler := passwordhandlers.NewResetHandler(authService, userClient, emailClient)
-	passwordChangeHandler := passwordhandlers.NewChangeHandler(authService, userClient)
+	passwordChangeHandler := passwordhandlers.NewChangeHandler(authService, userClient, cfg.DemoMode)
 	emailVerifyHandler := emailhandlers.NewVerificationHandler(authService, userClient, emailClient)
-	twoFactorSetupHandler := twofactorhandlers.NewSetupHandler(authService, userClient)
-	twoFactorVerifyHandler := twofactorhandlers.NewVerifyHandler(authService, userClient)
-	twoFactorEmailHandler := twofactorhandlers.NewEmailHandler(authService, userClient, emailClient)
+	twoFactorSetupHandler := twofactorhandlers.NewSetupHandler(authService, userClient, cfg.DemoMode)
+	twoFactorVerifyHandler := twofactorhandlers.NewVerifyHandler(authService, userClient, cfg.DemoMode)
+	twoFactorEmailHandler := twofactorhandlers.NewEmailHandler(authService, userClient, emailClient, cfg.DemoMode)
 	profileHandler := profilehandlers.NewProfileHandler(authService, userClient)
 	avatarHandler := profilehandlers.NewAvatarHandler(authService, userClient, profilePictureClient)
 	userDeleteHandler := userhandlers.NewDeleteHandler(authService, userClient)
@@ -76,6 +82,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	router := httptransport.NewRouter(httptransport.Routes{
 		HandleSignup:               signupHandler.HandleSignup,
+		HandleDemoBootstrap:        demoBootstrapHandler.HandleDemoBootstrap,
 		HandleLoginStart:           loginHandler.HandleLoginStart,
 		HandleLoginFinish:          loginHandler.HandleLoginFinish,
 		HandleRefresh:              refreshHandler.HandleRefresh,
@@ -112,17 +119,42 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		HandleGoogleOAuthCallback: googleOAuthHandler.HandleOAuthGoogleCallback,
 	}, promHandler, tracer)
 
+	var janitor *demojanitor.Janitor
+	if cfg.DemoMode {
+		janitor = demojanitor.New(demojanitor.Config{
+			ActivityTTL: cfg.DemoSessionActivityTTL,
+			HardCap:     cfg.DemoUserHardCap,
+			PageSize:    100,
+		}, cacheStore, userClient, dashboardClient, logger)
+	}
+
 	return &App{
 		server:      &http.Server{Addr: ":" + cfg.Port, Handler: router},
 		shutdownObs: shutdownObs,
 		authService: authService,
 		logger:      logger,
+		janitor:     janitor,
+		janitorTick: cfg.DemoCleanupInterval,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
 	defer a.shutdownObs()
 	defer a.authService.Close()
+
+	var janitorWG sync.WaitGroup
+	janitorCtx, stopJanitor := context.WithCancel(context.Background())
+	defer func() {
+		stopJanitor()
+		janitorWG.Wait()
+	}()
+	if a.janitor != nil && a.janitorTick > 0 {
+		janitorWG.Add(1)
+		go func() {
+			defer janitorWG.Done()
+			a.runJanitor(janitorCtx)
+		}()
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -136,6 +168,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		stopJanitor()
 		a.logger.Info("auth service shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -144,6 +177,25 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return nil
 	case err := <-errCh:
+		stopJanitor()
 		return err
+	}
+}
+
+func (a *App) runJanitor(ctx context.Context) {
+	if err := a.janitor.Cleanup(ctx); err != nil {
+		a.logger.Warn("demo janitor cleanup failed", "error", err)
+	}
+	ticker := time.NewTicker(a.janitorTick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.janitor.Cleanup(ctx); err != nil {
+				a.logger.Warn("demo janitor cleanup failed", "error", err)
+			}
+		}
 	}
 }

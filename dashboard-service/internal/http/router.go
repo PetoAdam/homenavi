@@ -31,6 +31,10 @@ func NewRouter(handler *Handler, promHandler http.Handler, tracer oteltrace.Trac
 		api.Route("/dashboard", func(dr chi.Router) {
 			dr.Get("/me", handler.HandleGetMyDashboard)
 			dr.Put("/me", handler.HandlePutMyDashboard)
+			dr.Group(func(service chi.Router) {
+				service.Use(auth.RoleAtLeastMiddleware("service"))
+				service.Delete("/users/{userID}", handler.HandleDeleteUserDashboard)
+			})
 			dr.Group(func(admin chi.Router) {
 				admin.Use(auth.RoleAtLeastMiddleware("admin"))
 				admin.Get("/default", handler.HandleGetDefaultDashboard)

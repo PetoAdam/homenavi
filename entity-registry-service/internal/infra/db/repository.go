@@ -90,8 +90,8 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("add ers_device_bindings.hdp_device_id: %w", err)
 		}
 	}
-	if m.HasTable(&hdpDeviceRecord{}) && !m.HasConstraint(&DeviceBinding{}, "HDPDevice") {
-		_ = m.CreateConstraint(&DeviceBinding{}, "HDPDevice")
+	if err := ensureHDPBindingConstraint(database); err != nil {
+		return err
 	}
 	if !m.HasConstraint(&Device{}, "Room") {
 		_ = m.CreateConstraint(&Device{}, "Room")
@@ -116,6 +116,25 @@ func ensureSchema(database *gorm.DB) error {
 	}
 	if err := backfillERSBindingDeviceIDs(database.WithContext(context.Background())); err != nil {
 		return err
+	}
+	return nil
+}
+
+func ensureHDPBindingConstraint(database *gorm.DB) error {
+	if !database.Migrator().HasTable(&hdpDeviceRecord{}) {
+		return nil
+	}
+	if database.Dialector.Name() != "postgres" {
+		if !database.Migrator().HasConstraint(&DeviceBinding{}, "HDPDevice") {
+			_ = database.Migrator().CreateConstraint(&DeviceBinding{}, "HDPDevice")
+		}
+		return nil
+	}
+	if err := database.Exec(`ALTER TABLE ers_device_bindings DROP CONSTRAINT IF EXISTS fk_ers_device_bindings_hdp_device`).Error; err != nil {
+		return fmt.Errorf("drop ers_device_bindings hdp foreign key: %w", err)
+	}
+	if err := database.Exec(`ALTER TABLE ers_device_bindings ADD CONSTRAINT fk_ers_device_bindings_hdp_device FOREIGN KEY (hdp_device_id) REFERENCES hdp_devices(id) ON UPDATE CASCADE ON DELETE CASCADE`).Error; err != nil {
+		return fmt.Errorf("add ers_device_bindings hdp foreign key: %w", err)
 	}
 	return nil
 }

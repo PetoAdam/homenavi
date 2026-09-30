@@ -12,7 +12,7 @@ import (
 )
 
 func TestMainRouterHealth(t *testing.T) {
-	router := NewMainRouter(gateway.Config{}, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")
+	router := NewMainRouter(gateway.Config{}, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "", nil)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
 
@@ -26,7 +26,7 @@ func TestMainRouterHealth(t *testing.T) {
 }
 
 func TestMainRouterGatewayHealth(t *testing.T) {
-	router := NewMainRouter(gateway.Config{}, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")
+	router := NewMainRouter(gateway.Config{}, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/gateway/health", nil)
 	rr := httptest.NewRecorder()
 
@@ -41,7 +41,7 @@ func TestMainRouterGatewayHealth(t *testing.T) {
 
 func TestMainRouterRoutesEndpoint(t *testing.T) {
 	cfg := gateway.Config{Routes: []gateway.RouteConfig{{Path: "/api/test", Upstream: "http://example.com", Methods: []string{http.MethodGet}, Access: "public"}}}
-	router := NewMainRouter(cfg, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")
+	router := NewMainRouter(cfg, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/gateway/routes", nil)
 	rr := httptest.NewRecorder()
 
@@ -65,7 +65,7 @@ func TestConfiguredPublicRouteProxies(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := gateway.Config{Routes: []gateway.RouteConfig{{Path: "/api/test", Upstream: upstream.URL, Methods: []string{http.MethodGet}, Access: "public"}}}
-	router := NewMainRouter(cfg, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")
+	router := NewMainRouter(cfg, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	rr := httptest.NewRecorder()
 

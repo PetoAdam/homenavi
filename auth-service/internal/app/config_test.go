@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -25,13 +26,15 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("AUTH_SERVICE_PORT", "9000")
 	t.Setenv("REDIS_ADDR", "redis:6380")
 	t.Setenv("USER_SERVICE_URL", "http://user-service:9001")
+	t.Setenv("DASHBOARD_SERVICE_URL", "http://dashboard-service:9002")
 	t.Setenv("LOGIN_MAX_FAILURES", "7")
+	t.Setenv("DEMO_CLEANUP_INTERVAL", "90s")
 
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.Port != "9000" || len(cfg.Redis.Addrs) != 1 || cfg.Redis.Addrs[0] != "redis:6380" || cfg.UserServiceURL != "http://user-service:9001" {
+	if cfg.Port != "9000" || len(cfg.Redis.Addrs) != 1 || cfg.Redis.Addrs[0] != "redis:6380" || cfg.UserServiceURL != "http://user-service:9001" || cfg.DashboardServiceURL != "http://dashboard-service:9002" {
 		t.Fatalf("unexpected config: %#v", cfg)
 	}
 	if cfg.Redis.Mode != "standalone" {
@@ -39,6 +42,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if cfg.LoginMaxFailures != 7 {
 		t.Fatalf("expected login max failures override, got %d", cfg.LoginMaxFailures)
+	}
+	if cfg.DemoCleanupInterval != 90*time.Second {
+		t.Fatalf("expected demo cleanup interval override, got %s", cfg.DemoCleanupInterval)
 	}
 	if cfg.JWTPrivateKey == nil {
 		t.Fatal("expected jwt private key to be loaded")

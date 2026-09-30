@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { login, finish2FA, signup, refreshToken, logout, getMe, request2FAEmail } from '../services/authService';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { login, finish2FA, signup, bootstrapDemoSession, refreshToken, logout, getMe, request2FAEmail } from '../services/authService';
 import { setAuthCookie, clearAuthCookie } from '../services/authCookie';
 import { setAccessToken as setHttpAccessToken } from '../services/httpClient';
+import { isPublicDemoModeEnabled } from '../utils/demoMode';
 
 const AuthContext = createContext();
 
@@ -12,6 +13,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [pendingUserId, setPendingUserId] = useState(null); // Store userId during 2FA flow
+  const demoBootstrapStartedRef = useRef(false);
+
+  const persistSession = (nextAccessToken, nextRefreshToken) => {
+    setAccessToken(nextAccessToken);
+    setRefreshTokenValue(nextRefreshToken);
+    localStorage.setItem('refreshToken', nextRefreshToken);
+    setAuthCookie(nextAccessToken);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -56,12 +65,7 @@ export function AuthProvider({ children }) {
     
     if (accessTokenFromUrl && refreshTokenFromUrl) {
       // Handle successful Google OAuth callback
-      setAccessToken(accessTokenFromUrl);
-      setRefreshTokenValue(refreshTokenFromUrl);
-      localStorage.setItem('refreshToken', refreshTokenFromUrl);
-
-      // Ensure cookie is set for api-gateway (and websocket) auth
-      setAuthCookie(accessTokenFromUrl);
+      persistSession(accessTokenFromUrl, refreshTokenFromUrl);
       
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -121,11 +125,7 @@ export function AuthProvider({ children }) {
       (async () => {
         const res = await refreshToken(refreshTokenValue);
         if (res.success) {
-          setAccessToken(res.accessToken);
-          setRefreshTokenValue(res.refreshToken);
-          localStorage.setItem('refreshToken', res.refreshToken);
-
-          setAuthCookie(res.accessToken);
+          persistSession(res.accessToken, res.refreshToken);
         } else {
           setAccessToken(null);
           setRefreshTokenValue(null);
@@ -135,6 +135,21 @@ export function AuthProvider({ children }) {
 
           setBootstrapping(false);
         }
+      })();
+      return;
+    }
+
+    if (!accessToken && !refreshTokenValue && isPublicDemoModeEnabled() && !demoBootstrapStartedRef.current) {
+      demoBootstrapStartedRef.current = true;
+      (async () => {
+        const res = await bootstrapDemoSession();
+        if (res.success) {
+          persistSession(res.accessToken, res.refreshToken);
+          return;
+        }
+
+        clearAuthCookie();
+        setBootstrapping(false);
       })();
       return;
     }
@@ -150,11 +165,7 @@ export function AuthProvider({ children }) {
     const interval = setInterval(async () => {
       const res = await refreshToken(refreshTokenValue);
       if (res.success) {
-        setAccessToken(res.accessToken);
-        setRefreshTokenValue(res.refreshToken);
-        localStorage.setItem('refreshToken', res.refreshToken);
-
-        setAuthCookie(res.accessToken);
+        persistSession(res.accessToken, res.refreshToken);
       }
     }, 13 * 60 * 1000); // every 13 min
     return () => clearInterval(interval);
@@ -173,11 +184,7 @@ export function AuthProvider({ children }) {
     
     // Handle successful login
     if (resp.success && resp.accessToken) {
-      setAccessToken(resp.accessToken);
-      setRefreshTokenValue(resp.refreshToken);
-      localStorage.setItem('refreshToken', resp.refreshToken);
-
-      setAuthCookie(resp.accessToken);
+      persistSession(resp.accessToken, resp.refreshToken);
       
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
@@ -205,11 +212,7 @@ export function AuthProvider({ children }) {
     setLoading(false);
     
     if (resp.success && resp.accessToken) {
-      setAccessToken(resp.accessToken);
-      setRefreshTokenValue(resp.refreshToken);
-      localStorage.setItem('refreshToken', resp.refreshToken);
-
-      setAuthCookie(resp.accessToken);
+      persistSession(resp.accessToken, resp.refreshToken);
       
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login

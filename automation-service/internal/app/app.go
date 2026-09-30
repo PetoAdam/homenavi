@@ -41,6 +41,15 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init repository: %w", err)
 	}
+	if cfg.DemoMode {
+		workflows, err := demoWorkflows()
+		if err != nil {
+			return nil, fmt.Errorf("build demo workflows: %w", err)
+		}
+		if err := repo.SeedDemoWorkflows(context.Background(), workflows); err != nil {
+			return nil, fmt.Errorf("seed demo workflows: %w", err)
+		}
+	}
 
 	mqttClient, err := mqttinfra.Connect(cfg.MQTT)
 	if err != nil {

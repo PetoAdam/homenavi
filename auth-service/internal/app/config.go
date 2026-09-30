@@ -15,6 +15,7 @@ type Config struct {
 	Port                     string
 	Redis                    redisx.Config
 	UserServiceURL           string
+	DashboardServiceURL      string
 	EmailServiceURL          string
 	ProfilePictureServiceURL string
 	JWTPrivateKey            *rsa.PrivateKey
@@ -30,6 +31,10 @@ type Config struct {
 	LoginLockoutSeconds      int
 	CodeMaxFailures          int
 	CodeLockoutSeconds       int
+	DemoMode                 bool
+	DemoCleanupInterval      time.Duration
+	DemoSessionActivityTTL   time.Duration
+	DemoUserHardCap          int
 }
 
 func LoadConfig() (Config, error) {
@@ -53,6 +58,7 @@ func LoadConfig() (Config, error) {
 		Port:                     envx.String("AUTH_SERVICE_PORT", "8000"),
 		Redis:                    redisConfig,
 		UserServiceURL:           envx.String("USER_SERVICE_URL", "http://user-service:8001"),
+		DashboardServiceURL:      envx.String("DASHBOARD_SERVICE_URL", "http://dashboard-service:8097"),
 		EmailServiceURL:          envx.String("EMAIL_SERVICE_URL", "http://email-service:8002"),
 		ProfilePictureServiceURL: envx.String("PROFILE_PICTURE_SERVICE_URL", "http://profile-picture-service:8003"),
 		JWTPrivateKey:            privateKey,
@@ -68,5 +74,9 @@ func LoadConfig() (Config, error) {
 		LoginLockoutSeconds:      envx.Int("LOGIN_LOCKOUT_SECONDS", 900),
 		CodeMaxFailures:          envx.Int("CODE_MAX_FAILURES", 5),
 		CodeLockoutSeconds:       envx.Int("CODE_LOCKOUT_SECONDS", 600),
+		DemoMode:                 envx.Bool("DEMO_MODE", false),
+		DemoCleanupInterval:      envx.Duration("DEMO_CLEANUP_INTERVAL", time.Minute),
+		DemoSessionActivityTTL:   envx.Duration("DEMO_SESSION_ACTIVITY_TTL", 15*time.Minute),
+		DemoUserHardCap:          envx.Int("DEMO_USER_HARD_CAP", 1500),
 	}, nil
 }

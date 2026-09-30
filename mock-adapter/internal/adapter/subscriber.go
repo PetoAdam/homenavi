@@ -2,10 +2,17 @@ package adapter
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
+)
+
+var (
+	errUnsupportedDevice  = errors.New("unsupported mock demo device")
+	errUnsupportedCommand = errors.New("unsupported mock demo command")
+	errInvalidCommand     = errors.New("invalid mock demo command payload")
 )
 
 func (s *Service) handleDeviceCommand(m Message) {
@@ -31,8 +38,48 @@ func (s *Service) handleDeviceCommand(m Message) {
 	if corr == "" {
 		corr = "ack-" + strings.ReplaceAll(external, "/", "-")
 	}
-	s.publishCommandResult(deviceID, corr, false, "rejected", "mock adapter placeholder does not support device commands yet")
-	slog.Info("mock adapter command rejected", "device_id", deviceID, "corr", corr)
+	command := strings.ToLower(strings.TrimSpace(asString(env["command"])))
+	args, _ := env["args"].(map[string]any)
+	statePatch, _ := env["state"].(map[string]any)
+	if command == "" && len(args) > 0 {
+		command = "set_state"
+	}
+	if len(args) == 0 && len(statePatch) > 0 {
+		args = statePatch
+		if command == "" {
+			command = "set_state"
+		}
+	}
+	switch command {
+	case "refresh":
+		if snapshot, ok := s.demoSnapshot(deviceID); ok {
+			s.publishMetadata(snapshot)
+			s.publishState(snapshot.HDPDeviceID, snapshot.State, corr)
+			s.publishCommandResult(snapshot.HDPDeviceID, corr, true, "applied", "")
+			return
+		}
+		s.publishCommandResult(deviceID, corr, false, "rejected", errUnsupportedDevice.Error())
+		return
+	case "set_state":
+		updatedState, err := s.applyDemoStatePatch(deviceID, args)
+		if err != nil {
+			status := "rejected"
+			if errors.Is(err, errInvalidCommand) {
+				status = "failed"
+			}
+			s.publishCommandResult(deviceID, corr, false, status, err.Error())
+			slog.Info("mock adapter command rejected", "device_id", deviceID, "corr", corr, "error", err)
+			return
+		}
+		canonical := s.hdpDeviceID(deviceID)
+		s.publishState(canonical, updatedState, corr)
+		s.publishCommandResult(canonical, corr, true, "applied", "")
+		slog.Info("mock adapter command applied", "device_id", canonical, "corr", corr)
+		return
+	default:
+		s.publishCommandResult(deviceID, corr, false, "rejected", "unsupported mock command")
+		slog.Info("mock adapter command rejected", "device_id", deviceID, "corr", corr, "command", command)
+	}
 }
 
 func (s *Service) handlePairingCommand(m Message) {
@@ -103,4 +150,25 @@ func asString(v any) string {
 		return value
 	}
 	return ""
+}
+
+func (s *Service) demoSnapshot(deviceID string) (demoSnapshot, bool) {
+	canonical := normalizeDemoHDPDeviceID(deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	device, ok := s.devices[canonical]
+	if !ok {
+		return demoSnapshot{}, false
+	}
+	return demoSnapshot{
+		HDPDeviceID:  device.HDPDeviceID,
+		Type:         device.Type,
+		Manufacturer: device.Manufacturer,
+		Model:        device.Model,
+		Description:  device.Description,
+		Icon:         device.Icon,
+		Capabilities: cloneArrayOfMaps(device.Capabilities),
+		Inputs:       cloneArrayOfMaps(device.Inputs),
+		State:        cloneAnyMap(device.State),
+	}, true
 }

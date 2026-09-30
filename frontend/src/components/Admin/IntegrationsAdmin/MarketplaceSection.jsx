@@ -17,6 +17,7 @@ import RoleSelect from '../../common/RoleSelect/RoleSelect';
 import IntegrationCard, { IntegrationCardHeader } from '../../common/IntegrationCard/IntegrationCard';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
 import SearchBar from '../../common/SearchBar/SearchBar';
+import { blockPublicDemoAction } from '../../../utils/demoMode';
 
 export default function MarketplaceSection({
   marketplaceError,
@@ -43,7 +44,17 @@ export default function MarketplaceSection({
   getMarketplacePublisher,
   getMarketplaceVersion,
   formatDownloads,
+  demoModeEnabled = false,
+  onDemoBlocked,
+  viewOnlyMode = false,
 }) {
+  const handleInstallClick = (event, entry) => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, event, onBlocked: onDemoBlocked })) {
+      return;
+    }
+    onInstallIntegration(entry);
+  };
+
   const sortOptions = ['Name', 'Version', 'Downloads', 'Trending'];
   const sortLabel = (() => {
     if (marketplaceSort === 'version') return 'Version';
@@ -200,19 +211,21 @@ export default function MarketplaceSection({
                           </div>
                         </>
                       )}
-                      actions={(
-                        <Button
-                          variant={isInstalled ? 'secondary' : 'primary'}
-                          className="integration-card-action-btn"
-                          onClick={() => onInstallIntegration(entry)}
-                          disabled={isInstalled || installing[entry.id]}
-                        >
-                          <span className="btn-icon"><FontAwesomeIcon icon={faDownload} /></span>
-                          <span className="btn-label">
-                            {isInstalled ? 'Installed' : (installing[entry.id] ? 'Installing…' : 'Install')}
-                          </span>
-                        </Button>
-                      )}
+                      actions={
+                        !viewOnlyMode ? (
+                          <Button
+                            variant={isInstalled ? 'secondary' : 'primary'}
+                            className="integration-card-action-btn"
+                            onClick={(event) => handleInstallClick(event, entry)}
+                            disabled={isInstalled || installing[entry.id]}
+                          >
+                            <span className="btn-icon"><FontAwesomeIcon icon={faDownload} /></span>
+                            <span className="btn-label">
+                              {isInstalled ? 'Installed' : (installing[entry.id] ? 'Installing…' : 'Install')}
+                            </span>
+                          </Button>
+                        ) : null
+                      }
                     />
                   );
                 })}
@@ -268,11 +281,11 @@ export default function MarketplaceSection({
                         </div>
                       </>
                     )}
-                    actions={(
+                    actions={!viewOnlyMode ? (
                       <Button
                         variant={isInstalled ? 'secondary' : 'primary'}
                         className="integration-card-action-btn"
-                        onClick={() => onInstallIntegration(entry)}
+                        onClick={(event) => handleInstallClick(event, entry)}
                         disabled={isInstalled || installing[entry.id]}
                       >
                         <span className="btn-icon"><FontAwesomeIcon icon={faDownload} /></span>
@@ -280,7 +293,7 @@ export default function MarketplaceSection({
                           {isInstalled ? 'Installed' : (installing[entry.id] ? 'Installing…' : 'Install')}
                         </span>
                       </Button>
-                    )}
+                    ) : null}
                     footer={installing[entry.id] ? (
                       <div className="integrations-admin-install-status" onClick={(e) => e.stopPropagation()}>
                         <div className="integrations-admin-install-meta">

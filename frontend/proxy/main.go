@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -18,12 +20,14 @@ func main() {
 	staticRoot := envOrDefault("FRONTEND_STATIC_ROOT", "/app/dist")
 	apiProxy := mustProxy(envOrDefault("API_GATEWAY_URL", "http://api-gateway:8080"))
 	integrationProxy := mustProxy(envOrDefault("INTEGRATION_PROXY_URL", "http://integration-proxy:8099"))
+	runtimeConfig := loadRuntimeConfig()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiProxy)
 	mux.Handle("/integrations/", integrationProxy)
 	mux.Handle("/ws/", apiProxy)
-	mux.HandleFunc("/", spaHandler(staticRoot))
+	mux.HandleFunc("/__homenavi_runtime_config__.js", runtimeConfigHandler(runtimeConfig))
+	mux.HandleFunc("/", spaHandler(staticRoot, runtimeConfig.ScriptPath))
 
 	logger.Printf("serving frontend on %s with static root %s", addr, staticRoot)
 	if err := http.ListenAndServe(addr, logRequests(logger, mux)); err != nil {
@@ -68,7 +72,7 @@ func forwardedProto(r *http.Request) string {
 	return "http"
 }
 
-func spaHandler(root string) http.HandlerFunc {
+func spaHandler(root string, runtimeScriptPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cleanPath := path.Clean("/" + r.URL.Path)
 		resolved := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(cleanPath, "/")))
@@ -80,7 +84,71 @@ func spaHandler(root string) http.HandlerFunc {
 
 		indexPath := filepath.Join(root, "index.html")
 		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeFile(w, r, indexPath)
+		serveIndexWithRuntimeConfig(w, r, indexPath, runtimeScriptPath)
+	}
+}
+
+type runtimeConfig struct {
+	ScriptPath string
+	Payload    map[string]any
+}
+
+func loadRuntimeConfig() runtimeConfig {
+	return runtimeConfig{
+		ScriptPath: "/__homenavi_runtime_config__.js",
+		Payload: map[string]any{
+			"demoMode": parseBoolEnv("VITE_DEMO_MODE"),
+			"VITE_DEMO_MODE": parseBoolEnv("VITE_DEMO_MODE"),
+		},
+	}
+}
+
+func runtimeConfigHandler(cfg runtimeConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		payload, err := json.Marshal(cfg.Payload)
+		if err != nil {
+			http.Error(w, "runtime config unavailable", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write([]byte("window.__HOMENAVI_RUNTIME_CONFIG__ = Object.freeze("))
+		_, _ = w.Write(payload)
+		_, _ = w.Write([]byte(");\n"))
+	}
+}
+
+func serveIndexWithRuntimeConfig(w http.ResponseWriter, r *http.Request, indexPath, runtimeScriptPath string) {
+	indexBytes, err := os.ReadFile(indexPath)
+	if err != nil {
+		http.Error(w, "index not found", http.StatusInternalServerError)
+		return
+	}
+	injected := injectRuntimeScript(indexBytes, runtimeScriptPath)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(injected)
+}
+
+func injectRuntimeScript(indexHTML []byte, runtimeScriptPath string) []byte {
+	needle := []byte("</head>")
+	scriptTag := []byte("<script src=\"" + runtimeScriptPath + "\"></script></head>")
+	if bytes.Contains(indexHTML, []byte(runtimeScriptPath)) {
+		return indexHTML
+	}
+	if bytes.Contains(indexHTML, needle) {
+		return bytes.Replace(indexHTML, needle, scriptTag, 1)
+	}
+	return append([]byte("<script src=\""+runtimeScriptPath+"\"></script>"), indexHTML...)
+}
+
+func parseBoolEnv(key string) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 

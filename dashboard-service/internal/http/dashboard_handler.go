@@ -11,6 +11,7 @@ import (
 	"github.com/PetoAdam/homenavi/dashboard-service/internal/auth"
 	"github.com/PetoAdam/homenavi/dashboard-service/internal/dashboard"
 	"github.com/PetoAdam/homenavi/shared/cachex"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
@@ -19,6 +20,7 @@ type DashboardService interface {
 	Weather(string) dashboard.WeatherResponse
 	GetMyDashboard(context.Context, uuid.UUID) (dashboard.Dashboard, error)
 	PutMyDashboard(context.Context, uuid.UUID, int, json.RawMessage) (dashboard.Dashboard, error)
+	DeleteUserDashboard(context.Context, uuid.UUID) error
 	GetDefaultDashboard(context.Context) (dashboard.Dashboard, error)
 	PutDefaultDashboard(context.Context, string, json.RawMessage) (dashboard.Dashboard, error)
 }
@@ -142,6 +144,20 @@ func (h *Handler) HandlePutMyDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	h.cacheDelete(r.Context(), h.cacheKeyForUserDashboard(userID))
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) HandleDeleteUserDashboard(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(strings.TrimSpace(chi.URLParam(r, "userID")))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+	if err := h.service.DeleteUserDashboard(r.Context(), userID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to delete dashboard")
+		return
+	}
+	h.cacheDelete(r.Context(), h.cacheKeyForUserDashboard(userID))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) HandleGetDefaultDashboard(w http.ResponseWriter, r *http.Request) {

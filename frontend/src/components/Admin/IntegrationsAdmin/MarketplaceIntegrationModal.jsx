@@ -14,6 +14,7 @@ import Button from '../../common/Button/Button';
 import IntegrationIcon from '../../common/IntegrationIcon/IntegrationIcon';
 import GalleryCarousel from '../../common/GalleryCarousel/GalleryCarousel';
 import BaseModal from '../../common/BaseModal/BaseModal';
+import { blockPublicDemoAction } from '../../../utils/demoMode';
 
 export default function MarketplaceIntegrationModal({
   integration,
@@ -27,8 +28,18 @@ export default function MarketplaceIntegrationModal({
   getMarketplacePublisher,
   getMarketplaceVersion,
   formatDownloads,
+  demoModeEnabled = false,
+  onDemoBlocked,
+  viewOnlyMode = false,
 }) {
   if (!integration) return null;
+
+  const handleInstallClick = (event) => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, event, onBlocked: onDemoBlocked })) {
+      return;
+    }
+    onInstallIntegration(integration);
+  };
 
   const iconRaw = integration.assets?.icon || integration.icon || '';
   const fa = resolveFaIcon(iconRaw) || resolveFaIcon(integration.id) || faPlug;
@@ -121,15 +132,19 @@ export default function MarketplaceIntegrationModal({
             ) : null}
             <div className="integrations-admin-modal-section">
               <div className="integrations-admin-card-title">Install</div>
-              <div className="integrations-admin-item-actions">
-                <Button
-                  variant={isInstalled ? 'secondary' : 'primary'}
-                  onClick={() => onInstallIntegration(integration)}
-                  disabled={isInstalled || installing[integration.id]}
-                >
-                  {isInstalled ? 'Installed' : (installing[integration.id] ? 'Installing…' : 'Install')}
-                </Button>
-              </div>
+              {!viewOnlyMode ? (
+                <div className="integrations-admin-item-actions">
+                  <Button
+                    variant={isInstalled ? 'secondary' : 'primary'}
+                    onClick={handleInstallClick}
+                    disabled={isInstalled || installing[integration.id]}
+                  >
+                    {isInstalled ? 'Installed' : (installing[integration.id] ? 'Installing…' : 'Install')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="integrations-admin-empty">Install is disabled for the default demo user.</div>
+              )}
               {installing[integration.id] ? (
                 <div className="integrations-admin-install-status">
                   <div className="integrations-admin-install-meta">

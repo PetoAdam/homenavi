@@ -7,6 +7,7 @@ import (
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
+	demohttp "github.com/PetoAdam/homenavi/auth-service/internal/http/demo"
 	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
 	twofactortransport "github.com/PetoAdam/homenavi/auth-service/internal/http/twofactor/transport"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
@@ -17,12 +18,14 @@ import (
 type SetupHandler struct {
 	authService *authdomain.Service
 	userService *clientsinfra.UserClient
+	demoMode    bool
 }
 
-func NewSetupHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *SetupHandler {
+func NewSetupHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, demoMode bool) *SetupHandler {
 	return &SetupHandler{
 		authService: authService,
 		userService: userService,
+		demoMode:    demoMode,
 	}
 }
 
@@ -37,6 +40,10 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	user, err := h.userService.GetUser(req.UserID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if h.demoMode && demohttp.IsDemoUser(user) {
+		errors.WriteError(w, demohttp.MutationBlockedError())
 		return
 	}
 
@@ -90,12 +97,14 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 type VerifyHandler struct {
 	authService *authdomain.Service
 	userService *clientsinfra.UserClient
+	demoMode    bool
 }
 
-func NewVerifyHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *VerifyHandler {
+func NewVerifyHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, demoMode bool) *VerifyHandler {
 	return &VerifyHandler{
 		authService: authService,
 		userService: userService,
+		demoMode:    demoMode,
 	}
 }
 
@@ -110,6 +119,10 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 	user, err := h.userService.GetUser(req.UserID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if h.demoMode && demohttp.IsDemoUser(user) {
+		errors.WriteError(w, demohttp.MutationBlockedError())
 		return
 	}
 
@@ -166,13 +179,15 @@ type EmailHandler struct {
 	authService  *authdomain.Service
 	userService  *clientsinfra.UserClient
 	emailService *clientsinfra.EmailClient
+	demoMode     bool
 }
 
-func NewEmailHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, emailService *clientsinfra.EmailClient) *EmailHandler {
+func NewEmailHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, emailService *clientsinfra.EmailClient, demoMode bool) *EmailHandler {
 	return &EmailHandler{
 		authService:  authService,
 		userService:  userService,
 		emailService: emailService,
+		demoMode:     demoMode,
 	}
 }
 
@@ -187,6 +202,10 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 	user, err := h.userService.GetUser(req.UserID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if h.demoMode && demohttp.IsDemoUser(user) {
+		errors.WriteError(w, demohttp.MutationBlockedError())
 		return
 	}
 
@@ -220,6 +239,16 @@ func (h *EmailHandler) Handle2FAEmailVerify(w http.ResponseWriter, r *http.Reque
 	var req twofactortransport.TwoFactorEmailVerifyRequest
 	if err := sharedtransport.ParseAndValidateJSON(r, &req); err != nil {
 		errors.WriteError(w, errors.BadRequest(err.Error()))
+		return
+	}
+
+	user, err := h.userService.GetUser(req.UserID)
+	if err != nil {
+		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if h.demoMode && demohttp.IsDemoUser(user) {
+		errors.WriteError(w, demohttp.MutationBlockedError())
 		return
 	}
 

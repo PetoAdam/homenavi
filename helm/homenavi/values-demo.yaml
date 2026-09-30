@@ -1,0 +1,43 @@
+services:
+  frontend:
+    env:
+      VITE_DEMO_MODE: "true"
+
+  entity-registry-service:
+    env:
+      DEMO_MODE: "true"
+
+  api-gateway:
+    env:
+      DEMO_SESSION_ACTIVITY_DEBOUNCE: 60s
+      DEMO_SESSION_ACTIVITY_TTL: 15m
+
+  auth-service:
+    env:
+      DEMO_MODE: "true"
+
+  dashboard-service:
+    env:
+      DEMO_MODE: "true"
+
+  automation-service:
+    env:
+      DEMO_MODE: "true"
+
+  integration-proxy:
+    env:
+      INTEGRATIONS_RUNTIME_MODE: gitops
+
+ingress:
+  enabled: true
+  hosts:
+    - host: demo.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+        - path: /api
+          pathType: Prefix
+          service: api-gateway
+          port: 8080

@@ -31,6 +31,7 @@ import useDeviceHubDevices from '../../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../../hooks/useErsInventory';
 import { listWorkflows } from '../../../services/automationService';
 import { searchLocations, reverseGeocode } from '../../../services/dashboardService';
+import { isPublicDemoModeEnabled } from '../../../utils/demoMode';
 import './WidgetSettingsModal.css';
 import GlassSelect from '../../common/GlassSelect/GlassSelect';
 import { collectDeviceStateFieldKeys } from '../../../utils/deviceFields';
@@ -500,6 +501,7 @@ function DeviceGraphSettings({ settings, updateSetting, ersDevices, ersLoading, 
 // Weather-specific settings with location search and geolocation
 function WeatherSettings({ settings, updateSetting }) {
   const { accessToken } = useAuth();
+  const demoModeEnabled = isPublicDemoModeEnabled();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -507,6 +509,40 @@ function WeatherSettings({ settings, updateSetting }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const searchTimeoutRef = useRef(null);
   const inputRef = useRef(null);
+
+  if (demoModeEnabled) {
+    return (
+      <>
+        <div className="widget-settings__field">
+          <label className="widget-settings__label">
+            Location
+          </label>
+          <div className="widget-settings__location-current">
+            <span>Budapest, Hungary</span>
+          </div>
+          <div className="widget-settings__hint">
+            Public demo weather is pinned to a mocked Budapest forecast.
+          </div>
+        </div>
+
+        <div className="widget-settings__field">
+          <label className="widget-settings__label">
+            Temperature Unit
+          </label>
+          <GlassSelect
+            value={(settings.unit || 'c').toString().toLowerCase() === 'f' ? 'f' : 'c'}
+            options={[
+              { value: 'c', label: 'Celsius (°C)' },
+              { value: 'f', label: 'Fahrenheit (°F)' },
+            ]}
+            placeholder="Select unit"
+            ariaLabel="Temperature unit"
+            onChange={(next) => updateSetting('unit', next)}
+          />
+        </div>
+      </>
+    );
+  }
 
   // Current location display
   const locationDisplay = settings.location_name || 

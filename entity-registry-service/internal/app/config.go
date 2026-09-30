@@ -18,6 +18,7 @@ type Config struct {
 	MQTTSharedGroup string
 	DeviceHubURL    string
 	AutoImport      bool
+	DemoMode        bool
 	DB              dbx.PostgresConfig
 	Redis           redisx.Config
 	ListCacheTTL    time.Duration
@@ -34,11 +35,12 @@ func LoadConfig() (Config, error) {
 		MQTTSharedGroup: envx.String("ENTITY_REGISTRY_MQTT_SHARED_GROUP", ""),
 		DeviceHubURL:    envx.String("DEVICE_HUB_URL", "http://device-hub:8090"),
 		AutoImport:      envx.Bool("ENTITY_REGISTRY_AUTO_IMPORT", true),
+		DemoMode:        envx.Bool("DEMO_MODE", false),
 		DB:              dbx.LoadPostgresConfig(dbx.PostgresConfig{User: "postgres", Password: "postgres", DBName: "homenavi", Host: "postgres", Port: "5432", SSLMode: "disable"}),
 		Redis:           redisConfig,
 		ListCacheTTL:    envx.Duration("ERS_LIST_CACHE_TTL", 30*time.Second),
 	}
-	slog.Info("entity-registry-service config loaded", "port", cfg.Port, "mqtt", cfg.MQTT.BrokerURL, "mqtt_broker_kind", cfg.MQTT.BrokerKind, "mqtt_shared_group", cfg.MQTTSharedGroup, "device_hub", cfg.DeviceHubURL, "auto_import", cfg.AutoImport)
+	slog.Info("entity-registry-service config loaded", "port", cfg.Port, "mqtt", cfg.MQTT.BrokerURL, "mqtt_broker_kind", cfg.MQTT.BrokerKind, "mqtt_shared_group", cfg.MQTTSharedGroup, "device_hub", cfg.DeviceHubURL, "auto_import", cfg.AutoImport, "demo_mode", cfg.DemoMode)
 	if err := cfg.MQTT.Validate(); err != nil {
 		return Config{}, err
 	}

@@ -7,6 +7,7 @@ import (
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
+	demohttp "github.com/PetoAdam/homenavi/auth-service/internal/http/demo"
 	passwordtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/password/transport"
 	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
@@ -100,12 +101,14 @@ func (h *ResetHandler) HandlePasswordResetConfirm(w http.ResponseWriter, r *http
 type ChangeHandler struct {
 	authService *authdomain.Service
 	userService *clientsinfra.UserClient
+	demoMode    bool
 }
 
-func NewChangeHandler(authService *authdomain.Service, userService *clientsinfra.UserClient) *ChangeHandler {
+func NewChangeHandler(authService *authdomain.Service, userService *clientsinfra.UserClient, demoMode bool) *ChangeHandler {
 	return &ChangeHandler{
 		authService: authService,
 		userService: userService,
+		demoMode:    demoMode,
 	}
 }
 
@@ -134,6 +137,10 @@ func (h *ChangeHandler) HandleChangePassword(w http.ResponseWriter, r *http.Requ
 	user, err := h.userService.GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if h.demoMode && demohttp.IsDemoUser(user) {
+		errors.WriteError(w, demohttp.MutationBlockedError())
 		return
 	}
 

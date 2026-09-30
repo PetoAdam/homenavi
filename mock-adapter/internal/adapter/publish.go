@@ -87,6 +87,57 @@ func (s *Service) publishHello() {
 	}
 }
 
+func (s *Service) publishDemoCatalog() {
+	for _, snapshot := range s.demoDeviceSnapshots() {
+		s.publishMetadata(snapshot)
+		s.publishState(snapshot.HDPDeviceID, snapshot.State, "")
+	}
+}
+
+func (s *Service) publishMetadata(snapshot demoSnapshot) {
+	if snapshot.HDPDeviceID == "" {
+		return
+	}
+	payload := map[string]any{
+		"schema":       hdp.SchemaV1,
+		"type":         "metadata",
+		"device_id":    snapshot.HDPDeviceID,
+		"protocol":     "mock",
+		"external_id":  strings.TrimPrefix(snapshot.HDPDeviceID, "mock/"),
+		"device_type":  snapshot.Type,
+		"manufacturer": snapshot.Manufacturer,
+		"model":        snapshot.Model,
+		"description":  snapshot.Description,
+		"icon":         snapshot.Icon,
+		"capabilities": snapshot.Capabilities,
+		"inputs":       snapshot.Inputs,
+		"ts":           time.Now().UnixMilli(),
+	}
+	if b, err := json.Marshal(payload); err == nil {
+		_ = s.client.PublishWith(hdp.MetadataPrefix+snapshot.HDPDeviceID, b, true)
+	}
+}
+
+func (s *Service) publishState(deviceID string, state map[string]any, corr string) {
+	id := normalizeDemoHDPDeviceID(deviceID)
+	if id == "" || len(state) == 0 {
+		return
+	}
+	payload := map[string]any{
+		"schema":    hdp.SchemaV1,
+		"type":      "state",
+		"device_id": id,
+		"state":     state,
+		"ts":        time.Now().UnixMilli(),
+	}
+	if corr != "" {
+		payload["corr"] = corr
+	}
+	if b, err := json.Marshal(payload); err == nil {
+		_ = s.client.PublishWith(hdp.StatePrefix+id, b, true)
+	}
+}
+
 func (s *Service) publishStatus(status, reason string) {
 	if s.adapterID == "" {
 		return

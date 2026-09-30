@@ -5,6 +5,7 @@ import "testing"
 func TestLoadConfig(t *testing.T) {
 	t.Setenv("AUTOMATION_SERVICE_PORT", "9999")
 	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("DEMO_MODE", "true")
 	t.Setenv("MQTT_BROKER_URL", "mqtt://broker:1883")
 	t.Setenv("MQTT_BROKER_KIND", "emqx")
 	t.Setenv("AUTOMATION_SERVICE_MQTT_SHARED_GROUP", "automation-events")
@@ -23,6 +24,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if cfg.MQTTSharedGroup != "automation-events" {
 		t.Fatalf("unexpected automation shared group: %q", cfg.MQTTSharedGroup)
+	}
+	if !cfg.DemoMode {
+		t.Fatal("expected demo mode to be enabled")
 	}
 	if cfg.DB.Host != "db" || cfg.DB.DBName != "automation" {
 		t.Fatalf("unexpected db config: %#v", cfg.DB)

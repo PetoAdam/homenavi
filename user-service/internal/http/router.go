@@ -23,7 +23,7 @@ func NewRouter(handler *UsersHandler, promHandler http.Handler, tracer oteltrace
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	r.Post("/users", handler.HandleCreate)
+	r.With(auth.OptionalJWTAuthMiddleware(pubKey)).Post("/users", handler.HandleCreate)
 	r.Post("/users/validate", handler.HandleValidate)
 
 	r.Group(func(pr chi.Router) {

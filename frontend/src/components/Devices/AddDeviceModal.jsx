@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faCircleCheck } from '@fortawesome/free-solid-svg-icons';
 import { DEVICE_ICON_CHOICES } from './deviceIconChoices';
 import BaseModal from '../common/BaseModal/BaseModal';
+import Snackbar from '../common/Snackbar/Snackbar';
 import PairingFlowRenderer from './pairing/PairingFlowRenderer';
 import PairingProgressPanel from './pairing/PairingProgressPanel';
 import {
@@ -18,6 +19,7 @@ import {
   createAddDeviceModalInitialState,
   createDefaultAddDeviceForm,
 } from './addDeviceModalReducer';
+import { blockPublicDemoAction, isPublicDemoModeEnabled } from '../../utils/demoMode';
 import './AddDeviceModal.css';
 
 const FLOW_STEPS = [
@@ -103,6 +105,7 @@ export default function AddDeviceModal({
   onStopPairing,
 }) {
   const [state, dispatch] = useReducer(addDeviceModalReducer, undefined, createAddDeviceModalInitialState);
+  const [demoToast, setDemoToast] = useState('');
   const {
     form,
     showAdvanced,
@@ -121,6 +124,7 @@ export default function AddDeviceModal({
 
   const modalRef = useRef(null);
   const resumePairingRef = useRef(false);
+  const demoModeEnabled = isPublicDemoModeEnabled();
 
   const updateForm = useCallback((updater) => {
     dispatch({ type: 'update-form', updater });
@@ -223,6 +227,9 @@ export default function AddDeviceModal({
   }, [form]);
 
   const beginGuidedPairing = useCallback(async payload => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, onBlocked: setDemoToast })) {
+      return;
+    }
     if (!pairingSupported) {
       dispatch({ type: 'patch', partial: { pairingError: pairingBlockedReason || 'Guided pairing is not available for this protocol yet.' } });
       return;
@@ -287,6 +294,7 @@ export default function AddDeviceModal({
     pairingProfile,
     pairingSupported,
     selectedProtocol,
+    demoModeEnabled,
   ]);
 
   const handleStopPairing = useCallback(async () => {
@@ -335,6 +343,9 @@ export default function AddDeviceModal({
   }, [resetFlow]);
 
   const handleEnterPairingFlow = useCallback(() => {
+    if (blockPublicDemoAction({ enabled: demoModeEnabled, onBlocked: setDemoToast })) {
+      return;
+    }
     dispatch({
       type: 'patch',
       partial: {
@@ -346,11 +357,10 @@ export default function AddDeviceModal({
         flowStep: 'pairing',
       },
     });
-  }, []);
+  }, [demoModeEnabled]);
 
   const handleRetryPairing = useCallback(async () => {
     if (!pairingProfile || !selectedProtocol) {
-      dispatch({ type: 'patch', partial: { pairingError: 'Pairing profile is unavailable for retry.' } });
       return;
     }
 
@@ -1026,9 +1036,10 @@ export default function AddDeviceModal({
     </BaseModal>
   );
 
-  if (typeof document === 'undefined') {
-    return modal;
-  }
-
-  return modal;
+  return (
+    <>
+      {modal}
+      <Snackbar message={demoToast} onClose={() => setDemoToast('')} />
+    </>
+  );
 }

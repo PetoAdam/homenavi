@@ -15,6 +15,7 @@ import (
 type Config struct {
 	Port                string
 	LogLevel            string
+	DemoMode            bool
 	MQTT                mqttx.Config
 	MQTTSharedGroup     string
 	JWTPublicKeyPath    string
@@ -35,6 +36,7 @@ func LoadConfig() (Config, error) {
 	cfg := Config{
 		Port:                envx.String("AUTOMATION_SERVICE_PORT", "8094"),
 		LogLevel:            envx.String("LOG_LEVEL", "info"),
+		DemoMode:            envx.Bool("DEMO_MODE", false),
 		MQTT:                mqttx.LoadConfig("mqtt://emqx:1883", "AUTOMATION_SERVICE_MQTT_CLIENT_ID"),
 		MQTTSharedGroup:     envx.String("AUTOMATION_SERVICE_MQTT_SHARED_GROUP", ""),
 		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),

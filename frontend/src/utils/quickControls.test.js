@@ -93,4 +93,32 @@ describe('resolveQuickControlItems', () => {
     expect(result[0]).toMatchObject({ kind: 'device', commandId: 'zigbee/device-a' });
     expect(result[1]).toMatchObject({ kind: 'group', id: 'group-1' });
   });
+
+  it('resolves realtime-only devices selected by device_hub device_id', () => {
+    const realtimeDevices = [
+      {
+        id: 'uuid-device-a',
+        device_id: 'mock/sofa-lamp',
+        external_id: 'sofa-lamp',
+        state: { on: true },
+        inputs: [
+          { id: 'on', type: 'toggle', property: 'on', capability_id: 'on' },
+        ],
+        capabilities: [
+          { id: 'on', property: 'on', kind: 'binary', value_type: 'boolean', access: { write: true } },
+        ],
+      },
+    ];
+
+    const result = resolveQuickControlItems({
+      selectedIds: ['mock/sofa-lamp'],
+      selectedGroupIds: [],
+      ersDevices: [],
+      ersGroups: [],
+      realtimeDevices,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: 'device', commandId: 'mock/sofa-lamp' });
+  });
 });

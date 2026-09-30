@@ -3,9 +3,11 @@ package adapter
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/mockdemo"
 )
 
 type publishedMessage struct {
@@ -60,8 +62,11 @@ func TestStartPublishesHelloAndStatusAndSubscribes(t *testing.T) {
 	}
 	defer svc.Stop()
 
-	if len(client.published) < 2 {
-		t.Fatalf("expected hello and status messages, got %d", len(client.published))
+	if countPublishedWithPrefix(client.published, hdp.MetadataPrefix+"mock/") != 8 {
+		t.Fatalf("expected metadata for 8 demo devices, got %d", countPublishedWithPrefix(client.published, hdp.MetadataPrefix+"mock/"))
+	}
+	if countPublishedWithPrefix(client.published, hdp.StatePrefix+"mock/") != 8 {
+		t.Fatalf("expected initial state for 8 demo devices, got %d", countPublishedWithPrefix(client.published, hdp.StatePrefix+"mock/"))
 	}
 	if _, ok := client.subscribed[hdp.PairingCommandPrefix+"mock"]; !ok {
 		t.Fatal("expected pairing subscription")
@@ -69,7 +74,7 @@ func TestStartPublishesHelloAndStatusAndSubscribes(t *testing.T) {
 	if _, ok := client.subscribed[hdp.CommandPrefix+"mock/#"]; !ok {
 		t.Fatal("expected command subscription")
 	}
-	if client.published[1].topic != hdp.AdapterStatusPrefix+"mock-adapter-1" || !client.published[1].retain {
+	if !hasRetainedTopic(client.published, hdp.AdapterStatusPrefix+"mock-adapter-1") {
 		t.Fatal("expected retained adapter status publish")
 	}
 }
@@ -125,18 +130,50 @@ func TestHandlePairingStartNeedsInputForQRCodeMode(t *testing.T) {
 	}
 }
 
-func TestHandleDeviceCommandRejectsAndPublishesResult(t *testing.T) {
+func TestHandleDeviceCommandAppliesStateAndPublishesResult(t *testing.T) {
 	client := newFakeClient()
 	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
-	payload := []byte(`{"device_id":"mock/node-1","corr":"corr-1"}`)
+	svc.initDemoCatalog()
+	payload := []byte(`{"device_id":"mock/sofa-lamp","corr":"corr-1","command":"set_state","args":{"on":true,"brightness":73}}`)
 
-	svc.handleDeviceCommand(fakeMessage{topic: hdp.CommandPrefix + "mock/node-1", payload: payload})
+	svc.handleDeviceCommand(fakeMessage{topic: hdp.CommandPrefix + "mock/sofa-lamp", payload: payload})
+
+	if len(client.published) != 2 {
+		t.Fatalf("expected state and command_result publish, got %d", len(client.published))
+	}
+	if client.published[0].topic != hdp.StatePrefix+mockdemo.SofaLampHDPDeviceID {
+		t.Fatalf("unexpected topic %q", client.published[0].topic)
+	}
+	if client.published[1].topic != hdp.CommandResultPrefix+mockdemo.SofaLampHDPDeviceID {
+		t.Fatalf("unexpected topic %q", client.published[1].topic)
+	}
+	var stateBody map[string]any
+	if err := json.Unmarshal(client.published[0].payload, &stateBody); err != nil {
+		t.Fatalf("unmarshal state: %v", err)
+	}
+	state, _ := stateBody["state"].(map[string]any)
+	if state["brightness"] != float64(73) || state["on"] != true {
+		t.Fatalf("expected updated state, got %#v", state)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(client.published[1].payload, &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["status"] != "applied" || body["success"] != true {
+		t.Fatalf("expected applied success result, got %#v", body)
+	}
+}
+
+func TestHandleDeviceCommandRejectsUnsupportedSensorCommand(t *testing.T) {
+	client := newFakeClient()
+	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
+	svc.initDemoCatalog()
+	payload := []byte(`{"device_id":"mock/entry-sensor","corr":"corr-2","command":"set_state","args":{"contact":true}}`)
+
+	svc.handleDeviceCommand(fakeMessage{topic: hdp.CommandPrefix + "mock/entry-sensor", payload: payload})
 
 	if len(client.published) != 1 {
 		t.Fatalf("expected one command_result publish, got %d", len(client.published))
-	}
-	if client.published[0].topic != hdp.CommandResultPrefix+"mock/node-1" {
-		t.Fatalf("unexpected topic %q", client.published[0].topic)
 	}
 	var body map[string]any
 	if err := json.Unmarshal(client.published[0].payload, &body); err != nil {
@@ -144,6 +181,30 @@ func TestHandleDeviceCommandRejectsAndPublishesResult(t *testing.T) {
 	}
 	if body["status"] != "rejected" {
 		t.Fatalf("expected rejected status, got %v", body["status"])
+	}
+}
+
+func TestAdvanceDemoStatesMutatesRuntimeState(t *testing.T) {
+	client := newFakeClient()
+	svc := New(client, Config{Enabled: true, AdapterID: "mock-adapter-1", Version: "dev"})
+	svc.initDemoCatalog()
+
+	updates := svc.advanceDemoStates()
+	if len(updates) == 0 {
+		t.Fatal("expected demo state updates")
+	}
+	foundCoffee := false
+	for _, update := range updates {
+		if update.HDPDeviceID != mockdemo.CoffeeMakerHDPDeviceID {
+			continue
+		}
+		foundCoffee = true
+		if update.State["power"] != "on" {
+			t.Fatalf("expected coffee maker to cycle on, got %#v", update.State)
+		}
+	}
+	if !foundCoffee {
+		t.Fatal("expected coffee maker update")
 	}
 }
 
@@ -156,4 +217,23 @@ func TestDeviceIDHelpers(t *testing.T) {
 	if proto != "mock" || external != "node-1" {
 		t.Fatalf("unexpected externalFromHDP result: %q %q", proto, external)
 	}
+}
+
+func countPublishedWithPrefix(messages []publishedMessage, prefix string) int {
+	count := 0
+	for _, msg := range messages {
+		if strings.HasPrefix(msg.topic, prefix) {
+			count++
+		}
+	}
+	return count
+}
+
+func hasRetainedTopic(messages []publishedMessage, topic string) bool {
+	for _, msg := range messages {
+		if msg.topic == topic && msg.retain {
+			return true
+		}
+	}
+	return false
 }

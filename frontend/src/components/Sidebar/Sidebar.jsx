@@ -1,10 +1,11 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBolt, faHouse, faLightbulb, faLayerGroup, faMap, faPlug, faStar, faUsers, faMusic, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
+import { faBolt, faCircleInfo, faEye, faHouse, faLightbulb, faLayerGroup, faMap, faMusic, faPlug, faStar, faUsers } from '@fortawesome/free-solid-svg-icons';
 import { faSpotify } from '@fortawesome/free-brands-svg-icons';
 import './Sidebar.css';
 import { useAuth } from '../../context/AuthContext';
+import { isPublicDemoModeEnabled } from '../../utils/demoMode';
 
 import { getIntegrationRegistry } from '../../services/integrationService';
 
@@ -84,6 +85,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 	const navigate = useNavigate();
 	const { user, accessToken, bootstrapping } = useAuth();
 	const [integrations, setIntegrations] = useState([]);
+	const demoModeEnabled = isPublicDemoModeEnabled();
 
 	const isResidentOrAdmin = user && (user.role === 'resident' || user.role === 'admin');
 	const isAdmin = user && user.role === 'admin';
@@ -120,12 +122,15 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 	}, [loadIntegrations]);
 
 	const menuGroups = useMemo(() => {
-		const integrationItems = (integrations || []).map((i) => {
+		const integrationItems = [
+			...((demoModeEnabled && isResidentOrAdmin) ? [{ name: 'Integrations', path: '/admin/integrations', icon: <FontAwesomeIcon icon={faEye} /> }] : []),
+			...(integrations || []).map((i) => {
 			const name = i?.display_name || i?.id;
 			const route = i?.id ? `/apps/${i.id}` : '/';
 			const icon = <IntegrationSidebarIcon icon={i?.icon} fallbackKey={i?.id} />;
 			return { name, path: route, icon };
-		});
+			}),
+		];
 
 		const groups = [
 			MAIN_GROUP,
@@ -138,7 +143,7 @@ const Sidebar = forwardRef(function Sidebar({ menuOpen, setMenuOpen, isPermanent
 			groups.push(ADMIN_GROUP);
 		}
 		return groups;
-	}, [integrations, isAdmin]);
+	}, [demoModeEnabled, integrations, isAdmin, isResidentOrAdmin]);
 
 	const isAboutActive = location.pathname === ABOUT_ITEM.path || location.pathname.startsWith(`${ABOUT_ITEM.path}/`);
 

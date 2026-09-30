@@ -9,6 +9,11 @@ routes:
     methods: [POST]
     access: public
     type: rest
+  - path: /api/auth/demo/bootstrap
+    upstream: http://auth-service:8000/api/auth/demo/bootstrap
+    methods: [POST]
+    access: public
+    type: rest
   - path: /api/auth/login/start
     upstream: http://auth-service:8000/api/auth/login/start
     methods: [POST]

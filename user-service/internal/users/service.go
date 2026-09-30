@@ -19,7 +19,7 @@ func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) Create(ctx context.Context, input CreateInput) (User, error) {
+func (s *Service) Create(ctx context.Context, actor Actor, input CreateInput) (User, error) {
 	if _, err := s.repo.FindByEmail(ctx, input.Email); err == nil {
 		return User{}, ErrDuplicateEmail
 	} else if !errors.Is(err, ErrNotFound) {
@@ -43,6 +43,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (User, error) {
 		return User{}, ErrPasswordOrGoogleIDRequired
 	}
 
+	role := "user"
+	if actor.Role == "service" && strings.EqualFold(strings.TrimSpace(input.Role), "resident") {
+		role = "resident"
+	}
+
 	user := User{
 		ID:                 uuid.New(),
 		UserName:           input.UserName,
@@ -51,7 +56,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (User, error) {
 		NormalizedEmail:    strings.ToUpper(input.Email),
 		FirstName:          input.FirstName,
 		LastName:           input.LastName,
-		Role:               "user",
+		Role:               role,
 		EmailConfirmed:     input.GoogleID != nil,
 		PasswordHash:       passwordHash,
 		GoogleID:           input.GoogleID,

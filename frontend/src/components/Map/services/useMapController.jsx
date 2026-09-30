@@ -87,6 +87,30 @@ function computeWorldBoundsFromLayout(rooms, devicePlacements) {
   return { minX, minY, maxX, maxY };
 }
 
+function buildMapFactLines(device) {
+  const state = device?.state && typeof device.state === 'object'
+    ? device.state
+    : (device?._last_state && typeof device._last_state === 'object' ? device._last_state : null);
+  const allCaps = [
+    ...(Array.isArray(device?.capabilities) ? device.capabilities : []),
+    ...(Array.isArray(device?.state?.capabilities) ? device.state.capabilities : []),
+  ];
+  const favoriteFields = readFavoriteFieldsFromErsMeta(device);
+  const fallbackKeys = ['air_quality', 'temperature', 'humidity', 'battery', 'brightness', 'position', 'power_draw', 'fan_speed', 'contact'];
+  const keys = [...favoriteFields, ...fallbackKeys.filter((key) => !favoriteFields.includes(key))];
+  const facts = [];
+  keys.forEach((key) => {
+    if (!key) return;
+    const raw = pickStateValue(state, key);
+    const { valueText, unit } = formatMetricValueAndUnitForKey(key, raw, allCaps);
+    const value = valueText ? `${valueText}${unit || ''}` : '';
+    if (!value) return;
+    if (facts.some((existing) => existing.key === key)) return;
+    facts.push({ key, text: value, icon: iconForFactLabel(key) });
+  });
+  return facts.slice(0, 2);
+}
+
 export default function useMapController() {
   const navigate = useNavigate();
   const { user, accessToken, bootstrapping } = useAuth();
@@ -713,6 +737,7 @@ export default function useMapController() {
     let raf2 = 0;
     let retry = 0;
     let reveal = 0;
+    let fallbackReveal = 0;
 
     const finishReveal = () => {
       reveal = window.setTimeout(() => setIsMapPrepared(true), 100);
@@ -736,13 +761,23 @@ export default function useMapController() {
       });
     });
 
+    fallbackReveal = window.setTimeout(() => {
+      if (fitViewToContent()) {
+        didAutoCenterRef.current = true;
+      } else {
+        setView((prev) => prev && typeof prev === 'object' ? prev : { scale: 1, tx: 0, ty: 0 });
+      }
+      setIsMapPrepared(true);
+    }, 900);
+
     return () => {
       if (raf1) window.cancelAnimationFrame(raf1);
       if (raf2) window.cancelAnimationFrame(raf2);
       if (retry) window.clearTimeout(retry);
       if (reveal) window.clearTimeout(reveal);
+      if (fallbackReveal) window.clearTimeout(fallbackReveal);
     };
-  }, [bootstrapping, ersLoading, fitViewToContent, isMapPrepared, setIsMapPrepared]);
+  }, [bootstrapping, ersLoading, fitViewToContent, isMapPrepared, setIsMapPrepared, setView]);
 
   const setWallLength = useCallback((roomId, wallIndex, length) => {
     applyEditorUpdate(prev => ({
@@ -1465,25 +1500,7 @@ export default function useMapController() {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
       const dev = deviceByKey.get(devKey) || devicesForPalette.find(d => safeString(d?.id || d?.hdpId || d?.ersId) === devKey);
       const label = safeString(dev?.displayName || dev?.name || devKey);
-
-      const state = dev?.state && typeof dev.state === 'object' ? dev.state : null;
-      const favorites = readFavoriteFieldsFromErsMeta(dev);
-      const allCaps = [
-        ...(Array.isArray(dev?.capabilities) ? dev.capabilities : []),
-        ...(Array.isArray(dev?.state?.capabilities) ? dev.state.capabilities : []),
-      ];
-      const favoriteLines = favorites
-        .map((favoriteKey) => {
-          const favoriteRaw = favoriteKey && state ? pickStateValue(state, favoriteKey) : undefined;
-          const { valueText, unit } = formatMetricValueAndUnitForKey(favoriteKey, favoriteRaw, allCaps);
-          const text = valueText ? `${valueText}${unit || ''}` : '';
-          return {
-            key: favoriteKey,
-            text,
-            icon: iconForFactLabel(favoriteKey),
-          };
-        })
-        .filter(x => x && x.text);
+      const favoriteLines = buildMapFactLines(dev);
 
       const labelFontSize = Math.max(8, Number(deviceLabelFontPx) || 11);
       const valueFontSize = Math.max(8, labelFontSize * 0.94);
