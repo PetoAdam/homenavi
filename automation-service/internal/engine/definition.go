@@ -71,15 +71,15 @@ type EdgeDef struct {
 type TriggerManual struct{}
 
 type TriggerDeviceState struct {
-	Targets        NodeTargets     `json:"targets"`
-	Key            string          `json:"key,omitempty"`
-	Op             string          `json:"op,omitempty"`    // exists|changed|eq|neq|gt|gte|lt|lte
-	Value          json.RawMessage `json:"value,omitempty"` // for comparisons
-	CooldownSec    int             `json:"cooldown_sec,omitempty"`
-	IgnoreRetained bool            `json:"ignore_retained,omitempty"`
-	CapabilityID   string          `json:"capability_id,omitempty"`
-	Aggregation    string          `json:"aggregation,omitempty"`
-	DebounceSec    int             `json:"debounce_sec,omitempty"`
+	Targets        NodeTargets      `json:"targets"`
+	Key            string           `json:"key,omitempty"`
+	Op             string           `json:"op,omitempty"`    // exists|changed|eq|neq|gt|gte|lt|lte
+	Value          json.RawMessage  `json:"value,omitempty"` // for comparisons
+	CooldownSec    int              `json:"cooldown_sec,omitempty"`
+	IgnoreRetained bool             `json:"ignore_retained,omitempty"`
+	CapabilityID   string           `json:"capability_id,omitempty"`
+	Aggregation    string           `json:"aggregation,omitempty"`
+	DebounceSec    int              `json:"debounce_sec,omitempty"`
 	Conditions     []StateCondition `json:"conditions,omitempty"`
 }
 
