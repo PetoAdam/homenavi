@@ -1,5 +1,25 @@
 import React from 'react';
 import BaseNodeEditor from './BaseNodeEditor';
+import { operatorsForCapability } from '../../capabilityModel';
+
+const conditionLabels = {
+  exists: 'Has a value',
+  changed: 'Changes',
+  eq: 'Is equal to',
+  neq: 'Is not equal to',
+  gt: 'Is greater than',
+  gte: 'Is at least',
+  lt: 'Is less than',
+  lte: 'Is at most',
+};
+
+function valueTypeForCapability(capability) {
+  if (!capability) return '';
+  if (capability.type === 'binary') return 'boolean';
+  if (capability.type === 'numeric') return 'number';
+  if (capability.type === 'enum' || capability.type === 'string') return 'text';
+  return '';
+}
 
 export default class TriggerEditor extends BaseNodeEditor {
   buildCronFromSimple(ui) {
@@ -57,8 +77,19 @@ export default class TriggerEditor extends BaseNodeEditor {
     const selectedNode = this.selectedNode;
     if (!selectedNode) return null;
 
-    const { deviceOptions, triggerKeyOptions } = this.props;
+    const { deviceOptions, groupOptions, tagOptions, selectedCapabilities = [] } = this.props;
     const kind = String(selectedNode.kind || '');
+    const selectedCapability = selectedCapabilities.find(capability => capability.id === selectedNode.data?.capability_id) || null;
+    const operators = operatorsForCapability(selectedCapability);
+    const targetsType = String(selectedNode.data?.targets?.type || 'device').toLowerCase();
+    const selector = String(selectedNode.data?.targets?.selector || '').trim();
+    const isCollectionSelector = targetsType === 'selector' && /^(group|tag):/.test(selector.toLowerCase());
+    const targetMode = String(selectedNode.data?.ui?.target_mode || (targetsType === 'device' ? 'device' : (isCollectionSelector ? 'collection' : 'selector')));
+    const collectionOptions = [
+      ...(Array.isArray(groupOptions) ? groupOptions.map(item => ({ ...item, kind: 'Group' })) : []),
+      ...(Array.isArray(tagOptions) ? tagOptions.map(item => ({ ...item, kind: 'Tag' })) : []),
+    ];
+    const selectedDeviceId = targetsType === 'device' ? String(selectedNode.data?.targets?.ids?.[0] || '') : '';
 
     return (
       <div className="automation-props">
@@ -258,10 +289,22 @@ export default class TriggerEditor extends BaseNodeEditor {
         ) : (
           <>
             <div className="field">
+              <label className="label">Target type</label>
+              <select className="input" value={targetMode} onChange={(e) => {
+                const nextTargetMode = e.target.value;
+                this.setSelectedNodeData({ targets: nextTargetMode === 'device' ? { type: 'device', ids: [], selector: '' } : { type: 'selector', ids: [], selector: nextTargetMode === 'selector' ? selector : '' } });
+                this.setSelectedNodeUI({ target_mode: nextTargetMode });
+              }}>
+                <option value="device">Device</option>
+                <option value="collection">Group or tag</option>
+                <option value="selector">Advanced selector</option>
+              </select>
+            </div>
+            {targetMode === 'device' && <div className="field">
               <label className="label">Device ID</label>
               <select
                 className="input"
-                value={String(selectedNode.data?.targets?.type || 'device').toLowerCase() === 'device' ? String(selectedNode.data?.targets?.ids?.[0] || '') : ''}
+                value={selectedDeviceId}
                 onChange={(e) => {
                   const v = e.target.value;
                   this.setSelectedNodeData({ targets: { type: 'device', ids: v ? [v] : [], selector: '' } });
@@ -272,37 +315,22 @@ export default class TriggerEditor extends BaseNodeEditor {
                   <option key={d.id} value={d.id}>{d.label}</option>
                 ))}
               </select>
+            </div>}
+            {targetMode === 'collection' && <div className="field"><label className="label">Group or tag</label><select className="input" value={selector} onChange={e => this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: e.target.value } })}><option value="">Select a group or tag…</option>{collectionOptions.map(item => <option key={`${item.kind}:${item.id}`} value={item.selector}>{item.kind}: {item.label}</option>)}</select></div>}
+            {targetMode === 'selector' && <div className="field"><label className="label">Selector</label><input className="input" value={selector} onChange={e => this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: e.target.value } })} placeholder="e.g. tag:kitchen" /></div>}
+            <div className="field">
+              <label className="label">Capability</label>
+              <select className="input" value={selectedNode.data?.capability_id || ''} onChange={(e) => {
+                const capability = selectedCapabilities.find(item => item.id === e.target.value);
+                this.setSelectedNodeData({ capability_id: capability?.id || '', capability_property: capability?.property || '', key: capability?.property || '', op: 'exists' });
+                if (capability) this.setSelectedNodeUI({ value_type: valueTypeForCapability(capability) });
+              }}>
+                <option value="">Select what to watch…</option>
+                {selectedCapabilities.map(capability => <option key={capability.id} value={capability.id}>{capability.label}</option>)}
+              </select>
             </div>
             <div className="field">
-              <label className="label">State key (optional)</label>
-              {triggerKeyOptions.length > 0 ? (
-                <select
-                  className="input"
-                  value={selectedNode.data?.key || ''}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    this.setSelectedNodeData({ key: v });
-                  }}
-                >
-                  <option value="">(any key)</option>
-                  {triggerKeyOptions.map((k) => (
-                    <option key={k} value={k}>{k}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  className="input"
-                  value={selectedNode.data?.key || ''}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    this.setSelectedNodeData({ key: v });
-                  }}
-                  placeholder="e.g. motion"
-                />
-              )}
-            </div>
-            <div className="field">
-              <label className="label">Op</label>
+              <label className="label">When it</label>
               <select
                 className="input"
                 value={selectedNode.data?.op || 'exists'}
@@ -311,17 +339,13 @@ export default class TriggerEditor extends BaseNodeEditor {
                   this.setSelectedNodeData({ op: v });
                 }}
               >
-                <option value="exists">exists</option>
-                <option value="eq">eq</option>
-                <option value="neq">neq</option>
-                <option value="gt">gt</option>
-                <option value="gte">gte</option>
-                <option value="lt">lt</option>
-                <option value="lte">lte</option>
+                {operators.map(operator => <option key={operator} value={operator}>{conditionLabels[operator] || operator}</option>)}
               </select>
             </div>
 
-            {String(selectedNode.data?.op || 'exists') !== 'exists' && (
+            {targetMode !== 'device' && <div className="field"><label className="label">For this target</label><select className="input" value={selectedNode.data?.aggregation || 'any'} onChange={e => this.setSelectedNodeData({ aggregation: e.target.value })}><option value="any">One or more devices</option><option value="all">All devices</option></select></div>}
+
+            {!['exists', 'changed'].includes(String(selectedNode.data?.op || 'exists')) && (
               <>
                 <div className="field">
                   <label className="label">Value editor</label>
@@ -355,7 +379,7 @@ export default class TriggerEditor extends BaseNodeEditor {
                 <div className="automation-slide">
                   <div className={`automation-slide-inner ${(selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? 'mode-builder' : 'mode-json'}`}>
                     <div className="automation-slide-pane">
-                      <div className="field">
+                      {!selectedCapability && <div className="field">
                         <label className="label">Type</label>
                         <select
                           className="input"
@@ -369,9 +393,40 @@ export default class TriggerEditor extends BaseNodeEditor {
                           <option value="number">Number</option>
                           <option value="text">Text</option>
                         </select>
-                      </div>
+                      </div>}
 
-                      {String(selectedNode.data?.ui?.value_type || 'boolean') === 'boolean' && (
+                      {selectedCapability?.type === 'binary' && (
+                        <div className="field">
+                          <label className="label">Value</label>
+                          <select className="input" value={String(selectedNode.data?.ui?.value_bool ?? true)} onChange={e => this.setSelectedNodeUI({ value_bool: e.target.value === 'true' })}>
+                            <option value="true">On / true</option>
+                            <option value="false">Off / false</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {selectedCapability?.type === 'numeric' && (
+                        <div className="field">
+                          <label className="label">Value {selectedCapability.unit ? `(${selectedCapability.unit})` : ''}</label>
+                          <input className="input" type="number" min={selectedCapability.min ?? undefined} max={selectedCapability.max ?? undefined} step={selectedCapability.step ?? 'any'} value={selectedNode.data?.ui?.value_number ?? ''} onChange={e => this.setSelectedNodeUI({ value_number: e.target.value })} />
+                        </div>
+                      )}
+
+                      {selectedCapability?.type === 'enum' && (
+                        <div className="field">
+                          <label className="label">Value</label>
+                          <select className="input" value={selectedNode.data?.ui?.value_string ?? ''} onChange={e => this.setSelectedNodeUI({ value_string: e.target.value })}>
+                            <option value="">Select…</option>
+                            {selectedCapability.enumValues.map(value => <option key={value} value={value}>{value}</option>)}
+                          </select>
+                        </div>
+                      )}
+
+                      {selectedCapability?.type === 'string' && (
+                        <div className="field"><label className="label">Value</label><input className="input" value={selectedNode.data?.ui?.value_string ?? ''} onChange={e => this.setSelectedNodeUI({ value_string: e.target.value })} /></div>
+                      )}
+
+                      {!selectedCapability && String(selectedNode.data?.ui?.value_type || 'boolean') === 'boolean' && (
                         <div className="field">
                           <label className="label">Value</label>
                           <select
@@ -388,7 +443,7 @@ export default class TriggerEditor extends BaseNodeEditor {
                         </div>
                       )}
 
-                      {String(selectedNode.data?.ui?.value_type || 'boolean') === 'number' && (
+                      {!selectedCapability && String(selectedNode.data?.ui?.value_type || 'boolean') === 'number' && (
                         <div className="field">
                           <label className="label">Value</label>
                           <input
@@ -403,7 +458,7 @@ export default class TriggerEditor extends BaseNodeEditor {
                         </div>
                       )}
 
-                      {String(selectedNode.data?.ui?.value_type || 'boolean') === 'text' && (
+                      {!selectedCapability && String(selectedNode.data?.ui?.value_type || 'boolean') === 'text' && (
                         <div className="field">
                           <label className="label">Value</label>
                           <input
@@ -437,6 +492,11 @@ export default class TriggerEditor extends BaseNodeEditor {
                 </div>
               </>
             )}
+
+            <div className="field">
+              <label className="label">Debounce (sec)</label>
+              <input className="input" type="number" min="0" value={Number(selectedNode.data?.debounce_sec ?? 0)} onChange={e => this.setSelectedNodeData({ debounce_sec: Math.max(0, Number(e.target.value) || 0) })} />
+            </div>
 
             <div className="field">
               <label className="label">Cooldown (sec)</label>

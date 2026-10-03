@@ -76,3 +76,20 @@ describe('workflow run availability', () => {
     })).toBe(false);
   });
 });
+
+describe('capability-driven command actions', () => {
+  it('preserves the capability value instead of replacing it with legacy state fields', () => {
+    const definition = buildDefinitionFromEditor({
+      nodes: [
+        { id: 'trigger-1', kind: 'trigger.manual', x: 0, y: 0, data: {} },
+        { id: 'action-1', kind: 'action.send_command', x: 0, y: 0, data: {
+          targets: { type: 'device', ids: ['device-1'] }, command: 'set_state',
+          capability_id: 'setpoint', capability_property: 'setpoint', capability_value: 21,
+          ui: { args_mode: 'builder', state: 'ON' },
+        } },
+      ],
+      edges: [{ from: 'trigger-1', to: 'action-1' }],
+    });
+    expect(definition.nodes.find(node => node.id === 'action-1')?.data.args).toEqual({ setpoint: 21 });
+  });
+});

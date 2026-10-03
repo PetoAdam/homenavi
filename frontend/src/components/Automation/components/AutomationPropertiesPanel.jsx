@@ -20,6 +20,8 @@ export default function AutomationPropertiesPanel({
   applyEditorUpdateBatched,
   deviceOptions,
   groupOptions,
+  tagOptions,
+  selectedCapabilities,
   triggerKeyOptions,
   userOptions,
   isAdmin,
@@ -98,6 +100,8 @@ export default function AutomationPropertiesPanel({
           defaultNodeData={defaultNodeData}
           deviceOptions={deviceOptions}
           groupOptions={groupOptions}
+          tagOptions={tagOptions}
+          selectedCapabilities={selectedCapabilities}
           triggerKeyOptions={triggerKeyOptions}
         />
       )}
@@ -109,6 +113,8 @@ export default function AutomationPropertiesPanel({
           applyEditorUpdateBatched={applyEditorUpdateBatched}
           defaultNodeData={defaultNodeData}
           deviceOptions={deviceOptions}
+          groupOptions={groupOptions}
+          selectedCapabilities={selectedCapabilities}
           triggerKeyOptions={triggerKeyOptions}
         />
       )}

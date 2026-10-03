@@ -37,6 +37,15 @@ func TestDefinitionNormalizeAndValidate_RejectsNegativeSleep(t *testing.T) {
 	}
 }
 
+func TestDefinitionNormalizeAndValidate_AcceptsChangedCapabilityTrigger(t *testing.T) {
+	definition := Definition{Version: "automation", Nodes: []NodeDef{{
+		ID: "trigger", Kind: "trigger.device_state", Data: json.RawMessage(`{"targets":{"type":"device","ids":["device"]},"capability_id":"state","key":"state","op":"changed","aggregation":"each","debounce_sec":2}`),
+	}}}
+	if err := definition.NormalizeAndValidate(); err != nil {
+		t.Fatalf("expected capability changed trigger to validate: %v", err)
+	}
+}
+
 func TestSleepDuration_ConvertsFractionalSeconds(t *testing.T) {
 	if got := sleepDuration(0.2); got != 200*time.Millisecond {
 		t.Fatalf("expected 200ms, got %s", got)

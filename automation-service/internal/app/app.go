@@ -65,6 +65,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	eng := engine.New(repo, mqttClient, engine.Options{
 		EmailServiceURL:     cfg.EmailServiceURL,
 		ERSServiceURL:       cfg.ERSServiceURL,
+		DeviceHubURL:        cfg.DeviceHubURL,
 		IntegrationProxyURL: cfg.IntegrationProxyURL,
 		MQTTSharedGroup:     cfg.MQTTSharedGroup,
 		RunEvents:           runEvents,

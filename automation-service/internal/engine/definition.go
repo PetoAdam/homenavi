@@ -73,10 +73,13 @@ type TriggerManual struct{}
 type TriggerDeviceState struct {
 	Targets        NodeTargets     `json:"targets"`
 	Key            string          `json:"key,omitempty"`
-	Op             string          `json:"op,omitempty"`    // exists|eq|neq|gt|gte|lt|lte
+	Op             string          `json:"op,omitempty"`    // exists|changed|eq|neq|gt|gte|lt|lte
 	Value          json.RawMessage `json:"value,omitempty"` // for comparisons
 	CooldownSec    int             `json:"cooldown_sec,omitempty"`
 	IgnoreRetained bool            `json:"ignore_retained,omitempty"`
+	CapabilityID   string          `json:"capability_id,omitempty"`
+	Aggregation    string          `json:"aggregation,omitempty"`
+	DebounceSec    int             `json:"debounce_sec,omitempty"`
 }
 
 type TriggerSchedule struct {
@@ -85,11 +88,13 @@ type TriggerSchedule struct {
 }
 
 type ActionSendCommand struct {
-	Targets          NodeTargets    `json:"targets"`
-	Command          string         `json:"command"`
-	Args             map[string]any `json:"args,omitempty"`
-	WaitForResult    bool           `json:"wait_for_result,omitempty"`
-	ResultTimeoutSec int            `json:"result_timeout_sec,omitempty"`
+	Targets          NodeTargets     `json:"targets"`
+	Command          string          `json:"command"`
+	Args             map[string]any  `json:"args,omitempty"`
+	WaitForResult    bool            `json:"wait_for_result,omitempty"`
+	ResultTimeoutSec int             `json:"result_timeout_sec,omitempty"`
+	CapabilityID     string          `json:"capability_id,omitempty"`
+	CapabilityValue  json.RawMessage `json:"capability_value,omitempty"`
 }
 
 type ActionIntegration struct {
@@ -254,9 +259,18 @@ func validateNode(n NodeDef) error {
 			t.Op = "exists"
 		}
 		switch t.Op {
-		case "exists", "eq", "neq", "gt", "gte", "lt", "lte":
+		case "exists", "changed", "eq", "neq", "gt", "gte", "lt", "lte":
 		default:
 			return errors.New("unsupported trigger.device_state op")
+		}
+		if strings.TrimSpace(t.CapabilityID) != "" {
+			aggregation := strings.ToLower(strings.TrimSpace(t.Aggregation))
+			if aggregation != "" && aggregation != "any" && aggregation != "all" && aggregation != "each" {
+				return errors.New("trigger.device_state.aggregation must be any, all, or each")
+			}
+			if t.DebounceSec < 0 {
+				return errors.New("trigger.device_state.debounce_sec must be >= 0")
+			}
 		}
 		return nil
 	case "trigger.schedule":
@@ -281,6 +295,9 @@ func validateNode(n NodeDef) error {
 		}
 		if a.ResultTimeoutSec <= 0 {
 			a.ResultTimeoutSec = 15
+		}
+		if len(a.CapabilityValue) > 0 && !json.Valid(a.CapabilityValue) {
+			return errors.New("action.send_command.capability_value must be valid json")
 		}
 		return nil
 	case "action.notify_email":

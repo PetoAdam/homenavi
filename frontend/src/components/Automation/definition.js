@@ -311,7 +311,15 @@ export function buildDefinitionFromEditor(editor) {
       // Builder: derive args for set_state.
       const cmd = String(data?.command || '').trim() || 'set_state';
       data.command = cmd;
-      if (mode === 'builder' && cmd === 'set_state') {
+      const capabilityID = String(data?.capability_id || '').trim();
+      if (capabilityID && mode === 'builder') {
+        const capabilityValue = data?.capability_value;
+        if (typeof capabilityValue === 'undefined') {
+          throw new Error('Action capability value is required');
+        }
+        data.args = { [String(data?.capability_property || capabilityID).trim()]: capabilityValue };
+      }
+      if (!capabilityID && mode === 'builder' && cmd === 'set_state') {
         const args = {};
         const st = String(data?.ui?.state || '').trim();
         if (st) args.state = st;
@@ -375,6 +383,11 @@ export function buildDefinitionFromEditor(editor) {
     if (String(n.kind).toLowerCase() === 'trigger.device_state') {
       data.targets = normalizeTargets(data.targets);
       data.key = String(data?.key || '').trim();
+      if (String(data?.capability_id || '').trim()) {
+        data.key = String(data?.capability_property || data.key || data.capability_id).trim();
+        data.aggregation = String(data?.aggregation || 'any').trim().toLowerCase();
+        data.debounce_sec = Math.max(0, Number(data?.debounce_sec || 0) || 0);
+      }
       const op = String(data?.op || 'exists').trim().toLowerCase() || 'exists';
       data.op = op;
       const cooldown = Number(data?.cooldown_sec ?? 0);
@@ -385,7 +398,8 @@ export function buildDefinitionFromEditor(editor) {
       const ui = (data.ui && typeof data.ui === 'object') ? data.ui : {};
       const valueMode = String(ui.value_mode || (ui.value_text ? 'json' : 'builder')).toLowerCase();
       ui.value_mode = valueMode;
-      if (op !== 'exists' && valueMode === 'builder') {
+      const requiresValue = op !== 'exists' && op !== 'changed';
+      if (requiresValue && valueMode === 'builder') {
         const t = String(ui.value_type || 'boolean').toLowerCase();
         ui.value_type = t;
         if (t === 'boolean') {
@@ -403,7 +417,7 @@ export function buildDefinitionFromEditor(editor) {
       data.ui = ui;
 
       const txt = String(data?.ui?.value_text || '').trim();
-      if (op !== 'exists' && txt) {
+      if (requiresValue && txt) {
         const parsed = safeJsonParse(txt);
         if (parsed == null) {
           throw new Error('Trigger value must be valid JSON');

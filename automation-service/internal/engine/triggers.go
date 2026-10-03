@@ -28,6 +28,7 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	if st.Schema != hdp.SchemaV1 || st.Type != "state" {
 		return
 	}
+	previousState := e.recordDeviceState(st.DeviceID, st.State)
 
 	type match struct {
 		wfID          uuid.UUID
@@ -71,7 +72,14 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	e.mu.RUnlock()
 
 	for _, c := range candidates {
-		if !matchStateTrigger(c.trigger, st.State) {
+		if !matchStateTriggerWithPrevious(c.trigger, st.State, previousState) {
+			e.clearDebounce(c.wfID, c.triggerNodeID, st.DeviceID)
+			continue
+		}
+		if !e.matchesAggregation(ctx, c.trigger, st.DeviceID) {
+			continue
+		}
+		if !e.debounceElapsed(c.wfID, c.triggerNodeID, st.DeviceID, c.trigger.DebounceSec) {
 			continue
 		}
 		claimed, err := e.repo.ClaimTriggerCooldown(ctx, c.wfID, c.triggerNodeID, time.Duration(c.trigger.CooldownSec)*time.Second, time.Now().UTC())
@@ -84,6 +92,68 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 		}
 		_, _ = e.StartWorkflowRun(ctx, c.wfID, c.triggerNodeID, map[string]any{"type": "state", "trigger_node_id": c.triggerNodeID, "device_id": st.DeviceID, "state": st.State, "ts": st.TS, "retained": m.Retained()})
 	}
+}
+
+func (e *Engine) recordDeviceState(deviceID string, state map[string]any) map[string]any {
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	previous := cloneState(e.deviceStates[deviceID])
+	e.deviceStates[deviceID] = cloneState(state)
+	return previous
+}
+
+func cloneState(state map[string]any) map[string]any {
+	if len(state) == 0 {
+		return map[string]any{}
+	}
+	copy := make(map[string]any, len(state))
+	for key, value := range state {
+		copy[key] = value
+	}
+	return copy
+}
+
+func (e *Engine) matchesAggregation(ctx context.Context, trigger TriggerDeviceState, deviceID string) bool {
+	if strings.ToLower(strings.TrimSpace(trigger.Aggregation)) != "all" {
+		return true
+	}
+	targets, err := e.resolveTargets(ctx, trigger.Targets)
+	if err != nil || len(targets) == 0 {
+		return false
+	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	for _, target := range targets {
+		if target.ExternalID == deviceID {
+			continue
+		}
+		if !matchStateTrigger(trigger, e.deviceStates[target.ExternalID]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Engine) debounceElapsed(workflowID uuid.UUID, nodeID, deviceID string, seconds int) bool {
+	if seconds <= 0 {
+		return true
+	}
+	key := workflowID.String() + ":" + nodeID + ":" + deviceID
+	now := time.Now().UTC()
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	started, ok := e.debounces[key]
+	if !ok {
+		e.debounces[key] = now
+		return false
+	}
+	return now.Sub(started) >= time.Duration(seconds)*time.Second
+}
+
+func (e *Engine) clearDebounce(workflowID uuid.UUID, nodeID, deviceID string) {
+	e.stateMu.Lock()
+	delete(e.debounces, workflowID.String()+":"+nodeID+":"+deviceID)
+	e.stateMu.Unlock()
 }
 
 func (e *Engine) shouldIgnoreRetainedState(retained bool, stateTS int64) bool {
@@ -290,6 +360,10 @@ func (e *Engine) handleCommandResult(ctx context.Context, m mqttinfra.Message) {
 }
 
 func matchStateTrigger(t TriggerDeviceState, state map[string]any) bool {
+	return matchStateTriggerWithPrevious(t, state, nil)
+}
+
+func matchStateTriggerWithPrevious(t TriggerDeviceState, state, previous map[string]any) bool {
 	key := strings.TrimSpace(t.Key)
 	op := strings.ToLower(strings.TrimSpace(t.Op))
 	if op == "" {
@@ -302,6 +376,10 @@ func matchStateTrigger(t TriggerDeviceState, state map[string]any) bool {
 	v, ok := state[key]
 	if op == "exists" {
 		return ok
+	}
+	if op == "changed" {
+		prior, hadPrior := previous[key]
+		return ok && hadPrior && !deepEqualLoose(v, prior)
 	}
 	if !ok {
 		return false

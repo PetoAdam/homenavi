@@ -6,7 +6,9 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
     const selectedNode = this.selectedNode;
     if (!selectedNode) return null;
 
-    const { deviceOptions, groupOptions, applyEditorUpdate } = this.props;
+    const { deviceOptions, groupOptions, applyEditorUpdate, selectedCapabilities = [] } = this.props;
+    const writableCapabilities = selectedCapabilities.filter(capability => capability.writable && capability.type !== 'unsupported');
+    const selectedCapability = writableCapabilities.find(capability => capability.id === selectedNode.data?.capability_id) || null;
     const cmd = String(selectedNode.data?.command || '').trim() || 'set_state';
     const commandMode = String(selectedNode.data?.ui?.command_mode || (cmd === 'set_state' ? 'set_state' : 'custom'));
     const effectiveArgsMode = commandMode === 'custom' ? 'json' : (selectedNode.data?.ui?.args_mode || 'builder');
@@ -122,6 +124,40 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
           </select>
         </div>
 
+        {commandMode === 'set_state' && effectiveArgsMode !== 'json' && (
+          <>
+            {targetMode === 'selector' && !isGroupSelector && (
+              <div className="muted">Capability metadata cannot be resolved for an arbitrary selector. Use advanced JSON.</div>
+            )}
+            {targetMode === 'group' && selectedGroupSelector && writableCapabilities.length === 0 && (
+              <div className="muted">This group has no compatible writable capabilities.</div>
+            )}
+            <div className="field">
+              <label className="label">Capability</label>
+              <select
+                className="input"
+                value={selectedNode.data?.capability_id || ''}
+                onChange={(e) => {
+                  const capability = writableCapabilities.find(item => item.id === e.target.value);
+                  this.setSelectedNodeData({
+                    capability_id: capability?.id || '',
+                    capability_property: capability?.property || '',
+                    capability_value: capability?.type === 'binary' ? false : '',
+                  });
+                }}
+              >
+                <option value="">Select a writable capability…</option>
+                {writableCapabilities.map(capability => <option key={capability.id} value={capability.id}>{capability.label}</option>)}
+              </select>
+            </div>
+            {selectedCapability?.type === 'binary' && <div className="field"><label className="label">Value</label><input type="checkbox" checked={Boolean(selectedNode.data?.capability_value)} onChange={e => this.setSelectedNodeData({ capability_value: e.target.checked })} /></div>}
+            {selectedCapability?.type === 'numeric' && <div className="field"><label className="label">Value {selectedCapability.unit ? `(${selectedCapability.unit})` : ''}</label><input className="input" type="number" min={selectedCapability.min ?? undefined} max={selectedCapability.max ?? undefined} step={selectedCapability.step ?? 'any'} value={selectedNode.data?.capability_value ?? ''} onChange={e => this.setSelectedNodeData({ capability_value: Number(e.target.value) })} /></div>}
+            {selectedCapability?.type === 'enum' && <div className="field"><label className="label">Value</label><select className="input" value={selectedNode.data?.capability_value ?? ''} onChange={e => this.setSelectedNodeData({ capability_value: e.target.value })}><option value="">Select…</option>{selectedCapability.enumValues.map(value => <option key={value} value={value}>{value}</option>)}</select></div>}
+            {selectedCapability?.type === 'string' && <div className="field"><label className="label">Value</label><input className="input" value={selectedNode.data?.capability_value ?? ''} onChange={e => this.setSelectedNodeData({ capability_value: e.target.value })} /></div>}
+            {selectedCapability?.type === 'object' && <div className="field"><label className="label">Value (JSON)</label><textarea className="input textarea" rows={5} value={typeof selectedNode.data?.capability_value === 'string' ? selectedNode.data.capability_value : JSON.stringify(selectedNode.data?.capability_value ?? {}, null, 2)} onChange={e => { try { this.setSelectedNodeData({ capability_value: JSON.parse(e.target.value) }); } catch { this.setSelectedNodeData({ capability_value: e.target.value }); } }} /></div>}
+          </>
+        )}
+
         {commandMode === 'custom' && (
           <div className="field">
             <label className="label">Custom command</label>
@@ -137,8 +173,13 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
           </div>
         )}
 
+        {!selectedCapability && commandMode === 'set_state' && effectiveArgsMode !== 'json' && (
+          <div className="muted">Select a capability to build a device command.</div>
+        )}
+
+        {commandMode === 'set_state' && (
         <div className="field">
-          <label className="label">Args mode</label>
+          <label className="label">Advanced args</label>
           {commandMode === 'custom' ? (
             <div className="muted">Custom commands use JSON args.</div>
           ) : (
@@ -176,7 +217,7 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
                     ...prev,
                     nodes: (Array.isArray(prev.nodes) ? prev.nodes : []).map((n) =>
                       n?.id === selectedNode.id
-                        ? { ...n, data: { ...(n.data || {}), ui: { ...(n.data?.ui || {}), args_mode: 'json' } } }
+                        ? { ...n, data: { ...(n.data || {}), capability_id: '', capability_property: '', capability_value: undefined, ui: { ...(n.data?.ui || {}), args_mode: 'json' } } }
                         : n
                     ),
                   }));
@@ -187,6 +228,7 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
             </div>
           )}
         </div>
+        )}
 
         {commandMode === 'custom' ? (
           <div className="field">
@@ -199,122 +241,12 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
                 const v = e.target.value;
                 this.setSelectedNodeUI({ args_text: v });
               }}
-              placeholder='e.g. { "state": "ON", "brightness": 120 }'
+              placeholder='e.g. { "property_name": "value" }'
             />
           </div>
-        ) : (
+        ) : commandMode === 'set_state' && effectiveArgsMode === 'json' ? (
           <div className="automation-slide">
             <div className={`automation-slide-inner ${effectiveArgsMode === 'builder' ? 'mode-builder' : 'mode-json'}`}>
-              <div className="automation-slide-pane">
-                <div className="field">
-                  <label className="label">State</label>
-                  <select
-                    className="input"
-                    value={selectedNode.data?.ui?.state || ''}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      this.setSelectedNodeUI({ state: v });
-                    }}
-                  >
-                    <option value="">(unset)</option>
-                    <option value="ON">ON</option>
-                    <option value="OFF">OFF</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label className="label">Brightness (0-255)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    max="255"
-                    value={selectedNode.data?.ui?.brightness || ''}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      this.setSelectedNodeUI({ brightness: v });
-                    }}
-                  />
-                </div>
-                <div className="field">
-                  <label className="label">Transition (ms)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    value={selectedNode.data?.ui?.transition_ms || ''}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      this.setSelectedNodeUI({ transition_ms: v });
-                    }}
-                  />
-                </div>
-
-                <div className="field">
-                  <label className="label">Color mode</label>
-                  <select
-                    className="input"
-                    value={selectedNode.data?.ui?.color_mode || 'none'}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      this.setSelectedNodeUI({ color_mode: v });
-                    }}
-                  >
-                    <option value="none">None</option>
-                    <option value="color_temp">Color temperature</option>
-                    <option value="hs">Hue / saturation</option>
-                  </select>
-                </div>
-
-                {(selectedNode.data?.ui?.color_mode || 'none') === 'color_temp' && (
-                  <div className="field">
-                    <label className="label">Color temperature (mired)</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0"
-                      value={selectedNode.data?.ui?.color_temp || ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        this.setSelectedNodeUI({ color_temp: v });
-                      }}
-                    />
-                  </div>
-                )}
-
-                {(selectedNode.data?.ui?.color_mode || 'none') === 'hs' && (
-                  <>
-                    <div className="field">
-                      <label className="label">Hue (0-360)</label>
-                      <input
-                        className="input"
-                        type="number"
-                        min="0"
-                        max="360"
-                        value={selectedNode.data?.ui?.hue || ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          this.setSelectedNodeUI({ hue: v });
-                        }}
-                      />
-                    </div>
-                    <div className="field">
-                      <label className="label">Saturation (0-100)</label>
-                      <input
-                        className="input"
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={selectedNode.data?.ui?.saturation || ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          this.setSelectedNodeUI({ saturation: v });
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-
               <div className="automation-slide-pane">
                 <div className="field">
                   <label className="label">Args (JSON)</label>
@@ -326,13 +258,13 @@ export default class ActionSendCommandEditor extends BaseNodeEditor {
                       const v = e.target.value;
                       this.setSelectedNodeUI({ args_text: v });
                     }}
-                    placeholder='e.g. { "state": "ON", "brightness": 120 }'
+                    placeholder='e.g. { "property_name": "value" }'
                   />
                 </div>
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
         <div className="field">
           <label className="checkbox">

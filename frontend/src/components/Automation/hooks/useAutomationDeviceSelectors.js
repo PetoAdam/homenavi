@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 
 import { normalizeDeviceLabel } from '../automationUtils';
+import { capabilitiesForDevice, compatibleCapabilities } from '../capabilityModel';
 
-export default function useAutomationDeviceSelectors({ devices, groups, selectedNode }) {
+export default function useAutomationDeviceSelectors({ devices, groups, tags, selectedNode }) {
   const deviceOptions = useMemo(() => {
     const items = Array.isArray(devices) ? devices : [];
     return items
@@ -36,6 +37,18 @@ export default function useAutomationDeviceSelectors({ devices, groups, selected
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [groups]);
 
+  const tagOptions = useMemo(() => {
+    const items = Array.isArray(tags) ? tags : [];
+    const allDevices = Array.isArray(devices) ? devices : [];
+    return items.map((tag) => {
+      const id = String(tag?.id || '').trim();
+      const slug = String(tag?.slug || '').trim();
+      if (!id || !slug) return null;
+      const members = allDevices.filter(device => (Array.isArray(device?.tags) ? device.tags : []).some(deviceTag => String(deviceTag?.id || '').trim() === id));
+      return { id, slug, selector: `tag:${slug}`, label: `${String(tag?.name || slug).trim()} (${members.length})`, raw: tag, members };
+    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
+  }, [devices, tags]);
+
   const deviceNameById = useMemo(() => {
     const items = Array.isArray(devices) ? devices : [];
     const m = new Map();
@@ -54,22 +67,32 @@ export default function useAutomationDeviceSelectors({ devices, groups, selected
     return m;
   }, [deviceOptions]);
 
-  const triggerKeyOptions = useMemo(() => {
-    if (!selectedNode || String(selectedNode.kind || '') !== 'trigger.device_state') return [];
+  const selectedCapabilities = useMemo(() => {
+    if (!selectedNode) return [];
     const targetsType = String(selectedNode?.data?.targets?.type || 'device').toLowerCase();
     const deviceId = targetsType === 'device' ? String(selectedNode?.data?.targets?.ids?.[0] || '').trim() : '';
-    if (!deviceId) return [];
-    const dev = deviceById.get(deviceId)?.raw;
-    const state = dev?.state;
-    if (!state || typeof state !== 'object') return [];
-    return Object.keys(state).sort();
-  }, [deviceById, selectedNode]);
+    if (deviceId) {
+      const device = deviceById.get(deviceId)?.raw;
+      return capabilitiesForDevice(device).filter(capability => capability.readable);
+    }
+    if (targetsType !== 'selector') return [];
+    const selector = String(selectedNode?.data?.targets?.selector || '').trim().toLowerCase();
+    const group = groupOptions.find(item => item.selector.toLowerCase() === selector)?.raw;
+    const tag = tagOptions.find(item => item.selector.toLowerCase() === selector);
+    const members = group ? (Array.isArray(group.devices) ? group.devices : []) : (tag?.members || []);
+    return compatibleCapabilities(members).filter(capability => capability.readable);
+  }, [deviceById, groupOptions, selectedNode, tagOptions]);
+
+  const triggerKeyOptions = useMemo(() => selectedCapabilities.map(capability => capability.property), [selectedCapabilities]);
 
   return {
     deviceOptions,
     groupOptions,
+    tagOptions,
     deviceNameById,
     deviceById,
+    selectedCapabilities,
+    compatibleCapabilities,
     triggerKeyOptions,
   };
 }

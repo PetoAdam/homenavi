@@ -30,12 +30,16 @@ type Engine struct {
 	httpClient          *http.Client
 	emailServiceURL     string
 	ersServiceURL       string
+	deviceHubURL        string
 	integrationProxyURL string
 
 	selMu         sync.Mutex
 	selectorTTL   time.Duration
 	selectorCache map[string]cachedSelector
 	selectorStore *cachex.JSONStore
+	stateMu       sync.Mutex
+	deviceStates  map[string]map[string]any
+	debounces     map[string]time.Time
 
 	mu          sync.RWMutex
 	workflows   map[uuid.UUID]dbinfra.Workflow
@@ -63,6 +67,7 @@ type Options struct {
 	HTTPClient          *http.Client
 	EmailServiceURL     string
 	ERSServiceURL       string
+	DeviceHubURL        string
 	IntegrationProxyURL string
 	MQTTSharedGroup     string
 	RunEvents           RunEventBus
@@ -82,6 +87,7 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 		httpClient:          hc,
 		emailServiceURL:     strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
 		ersServiceURL:       strings.TrimRight(strings.TrimSpace(opts.ERSServiceURL), "/"),
+		deviceHubURL:        strings.TrimRight(strings.TrimSpace(opts.DeviceHubURL), "/"),
 		integrationProxyURL: strings.TrimRight(strings.TrimSpace(opts.IntegrationProxyURL), "/"),
 		workflows:           map[uuid.UUID]dbinfra.Workflow{},
 		defs:                map[uuid.UUID]Definition{},
@@ -91,6 +97,8 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 		selectorTTL:         15 * time.Second,
 		selectorCache:       map[string]cachedSelector{},
 		selectorStore:       opts.SelectorStore,
+		deviceStates:        map[string]map[string]any{},
+		debounces:           map[string]time.Time{},
 		reloadEvery:         10 * time.Second,
 		mqttSharedGroup:     strings.TrimSpace(opts.MQTTSharedGroup),
 	}

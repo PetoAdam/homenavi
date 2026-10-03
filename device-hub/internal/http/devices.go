@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,80 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 )
+
+type commandCapability struct {
+	ID        string `json:"id"`
+	Property  string `json:"property"`
+	ValueType string `json:"value_type"`
+	Access    struct {
+		Write bool `json:"write"`
+	} `json:"access"`
+	Range *struct {
+		Min float64 `json:"min"`
+		Max float64 `json:"max"`
+	} `json:"range"`
+	Enum []string `json:"enum"`
+}
+
+func validateCapabilityStatePatch(raw datatypes.JSON, state map[string]any) error {
+	if !hasNonEmptyJSONArray(raw) {
+		return nil
+	}
+	var capabilities []commandCapability
+	if err := json.Unmarshal(raw, &capabilities); err != nil {
+		return nil
+	}
+	byProperty := make(map[string]commandCapability, len(capabilities))
+	for _, capability := range capabilities {
+		property := strings.TrimSpace(capability.Property)
+		if property == "" {
+			property = strings.TrimSpace(capability.ID)
+		}
+		if property != "" {
+			byProperty[property] = capability
+		}
+	}
+	for property, value := range state {
+		capability, known := byProperty[property]
+		if !known {
+			return fmt.Errorf("property %q is not supported by this device", property)
+		}
+		if !capability.Access.Write {
+			return fmt.Errorf("property %q is read-only", property)
+		}
+		valueType := strings.ToLower(strings.TrimSpace(capability.ValueType))
+		switch valueType {
+		case "boolean":
+			if _, ok := value.(bool); !ok {
+				return fmt.Errorf("property %q requires a boolean value", property)
+			}
+		case "number", "integer":
+			number, ok := value.(float64)
+			if !ok {
+				return fmt.Errorf("property %q requires a numeric value", property)
+			}
+			if capability.Range != nil && (number < capability.Range.Min || number > capability.Range.Max) {
+				return fmt.Errorf("property %q must be between %v and %v", property, capability.Range.Min, capability.Range.Max)
+			}
+		case "enum":
+			text, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("property %q requires an enum value", property)
+			}
+			matched := false
+			for _, option := range capability.Enum {
+				if text == option {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return fmt.Errorf("property %q has an unsupported value", property)
+			}
+		}
+	}
+	return nil
+}
 
 func hasNonEmptyJSONArray(raw []byte) bool {
 	trimmed := strings.TrimSpace(string(raw))
@@ -500,6 +575,10 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 	}
 	if len(statePatch) == 0 {
 		http.Error(w, "resolved state is empty", http.StatusBadRequest)
+		return
+	}
+	if err := validateCapabilityStatePatch(dev.Capabilities, statePatch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	corr := strings.TrimSpace(req.CorrelationID)

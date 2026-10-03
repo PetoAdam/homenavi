@@ -1,12 +1,16 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -150,10 +154,7 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 			for _, target := range targets {
 				deviceID := target.ExternalID
 				corr := fmt.Sprintf("auto-%s-%s-%s-%d", wfID.String(), n.ID, deviceID, baseTS)
-				cmd := HDPCommand{Envelope: hdp.Envelope{Schema: hdp.SchemaV1, Type: "command", DeviceID: deviceID, Corr: corr, TS: baseTS}, Command: cmdName, Args: a.Args}
-				b, _ := json.Marshal(cmd)
-				topic := hdp.Topic(hdp.CommandPrefix, deviceID)
-				if err := e.mq.Publish(topic, b); err != nil {
+				if err := e.dispatchCommand(ctx, deviceID, corr, cmdName, a); err != nil {
 					finish("failed", err.Error())
 					return err
 				}
@@ -297,6 +298,53 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 
 	_ = e.repo.FinishRun(ctx, runID, "success", "")
 	e.publishRunEvent(runID, RunEvent{Type: "run_finished", WorkflowID: wfID.String(), Status: "success"})
+}
+
+func (e *Engine) dispatchCommand(ctx context.Context, deviceID, correlationID, command string, action ActionSendCommand) error {
+	if strings.TrimSpace(action.CapabilityID) != "" {
+		if command != "set_state" {
+			return errors.New("capability-targeted actions only support set_state")
+		}
+		return e.dispatchCapabilityStatePatch(ctx, deviceID, correlationID, action.Args)
+	}
+	cmd := HDPCommand{Envelope: hdp.Envelope{Schema: hdp.SchemaV1, Type: "command", DeviceID: deviceID, Corr: correlationID, TS: time.Now().UTC().UnixMilli()}, Command: command, Args: action.Args}
+	payload, err := json.Marshal(cmd)
+	if err != nil {
+		return fmt.Errorf("marshal command: %w", err)
+	}
+	if e.mq == nil {
+		return errors.New("mqtt client unavailable")
+	}
+	if err := e.mq.Publish(hdp.Topic(hdp.CommandPrefix, deviceID), payload); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) dispatchCapabilityStatePatch(ctx context.Context, deviceID, correlationID string, state map[string]any) error {
+	if e.deviceHubURL == "" {
+		return errors.New("device hub url is not configured")
+	}
+	payload, err := json.Marshal(map[string]any{"state": state, "correlation_id": correlationID})
+	if err != nil {
+		return fmt.Errorf("marshal device state patch: %w", err)
+	}
+	endpoint := e.deviceHubURL + "/api/hdp/devices/" + url.PathEscape(deviceID) + "/commands"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build device hub command request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("dispatch through device hub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("device hub rejected command: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func evalIf(triggerEvent map[string]any, path string, op string, raw json.RawMessage) bool {

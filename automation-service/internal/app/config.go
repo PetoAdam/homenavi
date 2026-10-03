@@ -21,6 +21,7 @@ type Config struct {
 	UserServiceURL      string
 	EmailServiceURL     string
 	ERSServiceURL       string
+	DeviceHubURL        string
 	IntegrationProxyURL string
 	DB                  dbx.PostgresConfig
 	Redis               redisx.Config
@@ -41,6 +42,7 @@ func LoadConfig() (Config, error) {
 		UserServiceURL:      envx.String("USER_SERVICE_URL", "http://user-service:8001"),
 		EmailServiceURL:     envx.String("EMAIL_SERVICE_URL", "http://email-service:8002"),
 		ERSServiceURL:       envx.String("ERS_SERVICE_URL", "http://entity-registry-service:8095"),
+		DeviceHubURL:        envx.String("DEVICE_HUB_URL", "http://device-hub:8090"),
 		IntegrationProxyURL: envx.String("INTEGRATION_PROXY_URL", "http://integration-proxy:8099"),
 		DB:                  dbx.LoadPostgresConfig(dbx.PostgresConfig{SSLMode: "disable"}),
 		Redis:               redisConfig,
