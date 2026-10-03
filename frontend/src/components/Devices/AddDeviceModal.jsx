@@ -101,6 +101,7 @@ export default function AddDeviceModal({
   pairingConfig = {},
   onStartPairing,
   onStopPairing,
+  onInventoryMutation,
 }) {
   const [state, dispatch] = useReducer(addDeviceModalReducer, undefined, createAddDeviceModalInitialState);
   const {
@@ -121,6 +122,7 @@ export default function AddDeviceModal({
 
   const modalRef = useRef(null);
   const resumePairingRef = useRef(false);
+  const refreshedPairingSessionsRef = useRef(new Set());
 
   const updateForm = useCallback((updater) => {
     dispatch({ type: 'update-form', updater });
@@ -584,6 +586,11 @@ export default function AddDeviceModal({
       return;
     }
     if (status === 'completed') {
+      const sessionKey = `${activePairingSession.id || selectedProtocol}:${status}`;
+      if (sessionAddedDevices.length > 0 && !refreshedPairingSessionsRef.current.has(sessionKey)) {
+        refreshedPairingSessionsRef.current.add(sessionKey);
+        onInventoryMutation?.();
+      }
       dispatch({
         type: 'patch',
         partial: {
@@ -601,6 +608,11 @@ export default function AddDeviceModal({
       return;
     }
     if (status === 'stopped' && allowMultipleDevices && sessionAddedDevices.length > 0) {
+      const sessionKey = `${activePairingSession.id || selectedProtocol}:${status}`;
+      if (!refreshedPairingSessionsRef.current.has(sessionKey)) {
+        refreshedPairingSessionsRef.current.add(sessionKey);
+        onInventoryMutation?.();
+      }
       dispatch({
         type: 'patch',
         partial: {
@@ -662,7 +674,7 @@ export default function AddDeviceModal({
         },
       });
     }
-  }, [activePairingSession, pairingProfile, sessionAddedDevices]);
+  }, [activePairingSession, onInventoryMutation, pairingProfile, selectedProtocol, sessionAddedDevices]);
 
   const handleBackdropMouseDown = event => {
     if (event.target === event.currentTarget) {

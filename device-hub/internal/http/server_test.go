@@ -280,11 +280,21 @@ func TestManagementActionsForProtocol_UsesInterviewSupport(t *testing.T) {
 	srv.adapters.upsertFromHello([]byte(`{"adapter_id":"zigbee","protocol":"zigbee","pairing":{"schema_version":"1.0","supported":true,"supports_interview":true}}`))
 
 	actions := srv.managementActionsForProtocol("zigbee")
-	if len(actions) != 1 {
-		t.Fatalf("expected one management action, got %#v", actions)
+	if len(actions) != 2 {
+		t.Fatalf("expected two management actions, got %#v", actions)
 	}
 	if actions[0].Command != "reconfigure" || actions[0].Mode != "interview" {
 		t.Fatalf("expected reconfigure interview action, got %#v", actions[0])
+	}
+	if actions[1].Command != "reconfigure" || actions[1].Mode != "force_interview" {
+		t.Fatalf("expected force reinterview action, got %#v", actions[1])
+	}
+	capability := srv.reconfigureCapabilityForProtocol("zigbee")
+	if capability == nil || capability.Version != "v1" || len(capability.Modes) != 2 {
+		t.Fatalf("expected v1 capability with two modes, got %#v", capability)
+	}
+	if !srv.supportsReconfigureMode("zigbee", "force_interview") {
+		t.Fatal("expected force_interview to be supported")
 	}
 }
 

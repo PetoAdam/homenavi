@@ -282,6 +282,7 @@ type deviceListItem struct {
 	Inputs            json.RawMessage           `json:"inputs,omitempty"`
 	Configuration     deviceConfigurationStatus `json:"configuration"`
 	ManagementActions []deviceManagementAction  `json:"management_actions,omitempty"`
+	Reconfigure       *reconfigureCapability    `json:"reconfigure_capability,omitempty"`
 	Online            bool                      `json:"online"`
 	LastSeen          time.Time                 `json:"last_seen"`
 	CreatedAt         time.Time                 `json:"created_at"`

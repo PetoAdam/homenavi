@@ -196,12 +196,29 @@ func TestZigbeeReconfigureRequestInterview(t *testing.T) {
 	if topic != "zigbee2mqtt/bridge/request/device/interview" {
 		t.Fatalf("unexpected topic %q", topic)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(payload, &body); err != nil {
 		t.Fatalf("payload unmarshal: %v", err)
 	}
 	if body["id"] != "living-room-bulb" {
 		t.Fatalf("expected target id to be preserved, got %#v", body)
+	}
+}
+
+func TestZigbeeReconfigureRequestForceInterview(t *testing.T) {
+	topic, payload, err := zigbeeReconfigureRequest("force_interview", "living-room-bulb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if topic != "zigbee2mqtt/bridge/request/device/interview" {
+		t.Fatalf("unexpected topic %q", topic)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(payload, &body); err != nil {
+		t.Fatalf("payload unmarshal: %v", err)
+	}
+	if body["id"] != "living-room-bulb" || body["force"] != true {
+		t.Fatalf("expected forced interview payload, got %#v", body)
 	}
 }
 

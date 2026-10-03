@@ -49,6 +49,18 @@ type reconfigureRequest struct {
 	Args map[string]any `json:"args,omitempty"`
 }
 
+type reconfigureModeCapability struct {
+	ID                     string   `json:"id"`
+	RequiredArgs           []string `json:"required_args,omitempty"`
+	ExpectedTimeoutSeconds int      `json:"expected_timeout_seconds"`
+	BridgeAcknowledgement  bool     `json:"bridge_acknowledgement"`
+}
+
+type reconfigureCapability struct {
+	Version string                      `json:"version"`
+	Modes   []reconfigureModeCapability `json:"modes"`
+}
+
 type deviceActionResponse struct {
 	Status        string `json:"status"`
 	DeviceID      string `json:"device_id"`

@@ -8,6 +8,7 @@ import {
   normalizeTimestampMs,
   pairingConfigArrayToMap,
   resolveRestStateUpdatedAt,
+  sessionsArrayToMap,
   shouldSkipFreshDeviceListFetch,
 } from './useDeviceHubDevices.js';
 
@@ -56,6 +57,32 @@ describe('pairingConfigArrayToMap', () => {
     ];
     const result = pairingConfigArrayToMap(payload);
     expect(Object.keys(result)).toEqual(['matter']);
+  });
+});
+
+describe('sessionsArrayToMap', () => {
+  it('keeps devices observed over websocket when a pairing REST snapshot lags', () => {
+    const result = sessionsArrayToMap([{
+      protocol: 'zigbee',
+      id: 'pairing-1',
+      active: true,
+      status: 'active',
+      added_devices: [{ device_id: 'zigbee/0x1', state: 'detected' }],
+    }], {
+      zigbee: {
+        id: 'pairing-1',
+        protocol: 'zigbee',
+        active: true,
+        status: 'active',
+        addedDevices: [
+          { deviceId: 'zigbee/0x1', state: 'detected' },
+          { deviceId: 'zigbee/0x2', state: 'completed' },
+        ],
+      },
+    });
+
+    expect(result.zigbee.addedDevices).toHaveLength(2);
+    expect(result.zigbee.addedDevices.map(device => device.deviceId)).toEqual(['zigbee/0x1', 'zigbee/0x2']);
   });
 });
 
@@ -325,6 +352,66 @@ describe('useDeviceHubDevices realtime merge helpers', () => {
       '0x00124b0024abcd02',
     ]);
   });
+
+    it('keeps all concurrently paired Zigbee lightbulbs through interleaved progress events', () => {
+      const sessionID = 'pairing-three-bulbs';
+      const bulbs = [
+        ['0x00124b0024abcd11', 'Kitchen bulb'],
+        ['0x00124b0024abcd12', 'Hall bulb'],
+        ['0x00124b0024abcd13', 'Porch bulb'],
+      ];
+      let session = null;
+
+      bulbs.forEach(([externalId, name]) => {
+        session = buildPairingProgressSession({
+          id: sessionID,
+          origin: 'device-hub',
+          stage: 'active',
+          status: 'active',
+          active: true,
+          allow_multiple_devices: true,
+          added_devices: [{
+            device_id: `zigbee/${externalId}`,
+            external_id: externalId,
+            name,
+            state: 'detected',
+          }],
+        }, 'zigbee', session);
+      });
+
+      session = buildPairingProgressSession({
+        id: sessionID,
+        origin: 'device-hub',
+        stage: 'active',
+        status: 'active',
+        active: true,
+        allow_multiple_devices: true,
+        added_devices: [{
+          device_id: 'zigbee/0x00124b0024abcd12',
+          external_id: '0x00124b0024abcd12',
+          name: 'Hall bulb',
+          state: 'completed',
+        }],
+      }, 'zigbee', session);
+
+      const staleSnapshot = sessionsArrayToMap([{
+        id: sessionID,
+        protocol: 'zigbee',
+        active: true,
+        status: 'active',
+        allow_multiple_devices: true,
+        added_devices: [{
+          device_id: 'zigbee/0x00124b0024abcd11',
+          external_id: '0x00124b0024abcd11',
+          name: 'Kitchen bulb',
+          state: 'detected',
+        }],
+      }], { zigbee: session });
+
+      expect(staleSnapshot.zigbee.addedDevices).toHaveLength(3);
+      expect(staleSnapshot.zigbee.addedDevices.map(device => device.externalId)).toEqual(bulbs.map(([externalId]) => externalId));
+      expect(staleSnapshot.zigbee.addedDevices.find(device => device.externalId === '0x00124b0024abcd12')).toMatchObject({ state: 'completed' });
+    });
 
   it('upgrades placeholder multi-device entries when the canonical device id arrives', () => {
     const merged = mergePairingAddedDevices([

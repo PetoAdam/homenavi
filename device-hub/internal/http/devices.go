@@ -107,6 +107,7 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, r *http.Request) {
 			Icon:              d.Icon,
 			Configuration:     configurationStatusForDevice(&d),
 			ManagementActions: s.managementActionsForProtocol(d.Protocol),
+			Reconfigure:       s.reconfigureCapabilityForProtocol(d.Protocol),
 			Online:            d.Online,
 			LastSeen:          d.LastSeen,
 			CreatedAt:         d.CreatedAt,
@@ -389,35 +390,61 @@ func normalizeReconfigureMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "interview", "reinterview":
 		return "interview"
+	case "force_interview", "force-reinterview", "force_reinterview":
+		return "force_interview"
 	default:
 		return ""
 	}
 }
 
-func (s *Server) managementActionsForProtocol(protocol string) []deviceManagementAction {
-	proto := normalizeProtocol(protocol)
-	if proto == "" || s == nil || s.adapters == nil {
+func (s *Server) reconfigureCapabilityForProtocol(protocol string) *reconfigureCapability {
+	if s == nil || s.adapters == nil || normalizeProtocol(protocol) != "zigbee" || !s.adapters.supportsInterview(protocol) {
 		return nil
 	}
-	if s.adapters.supportsInterview(proto) {
-		return []deviceManagementAction{{
+	return &reconfigureCapability{
+		Version: "v1",
+		Modes: []reconfigureModeCapability{
+			{ID: "interview", ExpectedTimeoutSeconds: int(reconfigureCommandLifecycleTimeout.Seconds()), BridgeAcknowledgement: true},
+			{ID: "force_interview", ExpectedTimeoutSeconds: int(reconfigureCommandLifecycleTimeout.Seconds()), BridgeAcknowledgement: true},
+		},
+	}
+}
+
+func (s *Server) managementActionsForProtocol(protocol string) []deviceManagementAction {
+	capability := s.reconfigureCapabilityForProtocol(protocol)
+	if capability == nil {
+		return nil
+	}
+	return []deviceManagementAction{
+		{
 			ID:          "reinterview",
 			Command:     "reconfigure",
 			Mode:        "interview",
 			Label:       "Reinterview device",
 			Description: "Ask the adapter to rerun device interview and refresh capabilities or metadata.",
-		}}
+		},
+		{
+			ID:          "force-reinterview",
+			Command:     "reconfigure",
+			Mode:        "force_interview",
+			Label:       "Force reinterview",
+			Description: "Force a fresh device interview when normal metadata recovery did not resolve the issue.",
+		},
 	}
-	return nil
 }
 
 func (s *Server) supportsReconfigureMode(protocol, mode string) bool {
-	switch normalizeReconfigureMode(mode) {
-	case "interview":
-		return s != nil && s.adapters != nil && s.adapters.supportsInterview(protocol)
-	default:
+	normalized := normalizeReconfigureMode(mode)
+	capability := s.reconfigureCapabilityForProtocol(protocol)
+	if normalized == "" || capability == nil {
 		return false
 	}
+	for _, supported := range capability.Modes {
+		if supported.ID == normalized {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, deviceID string) {

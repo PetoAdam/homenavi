@@ -92,7 +92,7 @@ func (z *ZigbeeAdapter) handleBridgeEvent(m mqttinfra.Message) {
 		z.setFriendlyMapping(friendly, external)
 		z.reconcileFriendlyDevice(ctx, friendly, external)
 		status := adapterutil.StringField(evt.Data, "status")
-		if pending, ok := z.pendingReconfigureForExternal(external, "interview"); ok {
+		if pending, ok := z.pendingReconfigureForExternal(external, ""); ok {
 			switch interviewStageFromStatus(status) {
 			case "interviewing":
 				z.publishHDPCommandResult(&model.Device{ExternalID: external}, pending.corr, true, "in_progress", "")

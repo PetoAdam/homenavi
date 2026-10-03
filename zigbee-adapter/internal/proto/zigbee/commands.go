@@ -158,8 +158,11 @@ func zigbeeReconfigureRequest(mode, target string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("reconfigure target is required")
 	}
 	switch normalizedMode {
-	case "interview", "reinterview":
-		payload, err := json.Marshal(map[string]string{"id": normalizedTarget})
+	case "interview", "reinterview", "force_interview":
+		payload, err := json.Marshal(map[string]any{
+			"id":    normalizedTarget,
+			"force": normalizedMode == "force_interview",
+		})
 		if err != nil {
 			return "", nil, err
 		}

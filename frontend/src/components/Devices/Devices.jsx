@@ -36,6 +36,7 @@ import {
 import { devicesUiInitialState, devicesUiReducer } from './devicesUiReducer';
 import { useDevicePairingMutations } from './hooks/useDevicePairingMutations';
 import { useDevicesIntegrationSources } from './hooks/useDevicesIntegrationSources';
+import { useInventoryMutationRefresh } from './hooks/useInventoryMutationRefresh';
 import './Devices.css';
 
 const FALLBACK_INTEGRATIONS = [
@@ -73,6 +74,7 @@ export default function Devices() {
     connectionInfo,
     pairingSessions,
     pairingConfig,
+    refreshDevices,
     refreshPairings,
   } = useDeviceHubDevices({
     enabled: isResidentOrAdmin,
@@ -113,6 +115,7 @@ export default function Devices() {
   const [uiState, dispatchUi] = useReducer(devicesUiReducer, devicesUiInitialState);
   const [iconOverrides, setIconOverrides] = useState({});
   const { pendingCommands, commandError, showAddModal } = uiState;
+  const inventoryRefresh = useInventoryMutationRefresh({ refreshDeviceHub: refreshDevices, refreshErs });
   const { startPairingMutation, stopPairingMutation } = useDevicePairingMutations({
     accessToken,
     refreshPairings,
@@ -283,7 +286,7 @@ export default function Devices() {
     if (!res.success) {
       throw new Error(res.error || 'Unable to rename device');
     }
-    refreshErs?.();
+    inventoryRefresh.notifyMutationSucceeded();
     return res.data;
   };
 
@@ -315,9 +318,9 @@ export default function Devices() {
       }
     }
 
-    refreshErs?.();
+    inventoryRefresh.notifyMutationSucceeded();
     return res.data;
-  }, [accessToken, refreshErs]);
+  }, [accessToken, inventoryRefresh]);
 
   const handleUpdateIcon = useCallback(async (device, iconKey) => {
     if (!device?.id) {
@@ -364,14 +367,14 @@ export default function Devices() {
       if (!ersRes.success) {
         throw new Error(ersRes.error || hdpRes.error || 'Unable to delete device');
       }
-      refreshErs?.();
+      inventoryRefresh.notifyMutationSucceeded();
       return ersRes.data;
     }
 
     // ERS is auto-managed from HDP device_removed events.
-    refreshErs?.();
+    inventoryRefresh.notifyMutationSucceeded();
     return hdpRes.data;
-  }, [accessToken, refreshErs]);
+  }, [accessToken, inventoryRefresh]);
 
   const handleStartPairing = useCallback(
     async (payload) => startPairingMutation.mutateAsync(payload),
@@ -656,9 +659,12 @@ export default function Devices() {
         </GlassCard>
       </section>
 
-      {(realtimeError || ersError || commandError) && (
+      {(realtimeError || ersError || commandError || inventoryRefresh.error) && (
         <GlassCard className="devices-error-card" interactive={false}>
-          <div className="devices-error-text">{commandError || ersError || realtimeError}</div>
+          <div className="devices-error-text">{inventoryRefresh.error || commandError || ersError || realtimeError}</div>
+          {inventoryRefresh.error ? (
+            <button type="button" onClick={() => { void inventoryRefresh.retry(); }}>Retry refresh</button>
+          ) : null}
         </GlassCard>
       )}
 
@@ -835,6 +841,7 @@ export default function Devices() {
         pairingConfig={pairingConfig}
         onStartPairing={handleStartPairing}
         onStopPairing={handleStopPairing}
+        onInventoryMutation={inventoryRefresh.notifyMutationSucceeded}
       />
     </div>
   );

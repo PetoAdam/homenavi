@@ -422,11 +422,14 @@ export function buildPairingProgressSession(data, protocol, existing = null) {
   };
 }
 
-function sessionsArrayToMap(payload) {
+export function sessionsArrayToMap(payload, existing = {}) {
   if (!Array.isArray(payload)) return {};
   const next = {};
   payload.forEach(item => {
-    const session = mapPairingSession(item);
+    const mapped = mapPairingSession(item);
+    const session = mapped
+      ? buildPairingProgressSession(item, mapped.protocol, existing?.[mapped.protocol])
+      : null;
     if (session) {
       next[session.protocol] = session;
     }
@@ -773,7 +776,7 @@ export default function useDeviceHubDevices(options = {}) {
       if (!mountedRef.current) {
         return;
       }
-      setPairingSessions(sessionsArrayToMap(payload));
+      setPairingSessions(prev => sessionsArrayToMap(payload, prev));
     } catch (err) {
       console.warn('Pairing status fetch failed', err);
     }
@@ -1180,6 +1183,13 @@ export default function useDeviceHubDevices(options = {}) {
     commandLockReason,
   }), [commandLockReason, commandsReady, connectionState.metadataStatus, connectionState.realtimeMetrics, connectionState.stateStatus]);
 
+  const refreshDevices = useCallback(async () => {
+    const refreshed = await loadInitialDevices({ minFreshMs: 0 });
+    if (!refreshed) {
+      throw new Error('Unable to refresh Device Hub inventory');
+    }
+  }, [loadInitialDevices]);
+
   return {
     devices,
     stats,
@@ -1190,6 +1200,7 @@ export default function useDeviceHubDevices(options = {}) {
     renameDevice,
     pairingSessions,
     pairingConfig,
+    refreshDevices,
     refreshPairings,
   };
 }
