@@ -80,6 +80,13 @@ type TriggerDeviceState struct {
 	CapabilityID   string          `json:"capability_id,omitempty"`
 	Aggregation    string          `json:"aggregation,omitempty"`
 	DebounceSec    int             `json:"debounce_sec,omitempty"`
+	Conditions     []StateCondition `json:"conditions,omitempty"`
+}
+
+type StateCondition struct {
+	Key   string          `json:"key"`
+	Op    string          `json:"op"`
+	Value json.RawMessage `json:"value,omitempty"`
 }
 
 type TriggerSchedule struct {
@@ -270,6 +277,16 @@ func validateNode(n NodeDef) error {
 			}
 			if t.DebounceSec < 0 {
 				return errors.New("trigger.device_state.debounce_sec must be >= 0")
+			}
+		}
+		for _, condition := range t.Conditions {
+			if strings.TrimSpace(condition.Key) == "" {
+				return errors.New("trigger.device_state.conditions[].key is required")
+			}
+			switch strings.ToLower(strings.TrimSpace(condition.Op)) {
+			case "exists", "changed", "eq", "neq", "gt", "gte", "lt", "lte":
+			default:
+				return errors.New("trigger.device_state.conditions[].op is unsupported")
 			}
 		}
 		return nil

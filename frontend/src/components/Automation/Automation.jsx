@@ -851,6 +851,7 @@ function Automation() {
                 userOptions={userOptions}
                 isAdmin={isAdmin}
                 currentUserId={currentUserId}
+                onToast={setToast}
                 disconnectIncoming={disconnectIncoming}
                 disconnectOutgoing={disconnectOutgoing}
                 deleteSelectedNode={deleteSelectedNode}

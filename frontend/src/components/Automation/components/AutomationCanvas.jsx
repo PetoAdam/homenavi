@@ -9,6 +9,94 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import '../../common/CanvasPrimitives/CanvasPrimitives.css';
 
+function displaySelector(selector) {
+  const value = String(selector || '').trim();
+  if (!value) return 'selected devices';
+  const separator = value.indexOf(':');
+  if (separator < 1) return value;
+  const type = value.slice(0, separator).trim().toLowerCase();
+  const name = value.slice(separator + 1).trim();
+  if (!name) return value;
+  if (type === 'group') return `the ${name} group`;
+  if (type === 'tag') return `devices tagged ${name}`;
+  return `devices matching ${value}`;
+}
+
+function describeTarget(targets, deviceNameById) {
+  const type = String(targets?.type || 'device').toLowerCase();
+  if (type === 'selector') return displaySelector(targets?.selector);
+  const ids = Array.isArray(targets?.ids) ? targets.ids.map(id => String(id || '').trim()).filter(Boolean) : [];
+  const names = ids.map(id => deviceNameById.get(id) || id);
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  if (names.length === 1) return names[0];
+  if (names.length > 2) return `${names.slice(0, 2).join(', ')}, and ${names.length - 2} more`;
+  return 'a selected device';
+}
+
+function displayValue(value) {
+  if (value === undefined || value === null || value === '') return 'value';
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function describeCommandUpdates(data) {
+  const commands = Array.isArray(data?.capability_commands) ? data.capability_commands : [];
+  const updates = commands.length > 0
+    ? commands
+    : [{ id: data?.capability_id, property: data?.capability_property, value: data?.capability_value }];
+  return updates
+    .map(command => {
+      const property = String(command?.property || command?.id || '').trim();
+      return property ? `${property.replace(/[_-]+/g, ' ')} to ${displayValue(command?.value)}` : '';
+    })
+    .filter(Boolean)
+    .join(' and ');
+}
+
+function conditionValue(rawValue) {
+  if (typeof rawValue !== 'string') return rawValue;
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return rawValue;
+  }
+}
+
+function describeCondition(condition) {
+  const key = String(condition?.key || '').trim();
+  if (!key) return '';
+  const op = String(condition?.op || 'exists').trim() || 'exists';
+  const phrase = { eq: 'is', neq: 'is not', gt: 'is above', gte: 'is at least', lt: 'is below', lte: 'is at most', exists: 'has a value', changed: 'changes' }[op] || op;
+  const needsValue = !['exists', 'changed'].includes(op);
+  return `${key.replace(/[_-]+/g, ' ')} ${phrase}${needsValue ? ` ${displayValue(condition?.value)}` : ''}`;
+}
+
+function storedConditionValue(condition) {
+  if (String(condition?.value_mode || 'json') !== 'builder') return conditionValue(condition?.value_text);
+  const type = String(condition?.value_type || 'boolean').toLowerCase();
+  if (type === 'boolean') return Boolean(condition?.value_bool);
+  if (type === 'number') return condition?.value_number;
+  return condition?.value_string;
+}
+
+function describeTriggerConditions(data) {
+  const persisted = Array.isArray(data?.conditions) ? data.conditions : [];
+  if (persisted.length > 0) return persisted.map(describeCondition).filter(Boolean).join(' and ');
+
+  const ui = data?.ui || {};
+  const primaryValue = ui.value_type === 'number' ? ui.value_number
+    : ui.value_type === 'text' ? ui.value_string
+      : ui.value_bool === false ? false : true;
+  const primary = { key: data?.key, op: data?.op, value: primaryValue };
+  const additional = Array.isArray(data?.additional_conditions) ? data.additional_conditions.map(condition => ({
+    key: condition?.key,
+    op: condition?.op,
+    value: storedConditionValue(condition),
+  })) : [];
+  return [primary, ...additional].map(describeCondition).filter(Boolean).join(' and ');
+}
+
 export default function AutomationCanvas({
   canvasRef,
   onCanvasDragOver,
@@ -272,19 +360,17 @@ export default function AutomationCanvas({
             let bodyText = nodeBodyText(node);
 
             if (kind === 'trigger.device_state' || kind === 'action.send_command') {
-              const targetsType = String(node?.data?.targets?.type || 'device').toLowerCase();
-              const deviceId = targetsType === 'device' ? String(node?.data?.targets?.ids?.[0] || '').trim() : '';
-              const deviceName = deviceId ? (deviceNameById.get(deviceId) || deviceId) : '';
+              const target = describeTarget(node?.data?.targets, deviceNameById);
               if (kind === 'trigger.device_state') {
-                subtitle = deviceName ? `Device: ${deviceName}` : 'Device state';
-                const key = String(node?.data?.key || '').trim();
-                const op = String(node?.data?.op || 'exists').trim() || 'exists';
-                bodyText = `${deviceName ? `device: ${deviceName}` : 'device: —'}${key ? ` • ${key} ${op}` : ''}`;
+                subtitle = 'When device state changes';
+                const conditions = describeTriggerConditions(node?.data);
+                bodyText = conditions ? `For ${target}, ${conditions}` : `For ${target}, choose a capability`;
               }
               if (kind === 'action.send_command') {
                 const cmd = String(node?.data?.command || '').trim() || 'set_state';
-                subtitle = `${deviceName ? `Device: ${deviceName}` : 'Device'}${cmd ? ` • ${cmd}` : ''}`;
-                bodyText = `${deviceName ? `device: ${deviceName}` : 'device: —'} • cmd: ${cmd}`;
+                const updates = describeCommandUpdates(node?.data);
+                subtitle = 'Set device state';
+                bodyText = updates ? `For ${target}, set ${updates}` : (cmd === 'set_state' ? `For ${target}, choose a capability to update` : `For ${target}, run ${cmd}`);
               }
             }
 

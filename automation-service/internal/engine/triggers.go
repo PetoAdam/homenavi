@@ -28,7 +28,7 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	if st.Schema != hdp.SchemaV1 || st.Type != "state" {
 		return
 	}
-	previousState := e.recordDeviceState(st.DeviceID, st.State)
+	previousState, currentState := e.recordDeviceState(st.DeviceID, st.State)
 
 	type match struct {
 		wfID          uuid.UUID
@@ -72,7 +72,7 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	e.mu.RUnlock()
 
 	for _, c := range candidates {
-		if !matchStateTriggerWithPrevious(c.trigger, st.State, previousState) {
+		if !matchStateTriggerWithPrevious(c.trigger, currentState, previousState) {
 			e.clearDebounce(c.wfID, c.triggerNodeID, st.DeviceID)
 			continue
 		}
@@ -94,12 +94,16 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	}
 }
 
-func (e *Engine) recordDeviceState(deviceID string, state map[string]any) map[string]any {
+func (e *Engine) recordDeviceState(deviceID string, state map[string]any) (map[string]any, map[string]any) {
 	e.stateMu.Lock()
 	defer e.stateMu.Unlock()
 	previous := cloneState(e.deviceStates[deviceID])
-	e.deviceStates[deviceID] = cloneState(state)
-	return previous
+	current := cloneState(previous)
+	for key, value := range state {
+		current[key] = value
+	}
+	e.deviceStates[deviceID] = current
+	return previous, cloneState(current)
 }
 
 func cloneState(state map[string]any) map[string]any {
@@ -364,8 +368,20 @@ func matchStateTrigger(t TriggerDeviceState, state map[string]any) bool {
 }
 
 func matchStateTriggerWithPrevious(t TriggerDeviceState, state, previous map[string]any) bool {
-	key := strings.TrimSpace(t.Key)
-	op := strings.ToLower(strings.TrimSpace(t.Op))
+	if len(t.Conditions) > 0 {
+		for _, condition := range t.Conditions {
+			if !matchStateCondition(condition.Key, condition.Op, condition.Value, state, previous) {
+				return false
+			}
+		}
+		return true
+	}
+	return matchStateCondition(t.Key, t.Op, t.Value, state, previous)
+}
+
+func matchStateCondition(key, op string, value json.RawMessage, state, previous map[string]any) bool {
+	key = strings.TrimSpace(key)
+	op = strings.ToLower(strings.TrimSpace(op))
 	if op == "" {
 		op = "exists"
 	}
@@ -386,8 +402,8 @@ func matchStateTriggerWithPrevious(t TriggerDeviceState, state, previous map[str
 	}
 
 	var want any
-	if len(t.Value) > 0 {
-		_ = json.Unmarshal(t.Value, &want)
+	if len(value) > 0 {
+		_ = json.Unmarshal(value, &want)
 	}
 
 	switch op {

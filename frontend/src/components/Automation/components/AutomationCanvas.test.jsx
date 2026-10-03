@@ -106,4 +106,38 @@ describe('AutomationCanvas', () => {
 
     view.unmount();
   });
+
+  it('names selector targets and each capability update in node bodies', () => {
+    const view = renderIntoDom(
+      <AutomationCanvas
+        {...buildProps({
+          editorNodes: [
+            {
+              id: 'trigger-1', kind: 'trigger.device_state', x: 10, y: 10,
+              data: {
+                targets: { type: 'selector', selector: 'group:downstairs' }, key: 'temperature', op: 'gte', ui: { value_type: 'number', value_number: 21 },
+                additional_conditions: [{ key: 'humidity', op: 'lte', value_mode: 'builder', value_type: 'number', value_number: '55' }],
+              },
+            },
+            {
+              id: 'action-1', kind: 'action.send_command', x: 280, y: 10,
+              data: {
+                targets: { type: 'device', ids: ['device-1', 'device-2'] }, command: 'set_state',
+                capability_commands: [
+                  { id: 'fan-speed', property: 'fan_speed', value: 3 },
+                  { id: 'power', property: 'power', value: true },
+                ],
+              },
+            },
+          ],
+          deviceNameById: new Map([['device-1', 'Air Purifier'], ['device-2', 'Desk Fan']]),
+        })}
+      />,
+    );
+
+    expect(document.body.textContent).toContain('For the downstairs group, temperature is at least 21 and humidity is at most 55');
+    expect(document.body.textContent).toContain('For Air Purifier and Desk Fan, set fan speed to 3 and power to on');
+
+    view.unmount();
+  });
 });

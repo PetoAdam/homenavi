@@ -26,6 +26,7 @@ export default function AutomationPropertiesPanel({
   userOptions,
   isAdmin,
   currentUserId,
+  onToast,
   disconnectIncoming,
   disconnectOutgoing,
   deleteSelectedNode,
@@ -103,6 +104,7 @@ export default function AutomationPropertiesPanel({
           tagOptions={tagOptions}
           selectedCapabilities={selectedCapabilities}
           triggerKeyOptions={triggerKeyOptions}
+          onToast={onToast}
         />
       )}
 
@@ -116,6 +118,7 @@ export default function AutomationPropertiesPanel({
           groupOptions={groupOptions}
           selectedCapabilities={selectedCapabilities}
           triggerKeyOptions={triggerKeyOptions}
+          onToast={onToast}
         />
       )}
 

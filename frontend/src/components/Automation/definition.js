@@ -55,6 +55,18 @@ function describeTargets(targets) {
   return 'device —';
 }
 
+function boundedText(value, limit = 280) {
+  const text = String(value || '').trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function describeCommandPatch(data) {
+  const commands = Array.isArray(data?.capability_commands) ? data.capability_commands : [];
+  if (commands.length > 0) return commands.map(command => command.property || command.id).filter(Boolean).join(', ');
+  if (data?.capability_property || data?.capability_id) return String(data.capability_property || data.capability_id);
+  return data?.args && typeof data.args === 'object' ? Object.keys(data.args).join(', ') : '';
+}
+
 export function defaultNodeData(kind) {
   const k = String(kind || '').toLowerCase();
   if (k === 'trigger.manual') {
@@ -426,6 +438,34 @@ export function buildDefinitionFromEditor(editor) {
       } else {
         data.value = null;
       }
+      const additionalConditions = Array.isArray(data.additional_conditions) ? data.additional_conditions : [];
+      if (additionalConditions.length > 0) {
+        const conditions = [{ key: data.key, op: data.op, value: data.value }];
+        additionalConditions.forEach((condition) => {
+          const key = String(condition?.key || '').trim();
+          const op = String(condition?.op || 'exists').trim().toLowerCase();
+          if (!key) throw new Error('Each additional trigger condition needs a capability');
+          const requiresConditionValue = op !== 'exists' && op !== 'changed';
+          const valueMode = String(condition?.value_mode || 'json').toLowerCase();
+          if (requiresConditionValue && valueMode === 'builder') {
+            const type = String(condition?.value_type || 'boolean').toLowerCase();
+            if (type === 'boolean') {
+              condition.value_text = JSON.stringify(!!condition.value_bool);
+            } else if (type === 'number') {
+              const numericValue = Number(condition?.value_number);
+              if (!Number.isFinite(numericValue)) throw new Error('Additional trigger condition value must be a valid number');
+              condition.value_text = JSON.stringify(numericValue);
+            } else {
+              condition.value_text = JSON.stringify(String(condition?.value_string ?? ''));
+            }
+          }
+          const rawValue = String(condition?.value_text || '').trim();
+          const value = requiresConditionValue ? safeJsonParse(rawValue) : null;
+          if (requiresConditionValue && value == null) throw new Error('Additional trigger condition value must be valid JSON');
+          conditions.push({ key, op, value });
+        });
+        data.conditions = conditions;
+      }
     }
 
     if (String(n.kind).toLowerCase() === 'trigger.schedule') {
@@ -516,7 +556,9 @@ export function nodeSubtitle(node) {
   const kind = String(node?.kind || '').toLowerCase();
   if (kind === 'trigger.manual') return 'Manual';
   if (kind === 'trigger.device_state') {
-    return `Device state • ${describeTargets(node?.data?.targets)}`;
+    const key = String(node?.data?.key || '').trim();
+    const conditionCount = Array.isArray(node?.data?.conditions) ? node.data.conditions.length : 0;
+    return boundedText(`Device state • ${describeTargets(node?.data?.targets)}${key ? ` • ${key}` : ''}${conditionCount > 1 ? ` + ${conditionCount - 1} condition${conditionCount === 2 ? '' : 's'}` : ''}`);
   }
   if (kind === 'trigger.schedule') {
     const c = String(node?.data?.cron || '').trim();
@@ -524,7 +566,8 @@ export function nodeSubtitle(node) {
   }
   if (kind === 'action.send_command') {
     const c = String(node?.data?.command || '').trim();
-    return `${describeTargets(node?.data?.targets)}${c ? ` • ${c}` : ''}`;
+    const patch = describeCommandPatch(node?.data);
+    return boundedText(`${describeTargets(node?.data?.targets)}${c ? ` • ${c}` : ''}${patch ? ` • ${patch}` : ''}`);
   }
   if (kind === 'action.notify_email') {
     const ids = Array.isArray(node?.data?.user_ids) ? node.data.user_ids : [];
@@ -553,7 +596,8 @@ export function nodeBodyText(node) {
   if (kind === 'trigger.device_state') {
     const key = String(node?.data?.key || '').trim();
     const op = String(node?.data?.op || 'exists').trim() || 'exists';
-    return `${describeTargets(node?.data?.targets)}${key ? ` • ${key} ${op}` : ''}`;
+    const conditionCount = Array.isArray(node?.data?.conditions) ? node.data.conditions.length : 0;
+    return boundedText(`${describeTargets(node?.data?.targets)}${key ? ` • ${key} ${op}` : ''}${conditionCount > 1 ? ` • AND ${conditionCount - 1} more` : ''}`);
   }
   if (kind === 'trigger.schedule') {
     const c = String(node?.data?.cron || '').trim();
@@ -561,7 +605,8 @@ export function nodeBodyText(node) {
   }
   if (kind === 'action.send_command') {
     const c = String(node?.data?.command || '').trim() || 'set_state';
-    return `${describeTargets(node?.data?.targets)} • cmd: ${c}`;
+    const patch = describeCommandPatch(node?.data);
+    return boundedText(`${describeTargets(node?.data?.targets)} • ${c}${patch ? ` • ${patch}` : ''}`);
   }
   if (kind === 'action.notify_email') {
     const subject = String(node?.data?.subject || '').trim();

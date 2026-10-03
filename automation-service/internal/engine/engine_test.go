@@ -83,6 +83,30 @@ func TestMatchStateTrigger_ChangedRequiresPriorDifferentValue(t *testing.T) {
 	}
 }
 
+func TestMatchStateTrigger_ConditionsRequireEverySameDeviceCondition(t *testing.T) {
+	brightness, _ := json.Marshal(80)
+	color, _ := json.Marshal("warm")
+	trigger := TriggerDeviceState{Conditions: []StateCondition{
+		{Key: "brightness", Op: "gte", Value: brightness},
+		{Key: "color_mode", Op: "eq", Value: color},
+	}}
+	if !matchStateTrigger(trigger, map[string]any{"brightness": 90, "color_mode": "warm"}) {
+		t.Fatal("expected all same-device conditions to match")
+	}
+	if matchStateTrigger(trigger, map[string]any{"brightness": 90, "color_mode": "cool"}) {
+		t.Fatal("expected a failing condition to block the trigger")
+	}
+}
+
+func TestRecordDeviceState_MergesSeparateCapabilityUpdates(t *testing.T) {
+	engine := New(nil, nil, Options{})
+	_, _ = engine.recordDeviceState("lamp", map[string]any{"brightness": 90})
+	_, current := engine.recordDeviceState("lamp", map[string]any{"color_mode": "warm"})
+	if current["brightness"] != 90 || current["color_mode"] != "warm" {
+		t.Fatalf("expected merged state, got %v", current)
+	}
+}
+
 func TestMatchesAggregation_AllRequiresEveryTargetToMatch(t *testing.T) {
 	engine := New(nil, nil, Options{})
 	engine.recordDeviceState("device-a", map[string]any{"temperature": 22.0})

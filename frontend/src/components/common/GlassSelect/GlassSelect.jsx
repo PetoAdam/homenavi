@@ -11,7 +11,7 @@ function normalizeOptions(options) {
       if (typeof opt === 'string') return { value: opt, label: opt };
       if (!opt || typeof opt !== 'object') return null;
       const value = typeof opt.value === 'string' ? opt.value : '';
-      const label = typeof opt.label === 'string' ? opt.label : value;
+      const label = typeof opt.label === 'undefined' || opt.label === null ? value : opt.label;
       if (!value) return null;
       return { value, label };
     })
@@ -129,7 +129,6 @@ export default function GlassSelect({
                   }}
                   role="option"
                   aria-selected={isActive}
-                  title={opt.label}
                 >
                   <span className="glass-select__option-label">{opt.label}</span>
                   {isActive && <FontAwesomeIcon icon={faCheck} className="glass-select__check" />}

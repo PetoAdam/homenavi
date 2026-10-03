@@ -1,6 +1,12 @@
 import React from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
 import BaseNodeEditor from './BaseNodeEditor';
 import { operatorsForCapability } from '../../capabilityModel';
+import { CapabilityIcon, DeviceIcon } from '../AutomationIcons';
+import GlassSelect from '../../../common/GlassSelect/GlassSelect';
+import Button from '../../../common/Button/Button';
+import { triggerValueFromBuilder, triggerValueToBuilder } from '../../triggerValueConversion';
 
 const conditionLabels = {
   exists: 'Has a value',
@@ -13,6 +19,12 @@ const conditionLabels = {
   lte: 'Is at most',
 };
 
+function conditionSummary(label, op, value) {
+  const verb = { eq: 'is', neq: 'is not', gt: 'is greater than', gte: 'is at least', lt: 'is less than', lte: 'is at most', exists: 'has a value', changed: 'changes' }[op] || op;
+  if (op === 'exists' || op === 'changed') return `${label} ${verb}`;
+  return `${label} ${verb} ${String(value ?? 'a value')}`;
+}
+
 function valueTypeForCapability(capability) {
   if (!capability) return '';
   if (capability.type === 'binary') return 'boolean';
@@ -21,7 +33,62 @@ function valueTypeForCapability(capability) {
   return '';
 }
 
+function additionalConditionValue(condition) {
+  if (String(condition?.value_mode || 'json') !== 'builder') return condition?.value_text || 'a value';
+  const type = String(condition?.value_type || 'boolean').toLowerCase();
+  if (type === 'boolean') return Boolean(condition?.value_bool);
+  if (type === 'number') return condition?.value_number;
+  return condition?.value_string;
+}
+
 export default class TriggerEditor extends BaseNodeEditor {
+  showToast(message) {
+    this.props.onToast?.(message);
+  }
+
+  switchValueMode(mode, capability) {
+    const selectedNode = this.selectedNode;
+    if (!selectedNode) return;
+    const ui = selectedNode.data?.ui || {};
+    if (mode === 'json') {
+      const conversion = triggerValueFromBuilder(ui, capability);
+      this.setSelectedNodeUI({ value_mode: 'json', value_text: conversion.valid ? conversion.text : '' });
+      this.showToast(conversion.valid ? 'Builder value converted to JSON.' : `Builder could not be converted: ${conversion.message}`);
+      return;
+    }
+    const conversion = triggerValueToBuilder(ui.value_text, capability);
+    this.setSelectedNodeUI(conversion.valid
+      ? { ...conversion.ui, value_mode: 'builder' }
+      : { value_bool: true, value_number: '', value_string: '', value_mode: 'builder' });
+    this.showToast(conversion.valid ? 'JSON value converted to Builder.' : `Cannot convert JSON to Builder: ${conversion.message} A blank Builder is ready.`);
+  }
+
+  updateAdditionalCondition(index, patch) {
+    const selectedNode = this.selectedNode;
+    if (!selectedNode) return;
+    const conditions = Array.isArray(selectedNode.data?.additional_conditions) ? selectedNode.data.additional_conditions : [];
+    this.setSelectedNodeData({
+      additional_conditions: conditions.map((condition, conditionIndex) => conditionIndex === index ? { ...condition, ...patch } : condition),
+    });
+  }
+
+  switchAdditionalValueMode(index, mode, capability) {
+    const selectedNode = this.selectedNode;
+    const condition = selectedNode?.data?.additional_conditions?.[index];
+    if (!condition) return;
+    if (mode === 'json') {
+      const conversion = triggerValueFromBuilder(condition, capability);
+      this.updateAdditionalCondition(index, { value_mode: 'json', value_text: conversion.valid ? conversion.text : '' });
+      this.showToast(conversion.valid ? 'Builder value converted to JSON.' : `Builder could not be converted: ${conversion.message}`);
+      return;
+    }
+    const conversion = triggerValueToBuilder(condition.value_text, capability);
+    this.updateAdditionalCondition(index, conversion.valid
+      ? { ...conversion.ui, value_mode: 'builder' }
+      : { value_bool: true, value_number: '', value_string: '', value_mode: 'builder' });
+    this.showToast(conversion.valid ? 'JSON value converted to Builder.' : `Cannot convert JSON to Builder: ${conversion.message} A blank Builder is ready.`);
+  }
+
   buildCronFromSimple(ui) {
     const preset = String(ui?.schedule_preset || 'every_n_minutes');
     const clampInt = (raw, min, max, fallback) => {
@@ -90,6 +157,69 @@ export default class TriggerEditor extends BaseNodeEditor {
       ...(Array.isArray(tagOptions) ? tagOptions.map(item => ({ ...item, kind: 'Tag' })) : []),
     ];
     const selectedDeviceId = targetsType === 'device' ? String(selectedNode.data?.targets?.ids?.[0] || '') : '';
+    const selectedDevice = deviceOptions.find(device => device.id === selectedDeviceId);
+    const primaryValue = selectedCapability?.type === 'binary' ? Boolean(selectedNode.data?.ui?.value_bool)
+      : selectedCapability?.type === 'numeric' ? selectedNode.data?.ui?.value_number
+        : selectedNode.data?.ui?.value_string;
+    const triggerSummary = selectedCapability ? [conditionSummary(selectedCapability.label, selectedNode.data?.op || 'exists', primaryValue), ...(Array.isArray(selectedNode.data?.additional_conditions) ? selectedNode.data.additional_conditions.filter(condition => condition.key).map(condition => conditionSummary(condition.key, condition.op || 'eq', additionalConditionValue(condition))) : [])].join(' AND ') : '';
+    const additionalConditionsEditor = targetMode !== 'selector' ? (
+      <div className="field automation-additional-conditions">
+        <label className="label">Additional conditions (AND)</label>
+        {(Array.isArray(selectedNode.data?.additional_conditions) ? selectedNode.data.additional_conditions : []).map((condition, index) => {
+          const capability = selectedCapabilities.find(item => item.id === condition.capability_id);
+          const update = (patch) => this.updateAdditionalCondition(index, patch);
+          const requiresValue = !['exists', 'changed'].includes(condition.op || 'eq');
+          const valueMode = String(condition.value_mode || 'json');
+          const valueType = capability?.type === 'binary' ? 'boolean'
+            : capability?.type === 'numeric' ? 'number'
+              : capability?.type === 'enum' || capability?.type === 'string' ? 'text'
+                : String(condition.value_type || 'boolean');
+          return <div className="field automation-capability-row" key={`${condition.capability_id || 'condition'}-${index}`}>
+            <div className="automation-capability-row-heading">
+              <label className="label">Additional capability {index + 1}</label>
+              <Button
+                type="button"
+                variant="secondary"
+                className="automation-btn-mini automation-capability-remove"
+                aria-label={`Remove capability condition ${index + 1}`}
+                title="Remove capability condition"
+                onClick={() => this.setSelectedNodeData({ additional_conditions: selectedNode.data.additional_conditions.filter((_, itemIndex) => itemIndex !== index) })}
+              >
+                <span className="btn-icon"><FontAwesomeIcon icon={faTrash} /></span>
+              </Button>
+            </div>
+            <GlassSelect value={condition.capability_id || ''} onChange={(value) => { const next = selectedCapabilities.find(item => item.id === value); update({ capability_id: next?.id || '', key: next?.property || '', op: 'eq', value_mode: 'builder', value_type: valueTypeForCapability(next) || 'boolean', value_bool: true, value_number: '', value_string: '', value_text: '' }); }} placeholder="Select another capability…" ariaLabel={`Additional capability ${index + 1}`} options={selectedCapabilities.map(item => ({ value: item.id, label: <><CapabilityIcon capability={item} /> {item.label}</> }))} />
+            <select className="input" value={condition.op || 'eq'} onChange={e => update({ op: e.target.value })}>{operatorsForCapability(capability).filter(op => op !== 'changed').map(op => <option key={op} value={op}>{conditionLabels[op] || op}</option>)}</select>
+            {requiresValue && <>
+              <div className="automation-segmented slider" role="tablist" aria-label={`Additional condition ${index + 1} value editor mode`} style={{ '--seg-pos': valueMode === 'builder' ? 0 : 1 }}>
+                <button type="button" role="tab" aria-selected={valueMode === 'builder'} className={valueMode === 'builder' ? 'active' : ''} onClick={() => this.switchAdditionalValueMode(index, 'builder', capability)}>Builder</button>
+                <button type="button" role="tab" aria-selected={valueMode === 'json'} className={valueMode === 'json' ? 'active' : ''} onClick={() => this.switchAdditionalValueMode(index, 'json', capability)}>JSON</button>
+              </div>
+              {valueMode === 'builder' ? <>
+                {!capability && <select className="input" value={valueType} onChange={e => update({ value_type: e.target.value })}><option value="boolean">True/False</option><option value="number">Number</option><option value="text">Text</option></select>}
+                {valueType === 'boolean' && <select className="input" value={String(condition.value_bool ?? true)} onChange={e => update({ value_bool: e.target.value === 'true' })}><option value="true">On / true</option><option value="false">Off / false</option></select>}
+                {valueType === 'number' && <input className="input" type="number" min={capability?.min ?? undefined} max={capability?.max ?? undefined} step={capability?.step ?? 'any'} value={condition.value_number ?? ''} onChange={e => update({ value_number: e.target.value })} />}
+                {capability?.type === 'enum' && <select className="input" value={condition.value_string ?? ''} onChange={e => update({ value_string: e.target.value })}><option value="">Select…</option>{capability.enumValues.map(value => <option key={value} value={value}>{value}</option>)}</select>}
+                {valueType === 'text' && capability?.type !== 'enum' && <input className="input" value={condition.value_string ?? ''} onChange={e => update({ value_string: e.target.value })} />}
+              </> : <textarea className="input textarea" rows={3} value={condition.value_text || ''} onChange={e => update({ value_text: e.target.value })} placeholder="e.g. true, 35, or &quot;away&quot;" />}
+            </>}
+          </div>;
+        })}
+        <div className="automation-props-actions">
+          <Button
+            type="button"
+            className="automation-btn-mini"
+            disabled={!selectedNode.data?.capability_id}
+            title={!selectedNode.data?.capability_id ? 'Choose a primary capability first' : 'Add capability condition'}
+            onClick={() => this.setSelectedNodeData({ additional_conditions: [...(selectedNode.data?.additional_conditions || []), { capability_id: '', key: '', op: 'eq', value_mode: 'builder', value_type: 'boolean', value_bool: true, value_number: '', value_string: '', value_text: '' }] })}
+          >
+            <span className="btn-icon"><FontAwesomeIcon icon={faPlus} /></span>
+            <span className="btn-label">Add capability</span>
+          </Button>
+        </div>
+        <div className="muted">All conditions must match each selected device. For logic across multiple devices, use an IF node.</div>
+      </div>
+    ) : null;
 
     return (
       <div className="automation-props">
@@ -302,33 +432,40 @@ export default class TriggerEditor extends BaseNodeEditor {
             </div>
             {targetMode === 'device' && <div className="field">
               <label className="label">Device ID</label>
-              <select
-                className="input"
+              <GlassSelect
                 value={selectedDeviceId}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(value) => {
+                  const v = value;
                   this.setSelectedNodeData({ targets: { type: 'device', ids: v ? [v] : [], selector: '' } });
                 }}
-              >
-                <option value="">Select a device…</option>
-                {deviceOptions.map((d) => (
-                  <option key={d.id} value={d.id}>{d.label}</option>
-                ))}
-              </select>
+                placeholder="Select a device…"
+                ariaLabel="Device ID"
+                options={deviceOptions.map(device => ({ value: device.id, label: <><DeviceIcon device={device.raw} /> {device.label}</> }))}
+              />
             </div>}
+            {selectedDevice && <div className="muted"><DeviceIcon device={selectedDevice.raw} /> {selectedDevice.label}</div>}
             {targetMode === 'collection' && <div className="field"><label className="label">Group or tag</label><select className="input" value={selector} onChange={e => this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: e.target.value } })}><option value="">Select a group or tag…</option>{collectionOptions.map(item => <option key={`${item.kind}:${item.id}`} value={item.selector}>{item.kind}: {item.label}</option>)}</select></div>}
             {targetMode === 'selector' && <div className="field"><label className="label">Selector</label><input className="input" value={selector} onChange={e => this.setSelectedNodeData({ targets: { type: 'selector', ids: [], selector: e.target.value } })} placeholder="e.g. tag:kitchen" /></div>}
             <div className="field">
+              <label className="label">State editor</label>
+              <div className="automation-segmented slider" role="tablist" aria-label="Value editor mode" style={{ '--seg-pos': (selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? 0 : 1 }}>
+                <button type="button" role="tab" aria-selected={(selectedNode.data?.ui?.value_mode || 'builder') === 'builder'} className={(selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? 'active' : ''} onClick={() => this.switchValueMode('builder', selectedCapability)}>Builder</button>
+                <button type="button" role="tab" aria-selected={(selectedNode.data?.ui?.value_mode || 'builder') === 'json'} className={(selectedNode.data?.ui?.value_mode || 'builder') === 'json' ? 'active' : ''} onClick={() => this.switchValueMode('json', selectedCapability)}>JSON</button>
+              </div>
+            </div>
+            <div className="field">
               <label className="label">Capability</label>
-              <select className="input" value={selectedNode.data?.capability_id || ''} onChange={(e) => {
-                const capability = selectedCapabilities.find(item => item.id === e.target.value);
+              <GlassSelect value={selectedNode.data?.capability_id || ''} onChange={(value) => {
+                const capability = selectedCapabilities.find(item => item.id === value);
                 this.setSelectedNodeData({ capability_id: capability?.id || '', capability_property: capability?.property || '', key: capability?.property || '', op: 'exists' });
                 if (capability) this.setSelectedNodeUI({ value_type: valueTypeForCapability(capability) });
-              }}>
-                <option value="">Select what to watch…</option>
-                {selectedCapabilities.map(capability => <option key={capability.id} value={capability.id}>{capability.label}</option>)}
-              </select>
+              }}
+                placeholder="Select what to watch…"
+                ariaLabel="Capability"
+                options={selectedCapabilities.map(capability => ({ value: capability.id, label: <><CapabilityIcon capability={capability} /> {capability.label}</> }))}
+              />
             </div>
+            {selectedCapability && <div className="muted"><CapabilityIcon capability={selectedCapability} /> {selectedCapability.label}</div>}
             <div className="field">
               <label className="label">When it</label>
               <select
@@ -347,38 +484,8 @@ export default class TriggerEditor extends BaseNodeEditor {
 
             {!['exists', 'changed'].includes(String(selectedNode.data?.op || 'exists')) && (
               <>
-                <div className="field">
-                  <label className="label">Value editor</label>
-                  <div
-                    className="automation-segmented slider"
-                    role="tablist"
-                    aria-label="Value editor mode"
-                    style={{ '--seg-pos': (selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? 0 : 1 }}
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={(selectedNode.data?.ui?.value_mode || 'builder') === 'builder'}
-                      className={(selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? 'active' : ''}
-                      onClick={() => this.setSelectedNodeUI({ value_mode: 'builder' })}
-                    >
-                      Builder
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={(selectedNode.data?.ui?.value_mode || 'builder') === 'json'}
-                      className={(selectedNode.data?.ui?.value_mode || 'builder') === 'json' ? 'active' : ''}
-                      onClick={() => this.setSelectedNodeUI({ value_mode: 'json' })}
-                    >
-                      JSON
-                    </button>
-                  </div>
-                </div>
-
-                <div className="automation-slide">
-                  <div className={`automation-slide-inner ${(selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? 'mode-builder' : 'mode-json'}`}>
-                    <div className="automation-slide-pane">
+                {(selectedNode.data?.ui?.value_mode || 'builder') === 'builder' ? (
+                  <div>
                       {!selectedCapability && <div className="field">
                         <label className="label">Type</label>
                         <select
@@ -471,56 +578,61 @@ export default class TriggerEditor extends BaseNodeEditor {
                           />
                         </div>
                       )}
-                    </div>
-
-                    <div className="automation-slide-pane">
-                      <div className="field">
-                        <label className="label">Value (JSON)</label>
-                        <textarea
-                          className="input textarea"
-                          rows={5}
-                          value={selectedNode.data?.ui?.value_text || ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            this.setSelectedNodeUI({ value_text: v });
-                          }}
-                          placeholder={'e.g. true or 42 or {\n  "state": "ON"\n}'}
-                        />
-                      </div>
-                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="field">
+                    <label className="label">Value (JSON)</label>
+                    <textarea
+                      className="input textarea"
+                      rows={5}
+                      value={selectedNode.data?.ui?.value_text || ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        this.setSelectedNodeUI({ value_text: v });
+                      }}
+                      placeholder="e.g. true, 35, or &quot;away&quot;"
+                    />
+                    <div className="muted">Use a JSON value matching the selected capability. For a numeric capability, <strong>35</strong> is correct.</div>
+                  </div>
+                )}
               </>
             )}
 
-            <div className="field">
-              <label className="label">Debounce (sec)</label>
-              <input className="input" type="number" min="0" value={Number(selectedNode.data?.debounce_sec ?? 0)} onChange={e => this.setSelectedNodeData({ debounce_sec: Math.max(0, Number(e.target.value) || 0) })} />
-            </div>
+            {additionalConditionsEditor}
+            {triggerSummary && <div className="muted automation-trigger-summary" role="status">{triggerSummary}</div>}
 
-            <div className="field">
-              <label className="label">Cooldown (sec)</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={Number(selectedNode.data?.cooldown_sec ?? 2)}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  this.setSelectedNodeData({ cooldown_sec: v });
-                }}
-              />
-              <label className="checkbox">
+            <div className="automation-props-section automation-settings-section">
+              <div className="automation-props-section-title">Trigger behavior</div>
+              <div className="automation-props-section-subtitle">Control when this trigger is allowed to run.</div>
+              <div className="field">
+                <label className="label">Debounce (sec)</label>
+                <input className="input" type="number" min="0" value={Number(selectedNode.data?.debounce_sec ?? 0)} onChange={e => this.setSelectedNodeData({ debounce_sec: Math.max(0, Number(e.target.value) || 0) })} />
+              </div>
+
+              <div className="field">
+                <label className="label">Cooldown (sec)</label>
                 <input
-                  type="checkbox"
-                  checked={!!selectedNode.data?.ignore_retained}
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={Number(selectedNode.data?.cooldown_sec ?? 2)}
                   onChange={(e) => {
-                    const v = e.target.checked;
-                    this.setSelectedNodeData({ ignore_retained: v });
+                    const v = Number(e.target.value);
+                    this.setSelectedNodeData({ cooldown_sec: v });
                   }}
                 />
-                Ignore retained messages
-              </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={!!selectedNode.data?.ignore_retained}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      this.setSelectedNodeData({ ignore_retained: v });
+                    }}
+                  />
+                  Ignore retained messages
+                </label>
+              </div>
             </div>
           </>
         )}

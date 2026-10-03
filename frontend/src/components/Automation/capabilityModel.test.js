@@ -24,4 +24,5 @@ describe('automation capability model', () => {
     expect(operatorsForCapability(capabilitiesForDevice(bulb)[0])).toEqual(['exists', 'changed', 'eq', 'neq']);
     expect(operatorsForCapability(capabilitiesForDevice(bulb)[1])).toContain('gte');
   });
+
 });

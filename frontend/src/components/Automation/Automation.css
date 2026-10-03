@@ -1,3 +1,18 @@
+.automation-capability-row {
+  margin-top: 0.85rem !important;
+  padding-top: 0.85rem;
+}
+
+.automation-additional-conditions {
+  margin-top: 0.9rem !important;
+}
+
+.automation-trigger-summary {
+  padding: 0.6rem 0.75rem;
+  border-left: 2px solid var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  overflow-wrap: anywhere;
+}
 .automation-page {
   display: flex;
   flex-direction: column;
@@ -1511,6 +1526,28 @@
   gap: 6px;
 }
 
+.automation-capability-row {
+  margin-top: 0.85rem !important;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-glass-border-xlight);
+}
+
+.automation-capability-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.automation-capability-remove {
+  flex: 0 0 auto;
+  color: var(--color-error, #ef6b73);
+}
+
+.automation-additional-conditions {
+  margin-top: 0.9rem !important;
+}
+
 .automation-props .label {
   text-align: left;
   font-size: 0.86rem;
@@ -1705,6 +1742,13 @@
   align-items: center;
   gap: 10px;
 }
+
+.automation-node-header-right .muted {
+  color: color-mix(in srgb, var(--color-white) 64%, transparent);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
 .automation-node-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -1745,7 +1789,10 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  color: var(--color-white);
+  font-size: 0.96rem;
   font-weight: 700;
+  line-height: 1.15;
 }
 
 .node-kind-icon {
@@ -1758,8 +1805,12 @@
 
 .automation-node-body {
   padding: 10px 12px;
-  line-height: 1.3;
-  font-size: 0.9rem;
+  border-radius: 0 0 13px 13px;
+  background: color-mix(in srgb, var(--color-surface-card) 54%, transparent);
+  color: color-mix(in srgb, var(--color-white) 70%, transparent);
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.42;
 }
 
 .automation-props {
@@ -1781,6 +1832,26 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.automation-settings-section {
+  margin-top: 0.35rem;
+  padding: 12px;
+}
+
+.automation-props-section-title {
+  color: var(--color-white);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.automation-props-section-subtitle {
+  color: color-mix(in srgb, var(--color-white) 66%, transparent);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin-top: -4px;
 }
 
 .automation-props-section-header {

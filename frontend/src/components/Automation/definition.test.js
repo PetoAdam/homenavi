@@ -93,3 +93,34 @@ describe('capability-driven command actions', () => {
     expect(definition.nodes.find(node => node.id === 'action-1')?.data.args).toEqual({ setpoint: 21 });
   });
 });
+
+describe('same-device trigger conditions', () => {
+  it('serializes the primary and additional capability conditions as an AND array', () => {
+    const definition = buildDefinitionFromEditor({
+      nodes: [{ id: 'trigger-1', kind: 'trigger.device_state', x: 0, y: 0, data: {
+        targets: { type: 'device', ids: ['device-1'] }, capability_id: 'brightness', capability_property: 'brightness',
+        key: 'brightness', op: 'gte', ui: { value_mode: 'json', value_text: '80' },
+        additional_conditions: [{ capability_id: 'color_mode', key: 'color_mode', op: 'eq', value_text: '"warm"' }],
+      } }],
+      edges: [],
+    });
+    expect(definition.nodes[0].data.conditions).toEqual([
+      { key: 'brightness', op: 'gte', value: 80 },
+      { key: 'color_mode', op: 'eq', value: 'warm' },
+    ]);
+  });
+
+  it('serializes Builder values for additional conditions', () => {
+    const definition = buildDefinitionFromEditor({
+      nodes: [{ id: 'trigger-1', kind: 'trigger.device_state', x: 0, y: 0, data: {
+        targets: { type: 'device', ids: ['device-1'] }, key: 'power', op: 'eq', ui: { value_mode: 'builder', value_type: 'boolean', value_bool: true },
+        additional_conditions: [{ key: 'temperature', op: 'gte', value_mode: 'builder', value_type: 'number', value_number: '21' }],
+      } }],
+      edges: [],
+    });
+    expect(definition.nodes[0].data.conditions).toEqual([
+      { key: 'power', op: 'eq', value: true },
+      { key: 'temperature', op: 'gte', value: 21 },
+    ]);
+  });
+});
