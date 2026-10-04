@@ -77,30 +77,39 @@ jobs:
           services:
             api-gateway:
               image:
+                repository: ghcr.io/petoadam/homenavi-api-gateway
                 pullPolicy: Never
             auth-service:
               image:
+                repository: ghcr.io/petoadam/homenavi-auth-service
                 pullPolicy: Never
             user-service:
               image:
+                repository: ghcr.io/petoadam/homenavi-user-service
                 pullPolicy: Never
             mock-adapter:
               image:
+                repository: ghcr.io/petoadam/homenavi-mock-adapter
                 pullPolicy: Never
             device-hub:
               image:
+                repository: ghcr.io/petoadam/homenavi-device-hub
                 pullPolicy: Never
             entity-registry-service:
               image:
+                repository: ghcr.io/petoadam/homenavi-entity-registry-service
                 pullPolicy: Never
             history-service:
               image:
+                repository: ghcr.io/petoadam/homenavi-history-service
                 pullPolicy: Never
             automation-service:
               image:
+                repository: ghcr.io/petoadam/homenavi-automation-service
                 pullPolicy: Never
             integration-proxy:
               image:
+                repository: ghcr.io/petoadam/homenavi-integration-proxy
                 pullPolicy: Never
           EOF
 

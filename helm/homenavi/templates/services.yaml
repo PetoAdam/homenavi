@@ -1,5 +1,6 @@
 {{- range $name, $svc := .Values.services }}
-{{- if and (eq (include "homenavi.serviceEnabled" (dict "root" $ "component" $name)) "true") $svc.service.enabled }}
+{{- $service := default (dict) $svc.service }}
+{{- if and (eq (include "homenavi.serviceEnabled" (dict "root" $ "component" $name)) "true") $service.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -7,16 +8,16 @@ metadata:
   labels:
     {{- include "homenavi.componentLabels" (dict "root" $ "component" $name) | nindent 4 }}
 spec:
-  type: {{ default "ClusterIP" $svc.service.type }}
+  type: {{ default "ClusterIP" $service.type }}
   selector:
     {{- include "homenavi.selectorLabels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $name }}
   ports:
     - name: http
       protocol: TCP
-      port: {{ default $svc.containerPort $svc.service.port }}
-      targetPort: {{ default $svc.containerPort $svc.service.targetPort }}
-    {{- with $svc.service.extraPorts }}
+      port: {{ default $svc.containerPort $service.port }}
+      targetPort: {{ default $svc.containerPort $service.targetPort }}
+    {{- with $service.extraPorts }}
     {{- range . }}
     - name: {{ .name }}
       protocol: {{ default "TCP" .protocol }}
