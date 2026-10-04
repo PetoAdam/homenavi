@@ -8,7 +8,7 @@ This repo is easiest to understand as eight planes:
 - **Integration runtime plane**: integration-proxy + installed integration containers
 - **Marketplace plane**: marketplace API + marketplace web
 - **Messaging plane**: EMQX as shared MQTT event backbone across core and edge
-- **Object storage plane**: MinIO + profile picture bucket
+- **Object storage plane**: SeaweedFS + profile picture bucket
 - **External / interop plane**: OpenWeather, SMTP, external MQTT ecosystems
 - **Observability plane**: Prometheus + Jaeger
 
@@ -72,7 +72,7 @@ flowchart LR
 
   %% Storage/object plane
   subgraph StoragePlane["Object storage plane"]
-    MinIO["MinIO (S3-compatible object store)"]
+    SeaweedFS["SeaweedFS (S3-compatible object store)"]
     Bucket[("profile-pictures bucket")]
   end
 
@@ -156,8 +156,8 @@ flowchart LR
   Automation -->|Redis cache optional| Redis
 
   %% Object storage flow
-  ProfilePic -->|S3 API| MinIO
-  MinIO -->|stores objects| Bucket
+  ProfilePic -->|S3 API| SeaweedFS
+  SeaweedFS -->|stores objects| Bucket
 
   %% External upstream calls
   Weather -->|HTTPS weather and geocoding APIs| OpenWeather
@@ -199,7 +199,7 @@ flowchart LR
 | automation-service | Workflow engine, trigger subscriptions, action execution (device + integration) | REST/WS via gateway, MQTT events | EMQX, user-service, email-service, integration-proxy metadata, integration containers, Postgres, optional Redis cache |
 | weather-service | Cached weather and geocoding facade for UI | REST via gateway | OpenWeather APIs |
 | email-service | Outbound transactional mail (verification/notify) | Internal HTTP from auth/automation | SMTP provider |
-| profile-picture-service | Avatar upload/read APIs and object lifecycle | Internal HTTP from auth | MinIO/S3 bucket |
+| profile-picture-service | Avatar upload/read APIs and object lifecycle | Internal HTTP from auth | SeaweedFS/S3 bucket |
 | echo-service | Diagnostic websocket surface for auth + transport verification | WS via gateway | none |
 | integration-proxy | Integration registry, UI/API reverse proxy, install/update orchestration | `/integrations/*`, registry/admin endpoints | installed integration containers, Marketplace API, Docker runtime (compose mode) |
 | installed integrations | Third-party and first-party extension workloads (UI, devices, automation actions) | proxied HTTP from integration-proxy, optional MQTT command topics | vendor clouds/APIs, EMQX HDP topics |
@@ -208,7 +208,7 @@ flowchart LR
 | mock-adapter | Test adapter for HDP traffic simulation | MQTT HDP topics | EMQX |
 | EMQX | Shared MQTT backbone for HDP, pairing, command/result, optional external bridges | MQTT and MQTT-over-WS | core services, adapters, integrations, optional external broker |
 | marketplace API/web (external stack) | Integration catalog, release metadata, publish endpoint and web UI | HTTPS from browser and integration-proxy, CI publish calls | marketplace database, OIDC validation infrastructure |
-| minio | S3-compatible object storage for profile pictures | S3 API from profile-picture-service | persistent object volume |
+| seaweedfs | S3-compatible object storage for profile pictures | S3 API from profile-picture-service | persistent object volume |
 | postgres | Primary relational persistence | SQL from core services | persistent volume |
 | redis | Rate limiting, lockout state, optional service caches | TCP from gateway/auth/dashboard/ERS/automation/zigbee-adapter | in-memory dataset/persistence config |
 

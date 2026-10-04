@@ -87,7 +87,7 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
 {{- define "homenavi.objectStorageProvider" -}}
-{{- default "minio" .Values.dependencies.objectStorage.provider -}}
+{{- default "seaweedfs" .Values.dependencies.objectStorage.provider -}}
 {{- end -}}
 
 {{- define "homenavi.storageType" -}}
@@ -107,17 +107,17 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
 {{- define "homenavi.storageUsesManagedSecret" -}}
-{{- and (eq (include "homenavi.objectStorageProvider" .) "minio") (not (eq (include "homenavi.storageUsesExistingSecret" .) "true")) -}}
+{{- and (eq (include "homenavi.objectStorageProvider" .) "seaweedfs") (not (eq (include "homenavi.storageUsesExistingSecret" .) "true")) -}}
 {{- end -}}
 
 {{- define "homenavi.storageS3Endpoint" -}}
 {{- $override := trim (default "" .Values.storage.s3.endpoint) -}}
 {{- if ne $override "" -}}
 {{- $override -}}
-{{- else if eq (include "homenavi.objectStorageProvider" .) "minio" -}}
-http://minio:9000
+{{- else if eq (include "homenavi.objectStorageProvider" .) "seaweedfs" -}}
+http://seaweedfs:8333
 {{- else -}}
-{{- fail "storage.s3.endpoint is required when dependencies.objectStorage.provider is not minio" -}}
+{{- fail "storage.s3.endpoint is required when dependencies.objectStorage.provider is not seaweedfs" -}}
 {{- end -}}
 {{- end -}}
 
@@ -147,7 +147,7 @@ http://minio:9000
 {{- if ne $value "" -}}
 {{- $value -}}
 {{- else -}}
-{{- fail "storage.s3.accessKey or storage.s3.existingSecretName is required when dependencies.objectStorage.provider is not minio" -}}
+{{- fail "storage.s3.accessKey or storage.s3.existingSecretName is required when dependencies.objectStorage.provider is not seaweedfs" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -160,7 +160,7 @@ http://minio:9000
 {{- if ne $value "" -}}
 {{- $value -}}
 {{- else -}}
-{{- fail "storage.s3.secretKey or storage.s3.existingSecretName is required when dependencies.objectStorage.provider is not minio" -}}
+{{- fail "storage.s3.secretKey or storage.s3.existingSecretName is required when dependencies.objectStorage.provider is not seaweedfs" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -355,8 +355,8 @@ redis
 {{- $redisMode := include "homenavi.redisMode" .root -}}
 {{- if eq $name "emqx" -}}
 {{- and $enabled (eq $mqttProvider "emqx") -}}
-{{- else if eq $name "minio" -}}
-{{- and $enabled (eq $storageProvider "minio") -}}
+{{- else if eq $name "seaweedfs" -}}
+{{- and $enabled (eq $storageProvider "seaweedfs") -}}
 {{- else if eq $name "postgres" -}}
 {{- and $enabled (eq $postgresProvider "bundled") (eq $postgresMode "standalone") -}}
 {{- else if eq $name "redis" -}}

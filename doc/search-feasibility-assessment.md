@@ -43,7 +43,7 @@ Build a **phase 1 federated search API** behind API Gateway using existing servi
   - `frontend/src/components/Automation/Automation.jsx`
 
 ### 5. Infrastructure baseline does not currently include Elasticsearch
-- Current stack already runs many stateful components (Postgres, Redis, MinIO, EMQX).
+- Current stack already runs many stateful components (Postgres, Redis, SeaweedFS, EMQX).
 - Elasticsearch/OpenSearch is not present in default compose stack.
 - Relevant code:
   - `docker-compose.yml`

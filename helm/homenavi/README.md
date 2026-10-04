@@ -19,7 +19,7 @@ The scaffold currently includes deployable defaults for:
 - email-service
 - profile-picture-service
 - emqx
-- minio
+- seaweedfs
 - postgres
 - redis
 
@@ -56,7 +56,7 @@ helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
 - CloudNativePG storage is persistent by default via `postgres.cnpg.storage`.
 - Bundled standalone PostgreSQL uses the `persistentVolumeClaims.postgres-data` claim, which is enabled by default; disabling it now fails chart rendering instead of silently falling back to `emptyDir`.
 - The default bundled Redis mode is Sentinel.
-- The default profile-picture backend is MinIO-backed S3 storage.
+- The default profile-picture backend is SeaweedFS-backed S3 storage.
 - Bundled dependency startup in Kubernetes is handled with readiness/startup probes plus narrow init-container dependency waits, rather than strict global startup ordering.
 - Sensitive values should be provided via `services.<name>.envFromSecrets`.
 - Per-service secret or configMap-backed env vars can also be injected with `services.<name>.envValueFrom`.
@@ -111,7 +111,7 @@ By default, no external bridge is created.
 
 ## External dependency secrets and HA policy primitives
 
-The chart supports existing secret references for PostgreSQL, Redis, and S3/MinIO credentials, plus raw Kubernetes scheduling/policy primitives for later scale-out.
+The chart supports existing secret references for PostgreSQL, Redis, and S3 credentials, plus raw Kubernetes scheduling/policy primitives for later scale-out.
 
 See [doc/helm_ha_operations.md](../../doc/helm_ha_operations.md) for:
 

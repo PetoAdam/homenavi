@@ -118,20 +118,26 @@ spec:
       {{- $extraInitContainers := default (list) $svc.initContainers }}
       {{- if or (eq $name "profile-picture-service") (eq $name "integration-proxy") $zigbee2mqttBootstrapEnabled (gt (len $dedupedServiceDependencies) 0) (gt (len $extraInitContainers) 0) }}
       initContainers:
-        {{- if and (eq $name "profile-picture-service") (eq (include "homenavi.storageType" $) "s3") (eq (include "homenavi.objectStorageProvider" $) "minio") }}
+        {{- if and (eq $name "profile-picture-service") (eq (include "homenavi.storageType" $) "s3") (eq (include "homenavi.objectStorageProvider" $) "seaweedfs") }}
         - name: ensure-profile-picture-bucket
-          image: minio/mc:RELEASE.2025-02-21T16-00-46Z
+          image: amazon/aws-cli:2.17.0
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -ec
             - |
-              until mc alias set local {{ include "homenavi.storageS3Endpoint" $ | quote }} "$STORAGE_S3_ACCESS_KEY" "$STORAGE_S3_SECRET_KEY"; do
+              export AWS_ACCESS_KEY_ID="$STORAGE_S3_ACCESS_KEY"
+              export AWS_SECRET_ACCESS_KEY="$STORAGE_S3_SECRET_KEY"
+              until aws --endpoint-url {{ include "homenavi.storageS3Endpoint" $ | quote }} s3api list-buckets >/dev/null 2>&1; do
                 echo "waiting for object storage..."
                 sleep 2
               done
-              mc mb --ignore-existing local/{{ include "homenavi.storageS3Bucket" $ | quote }}
+              aws --endpoint-url {{ include "homenavi.storageS3Endpoint" $ | quote }} s3api head-bucket --bucket {{ include "homenavi.storageS3Bucket" $ | quote }} 2>/dev/null || \
+                aws --endpoint-url {{ include "homenavi.storageS3Endpoint" $ | quote }} s3api create-bucket --bucket {{ include "homenavi.storageS3Bucket" $ | quote }} || \
+                aws --endpoint-url {{ include "homenavi.storageS3Endpoint" $ | quote }} s3api head-bucket --bucket {{ include "homenavi.storageS3Bucket" $ | quote }} 2>/dev/null
           env:
+            - name: AWS_DEFAULT_REGION
+              value: {{ include "homenavi.storageS3Region" $ | quote }}
             - name: STORAGE_S3_ACCESS_KEY
               {{- if ne (trim (include "homenavi.storageS3AuthSecretName" $)) "" }}
               valueFrom:
@@ -318,9 +324,9 @@ spec:
             {{- $renderedVal = include "homenavi.storageS3ForcePathStyle" $ }}
             {{- else if eq $envKey "STORAGE_PRESIGN_EXPIRY_SECONDS" }}
             {{- $renderedVal = include "homenavi.storagePresignExpirySeconds" $ }}
-            {{- else if eq $envKey "MINIO_ROOT_USER" }}
+            {{- else if eq $envKey "AWS_ACCESS_KEY_ID" }}
             {{- $renderedVal = include "homenavi.storageS3AccessKey" $ }}
-            {{- else if eq $envKey "MINIO_ROOT_PASSWORD" }}
+            {{- else if eq $envKey "AWS_SECRET_ACCESS_KEY" }}
             {{- $renderedVal = include "homenavi.storageS3SecretKey" $ }}
             {{- end }}
             {{- if hasKey $svcEnvValueFrom $envKey }}
@@ -329,7 +335,7 @@ spec:
             {{- if and (or (eq $envKey "POSTGRES_USER") (eq $envKey "POSTGRES_PASSWORD")) (ne (trim (include "homenavi.postgresAuthSecretName" $)) "") }}
             {{- continue }}
             {{- end }}
-            {{- if and (or (eq $envKey "STORAGE_S3_ACCESS_KEY") (eq $envKey "STORAGE_S3_SECRET_KEY") (eq $envKey "MINIO_ROOT_USER") (eq $envKey "MINIO_ROOT_PASSWORD")) (ne (trim (include "homenavi.storageS3AuthSecretName" $)) "") }}
+            {{- if and (or (eq $envKey "STORAGE_S3_ACCESS_KEY") (eq $envKey "STORAGE_S3_SECRET_KEY") (eq $envKey "AWS_ACCESS_KEY_ID") (eq $envKey "AWS_SECRET_ACCESS_KEY")) (ne (trim (include "homenavi.storageS3AuthSecretName" $)) "") }}
             {{- continue }}
             {{- end }}
             {{- if ne $renderedVal "" }}
@@ -372,15 +378,15 @@ spec:
                   name: {{ include "homenavi.storageS3AuthSecretName" $ }}
                   key: {{ include "homenavi.storageS3SecretKeyKey" $ }}
             {{- end }}
-            {{- if and (hasKey $svcEnv "MINIO_ROOT_USER") (ne (trim (include "homenavi.storageS3AuthSecretName" $)) "") }}
-            - name: MINIO_ROOT_USER
+            {{- if and (hasKey $svcEnv "AWS_ACCESS_KEY_ID") (ne (trim (include "homenavi.storageS3AuthSecretName" $)) "") }}
+            - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
                   name: {{ include "homenavi.storageS3AuthSecretName" $ }}
                   key: {{ include "homenavi.storageS3AccessKeyKey" $ }}
             {{- end }}
-            {{- if and (hasKey $svcEnv "MINIO_ROOT_PASSWORD") (ne (trim (include "homenavi.storageS3AuthSecretName" $)) "") }}
-            - name: MINIO_ROOT_PASSWORD
+            {{- if and (hasKey $svcEnv "AWS_SECRET_ACCESS_KEY") (ne (trim (include "homenavi.storageS3AuthSecretName" $)) "") }}
+            - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "homenavi.storageS3AuthSecretName" $ }}

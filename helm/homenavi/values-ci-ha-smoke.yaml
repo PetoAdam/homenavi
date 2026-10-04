@@ -26,7 +26,7 @@ services:
     enabled: false
   profile-picture-service:
     enabled: false
-  minio:
+  seaweedfs:
     enabled: false
   echo-service:
     enabled: false

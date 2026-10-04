@@ -61,7 +61,7 @@ redis:
 
 Services that use Redis will receive `REDIS_PASSWORD` from the referenced secret automatically.
 
-### S3 / MinIO storage
+### S3 / SeaweedFS storage
 
 Use `storage.s3.existingSecretName` to source the object storage access and secret keys from a Kubernetes secret.
 
@@ -80,7 +80,7 @@ dependencies:
 storage:
   type: s3
   s3:
-    endpoint: https://minio.example.internal
+    endpoint: https://seaweedfs.example.internal
     region: us-east-1
     bucket: profile-pictures
     forcePathStyle: true
@@ -93,7 +93,7 @@ The chart uses those secret refs for:
 
 - `profile-picture-service`
 - the profile picture bucket bootstrap init container
-- bundled MinIO when `dependencies.objectStorage.provider=minio`
+- bundled SeaweedFS when `dependencies.objectStorage.provider=seaweedfs`
 
 When `storage.s3.existingSecretName` is set, the chart treats that secret as the only source of truth for storage credentials. It does not render a managed `*-storage-auth` secret in that mode.
 

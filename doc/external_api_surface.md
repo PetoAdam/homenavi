@@ -14,7 +14,7 @@ Notes:
 - The SPA is built from `Frontend/` (capital F). (Case matters on Linux/CI.)
 - The API Gateway itself is also published on the host at `http://<host>:8080/` via `docker-compose.yml` (useful for debugging), but nginx is the intended public edge.
 - The default Compose broker is EMQX, publishing MQTT on `1883` and MQTT-over-WebSocket on the configured host WebSocket port. The Frontend still uses `/ws/hdp` through nginx → gateway → broker.
-- Profile pictures default to S3-compatible object storage via bundled MinIO and are served through `/api/profile-pictures/users/{user_id}`.
+- Profile pictures default to S3-compatible object storage via bundled SeaweedFS and are served through `/api/profile-pictures/users/{user_id}`.
 
 ## API Gateway meta endpoints
 

@@ -33,7 +33,7 @@ dependencies:
   mqtt:
     provider: emqx
   objectStorage:
-    provider: minio
+    provider: seaweedfs
   postgres:
     provider: bundled
   redis:
@@ -150,7 +150,7 @@ persistentVolumeClaims:
     accessModes:
       - ReadWriteOnce
     size: 10Gi
-  minio-data:
+  seaweedfs-data:
     enabled: true
     storageClassName: ""
     accessModes:
@@ -371,7 +371,7 @@ services:
       PROFILE_PICTURE_SERVICE_PORT: "8000"
       STORAGE_TYPE: s3
       PROFILE_PICTURE_PUBLIC_BASE_PATH: /api/profile-pictures
-      STORAGE_S3_ENDPOINT: http://minio:9000
+      STORAGE_S3_ENDPOINT: http://seaweedfs:8333
       STORAGE_S3_REGION: us-east-1
       STORAGE_S3_BUCKET: profile-pictures
       STORAGE_S3_ACCESS_KEY: ""
@@ -638,44 +638,41 @@ services:
         type: configMap
         configMapNameTemplate: homenavi.emqxConfigMapName
 
-  minio:
+  seaweedfs:
     enabled: true
     replicas: 1
     image:
-      repository: minio/minio
-      tag: RELEASE.2025-02-28T09-55-16Z
-    containerPort: 9000
-    extraContainerPorts:
-      - name: console
-        containerPort: 9001
-        protocol: TCP
+      repository: chrislusf/seaweedfs
+      tag: "4.48"
+    containerPort: 8333
     service:
       enabled: true
       type: ClusterIP
-      port: 9000
-      targetPort: 9000
-      extraPorts:
-        - name: console
-          port: 9001
-          targetPort: 9001
-          protocol: TCP
+      port: 8333
+      targetPort: 8333
     env:
-      MINIO_ROOT_USER: ""
-      MINIO_ROOT_PASSWORD: ""
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      S3_BUCKET: profile-pictures
     envFromSecrets: []
     resources: {}
     args:
-      - server
-      - /data
-      - --console-address
-      - :9001
+      - mini
+      - -dir=/data
     volumeMounts:
-      - name: minio-data
+      - name: seaweedfs-data
         mountPath: /data
     volumes:
-      - name: minio-data
+      - name: seaweedfs-data
         type: generatedPVC
-        claimKey: minio-data
+        claimKey: seaweedfs-data
+
+objectStorageMigration:
+  # Set true only while copying an existing MinIO PVC into SeaweedFS.
+  enabled: false
+  legacyMinioPVC: ""
+  minioImage: minio/minio:RELEASE.2025-02-28T09-55-16Z
+  rcloneImage: rclone/rclone:1.68.2
 
   device-hub:
     enabled: true

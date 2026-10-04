@@ -3,3 +3,7 @@
 {{- if and $postgresStandalone (not (and $postgresDataPVC $postgresDataPVC.enabled)) -}}
 {{- fail "persistentVolumeClaims.postgres-data.enabled must be true when using bundled standalone Postgres; otherwise the chart falls back to emptyDir and Postgres data is lost on pod reschedule or node restart" -}}
 {{- end -}}
+{{- $seaweedfsDataPVC := index .Values.persistentVolumeClaims "seaweedfs-data" -}}
+{{- if and (eq (include "homenavi.objectStorageProvider" .) "seaweedfs") (not (and $seaweedfsDataPVC $seaweedfsDataPVC.enabled)) -}}
+{{- fail "persistentVolumeClaims.seaweedfs-data.enabled must be true when using bundled SeaweedFS; otherwise object data falls back to emptyDir and is lost on pod reschedule or node restart" -}}
+{{- end -}}

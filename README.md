@@ -124,7 +124,7 @@ Operational runbooks:
 | Automation and UI model | automation-service, dashboard-service | Workflow engine, run stream, widget and dashboard persistence |
 | Integrations runtime | integration-proxy, installed integrations | Registry, UI/API proxying, install/update orchestration, integration action execution |
 | Supporting services | weather-service, email-service, profile-picture-service, echo-service | Weather facade, outbound email, avatar storage, websocket diagnostics |
-| Messaging and data infra | EMQX, PostgreSQL, Redis, MinIO | MQTT backbone, relational storage, cache/rate-limit state, object storage |
+| Messaging and data infra | EMQX, PostgreSQL, Redis, SeaweedFS | MQTT backbone, relational storage, cache/rate-limit state, object storage |
 
 ## 7. Current capabilities
 
