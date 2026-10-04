@@ -667,13 +667,6 @@ services:
         type: generatedPVC
         claimKey: seaweedfs-data
 
-objectStorageMigration:
-  # Set true only while copying an existing MinIO PVC into SeaweedFS.
-  enabled: false
-  legacyMinioPVC: ""
-  minioImage: minio/minio:RELEASE.2025-02-28T09-55-16Z
-  rcloneImage: rclone/rclone:1.68.2
-
   device-hub:
     enabled: true
     replicas: 1
@@ -964,3 +957,10 @@ objectStorageMigration:
       - name: zigbee2mqtt-tmp
     securityContext:
       readOnlyRootFilesystem: false
+
+objectStorageMigration:
+  # Set true only while copying an existing MinIO PVC into SeaweedFS.
+  enabled: false
+  legacyMinioPVC: ""
+  minioImage: minio/minio:RELEASE.2025-02-28T09-55-16Z
+  rcloneImage: rclone/rclone:1.68.2
