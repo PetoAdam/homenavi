@@ -41,22 +41,27 @@ services:
   weather-service:
     enabled: false
   device-hub:
+    enabled: true
     replicas: 3
     env:
       DEVICE_HUB_MQTT_SHARED_GROUP: device-hub-ingest
   entity-registry-service:
+    enabled: true
     replicas: 3
     env:
       ENTITY_REGISTRY_MQTT_SHARED_GROUP: entity-registry-autoimport
   history-service:
+    enabled: true
     replicas: 3
     env:
       HISTORY_SERVICE_MQTT_SHARED_GROUP: history-ingest
   automation-service:
+    enabled: true
     replicas: 3
     env:
       AUTOMATION_SERVICE_MQTT_SHARED_GROUP: automation-events
   integration-proxy:
+    enabled: true
     replicas: 1
   jaeger:
     enabled: false
