@@ -15,10 +15,12 @@ import (
 )
 
 type commandCapability struct {
-	ID        string `json:"id"`
-	Property  string `json:"property"`
-	ValueType string `json:"value_type"`
-	Access    struct {
+	ID         string `json:"id"`
+	Property   string `json:"property"`
+	ValueType  string `json:"value_type"`
+	TrueValue  string `json:"true_value"`
+	FalseValue string `json:"false_value"`
+	Access     struct {
 		Write bool `json:"write"`
 	} `json:"access"`
 	Range *struct {
@@ -57,7 +59,11 @@ func validateCapabilityStatePatch(raw datatypes.JSON, state map[string]any) erro
 		valueType := strings.ToLower(strings.TrimSpace(capability.ValueType))
 		switch valueType {
 		case "boolean":
-			if _, ok := value.(bool); !ok {
+			if _, ok := value.(bool); ok {
+				continue
+			}
+			text, ok := value.(string)
+			if !ok || (capability.TrueValue == "" && capability.FalseValue == "") || (text != capability.TrueValue && text != capability.FalseValue) {
 				return fmt.Errorf("property %q requires a boolean value", property)
 			}
 		case "number", "integer":

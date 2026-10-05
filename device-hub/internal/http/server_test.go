@@ -178,12 +178,18 @@ func TestHandleDeviceCommandMissingState(t *testing.T) {
 
 func TestValidateCapabilityStatePatch(t *testing.T) {
 	capabilities := datatypes.JSON([]byte(`[
-		{"id":"state","property":"state","value_type":"boolean","access":{"write":true}},
+		{"id":"state","property":"state","value_type":"boolean","true_value":"ON","false_value":"OFF","access":{"write":true}},
 		{"id":"brightness","property":"brightness","value_type":"number","access":{"write":true},"range":{"min":0,"max":254}},
 		{"id":"temperature","property":"temperature","value_type":"number","access":{"write":false}}
 	]`))
 	if err := validateCapabilityStatePatch(capabilities, map[string]any{"state": true, "brightness": float64(120)}); err != nil {
 		t.Fatalf("expected valid capability write: %v", err)
+	}
+	if err := validateCapabilityStatePatch(capabilities, map[string]any{"state": "ON"}); err != nil {
+		t.Fatalf("expected declared binary value to be accepted: %v", err)
+	}
+	if err := validateCapabilityStatePatch(capabilities, map[string]any{"state": "INVALID"}); err == nil {
+		t.Fatal("expected invalid binary value rejection")
 	}
 	if err := validateCapabilityStatePatch(capabilities, map[string]any{"temperature": float64(20)}); err == nil {
 		t.Fatal("expected read-only property rejection")
