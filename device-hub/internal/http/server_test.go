@@ -199,6 +199,33 @@ func TestValidateCapabilityStatePatch(t *testing.T) {
 	}
 }
 
+func TestNormalizeLegacyOnStatePatch(t *testing.T) {
+	capabilities := datatypes.JSON([]byte(`[
+		{"id":"state","property":"state","value_type":"boolean","access":{"write":true}}
+	]`))
+	state := normalizeLegacyOnStatePatch(capabilities, map[string]any{"on": true})
+	if got, ok := state["state"].(bool); !ok || !got {
+		t.Fatalf("expected legacy on value to map to state, got %#v", state)
+	}
+	if _, found := state["on"]; found {
+		t.Fatalf("expected legacy on property to be removed, got %#v", state)
+	}
+}
+
+func TestNormalizeLegacyOnStatePatchPreservesNativeOnCapability(t *testing.T) {
+	capabilities := datatypes.JSON([]byte(`[
+		{"id":"on","property":"on","value_type":"boolean","access":{"write":true}},
+		{"id":"state","property":"state","value_type":"boolean","access":{"write":true}}
+	]`))
+	state := normalizeLegacyOnStatePatch(capabilities, map[string]any{"on": true})
+	if _, found := state["state"]; found {
+		t.Fatalf("expected native on property to remain unchanged, got %#v", state)
+	}
+	if got, ok := state["on"].(bool); !ok || !got {
+		t.Fatalf("expected native on value to remain, got %#v", state)
+	}
+}
+
 func TestHandleDeviceCreateInvalidJSON(t *testing.T) {
 	srv := NewServer(nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/hdp/devices", strings.NewReader("{bad"))

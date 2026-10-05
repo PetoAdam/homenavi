@@ -94,6 +94,39 @@ func validateCapabilityStatePatch(raw datatypes.JSON, state map[string]any) erro
 	return nil
 }
 
+func normalizeLegacyOnStatePatch(raw datatypes.JSON, state map[string]any) map[string]any {
+	if _, hasState := state["state"]; hasState {
+		return state
+	}
+	onValue, hasOn := state["on"]
+	if !hasOn || !hasNonEmptyJSONArray(raw) {
+		return state
+	}
+	var capabilities []commandCapability
+	if err := json.Unmarshal(raw, &capabilities); err != nil {
+		return state
+	}
+	var stateCapability *commandCapability
+	for index := range capabilities {
+		property := strings.TrimSpace(capabilities[index].Property)
+		if property == "" {
+			property = strings.TrimSpace(capabilities[index].ID)
+		}
+		if property == "on" {
+			return state
+		}
+		if property == "state" && strings.EqualFold(strings.TrimSpace(capabilities[index].ValueType), "boolean") && capabilities[index].Access.Write {
+			stateCapability = &capabilities[index]
+		}
+	}
+	if stateCapability == nil {
+		return state
+	}
+	delete(state, "on")
+	state["state"] = onValue
+	return state
+}
+
 func hasNonEmptyJSONArray(raw []byte) bool {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
@@ -583,6 +616,7 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		http.Error(w, "resolved state is empty", http.StatusBadRequest)
 		return
 	}
+	statePatch = normalizeLegacyOnStatePatch(dev.Capabilities, statePatch)
 	if err := validateCapabilityStatePatch(dev.Capabilities, statePatch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
