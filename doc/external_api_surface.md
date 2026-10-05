@@ -2,6 +2,11 @@
 
 This document describes the externally-consumable interfaces of the Homenavi stack as it exists in this repo.
 
+Machine-readable contracts:
+
+- `doc/openapi.yaml` documents the HTTP request/response API in OpenAPI 3.1.
+- `doc/asyncapi.yaml` documents WebSocket and MQTT-over-WebSocket channels in AsyncAPI 3.0.
+
 ## Public ingress (what a client can actually reach)
 
 In the default `docker-compose.yml` config, clients primarily talk to **nginx** on port 80.

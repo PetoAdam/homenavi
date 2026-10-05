@@ -1,0 +1,722 @@
+openapi: 3.1.0
+info:
+  title: Homenavi External API
+  version: 0.5.16
+  description: |
+    HTTP API exposed through the Homenavi API gateway. This document covers the
+    supported public control-plane contract. Event streams are described in
+    doc/asyncapi.yaml.
+servers:
+  - url: /
+    description: Current deployment ingress origin
+  - url: http://localhost
+    description: Local Compose ingress
+security:
+  - bearerAuth: []
+tags:
+  - name: Gateway
+  - name: Authentication
+  - name: Devices
+  - name: History
+  - name: Automation
+paths:
+  /health:
+    get:
+      tags: [Gateway]
+      security: []
+      operationId: getGatewayHealth
+      responses:
+        '200':
+          description: Gateway is healthy
+          content:
+            text/plain:
+              schema: { type: string, example: ok }
+  /metrics:
+    get:
+      tags: [Gateway]
+      security: []
+      operationId: getGatewayMetrics
+      responses:
+        '200': { description: Prometheus metrics in the text exposition format }
+  /api/gateway/routes:
+    get:
+      tags: [Gateway]
+      operationId: listGatewayRoutes
+      description: Debug endpoint that returns the loaded gateway route configuration.
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/signup:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: signUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignUpRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/auth/login/start:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: startLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginStartRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/auth/login/finish:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: finishLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginFinishRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/refresh:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: refreshSession
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+  /api/auth/me:
+    get:
+      tags: [Authentication]
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current authenticated user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/password/reset/request:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: requestPasswordReset
+      requestBody: { $ref: '#/components/requestBodies/EmailRequest' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/password/reset/confirm:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: confirmPasswordReset
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/password/change:
+    post:
+      tags: [Authentication]
+      operationId: changePassword
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/email/verify/request:
+    post:
+      tags: [Authentication]
+      operationId: requestEmailVerification
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/email/verify/confirm:
+    post:
+      tags: [Authentication]
+      operationId: confirmEmailVerification
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/2fa/setup:
+    post:
+      tags: [Authentication]
+      operationId: setupTwoFactor
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/2fa/verify:
+    post:
+      tags: [Authentication]
+      operationId: verifyTwoFactor
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/2fa/email/request:
+    post:
+      tags: [Authentication]
+      operationId: requestEmailTwoFactor
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/2fa/email/verify:
+    post:
+      tags: [Authentication]
+      operationId: verifyEmailTwoFactor
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/delete:
+    delete:
+      tags: [Authentication]
+      operationId: deleteCurrentUser
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/oauth/google/login:
+    get:
+      tags: [Authentication]
+      security: []
+      operationId: startGoogleOAuth
+      responses:
+        '302': { description: Redirect to Google OAuth }
+  /api/auth/oauth/google/callback:
+    get:
+      tags: [Authentication]
+      security: []
+      operationId: finishGoogleOAuth
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302': { description: Redirect to the frontend after authentication }
+  /api/auth/profile/generate-avatar:
+    post:
+      tags: [Authentication]
+      operationId: generateProfileAvatar
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/profile/upload-url:
+    post:
+      tags: [Authentication]
+      operationId: createProfilePictureUploadURL
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/profile/upload-complete:
+    post:
+      tags: [Authentication]
+      operationId: completeProfilePictureUpload
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/profile/upload:
+    post:
+      tags: [Authentication]
+      operationId: uploadProfilePicture
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/profile-pictures/users/{user_id}:
+    get:
+      tags: [Authentication]
+      security: []
+      operationId: getProfilePicture
+      parameters: [ { $ref: '#/components/parameters/UserID' } ]
+      responses:
+        '200': { description: Profile image bytes }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/profile-pictures/users/{user_id}/access-url:
+    get:
+      tags: [Authentication]
+      security: []
+      operationId: getProfilePictureAccessURL
+      parameters: [ { $ref: '#/components/parameters/UserID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/users:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: createUserRecord
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '201': { $ref: '#/components/responses/JSONSuccess' } }
+    get:
+      tags: [Authentication]
+      operationId: listUsers
+      description: Backup direct user-service access. Requires the admin role.
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/users/health:
+    get:
+      tags: [Authentication]
+      operationId: getUserServiceHealth
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/users/validate:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: validateCredentials
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/users/{id}:
+    get:
+      tags: [Authentication]
+      operationId: getUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    patch:
+      tags: [Authentication]
+      operationId: updateUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    delete:
+      tags: [Authentication]
+      operationId: deleteUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/users/{id}/lockout:
+    post:
+      tags: [Authentication]
+      operationId: lockOutUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/users:
+    get:
+      tags: [Authentication]
+      operationId: listAuthUsers
+      description: User management API exposed by auth-service. Requires the resident role.
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/users/{id}:
+    get:
+      tags: [Authentication]
+      operationId: getAuthUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    patch:
+      tags: [Authentication]
+      operationId: updateAuthUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/auth/users/{id}/lockout:
+    post:
+      tags: [Authentication]
+      operationId: lockOutAuthUser
+      parameters: [ { $ref: '#/components/parameters/AuthUserID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/hdp/health:
+    get:
+      tags: [Devices]
+      operationId: getDeviceHubHealth
+      responses: { '200': { $ref: '#/components/responses/TextOK' } }
+  /api/hdp/devices:
+    get:
+      tags: [Devices]
+      operationId: listDevices
+      responses:
+        '200':
+          description: Devices known to Homenavi
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Device' } }
+    post:
+      tags: [Devices]
+      operationId: createDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceCreateRequest' }
+      responses: { '201': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/hdp/devices/{device_id}/commands:
+    post:
+      tags: [Devices]
+      operationId: sendDeviceStateCommand
+      description: Device IDs containing `/` must be percent-encoded in this URL.
+      parameters: [ { $ref: '#/components/parameters/DeviceID' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceCommandRequest' }
+      responses:
+        '202':
+          description: Command accepted for adapter dispatch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceCommandResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/hdp/devices/{device_id}/refresh:
+    post:
+      tags: [Devices]
+      operationId: refreshDevice
+      parameters: [ { $ref: '#/components/parameters/DeviceID' } ]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceRefreshRequest' }
+      responses: { '202': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/hdp/devices/{device_id}/reconfigure:
+    post:
+      tags: [Devices]
+      operationId: reconfigureDevice
+      parameters: [ { $ref: '#/components/parameters/DeviceID' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconfigureRequest' }
+      responses: { '202': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/hdp/integrations:
+    get:
+      tags: [Devices]
+      operationId: listDeviceIntegrations
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/hdp/pairing-config:
+    get:
+      tags: [Devices]
+      operationId: getPairingConfiguration
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/hdp/pairings:
+    get:
+      tags: [Devices]
+      operationId: listPairings
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    post:
+      tags: [Devices]
+      operationId: startPairing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PairingRequest' }
+      responses: { '202': { $ref: '#/components/responses/JSONSuccess' } }
+    delete:
+      tags: [Devices]
+      operationId: stopPairing
+      parameters:
+        - { name: protocol, in: query, required: true, schema: { type: string } }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/history/health:
+    get:
+      tags: [History]
+      operationId: getHistoryHealth
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/history/state:
+    get:
+      tags: [History]
+      operationId: listDeviceStateHistory
+      parameters:
+        - { name: device_id, in: query, required: true, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, default: 1000 } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Page of recorded state points
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StateHistoryPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/history/{resource}:
+    $ref: '#/components/pathItems/GenericReadWriteDelete'
+  /api/automation/health:
+    get:
+      tags: [Automation]
+      operationId: getAutomationHealth
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/automation/workflows:
+    get:
+      tags: [Automation]
+      operationId: listWorkflows
+      responses:
+        '200':
+          description: Saved workflows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowList' }
+    post:
+      tags: [Automation]
+      operationId: createWorkflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowInput' }
+      responses: { '201': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/automation/workflows/{id}:
+    get:
+      tags: [Automation]
+      operationId: getWorkflow
+      parameters: [ { $ref: '#/components/parameters/WorkflowID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    put:
+      tags: [Automation]
+      operationId: updateWorkflow
+      parameters: [ { $ref: '#/components/parameters/WorkflowID' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowInput' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    delete:
+      tags: [Automation]
+      operationId: deleteWorkflow
+      parameters: [ { $ref: '#/components/parameters/WorkflowID' } ]
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/automation/{resource}:
+    $ref: '#/components/pathItems/GenericCRUD'
+  /api/dashboard/health:
+    get:
+      tags: [Gateway]
+      operationId: getDashboardHealth
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/widgets/catalog:
+    get:
+      tags: [Gateway]
+      operationId: getWidgetCatalog
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/widgets/weather:
+    get:
+      tags: [Gateway]
+      operationId: getWeatherWidgets
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/dashboard/default:
+    get:
+      tags: [Gateway]
+      operationId: getDefaultDashboard
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    put:
+      tags: [Gateway]
+      operationId: replaceDefaultDashboard
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/dashboard/{resource}:
+    $ref: '#/components/pathItems/GenericCRUD'
+  /api/weather/health:
+    get:
+      tags: [Gateway]
+      operationId: getWeatherHealth
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/weather:
+    get:
+      tags: [Gateway]
+      operationId: getWeather
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/weather/search:
+    get:
+      tags: [Gateway]
+      operationId: searchWeatherLocations
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/weather/reverse:
+    get:
+      tags: [Gateway]
+      operationId: reverseGeocodeWeatherLocation
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/ers/health:
+    get:
+      tags: [Gateway]
+      operationId: getEntityRegistryHealth
+      responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  /api/ers/{resource}:
+    $ref: '#/components/pathItems/GenericCRUD'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT sent as an Authorization bearer token. Browser clients may also use the auth cookie.
+  parameters:
+    UserID: { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+    AuthUserID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    WorkflowID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    DeviceID:
+      name: device_id
+      in: path
+      required: true
+      allowReserved: true
+      schema: { type: string, example: zigbee%2F0x00c09b9eff953ab2 }
+    ResourcePath:
+      name: resource
+      in: path
+      required: true
+      allowReserved: true
+      description: Gateway wildcard suffix. Percent-encode slashes when a resource has nested segments.
+      schema: { type: string }
+  pathItems:
+    GenericReadWriteDelete:
+      description: Gateway pass-through route. The resource suffix is provider-defined.
+      parameters: [ { $ref: '#/components/parameters/ResourcePath' } ]
+      get:
+        tags: [Gateway]
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      post:
+        tags: [Gateway]
+        requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      patch:
+        tags: [Gateway]
+        requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      delete:
+        tags: [Gateway]
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+    GenericCRUD:
+      description: Gateway pass-through route. The resource suffix is provider-defined.
+      parameters: [ { $ref: '#/components/parameters/ResourcePath' } ]
+      get:
+        tags: [Gateway]
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      post:
+        tags: [Gateway]
+        requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      put:
+        tags: [Gateway]
+        requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      patch:
+        tags: [Gateway]
+        requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+      delete:
+        tags: [Gateway]
+        responses: { '200': { $ref: '#/components/responses/JSONSuccess' } }
+  requestBodies:
+    EmailRequest:
+      required: true
+      content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string, format: email } } } } }
+    GenericObject:
+      required: true
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
+  responses:
+    JSONSuccess:
+      description: Successful JSON response
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
+    TextOK:
+      description: Service is healthy
+      content: { text/plain: { schema: { type: string, example: ok } } }
+    BadRequest: { description: Request validation failed }
+    Unauthorized: { description: Authentication is required or invalid }
+    NotFound: { description: Resource not found }
+  schemas:
+    SignUpRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        name: { type: string }
+    LoginStartRequest:
+      type: object
+      required: [email]
+      properties: { email: { type: string, format: email } }
+    LoginFinishRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email: { type: string, format: email }
+        code: { type: string }
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [admin, resident] }
+    DeviceCreateRequest:
+      type: object
+      required: [protocol, external_id]
+      properties:
+        protocol: { type: string, example: zigbee }
+        external_id: { type: string, example: '0x00c09b9eff953ab2' }
+        type: { type: string }
+        manufacturer: { type: string }
+        model: { type: string }
+        description: { type: string }
+        firmware: { type: string }
+        icon: { type: string }
+        capabilities: { type: array, items: { type: object, additionalProperties: true } }
+        inputs: { type: array, items: { type: object, additionalProperties: true } }
+    Device:
+      type: object
+      required: [id, device_id, protocol, external_id]
+      properties:
+        id: { type: string, format: uuid }
+        device_id: { type: string, example: zigbee/0x00c09b9eff953ab2 }
+        protocol: { type: string }
+        external_id: { type: string }
+        capabilities: { type: array, items: { type: object, additionalProperties: true } }
+        state: { type: object, additionalProperties: true }
+        online: { type: boolean }
+    DeviceCommandRequest:
+      type: object
+      required: [state]
+      properties:
+        state: { type: object, additionalProperties: true, example: { state: true, brightness: 120 } }
+        transition_ms: { type: integer, minimum: 0 }
+        correlation_id: { type: string }
+    DeviceCommandResponse:
+      type: object
+      required: [status, device_id, correlation_id]
+      properties:
+        status: { type: string, enum: [queued] }
+        device_id: { type: string }
+        correlation_id: { type: string }
+        transition_ms: { type: integer }
+    DeviceRefreshRequest:
+      type: object
+      properties:
+        metadata: { type: boolean }
+        state: { type: boolean }
+        properties: { type: array, items: { type: string } }
+    ReconfigureRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string }
+        args: { type: object, additionalProperties: true }
+    PairingRequest:
+      type: object
+      required: [protocol]
+      properties:
+        protocol: { type: string }
+        timeout: { type: integer, minimum: 1 }
+        mode: { type: string }
+        flow_id: { type: string }
+        inputs: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: true }
+    StateHistoryPage:
+      type: object
+      required: [device_id, points]
+      properties:
+        device_id: { type: string }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        next_cursor: { type: string }
+        points:
+          type: array
+          items:
+            type: object
+            required: [ts, payload, topic, retained]
+            properties:
+              ts: { type: string, format: date-time }
+              payload: { type: object, additionalProperties: true }
+              topic: { type: string }
+              retained: { type: boolean }
+    WorkflowInput:
+      type: object
+      required: [name, definition]
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        definition: { type: object, additionalProperties: true }
+        source: { type: object, additionalProperties: true }
+    WorkflowList:
+      type: object
+      required: [workflows]
+      properties:
+        workflows: { type: array, items: { type: object, additionalProperties: true } }

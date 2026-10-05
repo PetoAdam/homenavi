@@ -1,0 +1,60 @@
+asyncapi: 3.1.0
+info:
+  title: Homenavi Event API
+  version: 0.5.16
+  description: |
+    Event contracts exposed at the Homenavi ingress. Use this alongside
+    doc/openapi.yaml: commands and queries use OpenAPI, while subscriptions and
+    MQTT-over-WebSocket use AsyncAPI.
+servers:
+  localWebSocket:
+    host: localhost
+    pathname: /
+    protocol: ws
+    description: Local authenticated WebSocket ingress. Supply the JWT as an Authorization bearer token or supported auth cookie during the WebSocket upgrade.
+channels:
+  automationRun:
+    address: /ws/automation/runs/{run_id}
+    parameters:
+      run_id:
+        description: Automation run UUID.
+    messages:
+      runEvent:
+        payload:
+          type: object
+          required: [type, workflow_id, status]
+          properties:
+            type: { type: string, enum: [run_started, run_waiting, node_started, node_finished, run_finished] }
+            workflow_id: { type: string, format: uuid }
+            run_id: { type: string, format: uuid }
+            node_id: { type: string }
+            status: { type: string, enum: [running, waiting, sleeping, success, failed] }
+            error: { type: string }
+  entityRegistry:
+    address: /ws/ers
+    messages:
+      entityEvent:
+        payload:
+          type: object
+          additionalProperties: true
+          description: Entity registry change event. The schema is currently provider-defined.
+  hdpMqtt:
+    address: /ws/hdp
+    description: |
+      MQTT-over-WebSocket endpoint. The WebSocket payload is MQTT 5 protocol
+      data, not standalone JSON messages. Subscribe to HDP topics after the MQTT
+      CONNECT packet. See the HDP schema package and adapter contracts before
+      publishing commands directly.
+operations:
+  receiveAutomationRunEvent:
+    action: receive
+    channel: { $ref: '#/channels/automationRun' }
+    messages: [ { $ref: '#/channels/automationRun/messages/runEvent' } ]
+  receiveEntityRegistryEvent:
+    action: receive
+    channel: { $ref: '#/channels/entityRegistry' }
+    messages: [ { $ref: '#/channels/entityRegistry/messages/entityEvent' } ]
+  mqttOverWebSocket:
+    action: send
+    channel: { $ref: '#/channels/hdpMqtt' }
+    summary: Establish an MQTT session over the authenticated WebSocket transport.

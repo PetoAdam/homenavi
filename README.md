@@ -78,6 +78,8 @@ Primary references:
 - HDP contract and topic model: [doc/hdp.md](doc/hdp.md)
 - Database ownership and schema overview: [doc/database_schema.md](doc/database_schema.md)
 - API surface: [doc/external_api_surface.md](doc/external_api_surface.md)
+- HTTP API contract (OpenAPI 3.1): [doc/openapi.yaml](doc/openapi.yaml)
+- Event API contract (AsyncAPI 3.1): [doc/asyncapi.yaml](doc/asyncapi.yaml)
 
 <a id="quickstart"></a>
 ## 4. Quickstart
@@ -212,6 +214,8 @@ The common setup lives in the shared observability package and is wired in each 
 ## 10. Documentation map
 - Architecture diagrams and message flows: [doc/architecture_diagram.md](doc/architecture_diagram.md)
 - API endpoint map: [doc/external_api_surface.md](doc/external_api_surface.md)
+- HTTP API contract (OpenAPI 3.1): [doc/openapi.yaml](doc/openapi.yaml)
+- Event API contract (AsyncAPI 3.1): [doc/asyncapi.yaml](doc/asyncapi.yaml)
 - MQTT/HDP contract and interoperability: [doc/hdp.md](doc/hdp.md), [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md)
 - MQTT clients, broker topology, shared consumers, and Mosquitto compatibility: [doc/mqtt_architecture.md](doc/mqtt_architecture.md)
 - Local developer setup: [doc/local_build.md](doc/local_build.md)
