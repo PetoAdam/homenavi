@@ -3,7 +3,7 @@
 Status: Proposed  
 Date: 2026-04-13
 
-> Superseded for bundled object storage: Homenavi now uses SeaweedFS rather than MinIO. See [Object Storage Migration](object_storage_migration.md) for the implemented migration procedure. The remaining MinIO references in this historical planning document describe the original proposal.
+> Superseded for bundled object storage: Homenavi now uses SeaweedFS rather than MinIO. The remaining MinIO references in this historical planning document describe the original proposal.
 
 ---
 
