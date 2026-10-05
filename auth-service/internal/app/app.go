@@ -37,6 +37,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	authService := authdomain.NewService(authdomain.Config{
 		JWTPrivateKey:           cfg.JWTPrivateKey,
+		JWTIssuer:               cfg.JWTIssuer,
+		JWTAPIAudience:          cfg.JWTAPIAudience,
 		AccessTokenTTL:          cfg.AccessTokenTTL,
 		RefreshTokenTTL:         cfg.RefreshTokenTTL,
 		EmailVerificationTTL:    cfg.EmailVerificationTTL,

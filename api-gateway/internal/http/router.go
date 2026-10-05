@@ -68,13 +68,14 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey
 }
 
 func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) {
+	validation := apiMiddleware.APIValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {
 		case "websocket", "websocket-mqtt":
-			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeWebSocketProxyHandler(route))
+			h = wrapWithAccessControl(pubKey, validation, route.Access, proxy.MakeWebSocketProxyHandler(route))
 		default:
-			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeRestProxyHandler(route))
+			h = wrapWithAccessControl(pubKey, validation, route.Access, proxy.MakeRestProxyHandler(route))
 		}
 
 		if route.RateLimit != nil {
@@ -95,16 +96,16 @@ func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redi
 	}
 }
 
-func wrapWithAccessControl(pubKey *rsa.PublicKey, access string, next http.Handler) http.Handler {
+func wrapWithAccessControl(pubKey *rsa.PublicKey, validation apiMiddleware.ValidationConfig, access string, next http.Handler) http.Handler {
 	switch access {
 	case "public":
 		return next
 	case "auth":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(next)
+		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey, validation)(next)
 	case "resident":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
+		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey, validation)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
 	case "admin":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
+		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey, validation)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
 	default:
 		return next
 	}

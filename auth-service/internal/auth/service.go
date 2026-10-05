@@ -13,6 +13,7 @@ import (
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	cacheinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/cache"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/oauth2"
@@ -22,6 +23,8 @@ import (
 // Config holds the auth business configuration.
 type Config struct {
 	JWTPrivateKey           *rsa.PrivateKey
+	JWTIssuer               string
+	JWTAPIAudience          string
 	AccessTokenTTL          time.Duration
 	RefreshTokenTTL         time.Duration
 	EmailVerificationTTL    time.Duration
@@ -89,16 +92,37 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) IssueAccessToken(user *clientsinfra.User) (string, error) {
+	if user == nil {
+		return "", fmt.Errorf("user is required")
+	}
+	tokenID, err := newTokenID()
+	if err != nil {
+		return "", fmt.Errorf("generate token id: %w", err)
+	}
+	now := time.Now()
 	claims := jwt.MapClaims{
-		"sub":  user.ID,
-		"exp":  time.Now().Add(s.config.AccessTokenTTL).Unix(),
-		"iat":  time.Now().Unix(),
-		"role": user.Role,
-		"name": user.FirstName + " " + user.LastName,
+		"iss":                s.config.JWTIssuer,
+		"sub":                user.ID,
+		"aud":                []string{s.config.JWTAPIAudience},
+		"exp":                now.Add(s.config.AccessTokenTTL).Unix(),
+		"iat":                now.Unix(),
+		"nbf":                now.Unix(),
+		"jti":                tokenID,
+		authx.ClaimTokenType: authx.TokenTypeAPI,
+		"role":               user.Role,
+		"name":               user.FirstName + " " + user.LastName,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(s.config.JWTPrivateKey)
+}
+
+func newTokenID() (string, error) {
+	tokenBytes := make([]byte, 16)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(tokenBytes), nil
 }
 
 func (s *Service) IssueRefreshToken(userID string) (string, error) {

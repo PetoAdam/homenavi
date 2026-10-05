@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/PetoAdam/homenavi/shared/redisx"
 	"github.com/golang-jwt/jwt/v5"
@@ -18,6 +19,8 @@ type Config struct {
 	EmailServiceURL          string
 	ProfilePictureServiceURL string
 	JWTPrivateKey            *rsa.PrivateKey
+	JWTIssuer                string
+	JWTAPIAudience           string
 	AccessTokenTTL           time.Duration
 	RefreshTokenTTL          time.Duration
 	EmailVerificationTTL     time.Duration
@@ -56,6 +59,8 @@ func LoadConfig() (Config, error) {
 		EmailServiceURL:          envx.String("EMAIL_SERVICE_URL", "http://email-service:8002"),
 		ProfilePictureServiceURL: envx.String("PROFILE_PICTURE_SERVICE_URL", "http://profile-picture-service:8003"),
 		JWTPrivateKey:            privateKey,
+		JWTIssuer:                envx.String("JWT_ISSUER", authx.DefaultIssuer),
+		JWTAPIAudience:           envx.String("JWT_API_AUDIENCE", authx.AudienceAPI),
 		AccessTokenTTL:           15 * time.Minute,
 		RefreshTokenTTL:          7 * 24 * time.Hour,
 		EmailVerificationTTL:     24 * time.Hour,

@@ -6,14 +6,24 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {
-	Role string `json:"role"`
-	Name string `json:"name"`
+	Role      string `json:"role"`
+	Name      string `json:"name"`
+	TokenType string `json:"typ"`
 	jwt.RegisteredClaims
+}
+
+type ValidationConfig struct {
+	Issuer    string
+	Audience  string
+	TokenType string
+	ClockSkew time.Duration
 }
 
 type claimsKeyType struct{}
@@ -35,7 +45,7 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": message, "code": status})
 }
 
-func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
+func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey, cfg ValidationConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenStr := extractToken(r)
@@ -43,9 +53,23 @@ func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handl
 				writeJSONError(w, http.StatusUnauthorized, "missing token")
 				return
 			}
+			if pubKey == nil {
+				writeJSONError(w, http.StatusUnauthorized, "token verification unavailable")
+				return
+			}
+			parserOptions := []jwt.ParserOption{jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()})}
+			if cfg.Issuer != "" {
+				parserOptions = append(parserOptions, jwt.WithIssuer(cfg.Issuer))
+			}
+			if cfg.Audience != "" {
+				parserOptions = append(parserOptions, jwt.WithAudience(cfg.Audience))
+			}
+			if cfg.ClockSkew > 0 {
+				parserOptions = append(parserOptions, jwt.WithLeeway(cfg.ClockSkew))
+			}
 			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 				return pubKey, nil
-			})
+			}, parserOptions...)
 			if err != nil || !token.Valid {
 				writeJSONError(w, http.StatusUnauthorized, "invalid token")
 				return
@@ -55,9 +79,22 @@ func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey) func(http.Handler) http.Handl
 				writeJSONError(w, http.StatusUnauthorized, "invalid claims")
 				return
 			}
+			if cfg.TokenType != "" && claims.TokenType != cfg.TokenType {
+				writeJSONError(w, http.StatusUnauthorized, "invalid token type")
+				return
+			}
 			ctx := context.WithValue(r.Context(), ClaimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+func APIValidationConfig(issuer, audience string) ValidationConfig {
+	return ValidationConfig{
+		Issuer:    issuer,
+		Audience:  audience,
+		TokenType: authx.TokenTypeAPI,
+		ClockSkew: 30 * time.Second,
 	}
 }
 
