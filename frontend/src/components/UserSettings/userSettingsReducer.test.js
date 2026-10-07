@@ -11,6 +11,8 @@ describe('userSettingsReducer', () => {
     });
 
     expect(state.emailVerified).toBe(true);
+    expect(state.twoFAMethod).toBe('totp');
+    expect(state.recoveryCodes).toEqual([]);
     expect(state.profileForm).toEqual({ firstName: 'Ada', lastName: 'Lovelace' });
   });
 

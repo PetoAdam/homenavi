@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/PetoAdam/homenavi/user-service/internal/auth"
 	"github.com/PetoAdam/homenavi/user-service/internal/users"
 	"github.com/go-chi/chi/v5"
@@ -101,7 +102,11 @@ func (h *UsersHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "db error", nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, publicUser(user))
+	response := publicUser(user)
+	if isAuthServicePrincipal(actorFromRequest(r)) {
+		response["two_factor_secret"] = user.TwoFactorSecret
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *UsersHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +194,41 @@ func (h *UsersHandler) HandlePatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "user updated"})
 }
 
+func (h *UsersHandler) HandleReplaceRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CodeHashes []string `json:"code_hashes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
+		return
+	}
+	if err := h.service.ReplaceRecoveryCodes(r.Context(), actorFromRequest(r), chi.URLParam(r, "id"), req.CodeHashes); err != nil {
+		handleMutationError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *UsersHandler) HandleConsumeRecoveryCode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CodeHash string `json:"code_hash"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request", nil)
+		return
+	}
+	consumed, err := h.service.ConsumeRecoveryCode(r.Context(), actorFromRequest(r), chi.URLParam(r, "id"), req.CodeHash)
+	if err != nil {
+		handleMutationError(w, err)
+		return
+	}
+	if !consumed {
+		writeJSONError(w, http.StatusUnauthorized, "invalid recovery code", nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func handleMutationError(w http.ResponseWriter, err error) {
 	switch {
 	case strings.Contains(err.Error(), "invalid UUID"):
@@ -212,6 +252,10 @@ func actorFromRequest(r *http.Request) users.Actor {
 		return users.Actor{}
 	}
 	return users.Actor{Subject: claims.Sub, Role: claims.Role}
+}
+
+func isAuthServicePrincipal(actor users.Actor) bool {
+	return actor.Subject == authx.ServicePrincipalAuth && actor.Role == authx.RoleService
 }
 
 func publicUser(user users.User) map[string]any {

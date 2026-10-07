@@ -1,4 +1,14 @@
 routes:
+  - path: /.well-known/oauth-authorization-server
+    upstream: http://auth-service:8000/.well-known/oauth-authorization-server
+    methods: [GET]
+    access: public
+    type: rest
+  - path: /.well-known/oauth-authorization-server/api/auth
+    upstream: http://auth-service:8000/.well-known/oauth-authorization-server/api/auth
+    methods: [GET]
+    access: public
+    type: rest
   - path: /api/auth/health
     upstream: http://auth-service:8000/health
     methods: [GET]
@@ -52,12 +62,12 @@ routes:
   - path: /api/auth/2fa/email/request
     upstream: http://auth-service:8000/api/auth/2fa/email/request
     methods: [POST]
-    access: public
+    access: auth
     type: rest
   - path: /api/auth/2fa/email/verify
     upstream: http://auth-service:8000/api/auth/2fa/email/verify
     methods: [POST]
-    access: public
+    access: auth
     type: rest
   - path: /api/auth/delete
     upstream: http://auth-service:8000/api/auth/delete
@@ -83,6 +93,61 @@ routes:
     upstream: http://auth-service:8000/api/auth/oauth/google/callback
     methods: [GET]
     access: public
+    type: rest
+  - path: /api/auth/oauth/jwks.json
+    upstream: http://auth-service:8000/api/auth/oauth/jwks.json
+    methods: [GET]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/authorize
+    upstream: http://auth-service:8000/api/auth/oauth/authorize
+    methods: [GET, POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/token
+    upstream: http://auth-service:8000/api/auth/oauth/token
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/register
+    upstream: http://auth-service:8000/api/auth/oauth/register
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/transaction
+    upstream: http://auth-service:8000/api/auth/oauth/transaction
+    methods: [GET]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/transaction/login
+    upstream: http://auth-service:8000/api/auth/oauth/transaction/login
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/transaction/verify
+    upstream: http://auth-service:8000/api/auth/oauth/transaction/verify
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/transaction/approve
+    upstream: http://auth-service:8000/api/auth/oauth/transaction/approve
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/transaction/deny
+    upstream: http://auth-service:8000/api/auth/oauth/transaction/deny
+    methods: [POST]
+    access: public
+    type: rest
+  - path: /api/auth/oauth/consents
+    upstream: http://auth-service:8000/api/auth/oauth/consents
+    methods: [POST]
+    access: auth
+    type: rest
+  - path: /api/auth/oauth/consents/{clientID}
+    upstream: http://auth-service:8000/api/auth/oauth/consents/{clientID}
+    methods: [DELETE]
+    access: auth
     type: rest
   - path: /api/auth/oauth/google
     upstream: http://auth-service:8000/api/auth/oauth/google

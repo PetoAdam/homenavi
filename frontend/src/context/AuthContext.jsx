@@ -1,13 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { login, finish2FA, signup, refreshToken, logout, getMe, request2FAEmail } from '../services/authService';
-import { setAuthCookie, clearAuthCookie } from '../services/authCookie';
 import { setAccessToken as setHttpAccessToken } from '../services/httpClient';
 
 const AuthContext = createContext();
+const COOKIE_SESSION = 'cookie-session';
 
 export function AuthProvider({ children }) {
   const [accessToken, setAccessToken] = useState(null);
-  const [refreshTokenValue, setRefreshTokenValue] = useState(() => localStorage.getItem('refreshToken') || null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
@@ -44,29 +43,12 @@ export function AuthProvider({ children }) {
     setHttpAccessToken(accessToken);
   }, [accessToken]);
 
-  // On mount, try to refresh access token if refresh token exists in localStorage
-  // Also check for Google OAuth callback
+  // Bootstrap from HttpOnly cookies; bearer credentials never enter JavaScript.
   useEffect(() => {
     // Check for Google OAuth callback with tokens in URL
     const urlParams = new URLSearchParams(window.location.search);
-    const accessTokenFromUrl = urlParams.get('access_token');
-    const refreshTokenFromUrl = urlParams.get('refresh_token');
     const error = urlParams.get('error');
     const reason = urlParams.get('reason');
-    
-    if (accessTokenFromUrl && refreshTokenFromUrl) {
-      // Handle successful Google OAuth callback
-      setAccessToken(accessTokenFromUrl);
-      setRefreshTokenValue(refreshTokenFromUrl);
-      localStorage.setItem('refreshToken', refreshTokenFromUrl);
-
-      // Ensure cookie is set for api-gateway (and websocket) auth
-      setAuthCookie(accessTokenFromUrl);
-      
-      // Clear URL parameters
-      window.history.replaceState({}, document.title, window.location.pathname);
-      return;
-    }
     
     if (error) {
       // Handle OAuth error
@@ -116,23 +98,13 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    // Regular token refresh logic
-    if (!accessToken && refreshTokenValue) {
+    if (!accessToken) {
       (async () => {
-        const res = await refreshToken(refreshTokenValue);
+        const res = await refreshToken();
         if (res.success) {
-          setAccessToken(res.accessToken);
-          setRefreshTokenValue(res.refreshToken);
-          localStorage.setItem('refreshToken', res.refreshToken);
-
-          setAuthCookie(res.accessToken);
+          setAccessToken(COOKIE_SESSION);
         } else {
           setAccessToken(null);
-          setRefreshTokenValue(null);
-          localStorage.removeItem('refreshToken');
-
-          clearAuthCookie();
-
           setBootstrapping(false);
         }
       })();
@@ -141,24 +113,19 @@ export function AuthProvider({ children }) {
 
     // No refresh to perform; we can consider auth initialized.
     setBootstrapping(false);
-  }, [accessToken, refreshTokenValue]);
+  }, [accessToken]);
 
   // Auto-refresh access token
   useEffect(() => {
-    if (!refreshTokenValue) return;
-    localStorage.setItem('refreshToken', refreshTokenValue);
+    if (!accessToken) return;
     const interval = setInterval(async () => {
-      const res = await refreshToken(refreshTokenValue);
+      const res = await refreshToken();
       if (res.success) {
-        setAccessToken(res.accessToken);
-        setRefreshTokenValue(res.refreshToken);
-        localStorage.setItem('refreshToken', res.refreshToken);
-
-        setAuthCookie(res.accessToken);
+        setAccessToken(COOKIE_SESSION);
       }
     }, 13 * 60 * 1000); // every 13 min
     return () => clearInterval(interval);
-  }, [refreshTokenValue]);
+  }, [accessToken]);
 
   const handleLogin = async (email, password) => {
     setLoading(true);
@@ -172,16 +139,12 @@ export function AuthProvider({ children }) {
     }
     
     // Handle successful login
-    if (resp.success && resp.accessToken) {
-      setAccessToken(resp.accessToken);
-      setRefreshTokenValue(resp.refreshToken);
-      localStorage.setItem('refreshToken', resp.refreshToken);
-
-      setAuthCookie(resp.accessToken);
+    if (resp.success) {
+      setAccessToken(COOKIE_SESSION);
       
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
-      const me = await getMe(resp.accessToken);
+      const me = await getMe();
       if (me.success && me.user) {
         me.user.avatar = me.user.profile_picture_url || null;
         setUser(me.user);
@@ -204,16 +167,12 @@ export function AuthProvider({ children }) {
     const resp = await finish2FA(userId, code);
     setLoading(false);
     
-    if (resp.success && resp.accessToken) {
-      setAccessToken(resp.accessToken);
-      setRefreshTokenValue(resp.refreshToken);
-      localStorage.setItem('refreshToken', resp.refreshToken);
-
-      setAuthCookie(resp.accessToken);
+    if (resp.success) {
+      setAccessToken(COOKIE_SESSION);
       
       setPendingUserId(null); // Clear pending userId
       // Fetch user profile after login
-      const me = await getMe(resp.accessToken);
+      const me = await getMe();
       if (me.success && me.user) {
         me.user.avatar = me.user.profile_picture_url || null;
         setUser(me.user);
@@ -260,12 +219,8 @@ export function AuthProvider({ children }) {
 
   const handleLogout = async () => {
     setLoading(true);
-    await logout(refreshTokenValue, accessToken);
+    await logout();
     setAccessToken(null);
-    setRefreshTokenValue(null);
-    localStorage.removeItem('refreshToken');
-
-    clearAuthCookie();
 
     setHttpAccessToken(null);
     
@@ -290,7 +245,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{ 
       accessToken, 
-      refreshToken: refreshTokenValue, 
+      refreshToken: null,
       user, 
       loading, 
       bootstrapping,

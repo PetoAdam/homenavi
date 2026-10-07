@@ -17,4 +17,5 @@ var (
 	ErrResidentsGrantResidentOnly = errors.New("residents can only grant resident role")
 	ErrCannotModifyAdminRole      = errors.New("cannot modify admin role")
 	ErrNoValidFields              = errors.New("no valid fields to update")
+	ErrInvalidRecoveryCode        = errors.New("invalid recovery code")
 )

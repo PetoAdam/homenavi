@@ -30,13 +30,15 @@ type Tag struct {
 func (Tag) TableName() string { return "ers_tags" }
 
 type Group struct {
-	ID          uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	Slug        string         `json:"slug" gorm:"uniqueIndex;not null"`
-	Name        string         `json:"name" gorm:"not null"`
-	Description string         `json:"description"`
-	Meta        datatypes.JSON `json:"meta" gorm:"type:jsonb;not null;default:'{}'"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID              uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
+	IdempotencyKey  *string        `json:"-" gorm:"uniqueIndex:idx_ers_groups_idempotency_key"`
+	IdempotencyHash string         `json:"-"`
+	Slug            string         `json:"slug" gorm:"uniqueIndex;not null"`
+	Name            string         `json:"name" gorm:"not null"`
+	Description     string         `json:"description"`
+	Meta            datatypes.JSON `json:"meta" gorm:"type:jsonb;not null;default:'{}'"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
 func (Group) TableName() string { return "ers_groups" }

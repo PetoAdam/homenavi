@@ -7,33 +7,21 @@ import (
 )
 
 type TwoFactorSetupRequest struct {
-	UserID string `json:"user_id"`
 }
 
 func (r *TwoFactorSetupRequest) Validate() error {
-	if err := sharedtransport.ValidateRequired(map[string]string{"user_id": r.UserID}); err != nil {
-		return err
-	}
-	if !sharedtransport.IsValidUUID(r.UserID) {
-		return fmt.Errorf("invalid user ID format")
-	}
 	return nil
 }
 
 type TwoFactorVerifyRequest struct {
-	UserID string `json:"user_id"`
-	Code   string `json:"code"`
+	Code string `json:"code"`
 }
 
 func (r *TwoFactorVerifyRequest) Validate() error {
 	if err := sharedtransport.ValidateRequired(map[string]string{
-		"user_id": r.UserID,
-		"code":    r.Code,
+		"code": r.Code,
 	}); err != nil {
 		return err
-	}
-	if !sharedtransport.IsValidUUID(r.UserID) {
-		return fmt.Errorf("invalid user ID format")
 	}
 	if !sharedtransport.IsValidCode(r.Code) {
 		return fmt.Errorf("code must be exactly 6 digits")
@@ -42,33 +30,21 @@ func (r *TwoFactorVerifyRequest) Validate() error {
 }
 
 type TwoFactorEmailRequest struct {
-	UserID string `json:"user_id"`
 }
 
 func (r *TwoFactorEmailRequest) Validate() error {
-	if err := sharedtransport.ValidateRequired(map[string]string{"user_id": r.UserID}); err != nil {
-		return err
-	}
-	if !sharedtransport.IsValidUUID(r.UserID) {
-		return fmt.Errorf("invalid user ID format")
-	}
 	return nil
 }
 
 type TwoFactorEmailVerifyRequest struct {
-	UserID string `json:"user_id"`
-	Code   string `json:"code"`
+	Code string `json:"code"`
 }
 
 func (r *TwoFactorEmailVerifyRequest) Validate() error {
 	if err := sharedtransport.ValidateRequired(map[string]string{
-		"user_id": r.UserID,
-		"code":    r.Code,
+		"code": r.Code,
 	}); err != nil {
 		return err
-	}
-	if !sharedtransport.IsValidUUID(r.UserID) {
-		return fmt.Errorf("invalid user ID format")
 	}
 	if !sharedtransport.IsValidCode(r.Code) {
 		return fmt.Errorf("code must be exactly 6 digits")
@@ -77,13 +53,15 @@ func (r *TwoFactorEmailVerifyRequest) Validate() error {
 }
 
 type TwoFactorSetupResponse struct {
-	Secret     string `json:"secret"`
-	OTPAuthURL string `json:"otpauth_url"`
+	Secret        string `json:"secret"`
+	OTPAuthURL    string `json:"otpauth_url"`
+	QRCodeDataURL string `json:"qr_code_data_url"`
 }
 
 type TwoFactorVerifyResponse struct {
-	Verified bool   `json:"verified"`
-	Message  string `json:"message"`
+	Verified      bool     `json:"verified"`
+	Message       string   `json:"message"`
+	RecoveryCodes []string `json:"recovery_codes,omitempty"`
 }
 
 type TwoFactorEmailResponse struct {

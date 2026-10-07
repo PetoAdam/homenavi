@@ -56,6 +56,8 @@ services:
         condition: service_completed_successfully
       auth-service:
         condition: service_started
+      mcp-service:
+        condition: service_started
       user-service:
         condition: service_started
       dashboard-service:
@@ -63,6 +65,42 @@ services:
       redis:
         condition: service_healthy
       emqx:
+        condition: service_healthy
+    networks:
+      - homenavi-network
+
+  # Public URI metadata is derived by the gateway; OAuth clients remain explicitly trusted.
+  mcp-service:
+    image: ghcr.io/petoadam/homenavi-mcp-service:${HN_VERSION:-latest}
+    pull_policy: if_not_present
+    build:
+      context: .
+      dockerfile: ./mcp-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      - MCP_ENABLED=${MCP_ENABLED:-true}
+      - MCP_RESOURCE_URI=${MCP_RESOURCE_URI:-}
+      - MCP_AUTHORIZATION_SERVER_ISSUER=${MCP_AUTHORIZATION_SERVER_ISSUER:-}
+      - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - DEVICE_HUB_URL=http://device-hub:${DEVICE_HUB_PORT}
+      - HISTORY_SERVICE_URL=http://history-service:${HISTORY_SERVICE_PORT}
+      - ENTITY_REGISTRY_SERVICE_URL=http://entity-registry-service:${ENTITY_REGISTRY_PORT}
+      - AUTOMATION_SERVICE_URL=http://automation-service:${AUTOMATION_SERVICE_PORT}
+      - AUTH_SERVICE_URL=http://auth-service:${AUTH_SERVICE_PORT}
+      - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}
+      - MCP_ENABLED_TOOLS=${MCP_ENABLED_TOOLS:-}
+      - MCP_RATE_LIMIT_PER_MINUTE=${MCP_RATE_LIMIT_PER_MINUTE:-60}
+      - REDIS_MODE=standalone
+      - REDIS_ADDR=redis:${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      device-hub:
+        condition: service_started
+      redis:
         condition: service_healthy
     networks:
       - homenavi-network
@@ -82,6 +120,10 @@ services:
       - USER_SERVICE_URL=http://user-service:${USER_SERVICE_PORT}
       - ERS_SERVICE_URL=http://entity-registry-service:${ENTITY_REGISTRY_PORT}
       - JWT_PRIVATE_KEY_PATH=/app/keys/jwt_private.pem
+      - TOTP_ENCRYPTION_KEY_PATH=/app/keys/totp_encryption.key
+      - MCP_RESOURCE_URI=${MCP_RESOURCE_URI:-}
+      - OAUTH_TRUSTED_CLIENTS=${OAUTH_TRUSTED_CLIENTS:-}
+      - OAUTH_AUTHORIZATION_UI_URL=${OAUTH_AUTHORIZATION_UI_URL:-http://localhost:${FRONTEND_HOST_PORT}/oauth/authorize}
       - REDIS_MODE=standalone
       - REDIS_ADDR=redis:${REDIS_PORT}
       - REDIS_MASTER_NAME=${REDIS_MASTER_NAME:-}
@@ -213,11 +255,18 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
+      - REDIS_MODE=standalone
+      - REDIS_ADDR=redis:${REDIS_PORT}
+      - REDIS_MASTER_NAME=${REDIS_MASTER_NAME:-}
+      - REDIS_SENTINEL_ADDRS=${REDIS_SENTINEL_ADDRS:-}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://jaeger:4318/v1/traces}
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - homenavi-network

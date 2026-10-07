@@ -1,5 +1,4 @@
 import Paho from 'paho-mqtt';
-import { onAuthCookieChange } from '../authCookie';
 
 const GLOBAL_KEY = '__homenaviSharedMqtt__';
 
@@ -89,9 +88,6 @@ class SharedMqttConnection {
 
     this.subscriptions = new Map(); // filter -> { handlers:Set<fn>, ackListeners:Set<fn>, subscribed:boolean, subscribedAt:number }
     this.statusListeners = new Set();
-    this.unsubscribeAuthCookieChange = onAuthCookieChange(() => {
-      this.reconnect('auth-cookie-changed');
-    });
   }
 
   _getOrCreateSubscriptionEntry(filter) {

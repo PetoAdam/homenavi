@@ -1,0 +1,11 @@
+routes:
+  - path: /.well-known/oauth-protected-resource
+    upstream: http://mcp-service:8096/.well-known/oauth-protected-resource
+    methods: [GET]
+    access: public
+    type: rest
+  - path: /mcp
+    upstream: http://mcp-service:8096/mcp
+    methods: [POST]
+    access: public
+    type: rest

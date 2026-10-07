@@ -68,6 +68,19 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("create workflow_runs: %w", err)
 		}
 	}
+	if !m.HasColumn(&WorkflowRun{}, "IdempotencyKey") {
+		if err := m.AddColumn(&WorkflowRun{}, "IdempotencyKey"); err != nil {
+			return fmt.Errorf("add workflow_runs.idempotency_key: %w", err)
+		}
+	}
+	if err := database.Model(&WorkflowRun{}).Where("idempotency_key = ''").Update("idempotency_key", nil).Error; err != nil {
+		return fmt.Errorf("backfill workflow_runs.idempotency_key: %w", err)
+	}
+	if !m.HasIndex(&WorkflowRun{}, "idx_workflow_runs_idempotency_key") {
+		if err := m.CreateIndex(&WorkflowRun{}, "idx_workflow_runs_idempotency_key"); err != nil {
+			return fmt.Errorf("create workflow_runs idempotency index: %w", err)
+		}
+	}
 	if !m.HasTable(&WorkflowRunStep{}) {
 		if err := m.CreateTable(&WorkflowRunStep{}); err != nil {
 			return fmt.Errorf("create workflow_run_steps: %w", err)
@@ -298,6 +311,14 @@ func (r *Repository) CreateRun(ctx context.Context, run *WorkflowRun) error {
 		run.Status = "running"
 	}
 	return r.db.WithContext(ctx).Create(run).Error
+}
+
+func (r *Repository) GetRunByIdempotencyKey(ctx context.Context, key string) (*WorkflowRun, error) {
+	var run WorkflowRun
+	if err := r.db.WithContext(ctx).Where("idempotency_key = ?", key).First(&run).Error; err != nil {
+		return nil, err
+	}
+	return &run, nil
 }
 
 func (r *Repository) FinishRun(ctx context.Context, runID uuid.UUID, status string, errMsg string) error {

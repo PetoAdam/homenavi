@@ -141,6 +141,14 @@ ingress:
           pathType: Prefix
           service: api-gateway
           port: 8080
+        - path: /mcp
+          pathType: Exact
+          service: api-gateway
+          port: 8080
+        - path: /.well-known/oauth-protected-resource
+          pathType: Exact
+          service: api-gateway
+          port: 8080
   tls: []
 
 persistentVolumeClaims:
@@ -247,6 +255,7 @@ services:
       EMAIL_SERVICE_URL: http://email-service:8002
       PROFILE_PICTURE_SERVICE_URL: http://profile-picture-service:8000
       JWT_PRIVATE_KEY_PATH: /app/keys/jwt_private.pem
+      TOTP_ENCRYPTION_KEY_PATH: /app/keys/totp_encryption.key
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
@@ -258,6 +267,61 @@ services:
         port: 8002
       - host: profile-picture-service
         port: 8000
+    resources: {}
+    volumeMounts:
+      - name: jwt-keys
+        mountPath: /app/keys
+    volumes:
+      - name: jwt-keys
+        type: secret
+        secretNameTemplate: homenavi.jwtSecretName
+
+  mcp-service:
+    enabled: true
+    replicas: 1
+    image:
+      repository: ghcr.io/petoadam/homenavi-mcp-service
+      tag: ""
+    containerPort: 8096
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 8096
+    env:
+      MCP_ENABLED: "true"
+      MCP_AUTHORIZATION_SERVER_ISSUER: ""
+      JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      DEVICE_HUB_URL: http://device-hub:8090
+      HISTORY_SERVICE_URL: http://history-service:8093
+      ENTITY_REGISTRY_SERVICE_URL: http://entity-registry-service:8095
+      MCP_ALLOWED_ORIGINS: ""
+      MCP_ENABLED_TOOLS: ""
+      MCP_RATE_LIMIT_PER_MINUTE: "60"
+      REDIS_MODE: sentinel
+    envFromSecrets: []
+    dependsOn:
+      - host: device-hub
+        port: 8090
+      - host: history-service
+        port: 8093
+      - host: entity-registry-service
+        port: 8095
+      - host: redis
+        port: 6379
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8096
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 6
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8096
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 6
     resources: {}
     volumeMounts:
       - name: jwt-keys

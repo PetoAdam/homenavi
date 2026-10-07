@@ -1,21 +1,37 @@
 // Package authx defines shared authentication claim and authorization constants.
 package authx
 
-import "strings"
+import (
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"fmt"
+	"strings"
+)
 
 const (
 	ClaimAuthorizedParty = "azp"
 	ClaimHomeID          = "home_id"
+	ClaimSessionID       = "sid"
 	ClaimScope           = "scope"
 	ClaimTokenType       = "typ"
 
 	DefaultIssuer = "homenavi-auth-service"
 
-	AudienceAPI = "homenavi-api"
+	AudienceAPI         = "homenavi-api"
+	AudienceAutomation  = "homenavi-automation-service"
+	AudienceUserService = "homenavi-user-service"
 
 	TokenTypeAPI       = "homenavi-api"
 	TokenTypeDelegated = "homenavi-delegated"
 	TokenTypeMCP       = "homenavi-mcp"
+	TokenTypeService   = "homenavi-service"
+
+	ServicePrincipalAuth = "homenavi-auth-service"
+
+	SessionStatusActive  = "active"
+	SessionStatusRevoked = "revoked"
 
 	RoleUser     = "user"
 	RoleResident = "resident"
@@ -53,4 +69,22 @@ func HasAudience(audiences []string, requiredAudience string) bool {
 		}
 	}
 	return false
+}
+
+// SessionStatusKey returns the shared Redis key used to enforce access-token session revocation.
+func SessionStatusKey(sessionID string) string {
+	return "auth_session:" + sessionID
+}
+
+// KeyIDForRSAPublicKey returns the stable identifier shared by JWT issuers and verifiers.
+func KeyIDForRSAPublicKey(publicKey *rsa.PublicKey) (string, error) {
+	if publicKey == nil {
+		return "", fmt.Errorf("RSA public key is required")
+	}
+	publicKeyDER, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return "", fmt.Errorf("marshal RSA public key: %w", err)
+	}
+	digest := sha256.Sum256(publicKeyDER)
+	return base64.RawURLEncoding.EncodeToString(digest[:]), nil
 }

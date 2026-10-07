@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { setAuthCookie, clearAuthCookie } from './authCookie';
 
 // Unified HTTP client with consistent error shaping & auth header injection.
 // Usage: http.get(url, { token, params }); http.post(url, data, { token });
@@ -11,6 +10,7 @@ const instance = axios.create({
 
 // Access token in-memory cache (AuthContext should also update this)
 let currentAccessToken = null;
+const COOKIE_SESSION = 'cookie-session';
 export function setAccessToken(token) { currentAccessToken = token; }
 
 // Flag to avoid infinite retry loops
@@ -25,7 +25,7 @@ async function processQueue(error, token = null) {
 }
 
 instance.interceptors.request.use(cfg => {
-  if (currentAccessToken && !cfg.headers['Authorization']) {
+  if (currentAccessToken && currentAccessToken !== COOKIE_SESSION && !cfg.headers['Authorization']) {
     cfg.headers['Authorization'] = `Bearer ${currentAccessToken}`;
   }
   return cfg;
@@ -36,28 +36,21 @@ instance.interceptors.response.use(r => r, async (error) => {
   if (!response) return Promise.reject(error);
   // Only attempt refresh on 401 and once per request
   if (response.status === 401 && !config._retry) {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) return Promise.reject(error);
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         refreshQueue.push({ resolve, reject });
       }).then((newToken) => {
-        config.headers['Authorization'] = `Bearer ${newToken}`;
+        delete config.headers['Authorization'];
         return instance(config);
       });
     }
     config._retry = true;
     isRefreshing = true;
     try {
-      const resp = await axios.post('/api/auth/refresh', { refresh_token: refreshToken });
-      const newAccess = resp.data.access_token;
-      const newRefresh = resp.data.refresh_token;
-      if (newAccess) {
-        currentAccessToken = newAccess;
-        localStorage.setItem('refreshToken', newRefresh || refreshToken);
-        setAuthCookie(newAccess);
-        processQueue(null, newAccess);
-        config.headers['Authorization'] = `Bearer ${newAccess}`;
+      await axios.post('/api/auth/refresh', {});
+      if (currentAccessToken === COOKIE_SESSION) {
+        processQueue(null, COOKIE_SESSION);
+        delete config.headers['Authorization'];
         return instance(config);
       }
       processQueue(new Error('No access token in refresh response'));
@@ -66,8 +59,6 @@ instance.interceptors.response.use(r => r, async (error) => {
       processQueue(e);
       // Clear tokens on refresh failure
       currentAccessToken = null;
-      localStorage.removeItem('refreshToken');
-      clearAuthCookie();
       return Promise.reject(e);
     } finally {
       isRefreshing = false;
@@ -91,7 +82,7 @@ function normalizeError(err, fallback) {
 
 function authHeaders(token, contentType = 'application/json') {
   const h = {};
-  if (token) h['Authorization'] = `Bearer ${token}`;
+  if (token && token !== COOKIE_SESSION) h['Authorization'] = `Bearer ${token}`;
   if (contentType) h['Content-Type'] = contentType;
   return h;
 }

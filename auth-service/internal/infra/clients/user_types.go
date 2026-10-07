@@ -12,7 +12,7 @@ type User struct {
 	EmailConfirmed    bool      `json:"email_confirmed"`
 	TwoFactorEnabled  bool      `json:"two_factor_enabled"`
 	TwoFactorType     string    `json:"two_factor_type"`
-	TwoFactorSecret   string    `json:"-"`
+	TwoFactorSecret   string    `json:"two_factor_secret"`
 	ProfilePictureURL string    `json:"profile_picture_url"`
 	GoogleID          string    `json:"google_id,omitempty"`
 	LockoutEnabled    bool      `json:"lockout_enabled"`

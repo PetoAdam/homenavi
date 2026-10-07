@@ -29,7 +29,7 @@ additional boundaries:
 | Refresh sessions   | Redis token lookup                                       | Rotating token families, reuse detection, device/session management, and logout-all                |
 | MCP authorization  | Not present                                              | OAuth 2.1 authorization code with PKCE and resource-bound access tokens                            |
 | Service delegation | Not present                                              | Token exchange that issues a separate downstream token; never forwards an MCP token                |
-| Agent control      | Existing REST/HDP endpoints                              | Curated typed tools, confirmation for high-risk mutations, audit, and kill switches                |
+| Agent control      | Existing REST/HDP endpoints                              | Curated typed tools, resident/admin role gate, scopes, idempotency, audit, and kill switches        |
 
 ## Security Principles
 
@@ -38,7 +38,7 @@ additional boundaries:
 2. Bind every token to its intended recipient. A token issued for `/mcp` must not be
    accepted by the normal API gateway or another service.
 3. Keep the model, MCP client, and retrieved content untrusted. Authorization,
-   input checks, resource ownership, and approval checks run in deterministic code.
+   input checks, resource ownership, and capability checks run in deterministic code.
 4. Do not expose a generic HTTP, HDP, MQTT, or WebSocket forwarding tool.
 5. Make security decisions observable and reversible with audit records, revocation,
    per-client disablement, and a global MCP kill switch.
@@ -89,6 +89,7 @@ All newly issued access tokens must use the following baseline profile:
   "role": "resident",
   "home_id": "<home-id>",
   "jti": "<random-128-bit-id>",
+  "sid": "<session-id>",
   "typ": "homenavi-api",
   "iat": 0,
   "nbf": 0,
@@ -107,7 +108,9 @@ duplicated across services.
 - Pin accepted algorithms explicitly; reject `none`, symmetric algorithms, and
   unexpected asymmetric algorithms before claims processing.
 - Add a `kid` header and maintain an active signing key plus one or more verification
-  keys. Publish public keys from a JWKS endpoint.
+  keys. Publish public keys from a JWKS endpoint. `kid` is the SHA-256 fingerprint
+  of the PKIX-encoded public key, encoded with base64url without padding; aliases are
+  not accepted because every issuer and verifier must use the same identifier.
 - Load private signing keys from the deployment secret mechanism, never from images or
   source control. Prefer a managed KMS/HSM when deployments have one.
 - Rotate keys with overlap: publish new verification key, issue with new `kid`, wait for
@@ -141,7 +144,11 @@ Replace independent refresh-token records with a Redis-backed token family:
 - Store only a hashed refresh-token value, family ID, session ID, client ID, user ID,
   issued time, expiry, and replacement relationship.
 - Rotate refresh tokens on every use. If an already-used member is presented, revoke
-  the entire family and require a new login.
+  the entire family and its session, invalidating access tokens for that session
+  immediately and requiring a new login.
+- Resource servers must validate the active `sid` against the Redis session-status
+  record on every API-token request. A missing or revoked record is unauthorized; an
+  unavailable status store is a service-unavailable response, never a fail-open grant.
 - Support user-visible session listing and targeted logout, plus logout-all and
   administrative session revocation.
 - Bind browser sessions to an approved client and track coarse device metadata for
@@ -152,12 +159,59 @@ Replace independent refresh-token records with a Redis-backed token family:
   `SameSite`, CSRF protection for state-changing browser requests, and an allowlisted
   CORS origin policy.
 
+### Multi-Factor Authentication
+
+Support both email one-time passwords and authenticator applications. Authenticator
+applications use RFC 6238 TOTP with six digits, a 30-second period, and an
+`otpauth://` enrollment URI compatible with Google Authenticator and similar apps.
+Email remains an available factor, but it is not a substitute for an authenticator
+app when a policy requires phishing-resistant or stronger authentication.
+
+- Model the enabled factor explicitly as `email` or `totp`; reject unknown factor
+  values and require one verified factor before issuing a token pair.
+- Require an authenticated, recently verified user session to begin enrollment,
+  confirm enrollment with a valid TOTP code before enabling it, and never accept a
+  caller-supplied user ID as authorization for factor changes.
+- Generate a high-entropy TOTP secret, encrypt it at rest with a deployment-managed
+  key, return the raw secret and QR-compatible URI only during enrollment, and keep
+  both out of logs, metrics, audit payloads, and normal profile responses.
+- Permit a narrowly bounded clock-skew window for TOTP validation, prevent a code
+  from being accepted twice in the same time step, and rate-limit failures per user,
+  IP address, and pending login challenge.
+- Use single-use, short-lived email codes with the same rate limits. Do not log or
+  return email codes, including in development fallbacks.
+- Issue an opaque, short-lived login challenge after password verification. Bind the
+  challenge to the user, selected factor, and requesting client; require it to finish
+  MFA, and issue access and refresh tokens only after successful completion.
+- Provide one-time recovery codes: generate them only after a factor is verified,
+  store salted hashes, show each plaintext code once, consume them atomically, and
+  force factor re-enrollment after recovery use.
+- Require MFA or recovery-code confirmation to disable a factor, rotate a TOTP secret,
+  generate recovery codes, or change a verified email address. Revoke active sessions
+  after a security-factor reset and write an audit event for every factor lifecycle
+  action without recording secrets or codes.
+
+Implementation sequence:
+
+1. Introduce an MFA-factor and login-challenge data contract in `auth-service` and
+   `user-service`, then migrate the current `two_factor_*` fields without changing
+   enabled users' factor choice.
+2. Replace user-ID based setup and verification requests with authenticated endpoints
+   bound to the API token subject and recent-authentication timestamp.
+3. Add envelope encryption for persisted TOTP secrets, atomic recovery-code storage,
+   and audit records for enrollment, verification, reset, and disablement.
+4. Move email and TOTP completion behind the same challenge endpoint; retain the
+   existing six-digit TOTP compatibility during the migration.
+5. Release behind a feature flag, migrate existing TOTP users, require re-enrollment
+   only where a secret cannot be safely migrated, and exercise rollback before making
+   MFA mandatory for privileged roles.
+
 ## OAuth 2.1 for MCP
 
-Auth-service becomes the Homenavi authorization server. The MCP server is a protected
-resource server. The first release uses pre-registered trusted MCP clients; Dynamic
-Client Registration is deferred until it has redirect URI validation, client metadata
-review, client revocation, and rate-abuse controls.
+Auth-service is the Homenavi authorization server and MCP is a protected resource
+server. Dynamic Client Registration is available for native loopback and approved VS
+Code redirect URIs. Client revocation and registration abuse controls remain required
+before broad public deployment.
 
 Required endpoints and metadata:
 
@@ -166,13 +220,15 @@ Required endpoints and metadata:
 | `/.well-known/oauth-protected-resource`   | MCP resource metadata naming auth-service           |
 | `/.well-known/oauth-authorization-server` | Authorization server metadata                       |
 | `/api/auth/oauth/authorize`               | Authorization Code + PKCE interaction and consent   |
-| `/api/auth/oauth/token`                   | Code exchange, refresh rotation, and token exchange |
+| `/api/auth/oauth/token`                   | Code exchange for scoped MCP access tokens          |
 | `/api/auth/oauth/jwks.json`               | Public signing keys                                 |
 | `/mcp`                                    | Streamable HTTP MCP endpoint                        |
 
 The authorization code flow uses exact registered redirect URIs, `state`, PKCE S256,
 short authorization-code expiry, single-use codes, and the OAuth `resource` parameter.
-The user sees the MCP client name and requested scopes before consent is stored.
+The user sees the MCP client name and requested scopes before consent is stored. A
+valid existing Homenavi browser session proceeds directly to consent; otherwise normal
+sign-in and configured 2FA are required. Consent records expire after 30 days.
 
 ```mermaid
 sequenceDiagram
@@ -232,7 +288,7 @@ sequenceDiagram
     M-->>C: Structured MCP result
 ```
 
-## MCP Tool and Approval Policy
+## MCP Tool and Write Policy
 
 Start with read-only tools: `list_devices`, `get_device`, `get_device_state`,
 `list_rooms`, `list_automations`, `get_automation`, and `query_state_history`.
@@ -242,8 +298,8 @@ Add mutations in controlled phases:
 | Risk level | Examples                                                                             | Required control                                                                                   |
 | ---------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | Low        | Read device state, list automations                                                  | Scope, role, home ownership, audit                                                                 |
-| Medium     | Set light state, thermostat setpoint                                                 | Typed schema, capability validation, idempotency key, user-visible client confirmation, audit      |
-| High       | Unlock, pairing, delete automation, disable security rule, broad multi-device action | Preview plus short-lived approval token bound to actor, client, action digest, targets, and expiry |
+| Medium     | Set light state, thermostat setpoint                                                 | Resident/admin role, scope, typed schema, capability validation, idempotency key, audit             |
+| High       | Unlock, pairing, delete automation, disable security rule, broad multi-device action | Not exposed through MCP until a dedicated server-side policy is implemented                         |
 
 The server resolves device IDs, capabilities, type/range constraints, and target-home
 membership itself. The model never supplies a raw downstream path or arbitrary payload.
@@ -272,10 +328,13 @@ consumer; rollback path exercised in development.
 - Publish JWKS, implement key ring and staged rotation, and add integration tests for
   unknown/retired keys.
 - Introduce refresh-token families, rotation, reuse detection, and session revocation.
+- Harden existing email and TOTP MFA behind authenticated enrollment and opaque login
+  challenges; encrypt TOTP secrets, add recovery codes, and audit factor changes.
 - Eliminate authentication tokens from URLs and scrub sensitive headers from logs.
 
 Exit criteria: all existing browser/API tests pass with new claim validation; automatic
-key rotation works in staging; refresh replay revokes its token family.
+key rotation works in staging; refresh replay revokes its token family; email and TOTP
+MFA enrollment, login, recovery, and factor reset pass abuse and migration tests.
 
 ### Phase 2: OAuth Authorization Server Foundations
 
@@ -301,16 +360,15 @@ an MCP-audience token, and cannot use it against ordinary API routes.
 Exit criteria: full protocol lifecycle passes; RBAC matrix passes; auditors can trace a
 tool call to user, client, downstream correlation ID, and result.
 
-### Phase 4: Delegated Mutations and Approval
+### Phase 4: Delegated Mutations
 
 - Implement token exchange and downstream delegated token validation.
 - Add `control_device` for a narrow capability allowlist with idempotency and typed
   validation.
-- Implement preview/approval tokens for high-risk commands and automation changes.
 - Add per-tool feature flags, limits, and emergency disablement.
 
 Exit criteria: no MCP token reaches API gateway or downstream services; replayed
-approval and idempotency tokens are rejected; kill switch blocks new mutations.
+idempotency keys are rejected; kill switch blocks new mutations.
 
 ### Phase 5: Operational Maturity
 
@@ -318,18 +376,18 @@ approval and idempotency tokens are rejected; kill switch blocks new mutations.
 - Add client self-service only after Dynamic Client Registration abuse controls are
   designed and tested.
 - Run quarterly key-rotation, token-revocation, incident-response, and restore drills.
-- Review scope usage, denied requests, approvals, and audit retention policy.
+- Review scope usage, denied requests, direct-write activity, and audit retention policy.
 
 ## Test and Release Gates
 
 | Test layer           | Required cases                                                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit                 | Claim validation, `kid` selection, scope/role policy, approval digest, tool schemas, redaction                                       |
-| Auth integration     | PKCE, state, exact redirects, code reuse, audience substitution, refresh replay, logout/revocation                                   |
+| Unit                 | Claim validation, `kid` selection, scope/role policy, idempotency, tool schemas, redaction                                            |
+| Auth integration     | PKCE, state, exact redirects, code reuse, audience substitution, refresh replay, logout/revocation, MFA enrollment/login/recovery     |
 | Gateway integration  | Valid and invalid issuer/audience/algorithm/time claims; resident/admin boundaries; rate-limit keys                                  |
 | MCP integration      | Initialize, session lifecycle, origin checks, protocol versions, cancellation, request limits, structured output validation          |
 | Authorization matrix | Unauthenticated, locked, revoked, user, resident, admin, disabled client, wrong scope, wrong home, expired and wrong-audience tokens |
-| Adversarial          | Prompt-injected arguments, malicious device metadata, cross-home IDs, raw-path injection, approval replay, token theft simulation    |
+| Adversarial          | Prompt-injected arguments, malicious device metadata, cross-home IDs, raw-path injection, idempotency replay, token theft simulation |
 | End-to-end           | At least two MCP clients against Compose and staging, with audit-to-downstream trace correlation                                     |
 
 Release conditions:
@@ -367,7 +425,7 @@ independently deployable behind a feature flag or compatibility setting. Do not 
 | Auth HTTP surface             | `auth-service/internal/http`                                     | OAuth metadata, authorization, token, consent, JWKS, session endpoints       |
 | Gateway token checks          | `api-gateway/internal/middleware/auth.go`                        | Algorithm pinning, issuer/audience/type validation, scope context            |
 | Gateway routing               | `api-gateway/config/routes` and `api-gateway/internal/http`      | MCP reverse proxy, limits, Origin policy, correlation propagation            |
-| MCP service                   | new `mcp-service/` Go module                                     | Streamable HTTP, tool registry, schemas, policy, approval, audit             |
+| MCP service                   | new `mcp-service/` Go module                                     | Streamable HTTP, tool registry, schemas, policy, audit                       |
 | Local deployment              | `docker-compose.yml`, `docker-compose.ci.yml`, `.env.example`    | Service wiring, non-secret configuration, CI image targets                   |
 | Kubernetes deployment         | `helm/homenavi` templates, values, CI values                     | Deployment, service, secret references, ingress route, probes, feature flags |
 | Unit tests                    | affected Go package `*_test.go` files                            | Fast deterministic behavior and negative-path coverage                       |
@@ -385,7 +443,7 @@ Implementation tasks:
 
 1. Define a versioned claims package with constants for issuer, audiences, token types,
    scope names, role names, correlation claim, and clock-skew policy.
-2. Define JSON Schema documents for initial MCP tools and approval-token payloads.
+2. Define JSON Schema documents for initial MCP tools and direct-write payloads.
 3. Create deterministic test principals: unauthenticated, user, resident, admin,
    locked resident, revoked resident, and a resident in a second home.
 4. Create deterministic device fixtures: a writable light, read-only sensor, thermostat,
@@ -601,30 +659,29 @@ Quality gate: security review of the tool's threat model and audit payload; the 
 write tool is enabled only for a staging allowlist and is protected by the global kill
 switch.
 
-### Work Package 6: Approval-Protected High-Risk Changes
+### Work Package 6: Role-Gated Direct Writes
 
-**Goal:** support high-risk home and automation changes without granting autonomous
-write authority to a model.
+**Goal:** support selected home and automation changes for resident and admin users
+without a per-action browser confirmation.
 
 Implementation tasks:
 
-1. Add preview tools that return normalized targets, effects, policy decision, and an
-   approval digest but do not mutate state.
-2. Add a one-time approval token bound to user, client, action digest, target set,
-   scope, home, issue time, expiry, and approval method.
-3. Require a human-visible client confirmation before `apply_*` tools consume the
-   approval token.
-4. Add approval replay detection and record both preview and apply attempts.
-5. Classify new tools as read-only, medium, or high risk in version-controlled policy
-   data; policy changes require review.
+1. Require a resident or admin role and the tool's OAuth scope for every mutation.
+2. Enforce typed inputs, capability validation, target-home ownership, and a scoped
+  idempotency key before issuing a downstream request.
+3. Keep high-risk tools unavailable until their server-side policy is explicitly
+  implemented and reviewed.
+4. Record every attempted mutation and its downstream correlation ID in audit logs.
+5. Classify new tools as read-only, direct-write, or unavailable in version-controlled
+  policy data; policy changes require review.
 
 Required integration tests:
 
-- Approval fails after expiry, replay, user/client mismatch, target change, scope
-  reduction/expansion, and action-digest change.
-- Preview creates no device command or automation mutation.
-- Apply generates exactly one downstream mutation and linked audit records.
-- Global or per-tool disablement stops apply requests even with a valid approval.
+- User-role, missing-scope, revoked-session, and malformed-idempotency-key mutations fail.
+- Reusing an idempotency key with changed input fails; retrying an unchanged request
+  returns the original result.
+- Direct writes generate exactly one downstream mutation and linked audit records.
+- Global or per-tool disablement stops new direct writes.
 
 Quality gate: at least one incident/rollback exercise demonstrates immediate disabling,
 audit lookup, and no partial repeat after client retry.
@@ -647,7 +704,7 @@ Minimum unit-test groups:
 | Refresh sessions    | Hashing, family rotation, reuse, logout, lockout, expiry, concurrent refresh race                            |
 | OAuth               | Client status, redirect matching, state, PKCE, code lifecycle, consent, resource indicators, revocation      |
 | MCP transport       | Initialization, versions, sessions, Origin, cancellation, malformed JSON-RPC, request limits                 |
-| Tool policy         | Schema validation, policy class, redaction, capability lookup, IDOR prevention, idempotency, approval digest |
+| Tool policy         | Schema validation, policy class, redaction, capability lookup, IDOR prevention, idempotency                    |
 | Audit               | Required fields, redaction, immutable event ordering, correlation propagation, denied events                 |
 
 Run affected package tests with the race detector in CI for auth, gateway middleware,
@@ -700,7 +757,7 @@ Required scenarios:
 | Delegation             | Downstream sees delegated API token, never the inbound MCP token                             |
 | Tool schema bypass     | Extra fields, raw paths, invalid capability values, and oversize payloads fail               |
 | Idempotent control     | Same idempotency key produces one downstream command                                         |
-| Approval replay        | One approval creates one action; subsequent use or altered target fails                      |
+| Idempotency replay     | Reusing a key with changed input fails; an unchanged retry returns the original result       |
 | Revocation propagation | Client consent/session/key revocation blocks subsequent tool calls within documented latency |
 | Kill switch            | Existing and new mutation attempts stop according to documented behavior                     |
 
@@ -718,7 +775,7 @@ Helm files.
   redirect URI inventory, or internal topology beyond what the caller may access.
 - Load tests enforce per-IP, per-client, per-user, and per-tool limits without making
   authorization state inconsistent.
-- Fuzz JSON-RPC parsing, JWT headers/claims, OAuth query parameters, and approval-token
+- Fuzz JSON-RPC parsing, JWT headers/claims, OAuth query parameters, and direct-write
   payloads. Preserve minimized regressions as fixtures.
 
 ## CI and Quality Gates
@@ -754,10 +811,10 @@ The following conditions block merge for changes touching the listed areas:
 | Gateway auth/routing         | Gateway unit/race tests, route authorization matrix, Compose MCP/API audience separation smoke                           |
 | MCP service/tools            | MCP unit/race tests, schema snapshots, security regression suite, Compose MCP smoke, Docker build                        |
 | Helm/Compose                 | Render/lint, configuration assertions, Compose smoke; HA smoke for chart/runtime changes                                 |
-| Write-capable tool           | All above plus delegation integration tests, idempotency test, approval tests where applicable, security review approval |
+| Write-capable tool           | All above plus delegation integration tests, idempotency tests, and security review                             |
 
 Every security bug receives a regression test before closure. Every change to a scope,
-role floor, token audience, tool schema, or approval policy updates its contract
+role floor, token audience, tool schema, or direct-write policy updates its contract
 snapshot and requires review from the code owner responsible for auth or gateway.
 
 ### Deployment Gates
@@ -772,7 +829,7 @@ snapshot and requires review from the code owner responsible for auth or gateway
 4. **Production read-only:** enable read tools for a small user allowlist. Monitor deny
    rate, token validation failures, latency, tool errors, audit volume, and rate-limit
    events for one release cycle.
-5. **Production writes:** require completed staging write drills, approval policy tests,
+5. **Production writes:** require completed staging write drills, direct-write policy tests,
    incident rollback drill, documented on-call ownership, and explicit release approval.
 
 ### Evidence Required for Each Release
@@ -785,7 +842,7 @@ Attach or retain links to the following evidence in the release record:
 - Key rotation drill results with timestamps and active/retired `kid` values, never key
   material.
 - OAuth and token-exchange negative test report.
-- Audit trace samples covering allowed, denied, revoked, and approval-protected calls.
+- Audit trace samples covering allowed, denied, revoked, and direct-write calls.
 - Feature-flag state, client allowlist, tool allowlist, rollback owner, and kill-switch
   verification result.
 

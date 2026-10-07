@@ -32,7 +32,7 @@ func sleepDuration(seconds float64) time.Duration {
 	return time.Duration(normalizeSleepDurationSeconds(seconds) * float64(time.Second))
 }
 
-func (e *Engine) StartWorkflowRun(ctx context.Context, wfID uuid.UUID, triggerNodeID string, triggerEvent map[string]any) (uuid.UUID, error) {
+func (e *Engine) StartWorkflowRun(ctx context.Context, wfID uuid.UUID, triggerNodeID string, triggerEvent map[string]any, idempotencyKey string) (uuid.UUID, error) {
 	e.mu.RLock()
 	w, okW := e.workflows[wfID]
 	d, okD := e.defs[wfID]
@@ -58,7 +58,11 @@ func (e *Engine) StartWorkflowRun(ctx context.Context, wfID uuid.UUID, triggerNo
 	}
 
 	triggerJSON, _ := json.Marshal(triggerEvent)
-	run := &dbinfra.WorkflowRun{WorkflowID: wfID, Status: "running", TriggerEvent: datatypes.JSON(triggerJSON), StartedAt: time.Now().UTC()}
+	var idempotencyKeyValue *string
+	if key := strings.TrimSpace(idempotencyKey); key != "" {
+		idempotencyKeyValue = &key
+	}
+	run := &dbinfra.WorkflowRun{WorkflowID: wfID, IdempotencyKey: idempotencyKeyValue, Status: "running", TriggerEvent: datatypes.JSON(triggerJSON), StartedAt: time.Now().UTC()}
 	if err := e.repo.CreateRun(ctx, run); err != nil {
 		slog.Warn("create run failed", "error", err)
 		return uuid.Nil, err
@@ -414,6 +418,10 @@ func evalIf(triggerEvent map[string]any, path string, op string, raw json.RawMes
 }
 
 func (e *Engine) RunWorkflowNow(ctx context.Context, wfID uuid.UUID) (uuid.UUID, error) {
+	return e.RunWorkflowNowWithIdempotency(ctx, wfID, "")
+}
+
+func (e *Engine) RunWorkflowNowWithIdempotency(ctx context.Context, wfID uuid.UUID, idempotencyKey string) (uuid.UUID, error) {
 	e.mu.RLock()
 	w, ok := e.workflows[wfID]
 	d, okD := e.defs[wfID]
@@ -437,5 +445,5 @@ func (e *Engine) RunWorkflowNow(ctx context.Context, wfID uuid.UUID) (uuid.UUID,
 	if manualNodeID == "" {
 		return uuid.Nil, errors.New("no manual trigger")
 	}
-	return e.StartWorkflowRun(ctx, wfID, manualNodeID, map[string]any{"type": "manual", "trigger_node_id": manualNodeID, "ts": time.Now().UTC().UnixMilli()})
+	return e.StartWorkflowRun(ctx, wfID, manualNodeID, map[string]any{"type": "manual", "trigger_node_id": manualNodeID, "ts": time.Now().UTC().UnixMilli()}, idempotencyKey)
 }

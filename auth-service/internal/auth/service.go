@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
@@ -22,28 +24,41 @@ import (
 
 // Config holds the auth business configuration.
 type Config struct {
-	JWTPrivateKey           *rsa.PrivateKey
-	JWTIssuer               string
-	JWTAPIAudience          string
-	AccessTokenTTL          time.Duration
-	RefreshTokenTTL         time.Duration
-	EmailVerificationTTL    time.Duration
-	PasswordResetTTL        time.Duration
-	TwoFactorTTL            time.Duration
-	GoogleOAuthClientID     string
-	GoogleOAuthClientSecret string
-	GoogleOAuthRedirectURL  string
-	LoginMaxFailures        int
-	LoginLockoutSeconds     int
-	CodeMaxFailures         int
-	CodeLockoutSeconds      int
+	JWTPrivateKey                *rsa.PrivateKey
+	JWTVerificationPublicKeys    []*rsa.PublicKey
+	JWTKeyID                     string
+	JWTIssuer                    string
+	JWTAPIAudience               string
+	JWTUserServiceAudience       string
+	AccessTokenTTL               time.Duration
+	RefreshTokenTTL              time.Duration
+	EmailVerificationTTL         time.Duration
+	PasswordResetTTL             time.Duration
+	TwoFactorTTL                 time.Duration
+	GoogleOAuthClientID          string
+	GoogleOAuthClientSecret      string
+	GoogleOAuthRedirectURL       string
+	LoginMaxFailures             int
+	LoginLockoutSeconds          int
+	CodeMaxFailures              int
+	CodeLockoutSeconds           int
+	TOTPEncryptionKey            []byte
+	OAuthMCPResource             string
+	MCPAuthorizationServerIssuer string
+	OAuthTrustedClients          []OAuthClient
 }
+
+var ErrMCPRoleRequired = stdErrors.New("MCP access requires resident role or above")
 
 // Service implements authentication use cases and token/code lifecycle behavior.
 type Service struct {
 	config            Config
 	cacheStore        cacheinfra.Store
+	keyRing           *KeyRing
 	googleOAuthConfig *oauth2.Config
+	oauthClients      *OAuthClientRegistry
+	oauthCodes        *OAuthAuthorizationCodeManager
+	oauthConsents     *OAuthConsentManager
 }
 
 type CredentialUserProvider interface {
@@ -53,6 +68,10 @@ type CredentialUserProvider interface {
 
 type UserProvider interface {
 	GetUser(userID string) (*clientsinfra.User, error)
+}
+
+type RecoveryCodeConsumer interface {
+	ConsumeRecoveryCode(userID, code string) (bool, error)
 }
 
 type TwoFactorCodeSender interface {
@@ -72,6 +91,30 @@ type TokenPair struct {
 	RefreshToken string
 }
 
+type OAuthSession struct {
+	Subject   string
+	SessionID string
+	Role      string
+}
+
+func MCPRoleAllowed(role string) bool {
+	return role == authx.RoleResident || role == authx.RoleAdmin
+}
+
+const (
+	refreshTokenPrefix         = "refresh_token:"
+	refreshTokenConsumedPrefix = "refresh_token_consumed:"
+	refreshTokenFamilyPrefix   = "refresh_token_family:"
+	refreshTokenFamilyActive   = "active"
+	refreshTokenFamilyRevoked  = "revoked"
+)
+
+type refreshTokenRecord struct {
+	UserID    string `json:"user_id"`
+	FamilyID  string `json:"family_id"`
+	SessionID string `json:"session_id"`
+}
+
 func NewService(cfg Config, cacheStore cacheinfra.Store) *Service {
 	googleOAuthConfig := &oauth2.Config{
 		RedirectURL:  cfg.GoogleOAuthRedirectURL,
@@ -81,7 +124,8 @@ func NewService(cfg Config, cacheStore cacheinfra.Store) *Service {
 		Endpoint:     google.Endpoint,
 	}
 
-	return &Service{config: cfg, cacheStore: cacheStore, googleOAuthConfig: googleOAuthConfig}
+	oauthClients, _ := NewOAuthClientRegistry(cfg.OAuthTrustedClients, cfg.OAuthMCPResource)
+	return &Service{config: cfg, cacheStore: cacheStore, keyRing: NewKeyRing(cfg.JWTKeyID, cfg.JWTPrivateKey, cfg.JWTVerificationPublicKeys...), googleOAuthConfig: googleOAuthConfig, oauthClients: oauthClients, oauthCodes: NewOAuthAuthorizationCodeManager(cacheStore), oauthConsents: NewOAuthConsentManager(cacheStore)}
 }
 
 func (s *Service) Close() error {
@@ -94,6 +138,20 @@ func (s *Service) Close() error {
 func (s *Service) IssueAccessToken(user *clientsinfra.User) (string, error) {
 	if user == nil {
 		return "", fmt.Errorf("user is required")
+	}
+	sessionID, err := newTokenID()
+	if err != nil {
+		return "", fmt.Errorf("generate session ID: %w", err)
+	}
+	if err := s.activateSession(sessionID); err != nil {
+		return "", err
+	}
+	return s.issueAccessToken(user, sessionID)
+}
+
+func (s *Service) issueAccessToken(user *clientsinfra.User, sessionID string) (string, error) {
+	if user == nil || sessionID == "" {
+		return "", fmt.Errorf("user and session ID are required")
 	}
 	tokenID, err := newTokenID()
 	if err != nil {
@@ -108,13 +166,18 @@ func (s *Service) IssueAccessToken(user *clientsinfra.User) (string, error) {
 		"iat":                now.Unix(),
 		"nbf":                now.Unix(),
 		"jti":                tokenID,
+		authx.ClaimSessionID: sessionID,
 		authx.ClaimTokenType: authx.TokenTypeAPI,
 		"role":               user.Role,
 		"name":               user.FirstName + " " + user.LastName,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(s.config.JWTPrivateKey)
+	return s.keyRing.Sign(claims)
+}
+
+// JSONWebKeySet returns the public key document for the active signing key.
+func (s *Service) JSONWebKeySet() (JSONWebKeySet, error) {
+	return s.keyRing.JSONWebKeySet()
 }
 
 func newTokenID() (string, error) {
@@ -126,26 +189,56 @@ func newTokenID() (string, error) {
 }
 
 func (s *Service) IssueRefreshToken(userID string) (string, error) {
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to generate random token: %v", err)
+	if userID == "" {
+		return "", fmt.Errorf("user ID is required")
 	}
-
-	tokenID := base64.URLEncoding.EncodeToString(tokenBytes)
-	ctx := context.Background()
-	if err := s.cacheStore.Set(ctx, "refresh_token:"+tokenID, userID, s.config.RefreshTokenTTL); err != nil {
+	familyID, err := newTokenID()
+	if err != nil {
+		return "", fmt.Errorf("generate refresh token family ID: %w", err)
+	}
+	sessionID, err := newTokenID()
+	if err != nil {
+		return "", fmt.Errorf("generate session ID: %w", err)
+	}
+	if err := s.activateSession(sessionID); err != nil {
 		return "", err
 	}
-	return tokenID, nil
+	return s.issueRefreshToken(userID, familyID, sessionID)
+}
+
+func (s *Service) issueRefreshToken(userID, familyID, sessionID string) (string, error) {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("generate refresh token: %w", err)
+	}
+
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
+	recordBytes, err := json.Marshal(refreshTokenRecord{UserID: userID, FamilyID: familyID, SessionID: sessionID})
+	if err != nil {
+		return "", fmt.Errorf("encode refresh token record: %w", err)
+	}
+	ctx := context.Background()
+	if err := s.cacheStore.Set(ctx, refreshTokenFamilyKey(familyID), refreshTokenFamilyActive, s.config.RefreshTokenTTL); err != nil {
+		return "", fmt.Errorf("store refresh token family: %w", err)
+	}
+	if err := s.cacheStore.Set(ctx, refreshTokenKey(token), string(recordBytes), s.config.RefreshTokenTTL); err != nil {
+		_ = s.cacheStore.Delete(ctx, refreshTokenFamilyKey(familyID))
+		return "", fmt.Errorf("store refresh token: %w", err)
+	}
+	return token, nil
 }
 
 func (s *Service) ValidateRefreshToken(token string) (string, error) {
 	ctx := context.Background()
-	userID, err := s.cacheStore.Get(ctx, "refresh_token:"+token)
+	record, err := s.loadRefreshTokenRecord(ctx, refreshTokenKey(token))
 	if err != nil {
 		return "", errors.Unauthorized("invalid or expired refresh token")
 	}
-	return userID, nil
+	status, err := s.cacheStore.Get(ctx, refreshTokenFamilyKey(record.FamilyID))
+	if err != nil || status != refreshTokenFamilyActive {
+		return "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	return record.UserID, nil
 }
 
 func (s *Service) IsLoginLocked(email string) (bool, int64, error) {
@@ -218,7 +311,118 @@ func (s *Service) ClearCodeFailures(userID, codeType string) {
 
 func (s *Service) RevokeRefreshToken(token string) error {
 	ctx := context.Background()
-	return s.cacheStore.Delete(ctx, "refresh_token:"+token)
+	record, err := s.loadRefreshTokenRecord(ctx, refreshTokenKey(token))
+	if err != nil {
+		consumedRecord, consumedErr := s.cacheStore.Get(ctx, refreshTokenConsumedKey(token))
+		if consumedErr != nil {
+			if stdErrors.Is(consumedErr, cacheinfra.ErrNotFound) {
+				return nil
+			}
+			return fmt.Errorf("load consumed refresh token: %w", consumedErr)
+		}
+		record, err = decodeRefreshTokenRecord(consumedRecord)
+		if err != nil {
+			return fmt.Errorf("decode consumed refresh token: %w", err)
+		}
+	}
+	familyKey := refreshTokenFamilyKey(record.FamilyID)
+	if ttl, err := s.cacheStore.TTL(ctx, familyKey); err == nil && ttl > 0 {
+		if err := s.cacheStore.Set(ctx, familyKey, refreshTokenFamilyRevoked, ttl); err != nil {
+			return err
+		}
+	} else if err != nil && !stdErrors.Is(err, cacheinfra.ErrNotFound) {
+		return fmt.Errorf("read refresh token family: %w", err)
+	}
+	if err := s.revokeSession(record.SessionID); err != nil {
+		return err
+	}
+	return s.cacheStore.Delete(ctx, refreshTokenKey(token))
+}
+
+func (s *Service) rotateRefreshToken(token string) (refreshTokenRecord, string, error) {
+	newTokenBytes := make([]byte, 32)
+	if _, err := rand.Read(newTokenBytes); err != nil {
+		return refreshTokenRecord{}, "", fmt.Errorf("generate replacement refresh token: %w", err)
+	}
+	replacementToken := base64.RawURLEncoding.EncodeToString(newTokenBytes)
+	ctx := context.Background()
+	recordJSON, status, err := s.cacheStore.RotateRefreshToken(ctx, refreshTokenKey(token), refreshTokenConsumedKey(token), refreshTokenKey(replacementToken), refreshTokenFamilyPrefix)
+	if err != nil {
+		return refreshTokenRecord{}, "", fmt.Errorf("rotate refresh token: %w", err)
+	}
+	if status == cacheinfra.RefreshTokenReplayed {
+		if err := s.RevokeRefreshToken(token); err != nil {
+			return refreshTokenRecord{}, "", errors.ServiceUnavailable("refresh replay revocation unavailable", err)
+		}
+	}
+	if status != cacheinfra.RefreshTokenRotated {
+		return refreshTokenRecord{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	record, err := decodeRefreshTokenRecord(recordJSON)
+	if err != nil {
+		return refreshTokenRecord{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	return record, replacementToken, nil
+}
+
+func (s *Service) loadRefreshTokenRecord(ctx context.Context, key string) (refreshTokenRecord, error) {
+	recordJSON, err := s.cacheStore.Get(ctx, key)
+	if err != nil {
+		return refreshTokenRecord{}, err
+	}
+	return decodeRefreshTokenRecord(recordJSON)
+}
+
+func decodeRefreshTokenRecord(recordJSON string) (refreshTokenRecord, error) {
+	var record refreshTokenRecord
+	if err := json.Unmarshal([]byte(recordJSON), &record); err != nil {
+		return refreshTokenRecord{}, err
+	}
+	if record.UserID == "" || record.FamilyID == "" || record.SessionID == "" {
+		return refreshTokenRecord{}, fmt.Errorf("invalid refresh token record")
+	}
+	return record, nil
+}
+
+func refreshTokenKey(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return refreshTokenPrefix + base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func refreshTokenConsumedKey(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return refreshTokenConsumedPrefix + base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func refreshTokenFamilyKey(familyID string) string {
+	return refreshTokenFamilyPrefix + familyID
+}
+
+func (s *Service) activateSession(sessionID string) error {
+	if s.cacheStore == nil {
+		return fmt.Errorf("session cache is not configured")
+	}
+	return s.cacheStore.Set(context.Background(), authx.SessionStatusKey(sessionID), authx.SessionStatusActive, s.config.RefreshTokenTTL)
+}
+
+func (s *Service) revokeSession(sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("session ID is required")
+	}
+	ttl, err := s.cacheStore.TTL(context.Background(), authx.SessionStatusKey(sessionID))
+	if err != nil {
+		if stdErrors.Is(err, cacheinfra.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("read session status: %w", err)
+	}
+	if ttl <= 0 {
+		return nil
+	}
+	if err := s.cacheStore.Set(context.Background(), authx.SessionStatusKey(sessionID), authx.SessionStatusRevoked, ttl); err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) StoreVerificationCode(codeType, userID, code string) error {
@@ -284,36 +488,99 @@ func (s *Service) ValidateOAuthState(state string) error {
 	return nil
 }
 
-func (s *Service) IssueShortLivedToken(userID string) (string, error) {
-	claims := jwt.MapClaims{"sub": userID, "exp": time.Now().Add(2 * time.Minute).Unix(), "iat": time.Now().Unix(), "role": "user"}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(s.config.JWTPrivateKey)
+func (s *Service) IssueServiceToken() (string, error) {
+	tokenID, err := newTokenID()
+	if err != nil {
+		return "", fmt.Errorf("generate service token ID: %w", err)
+	}
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":                s.config.JWTIssuer,
+		"sub":                authx.ServicePrincipalAuth,
+		"aud":                []string{s.config.JWTUserServiceAudience},
+		"exp":                now.Add(2 * time.Minute).Unix(),
+		"iat":                now.Unix(),
+		"nbf":                now.Unix(),
+		"jti":                tokenID,
+		authx.ClaimTokenType: authx.TokenTypeService,
+		"role":               authx.RoleService,
+	}
+	return s.keyRing.Sign(claims)
 }
 
 func (s *Service) ValidateToken(tokenString string) (*jwt.Token, error) {
-	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+	token, err := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if token.Method.Alg() != jwt.SigningMethodRS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return &s.config.JWTPrivateKey.PublicKey, nil
-	})
+		keyID, ok := token.Header["kid"].(string)
+		if !ok || keyID == "" {
+			return nil, fmt.Errorf("missing JWT key ID")
+		}
+		return s.keyRing.PublicKeyForID(keyID)
+	}, jwt.WithIssuer(s.config.JWTIssuer), jwt.WithAudience(s.config.JWTAPIAudience), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithLeeway(30*time.Second))
+	if err != nil || !token.Valid {
+		return token, err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("unexpected token claims type")
+	}
+	if claims[authx.ClaimTokenType] != authx.TokenTypeAPI || claims["sub"] == "" || claims["role"] == "" || claims["jti"] == "" || claims["nbf"] == nil || claims["iat"] == nil {
+		return nil, fmt.Errorf("invalid API token claims")
+	}
+	sessionID, ok := claims[authx.ClaimSessionID].(string)
+	if !ok || sessionID == "" {
+		return nil, fmt.Errorf("missing API token session ID")
+	}
+	if err := s.requireActiveSession(sessionID); err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
+func (s *Service) requireActiveSession(sessionID string) error {
+	if s.cacheStore == nil {
+		return fmt.Errorf("session cache is not configured")
+	}
+	status, err := s.cacheStore.Get(context.Background(), authx.SessionStatusKey(sessionID))
+	if err != nil {
+		return fmt.Errorf("load session status: %w", err)
+	}
+	if status != authx.SessionStatusActive {
+		return fmt.Errorf("session is not active")
+	}
+	return nil
 }
 
 func (s *Service) ExtractUserIDFromToken(tokenString string) (string, error) {
+	session, err := s.ExtractOAuthSession(tokenString)
+	if err != nil {
+		return "", err
+	}
+	return session.Subject, nil
+}
+
+func (s *Service) ExtractOAuthSession(tokenString string) (OAuthSession, error) {
 	token, err := s.ValidateToken(tokenString)
 	if err != nil || !token.Valid {
-		return "", errors.Unauthorized("invalid token")
+		return OAuthSession{}, errors.Unauthorized("invalid token")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", errors.Unauthorized("invalid token claims")
+		return OAuthSession{}, errors.Unauthorized("invalid token claims")
 	}
 	userID, ok := claims["sub"].(string)
 	if !ok {
-		return "", errors.Unauthorized("invalid user ID in token")
+		return OAuthSession{}, errors.Unauthorized("invalid user ID in token")
 	}
-	return userID, nil
+	sessionID, _ := claims[authx.ClaimSessionID].(string)
+	if sessionID == "" {
+		return OAuthSession{}, errors.Unauthorized("invalid token session")
+	}
+	role, _ := claims["role"].(string)
+	return OAuthSession{Subject: userID, SessionID: sessionID, Role: role}, nil
 }
 
 func (s *Service) ExchangeGoogleOAuthCode(code, redirectURI string) (*clientsinfra.GoogleUserInfo, error) {
@@ -345,12 +612,26 @@ func (s *Service) GetGoogleAuthURL(state string) string {
 }
 
 func (s *Service) IssueTokenPair(user *clientsinfra.User) (*TokenPair, error) {
-	accessToken, err := s.IssueAccessToken(user)
+	if user == nil {
+		return nil, errors.BadRequest("user is required")
+	}
+	sessionID, err := newTokenID()
+	if err != nil {
+		return nil, errors.InternalServerError("generate session ID", err)
+	}
+	if err := s.activateSession(sessionID); err != nil {
+		return nil, errors.InternalServerError("activate session", err)
+	}
+	accessToken, err := s.issueAccessToken(user, sessionID)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to issue access token", err)
 	}
 
-	refreshToken, err := s.IssueRefreshToken(user.ID)
+	familyID, err := newTokenID()
+	if err != nil {
+		return nil, errors.InternalServerError("generate refresh token family ID", err)
+	}
+	refreshToken, err := s.issueRefreshToken(user.ID, familyID, sessionID)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to issue refresh token", err)
 	}
@@ -435,7 +716,11 @@ func (s *Service) FinishLogin(userID, code string, users UserProvider) (*TokenPa
 
 	switch user.TwoFactorType {
 	case "totp":
-		if !validateTOTP(code, user.TwoFactorSecret) {
+		secret, err := s.DecryptTOTPSecret(user.TwoFactorSecret)
+		if err != nil {
+			return nil, errors.InternalServerError("failed to read TOTP secret", err)
+		}
+		if !validateTOTP(code, secret) {
 			locked, ttl, _ := s.RegisterCodeFailure(userID, "totp")
 			if locked {
 				return nil, timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
@@ -459,14 +744,7 @@ func (s *Service) FinishLogin(userID, code string, users UserProvider) (*TokenPa
 	return s.IssueTokenPair(user)
 }
 
-func (s *Service) RefreshSession(refreshToken string, users UserProvider) (*TokenPair, error) {
-	userID, err := s.ValidateRefreshToken(refreshToken)
-	if err != nil {
-		return nil, errors.Unauthorized("invalid or expired refresh token")
-	}
-
-	_ = s.RevokeRefreshToken(refreshToken)
-
+func (s *Service) FinishLoginWithRecoveryCode(userID, code string, users UserProvider, recoveryCodes RecoveryCodeConsumer) (*TokenPair, error) {
 	user, err := users.GetUser(userID)
 	if err != nil {
 		return nil, errors.NotFound("user not found")
@@ -474,8 +752,49 @@ func (s *Service) RefreshSession(refreshToken string, users UserProvider) (*Toke
 	if user.LockoutEnabled {
 		return nil, errors.NewAppError(423, "account locked", nil).WithField("reason", ReasonAdminLock)
 	}
-
+	if !user.TwoFactorEnabled || recoveryCodes == nil {
+		return nil, errors.BadRequest("recovery login is unavailable")
+	}
+	if locked, ttl, _ := s.IsCodeLocked(userID, "recovery"); locked {
+		return nil, timedLockoutError("recovery codes locked", ReasonTwoFALockout, ttl)
+	}
+	consumed, err := recoveryCodes.ConsumeRecoveryCode(userID, code)
+	if err != nil {
+		return nil, errors.InternalServerError("failed to verify recovery code", err)
+	}
+	if !consumed {
+		locked, ttl, _ := s.RegisterCodeFailure(userID, "recovery")
+		if locked {
+			return nil, timedLockoutError("recovery codes locked", ReasonTwoFALockout, ttl)
+		}
+		return nil, errors.Unauthorized("invalid recovery code")
+	}
+	s.ClearCodeFailures(userID, "recovery")
 	return s.IssueTokenPair(user)
+}
+
+func (s *Service) RefreshSession(refreshToken string, users UserProvider) (*TokenPair, error) {
+	record, rotatedRefreshToken, err := s.rotateRefreshToken(refreshToken)
+	if err != nil {
+		return nil, errors.Unauthorized("invalid or expired refresh token")
+	}
+
+	user, err := users.GetUser(record.UserID)
+	if err != nil {
+		_ = s.RevokeRefreshToken(rotatedRefreshToken)
+		return nil, errors.NotFound("user not found")
+	}
+	if user.LockoutEnabled {
+		_ = s.RevokeRefreshToken(rotatedRefreshToken)
+		return nil, errors.NewAppError(423, "account locked", nil).WithField("reason", ReasonAdminLock)
+	}
+
+	accessToken, err := s.issueAccessToken(user, record.SessionID)
+	if err != nil {
+		_ = s.RevokeRefreshToken(rotatedRefreshToken)
+		return nil, err
+	}
+	return &TokenPair{AccessToken: accessToken, RefreshToken: rotatedRefreshToken}, nil
 }
 
 func timedLockoutError(message, reason string, ttl int64) *errors.AppError {

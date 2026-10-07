@@ -20,15 +20,20 @@ import (
 )
 
 type Server struct {
-	repo         *dbinfra.Repository
-	engine       *engine.Engine
-	pubKey       *rsa.PublicKey
-	cache        *cachex.JSONStore
-	listCacheTTL time.Duration
+	repo             *dbinfra.Repository
+	engine           *engine.Engine
+	pubKey           *rsa.PublicKey
+	cache            *cachex.JSONStore
+	listCacheTTL     time.Duration
+	sessionValidator auth.SessionValidator
 
 	httpClient          *http.Client
 	userServiceURL      string
 	integrationProxyURL string
+}
+
+func WithSessionValidator(validator auth.SessionValidator) ServerOption {
+	return func(s *Server) { s.sessionValidator = validator }
 }
 
 type ServerOption func(*Server)
@@ -124,7 +129,7 @@ func (s *Server) Handler() http.Handler {
 			})
 			return
 		}
-		r.Use(auth.JWTAuthMiddlewareRS256(s.pubKey))
+		r.Use(auth.JWTAuthMiddlewareRS256(s.pubKey, s.sessionValidator))
 		r.Use(auth.RoleAtLeastMiddleware("resident"))
 
 		r.Get("/nodes", s.handleNodes)
@@ -137,7 +142,7 @@ func (s *Server) Handler() http.Handler {
 			r.Put("/", s.handleUpdateWorkflow)
 			r.Post("/enable", s.handleEnableWorkflow(true))
 			r.Post("/disable", s.handleEnableWorkflow(false))
-			r.Post("/run", s.handleRunWorkflow)
+			r.With(auth.RequireDelegatedScope("home.automation.execute")).Post("/run", s.handleRunWorkflow)
 			r.Get("/runs", s.handleListRuns)
 			r.With(auth.RoleAtLeastMiddleware("admin")).Delete("/", s.handleDeleteWorkflow)
 		})

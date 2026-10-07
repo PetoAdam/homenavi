@@ -17,6 +17,7 @@ import ProfileButton from './components/common/ProfileButton/ProfileButton.jsx';
 import './App.css';
 import { isPermanentSidebarWidth } from './breakpoints.js';
 import { AuthProvider } from './context/AuthContext';
+import OAuthAuthorize from './components/Auth/OAuthAuthorize/OAuthAuthorize.jsx';
 
 export default function App() {
   const location = useLocation();
@@ -52,6 +53,10 @@ export default function App() {
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [sidebarOpen, isPermanentSidebar]);
+
+  if (location.pathname === '/oauth/authorize') {
+    return <OAuthAuthorize />;
+  }
 
   // Only pass what Sidebar needs; let Sidebar handle remounting if needed
   return (

@@ -90,7 +90,7 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 		if !claimed {
 			continue
 		}
-		_, _ = e.StartWorkflowRun(ctx, c.wfID, c.triggerNodeID, map[string]any{"type": "state", "trigger_node_id": c.triggerNodeID, "device_id": st.DeviceID, "state": st.State, "ts": st.TS, "retained": m.Retained()})
+		_, _ = e.StartWorkflowRun(ctx, c.wfID, c.triggerNodeID, map[string]any{"type": "state", "trigger_node_id": c.triggerNodeID, "device_id": st.DeviceID, "state": st.State, "ts": st.TS, "retained": m.Retained()}, "")
 	}
 }
 

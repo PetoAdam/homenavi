@@ -7,7 +7,6 @@ import (
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	authtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/auth/transport"
-	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
 )
 
 type LogoutHandler struct {
@@ -21,14 +20,19 @@ func NewLogoutHandler(authService *authdomain.Service) *LogoutHandler {
 }
 
 func (h *LogoutHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	var req authtransport.LogoutRequest
-	if err := sharedtransport.ParseAndValidateJSON(r, &req); err != nil {
-		errors.WriteError(w, errors.BadRequest(err.Error()))
+	refreshToken := RefreshTokenFromRequest(r)
+	if refreshToken == "" {
+		ClearSessionCookies(w, r)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(authtransport.LogoutResponse{Message: "logged out successfully"})
 		return
 	}
 
-	// Revoke refresh token
-	h.authService.RevokeRefreshToken(req.RefreshToken)
+	if err := h.authService.RevokeRefreshToken(refreshToken); err != nil {
+		errors.WriteError(w, errors.ServiceUnavailable("logout temporarily unavailable", err))
+		return
+	}
+	ClearSessionCookies(w, r)
 
 	response := authtransport.LogoutResponse{
 		Message: "logged out successfully",

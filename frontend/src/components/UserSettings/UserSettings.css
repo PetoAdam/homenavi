@@ -240,6 +240,30 @@
   width: 100%;
 }
 
+.two-fa-qr-code {
+  width: min(256px, 100%);
+  height: auto;
+  align-self: center;
+  background: #ffffff;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.recovery-codes {
+  margin-top: 1rem;
+}
+
+.recovery-code-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.recovery-code-list code {
+  overflow-wrap: anywhere;
+}
+
 .user-settings-input-group input {
   width: 100%;
   padding: 1.1em 1.1em 0.7em 1.1em;

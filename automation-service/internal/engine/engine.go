@@ -308,7 +308,7 @@ func (e *Engine) reconcileCron() {
 					}
 					return
 				}
-				_, _ = e.StartWorkflowRun(ctx, wfIDCopy, nodeIDCopy, map[string]any{"type": "schedule", "trigger_node_id": nodeIDCopy, "cron": cronCopy, "ts": occurredAt.UnixMilli()})
+				_, _ = e.StartWorkflowRun(ctx, wfIDCopy, nodeIDCopy, map[string]any{"type": "schedule", "trigger_node_id": nodeIDCopy, "cron": cronCopy, "ts": occurredAt.UnixMilli()}, "")
 			})
 			if err != nil {
 				slog.Warn("invalid cron expression", "workflow_id", wfID, "trigger_node_id", n.ID, "cron", cronExpr, "error", err)

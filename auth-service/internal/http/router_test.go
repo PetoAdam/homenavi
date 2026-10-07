@@ -50,3 +50,23 @@ func TestRouterHealth(t *testing.T) {
 		t.Fatalf("expected OK body, got %q", rr.Body.String())
 	}
 }
+
+func TestRouterJWKS(t *testing.T) {
+	router := NewRouter(Routes{
+		HandleJWKS: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"keys":[]}`))
+		},
+	}, http.NotFoundHandler(), otel.Tracer("test"))
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/jwks.json", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if rr.Body.String() != `{"keys":[]}` {
+		t.Fatalf("unexpected JWKS body %q", rr.Body.String())
+	}
+}

@@ -11,10 +11,10 @@ import (
 
 // Config holds bootstrap settings for api-gateway.
 type Config struct {
-	Gateway          gateway.Config
-	JWTPublicKeyPath string
-	Redis            redisx.Config
-	CORSAllowOrigins string
+	Gateway           gateway.Config
+	JWTPublicKeyPaths []string
+	Redis             redisx.Config
+	CORSAllowOrigins  string
 }
 
 func LoadConfig(args []string) (Config, error) {
@@ -32,13 +32,27 @@ func LoadConfig(args []string) (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		Gateway:          gatewayConfig,
-		JWTPublicKeyPath: envx.String("JWT_PUBLIC_KEY_PATH", gatewayConfig.JWTPublicKeyPath),
-		Redis:            redisConfig,
-		CORSAllowOrigins: envx.String("CORS_ALLOW_ORIGINS", ""),
+		Gateway:           gatewayConfig,
+		JWTPublicKeyPaths: jwtPublicKeyPaths(envx.String("JWT_PUBLIC_KEY_PATHS", ""), envx.String("JWT_PUBLIC_KEY_PATH", gatewayConfig.JWTPublicKeyPath)),
+		Redis:             redisConfig,
+		CORSAllowOrigins:  envx.String("CORS_ALLOW_ORIGINS", ""),
 	}
-	if strings.TrimSpace(cfg.JWTPublicKeyPath) == "" {
-		return Config{}, fmt.Errorf("JWT_PUBLIC_KEY_PATH not set")
+	if len(cfg.JWTPublicKeyPaths) == 0 {
+		return Config{}, fmt.Errorf("JWT_PUBLIC_KEY_PATH or JWT_PUBLIC_KEY_PATHS must be set")
 	}
 	return cfg, nil
+}
+
+func jwtPublicKeyPaths(paths, fallbackPath string) []string {
+	if strings.TrimSpace(paths) == "" {
+		paths = fallbackPath
+	}
+	values := strings.Split(paths, ",")
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }

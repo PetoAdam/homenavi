@@ -60,6 +60,24 @@ func ensureSchema(database *gorm.DB) error {
 			return fmt.Errorf("add ers_groups.meta: %w", err)
 		}
 	}
+	if !m.HasColumn(&Group{}, "IdempotencyKey") {
+		if err := m.AddColumn(&Group{}, "IdempotencyKey"); err != nil {
+			return fmt.Errorf("add ers_groups.idempotency_key: %w", err)
+		}
+	}
+	if !m.HasColumn(&Group{}, "IdempotencyHash") {
+		if err := m.AddColumn(&Group{}, "IdempotencyHash"); err != nil {
+			return fmt.Errorf("add ers_groups.idempotency_hash: %w", err)
+		}
+	}
+	if err := database.Model(&Group{}).Where("idempotency_key = ''").Update("idempotency_key", nil).Error; err != nil {
+		return fmt.Errorf("backfill ers_groups.idempotency_key: %w", err)
+	}
+	if !m.HasIndex(&Group{}, "idx_ers_groups_idempotency_key") {
+		if err := m.CreateIndex(&Group{}, "idx_ers_groups_idempotency_key"); err != nil {
+			return fmt.Errorf("create ers_groups idempotency index: %w", err)
+		}
+	}
 	if !m.HasTable(&Device{}) {
 		if err := m.CreateTable(&Device{}); err != nil {
 			return fmt.Errorf("create ers_devices: %w", err)
@@ -118,6 +136,14 @@ func ensureSchema(database *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+func (r *Repository) GetGroupByIdempotencyKey(ctx context.Context, key string) (*Group, error) {
+	var group Group
+	if err := r.db.WithContext(ctx).Where("idempotency_key = ?", key).First(&group).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
 }
 
 func backfillERSMetadata(database *gorm.DB) error {

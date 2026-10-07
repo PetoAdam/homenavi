@@ -46,8 +46,9 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 		TwoFARequired: result.TwoFARequired,
 		UserID:        result.UserID,
 		TwoFAType:     result.TwoFAType,
-		AccessToken:   result.AccessToken,
-		RefreshToken:  result.RefreshToken,
+	}
+	if !result.TwoFARequired {
+		SetSessionCookies(w, r, &authdomain.TokenPair{AccessToken: result.AccessToken, RefreshToken: result.RefreshToken})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -61,7 +62,13 @@ func (h *LoginHandler) HandleLoginFinish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tokens, err := h.authService.FinishLogin(req.UserID, req.Code, h.userService)
+	var tokens *authdomain.TokenPair
+	var err error
+	if req.RecoveryCode {
+		tokens, err = h.authService.FinishLoginWithRecoveryCode(req.UserID, req.Code, h.userService, h.userService)
+	} else {
+		tokens, err = h.authService.FinishLogin(req.UserID, req.Code, h.userService)
+	}
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			errors.WriteError(w, appErr)
@@ -71,10 +78,8 @@ func (h *LoginHandler) HandleLoginFinish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response := authtransport.LoginResponse{
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-	}
+	SetSessionCookies(w, r, tokens)
+	response := authtransport.LoginResponse{}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)

@@ -11,6 +11,15 @@ import (
 
 var ErrNotFound = stdErrors.New("cache value not found")
 
+type RefreshTokenRotationStatus uint8
+
+const (
+	RefreshTokenRotated RefreshTokenRotationStatus = iota
+	RefreshTokenMissing
+	RefreshTokenReplayed
+	RefreshTokenFamilyRevoked
+)
+
 type Store interface {
 	Set(ctx context.Context, key string, value string, ttl time.Duration) error
 	Get(ctx context.Context, key string) (string, error)
@@ -19,6 +28,7 @@ type Store interface {
 	Increment(ctx context.Context, key string) (int64, error)
 	Expire(ctx context.Context, key string, ttl time.Duration) error
 	GetDelete(ctx context.Context, key string) (string, error)
+	RotateRefreshToken(ctx context.Context, currentKey, consumedKey, replacementKey, familyKeyPrefix string) (string, RefreshTokenRotationStatus, error)
 	Close() error
 }
 
@@ -74,6 +84,61 @@ func (s *RedisStore) GetDelete(ctx context.Context, key string) (string, error) 
 		return "", err
 	}
 	return value, nil
+}
+
+var rotateRefreshTokenScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if not current then
+	local consumedRecord = redis.call('GET', KEYS[2])
+	if consumedRecord then
+		local consumed = cjson.decode(consumedRecord)
+		local replayedFamilyKey = ARGV[1] .. consumed.family_id
+    local familyTTL = redis.call('PTTL', replayedFamilyKey)
+    if familyTTL > 0 then
+      redis.call('SET', replayedFamilyKey, 'revoked', 'PX', familyTTL)
+    end
+		return {2, consumedRecord}
+  end
+  return {1, ''}
+end
+
+local record = cjson.decode(current)
+local familyKey = ARGV[1] .. record.family_id
+if redis.call('GET', familyKey) ~= 'active' then
+  return {3, ''}
+end
+
+local tokenTTL = redis.call('PTTL', KEYS[1])
+if tokenTTL <= 0 then
+  return {1, ''}
+end
+
+redis.call('DEL', KEYS[1])
+redis.call('SET', KEYS[2], current, 'PX', tokenTTL)
+redis.call('SET', KEYS[3], current, 'PX', tokenTTL)
+return {0, current}
+`)
+
+// RotateRefreshToken atomically consumes a refresh token, records its family for
+// replay detection, and stores a replacement token record with the same expiry.
+func (s *RedisStore) RotateRefreshToken(ctx context.Context, currentKey, consumedKey, replacementKey, familyKeyPrefix string) (string, RefreshTokenRotationStatus, error) {
+	result, err := rotateRefreshTokenScript.Run(ctx, s.client, []string{currentKey, consumedKey, replacementKey}, familyKeyPrefix).Result()
+	if err != nil {
+		return "", RefreshTokenMissing, err
+	}
+	values, ok := result.([]interface{})
+	if !ok || len(values) != 2 {
+		return "", RefreshTokenMissing, stdErrors.New("unexpected refresh token rotation result")
+	}
+	statusCode, ok := values[0].(int64)
+	if !ok {
+		return "", RefreshTokenMissing, stdErrors.New("invalid refresh token rotation status")
+	}
+	record, ok := values[1].(string)
+	if !ok {
+		return "", RefreshTokenMissing, stdErrors.New("invalid refresh token rotation record")
+	}
+	return record, RefreshTokenRotationStatus(statusCode), nil
 }
 
 func (s *RedisStore) Close() error {

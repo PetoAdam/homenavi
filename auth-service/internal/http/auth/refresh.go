@@ -7,7 +7,6 @@ import (
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	authtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/auth/transport"
-	sharedtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/transport"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 )
 
@@ -24,13 +23,13 @@ func NewRefreshHandler(authService *authdomain.Service, userService *clientsinfr
 }
 
 func (h *RefreshHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
-	var req authtransport.RefreshRequest
-	if err := sharedtransport.ParseAndValidateJSON(r, &req); err != nil {
-		errors.WriteError(w, errors.BadRequest(err.Error()))
+	refreshToken := RefreshTokenFromRequest(r)
+	if refreshToken == "" {
+		errors.WriteError(w, errors.Unauthorized("missing refresh session"))
 		return
 	}
 
-	tokens, err := h.authService.RefreshSession(req.RefreshToken, h.userService)
+	tokens, err := h.authService.RefreshSession(refreshToken, h.userService)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			errors.WriteError(w, appErr)
@@ -40,10 +39,8 @@ func (h *RefreshHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := authtransport.RefreshResponse{
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-	}
+	SetSessionCookies(w, r, tokens)
+	response := authtransport.RefreshResponse{}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)

@@ -1,0 +1,32 @@
+name: Verify and Package MCP Service Container
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["mcp-service/**", "shared/**", ".github/workflows/mcp_service_docker_build.yaml"]
+  pull_request:
+    branches: [main]
+    paths: ["mcp-service/**", "shared/**", ".github/workflows/mcp_service_docker_build.yaml"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ./mcp-service/go.mod
+          cache-dependency-path: ./mcp-service/go.sum
+      - name: Static analysis
+        working-directory: ./mcp-service
+        run: go vet ./...
+      - name: Unit tests
+        working-directory: ./mcp-service
+        run: go test ./...
+      - name: Build container
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./mcp-service/Dockerfile
+          push: false
+          tags: homenavi-mcp-service:latest

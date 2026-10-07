@@ -13,8 +13,11 @@ import (
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	eventsinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/events"
 	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/PetoAdam/homenavi/shared/cachex"
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
+	"github.com/PetoAdam/homenavi/shared/redisx"
+	"github.com/redis/go-redis/v9"
 )
 
 // App is the composed automation-service application.
@@ -62,6 +65,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			logger.Warn("automation-service cache disabled", "error", err)
 		}
 	}
+	sessionClient, err := redisx.Connect(context.Background(), cfg.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("connect session store: %w", err)
+	}
 	eng := engine.New(repo, mqttClient, engine.Options{
 		EmailServiceURL:     cfg.EmailServiceURL,
 		ERSServiceURL:       cfg.ERSServiceURL,
@@ -83,6 +90,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		cfg.IntegrationProxyURL,
 		&http.Client{Timeout: 10 * time.Second},
 		httptransport.WithCache(cacheStore, cfg.ListCacheTTL),
+		httptransport.WithSessionValidator(func(ctx context.Context, sessionID string) (bool, error) {
+			status, err := sessionClient.Get(ctx, authx.SessionStatusKey(sessionID)).Result()
+			if err == redis.Nil {
+				return false, nil
+			}
+			return status == authx.SessionStatusActive, err
+		}),
 	)
 	router := httptransport.NewRouter(handler)
 
@@ -95,7 +109,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		engine:   eng,
 		mqtt:     mqttClient,
 		cache:    cacheStore,
-		shutdown: shutdown,
+		shutdown: func() { _ = sessionClient.Close(); shutdown() },
 		logger:   logger,
 	}, nil
 }

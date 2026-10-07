@@ -2,7 +2,8 @@ package clients
 
 import (
 	"bytes"
-	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,23 +14,22 @@ import (
 
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	authtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/auth/transport"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type UserConfig struct {
-	BaseURL       string
-	JWTPrivateKey *rsa.PrivateKey
+	BaseURL    string
+	IssueToken func() (string, error)
 }
 
 // UserClient wraps user-service HTTP calls.
 type UserClient struct {
-	baseURL       string
-	jwtPrivateKey *rsa.PrivateKey
-	httpClient    *http.Client
+	baseURL    string
+	issueToken func() (string, error)
+	httpClient *http.Client
 }
 
 func NewUserClient(cfg UserConfig) *UserClient {
-	return &UserClient{baseURL: cfg.BaseURL, jwtPrivateKey: cfg.JWTPrivateKey, httpClient: &http.Client{Timeout: 10 * time.Second}}
+	return &UserClient{baseURL: cfg.BaseURL, issueToken: cfg.IssueToken, httpClient: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func (c *UserClient) CreateUser(req *authtransport.SignupRequest) (*User, error) {
@@ -66,7 +66,7 @@ func (c *UserClient) ValidateCredentials(email, password string) (*User, error) 
 }
 
 func (c *UserClient) GetUser(userID string) (*User, error) {
-	token, err := c.issueInternalToken(userID)
+	token, err := c.issueInternalToken()
 	if err != nil {
 		return nil, errors.InternalServerError("failed to issue internal token", err)
 	}
@@ -92,7 +92,10 @@ func (c *UserClient) GetUser(userID string) (*User, error) {
 }
 
 func (c *UserClient) GetUserByEmail(email string) (*User, error) {
-	token, _ := c.issueInternalToken("")
+	token, err := c.issueInternalToken()
+	if err != nil {
+		return nil, errors.InternalServerError("failed to issue service token", err)
+	}
 	resp, err := c.makeRequest(http.MethodGet, "/users?email="+url.QueryEscape(email), nil, token)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to get user by email", err)
@@ -134,8 +137,48 @@ func (c *UserClient) UpdateUser(userID string, updates map[string]interface{}, j
 	return nil
 }
 
+func (c *UserClient) ReplaceRecoveryCodes(userID string, codeHashes []string, jwtToken string) error {
+	body, err := json.Marshal(map[string]any{"code_hashes": codeHashes})
+	if err != nil {
+		return errors.InternalServerError("failed to marshal recovery codes", err)
+	}
+	resp, err := c.makeRequest(http.MethodPut, "/users/"+userID+"/recovery-codes", body, jwtToken)
+	if err != nil {
+		return errors.InternalServerError("failed to store recovery codes", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return errors.InternalServerError("user service returned unexpected status", nil)
+	}
+	return nil
+}
+
+func (c *UserClient) ConsumeRecoveryCode(userID, code string) (bool, error) {
+	token, err := c.issueInternalToken()
+	if err != nil {
+		return false, errors.InternalServerError("failed to issue internal token", err)
+	}
+	digest := sha256.Sum256([]byte(code))
+	body, err := json.Marshal(map[string]string{"code_hash": hex.EncodeToString(digest[:])})
+	if err != nil {
+		return false, errors.InternalServerError("failed to marshal recovery code", err)
+	}
+	resp, err := c.makeRequest(http.MethodPost, "/users/"+userID+"/recovery-codes/consume", body, token)
+	if err != nil {
+		return false, errors.InternalServerError("failed to consume recovery code", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		return true, nil
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return false, nil
+	}
+	return false, errors.InternalServerError("user service returned unexpected status", nil)
+}
+
 func (c *UserClient) UpdatePassword(userID, newPassword string) error {
-	token, err := c.issueInternalToken(userID)
+	token, err := c.issueInternalToken()
 	if err != nil {
 		return errors.InternalServerError("failed to issue internal token", err)
 	}
@@ -159,7 +202,10 @@ func (c *UserClient) DeleteUser(userID string, jwtToken string) error {
 }
 
 func (c *UserClient) GetUserByGoogleID(googleID string) (*User, error) {
-	token, _ := c.issueInternalToken("")
+	token, err := c.issueInternalToken()
+	if err != nil {
+		return nil, errors.InternalServerError("failed to issue service token", err)
+	}
 	resp, err := c.makeRequest(http.MethodGet, "/users?google_id="+url.QueryEscape(googleID), nil, token)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to get user by google_id", err)
@@ -181,7 +227,7 @@ func (c *UserClient) GetUserByGoogleID(googleID string) (*User, error) {
 }
 
 func (c *UserClient) LinkGoogleID(userID, googleID string) error {
-	token, err := c.issueInternalToken(userID)
+	token, err := c.issueInternalToken()
 	if err != nil {
 		return errors.InternalServerError("failed to issue internal token", err)
 	}
@@ -272,11 +318,9 @@ func (c *UserClient) makeRequest(method, path string, body []byte, jwtToken stri
 	return c.httpClient.Do(req)
 }
 
-func (c *UserClient) issueInternalToken(userID string) (string, error) {
-	claims := jwt.MapClaims{"sub": userID, "exp": time.Now().Add(2 * time.Minute).Unix(), "iat": time.Now().Unix(), "role": "service"}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	if c.jwtPrivateKey == nil {
-		return "", fmt.Errorf("jwt private key not configured")
+func (c *UserClient) issueInternalToken() (string, error) {
+	if c.issueToken == nil {
+		return "", fmt.Errorf("service token issuer not configured")
 	}
-	return token.SignedString(c.jwtPrivateKey)
+	return c.issueToken()
 }

@@ -13,6 +13,7 @@ use (
 	./entity-registry-service
 	./history-service
 	./integration-proxy
+	./mcp-service
 	./shared
 	./mock-adapter
 	./user-service

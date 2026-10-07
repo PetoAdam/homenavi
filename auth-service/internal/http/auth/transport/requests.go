@@ -63,8 +63,9 @@ func (r *LoginStartRequest) Validate() error {
 }
 
 type LoginFinishRequest struct {
-	UserID string `json:"user_id"`
-	Code   string `json:"code"`
+	UserID       string `json:"user_id"`
+	Code         string `json:"code"`
+	RecoveryCode bool   `json:"recovery_code"`
 }
 
 func (r *LoginFinishRequest) Validate() error {
@@ -76,6 +77,9 @@ func (r *LoginFinishRequest) Validate() error {
 	}
 	if !sharedtransport.IsValidUUID(r.UserID) {
 		return fmt.Errorf("invalid user ID format")
+	}
+	if r.RecoveryCode && len(r.Code) == 16 {
+		return nil
 	}
 	if !sharedtransport.IsValidCode(r.Code) {
 		return fmt.Errorf("code must be exactly 6 digits")
