@@ -231,8 +231,28 @@ func (s *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid workflow id")
 		return
 	}
-	runID, err := s.engine.RunWorkflowNow(r.Context(), id)
+	if idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key")); idempotencyKey != "" {
+		if existing, lookupErr := s.repo.GetRunByIdempotencyKey(r.Context(), idempotencyKey); lookupErr == nil {
+			if existing.WorkflowID != id {
+				writeError(w, http.StatusConflict, "idempotency key belongs to a different workflow")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"queued": true, "run_id": existing.ID.String()})
+			return
+		}
+	}
+	runID, err := s.engine.RunWorkflowNowWithIdempotency(r.Context(), id, strings.TrimSpace(r.Header.Get("Idempotency-Key")))
 	if err != nil {
+		if idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key")); idempotencyKey != "" {
+			if existing, lookupErr := s.repo.GetRunByIdempotencyKey(r.Context(), idempotencyKey); lookupErr == nil {
+				if existing.WorkflowID != id {
+					writeError(w, http.StatusConflict, "idempotency key belongs to a different workflow")
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"queued": true, "run_id": existing.ID.String()})
+				return
+			}
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

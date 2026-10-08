@@ -29,6 +29,11 @@ def auth_service_url() -> str:
 
 
 @pytest.fixture(scope="session")
+def mcp_url() -> str:
+    return os.getenv("HOMENAVI_MCP_URL", "http://localhost:8080/mcp").rstrip("/")
+
+
+@pytest.fixture(scope="session")
 def session() -> requests.Session:
     s = requests.Session()
     s.headers.update({"Content-Type": "application/json"})

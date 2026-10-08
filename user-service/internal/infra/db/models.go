@@ -22,7 +22,7 @@ type userRow struct {
 	GoogleID           *string `gorm:"uniqueIndex"`
 	TwoFactorEnabled   bool
 	TwoFactorType      string `gorm:"type:varchar(16)"`
-	TwoFactorSecret    string `gorm:"type:varchar(64)"`
+	TwoFactorSecret    string `gorm:"type:varchar(512)"`
 	LockoutEnd         *time.Time
 	LockoutEnabled     bool
 	AccessFailedCount  int
@@ -36,6 +36,14 @@ type emailVerificationRow struct {
 	Code      string    `gorm:"size:16;index"`
 	ExpiresAt time.Time
 	Used      bool
+	CreatedAt time.Time
+}
+
+type recoveryCodeRow struct {
+	ID        uint      `gorm:"primaryKey"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_recovery_code_user_hash"`
+	CodeHash  string    `gorm:"type:char(64);not null;uniqueIndex:idx_recovery_code_user_hash"`
+	UsedAt    *time.Time
 	CreatedAt time.Time
 }
 

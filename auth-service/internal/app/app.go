@@ -36,21 +36,33 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("create redis store: %w", err)
 	}
 	authService := authdomain.NewService(authdomain.Config{
-		JWTPrivateKey:           cfg.JWTPrivateKey,
-		AccessTokenTTL:          cfg.AccessTokenTTL,
-		RefreshTokenTTL:         cfg.RefreshTokenTTL,
-		EmailVerificationTTL:    cfg.EmailVerificationTTL,
-		PasswordResetTTL:        cfg.PasswordResetTTL,
-		TwoFactorTTL:            cfg.TwoFactorTTL,
-		GoogleOAuthClientID:     cfg.GoogleOAuthClientID,
-		GoogleOAuthClientSecret: cfg.GoogleOAuthClientSecret,
-		GoogleOAuthRedirectURL:  cfg.GoogleOAuthRedirectURL,
-		LoginMaxFailures:        cfg.LoginMaxFailures,
-		LoginLockoutSeconds:     cfg.LoginLockoutSeconds,
-		CodeMaxFailures:         cfg.CodeMaxFailures,
-		CodeLockoutSeconds:      cfg.CodeLockoutSeconds,
+		JWTPrivateKey:                cfg.JWTPrivateKey,
+		JWTVerificationPublicKeys:    cfg.JWTVerificationPublicKeys,
+		JWTKeyID:                     cfg.JWTKeyID,
+		JWTIssuer:                    cfg.JWTIssuer,
+		JWTAPIAudience:               cfg.JWTAPIAudience,
+		JWTUserServiceAudience:       cfg.JWTUserServiceAudience,
+		AccessTokenTTL:               cfg.AccessTokenTTL,
+		RefreshTokenTTL:              cfg.RefreshTokenTTL,
+		EmailVerificationTTL:         cfg.EmailVerificationTTL,
+		PasswordResetTTL:             cfg.PasswordResetTTL,
+		TwoFactorTTL:                 cfg.TwoFactorTTL,
+		GoogleOAuthClientID:          cfg.GoogleOAuthClientID,
+		GoogleOAuthClientSecret:      cfg.GoogleOAuthClientSecret,
+		GoogleOAuthRedirectURL:       cfg.GoogleOAuthRedirectURL,
+		LoginMaxFailures:             cfg.LoginMaxFailures,
+		LoginLockoutSeconds:          cfg.LoginLockoutSeconds,
+		CodeMaxFailures:              cfg.CodeMaxFailures,
+		CodeLockoutSeconds:           cfg.CodeLockoutSeconds,
+		TOTPEncryptionKey:            cfg.TOTPEncryptionKey,
+		OAuthMCPResource:             cfg.OAuthMCPResource,
+		MCPAuthorizationServerIssuer: cfg.MCPAuthorizationServerIssuer,
+		OAuthTrustedClients:          cfg.OAuthTrustedClients,
 	}, cacheStore)
-	userClient := clientsinfra.NewUserClient(clientsinfra.UserConfig{BaseURL: cfg.UserServiceURL, JWTPrivateKey: cfg.JWTPrivateKey})
+	userClient := clientsinfra.NewUserClient(clientsinfra.UserConfig{
+		BaseURL:    cfg.UserServiceURL,
+		IssueToken: authService.IssueServiceToken,
+	})
 	emailClient := clientsinfra.NewEmailClient(cfg.EmailServiceURL)
 	profilePictureClient := clientsinfra.NewProfilePictureClient(cfg.ProfilePictureServiceURL)
 
@@ -69,6 +81,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	userDeleteHandler := userhandlers.NewDeleteHandler(authService, userClient)
 	userManageHandler := userhandlers.NewManageHandler(authService, userClient)
 	googleOAuthHandler := oauthhandlers.NewGoogleHandler(authService, userClient)
+	jwksHandler := oauthhandlers.NewJWKSHandler(authService)
+	metadataHandler := oauthhandlers.NewMetadataHandler(cfg.MCPAuthorizationServerIssuer)
+	oauthAuthorizationHandler := oauthhandlers.NewAuthorizationHandler(authService)
+	oauthAuthorizationHandler.ConfigureBrowserLogin(authService, userClient, emailClient, cfg.OAuthAuthorizationUIURL)
+	oauthTokenHandler := oauthhandlers.NewTokenHandler(authService, userClient)
 
 	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("auth-service")
 	if err != nil {
@@ -109,7 +126,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			}
 			http.Redirect(w, r, authService.GetGoogleAuthURL(state), http.StatusTemporaryRedirect)
 		},
-		HandleGoogleOAuthCallback: googleOAuthHandler.HandleOAuthGoogleCallback,
+		HandleGoogleOAuthCallback:   googleOAuthHandler.HandleOAuthGoogleCallback,
+		HandleJWKS:                  jwksHandler.HandleJWKS,
+		HandleAuthorizationMetadata: metadataHandler.HandleAuthorizationServerMetadata,
+		HandleOAuthAuthorize:        oauthAuthorizationHandler.HandleAuthorize,
+		HandleOAuthToken:            oauthTokenHandler.HandleToken,
+		HandleOAuthRegister:         oauthAuthorizationHandler.HandleRegisterClient,
+		HandleOAuthTransaction:      oauthAuthorizationHandler.HandleAuthorizationTransaction,
+		HandleOAuthLogin:            oauthAuthorizationHandler.HandleAuthorizationLogin,
+		HandleOAuthVerification:     oauthAuthorizationHandler.HandleAuthorizationVerification,
+		HandleOAuthApproval:         oauthAuthorizationHandler.HandleAuthorizationApproval,
+		HandleOAuthDenial:           oauthAuthorizationHandler.HandleAuthorizationDenial,
+		HandleOAuthConsentGrant:     oauthAuthorizationHandler.HandleGrantConsent,
+		HandleOAuthConsentRevoke:    oauthAuthorizationHandler.HandleRevokeConsent,
 	}, promHandler, tracer)
 
 	return &App{

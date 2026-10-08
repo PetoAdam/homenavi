@@ -4,19 +4,33 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 // Claims represents the JWT claims user-service cares about.
 type Claims struct {
-	Role string `json:"role"`
-	Sub  string `json:"sub"`
+	Role      string `json:"role"`
+	Sub       string `json:"sub"`
+	SessionID string `json:"sid"`
+	TokenType string `json:"typ"`
 	jwt.RegisteredClaims
 }
+
+type ValidationConfig struct {
+	Issuer           string
+	APIAudience      string
+	ServiceAudience  string
+	SessionValidator SessionValidator
+}
+
+type SessionValidator func(context.Context, string) (bool, error)
 
 type claimsKeyType struct{}
 
@@ -30,8 +44,36 @@ func LoadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 	return jwt.ParseRSAPublicKeyFromPEM(data)
 }
 
-// JWTAuthMiddleware verifies a bearer token using the supplied RSA public key.
-func JWTAuthMiddleware(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
+// RSAPublicKeySet holds all active and overlap JWT verification keys by kid.
+type RSAPublicKeySet struct {
+	keys map[string]*rsa.PublicKey
+}
+
+func NewRSAPublicKeySet(publicKeys ...*rsa.PublicKey) (RSAPublicKeySet, error) {
+	keys := make(map[string]*rsa.PublicKey, len(publicKeys))
+	for _, publicKey := range publicKeys {
+		if publicKey == nil {
+			return RSAPublicKeySet{}, fmt.Errorf("JWT public key is required")
+		}
+		keyID, err := authx.KeyIDForRSAPublicKey(publicKey)
+		if err != nil {
+			return RSAPublicKeySet{}, fmt.Errorf("derive JWT key ID: %w", err)
+		}
+		keys[keyID] = publicKey
+	}
+	if len(keys) == 0 {
+		return RSAPublicKeySet{}, fmt.Errorf("at least one JWT public key is required")
+	}
+	return RSAPublicKeySet{keys: keys}, nil
+}
+
+func (s RSAPublicKeySet) PublicKeyForID(keyID string) (*rsa.PublicKey, bool) {
+	publicKey, ok := s.keys[keyID]
+	return publicKey, ok
+}
+
+// JWTAuthMiddleware verifies a bearer token against the configured key set.
+func JWTAuthMiddleware(publicKeys RSAPublicKeySet, cfg ValidationConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenStr := ExtractToken(r)
@@ -39,24 +81,65 @@ func JWTAuthMiddleware(pubKey *rsa.PublicKey) func(http.Handler) http.Handler {
 				writeJSONError(w, http.StatusUnauthorized, "missing token")
 				return
 			}
+			if len(publicKeys.keys) == 0 {
+				writeJSONError(w, http.StatusUnauthorized, "token verification unavailable")
+				return
+			}
 			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (any, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				if token.Method.Alg() != jwt.SigningMethodRS256.Alg() {
 					return nil, jwt.ErrTokenUnverifiable
 				}
-				return pubKey, nil
-			})
+				keyID, ok := token.Header["kid"].(string)
+				if !ok || keyID == "" {
+					return nil, jwt.ErrTokenUnverifiable
+				}
+				publicKey, ok := publicKeys.PublicKeyForID(keyID)
+				if !ok {
+					return nil, jwt.ErrTokenUnverifiable
+				}
+				return publicKey, nil
+			}, jwt.WithIssuer(cfg.Issuer), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithLeeway(30*time.Second))
 			if err != nil || !token.Valid {
 				writeJSONError(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
 			claims, ok := token.Claims.(*Claims)
-			if !ok {
+			if !ok || claims.Sub == "" || claims.Role == "" || claims.TokenType == "" || claims.ID == "" || claims.NotBefore == nil || claims.IssuedAt == nil || !hasAcceptedProfile(claims, cfg) {
 				writeJSONError(w, http.StatusUnauthorized, "invalid claims")
 				return
+			}
+			if claims.TokenType == authx.TokenTypeAPI {
+				if claims.SessionID == "" {
+					writeJSONError(w, http.StatusUnauthorized, "invalid claims")
+					return
+				}
+				if cfg.SessionValidator != nil {
+					active, err := cfg.SessionValidator(r.Context(), claims.SessionID)
+					if err != nil {
+						writeJSONError(w, http.StatusServiceUnavailable, "session verification unavailable")
+						return
+					}
+					if !active {
+						writeJSONError(w, http.StatusUnauthorized, "session revoked")
+						return
+					}
+				}
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey, claims)))
 		})
 	}
+}
+
+func hasAcceptedProfile(claims *Claims, cfg ValidationConfig) bool {
+	for _, audience := range claims.Audience {
+		if claims.TokenType == authx.TokenTypeAPI && audience == cfg.APIAudience {
+			return true
+		}
+		if claims.TokenType == authx.TokenTypeService && audience == cfg.ServiceAudience {
+			return true
+		}
+	}
+	return false
 }
 
 // RoleAtLeastMiddleware ensures caller has at least the required role.

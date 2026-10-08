@@ -58,6 +58,7 @@ Current repo state at a glance:
 - The frontend state architecture has been consolidated around React Query for server state, Zustand for durable client preferences, and reducers for complex local workflows.
 - Compose remains the fastest way to run the full platform locally, while Helm charts cover the current Kubernetes path.
 - Integration-first extension points, marketplace metadata, and separate integration repositories are part of the normal development model.
+- An OAuth-protected MCP endpoint gives resident and admin AI clients scoped, audited access to Homenavi devices, inventory, history, workflow reads, and narrowly authorized control actions.
 
 What is still true:
 - Some roadmap and design-plan documents remain in `doc/` for larger future work.
@@ -68,6 +69,7 @@ Homenavi runs as a layered system:
 - Browser app (PWA frontend).
 - Nginx ingress for HTTPS/WSS.
 - API Gateway for auth checks, routing, and websocket upgrades.
+- MCP service for OAuth-discovered Streamable HTTP tools, scoped access, rate limits, audited AI-client requests, and delegated gateway operations.
 - Domain services (auth, user, dashboard, device-hub, ERS, history, automation, weather).
 - Integration runtime via integration-proxy and installed integrations.
 - Shared messaging via EMQX (HDP topics).
@@ -80,7 +82,7 @@ Primary references:
 - API surface: [doc/external_api_surface.md](doc/external_api_surface.md)
 - HTTP API contract (OpenAPI 3.1): [doc/openapi.yaml](doc/openapi.yaml)
 - Event API contract (AsyncAPI 3.1): [doc/asyncapi.yaml](doc/asyncapi.yaml)
-- MCP and authentication security roadmap: [doc/mcp_and_auth_security_roadmap.md](doc/mcp_and_auth_security_roadmap.md)
+- MCP usage, scopes, OAuth behavior, and operations: [doc/mcp.md](doc/mcp.md)
 
 <a id="quickstart"></a>
 ## 4. Quickstart
@@ -123,6 +125,7 @@ Operational runbooks:
 |---|---|---|
 | Ingress and edge API | nginx, api-gateway | Public HTTPS/WSS ingress, auth checks, route and websocket dispatch |
 | Identity and access | auth-service, user-service | Login/session/JWT, lockouts/2FA, RBAC-aware user profiles, roles and admin operations |
+| AI and MCP access | mcp-service | OAuth-protected, scope-gated Streamable HTTP tools. Domain operations use short-lived delegated tokens through API Gateway; OAuth consent, not per-action browser prompts, authorizes exposed commands, workflow runs, and group creation. |
 | Home model and state | entity-registry-service, device-hub, history-service | Canonical inventory, rooms/tags/groups/map metadata, HDP command/state plane, historical state persistence |
 | Automation and UI model | automation-service, dashboard-service | Workflow engine, run stream, widget and dashboard persistence |
 | Integrations runtime | integration-proxy, installed integrations | Registry, UI/API proxying, install/update orchestration, integration action execution |

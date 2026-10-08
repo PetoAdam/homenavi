@@ -1,9 +1,14 @@
 package twofactor
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/png"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
@@ -33,8 +38,13 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify user exists
-	user, err := h.userService.GetUser(req.UserID)
+	userID, authErr := authenticatedUserID(r, h.authService)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+
+	user, err := h.userService.GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -56,31 +66,44 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		errors.WriteError(w, errors.InternalServerError("failed to generate TOTP secret", err))
 		return
 	}
+	qrCodeDataURL, err := provisioningQRCodeDataURL(secret)
+	if err != nil {
+		slog.Error("failed to create totp enrollment QR code", "error", err)
+		errors.WriteError(w, errors.InternalServerError("failed to create TOTP enrollment QR code", err))
+		return
+	}
 
 	// Issue a short-lived token for updating user
-	token, err := h.authService.IssueShortLivedToken(req.UserID)
+	token, err := h.authService.IssueServiceToken()
 	if err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
 		return
 	}
 
-	// Store the secret but don't enable 2FA yet (user needs to verify)
+	encryptedSecret, err := h.authService.EncryptTOTPSecret(secret.Secret())
+	if err != nil {
+		slog.Error("failed to encrypt TOTP secret", "error", err)
+		errors.WriteError(w, errors.InternalServerError("failed to protect TOTP secret", err))
+		return
+	}
+
 	updates := map[string]interface{}{
-		"two_factor_secret":  secret.Secret(),
+		"two_factor_secret":  encryptedSecret,
 		"two_factor_type":    "totp",
 		"two_factor_enabled": false,
 	}
 
-	if err := h.userService.UpdateUser(req.UserID, updates, token); err != nil {
+	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}
 
-	slog.Info("2fa totp setup initiated", "user_id", req.UserID)
+	slog.Info("2fa totp setup initiated", "user_id", userID)
 
 	response := twofactortransport.TwoFactorSetupResponse{
-		Secret:     secret.Secret(),
-		OTPAuthURL: secret.URL(),
+		Secret:        secret.Secret(),
+		OTPAuthURL:    secret.URL(),
+		QRCodeDataURL: qrCodeDataURL,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -106,8 +129,13 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get user
-	user, err := h.userService.GetUser(req.UserID)
+	userID, authErr := authenticatedUserID(r, h.authService)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+
+	user, err := h.userService.GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -123,9 +151,15 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Validate TOTP code
+	secret, err := h.authService.DecryptTOTPSecret(user.TwoFactorSecret)
+	if err != nil {
+		slog.Error("failed to decrypt TOTP secret", "error", err)
+		errors.WriteError(w, errors.InternalServerError("failed to read TOTP secret", err))
+		return
+	}
+
 	if user.TwoFactorType == "totp" {
-		if !totp.Validate(req.Code, user.TwoFactorSecret) {
+		if !totp.Validate(req.Code, secret) {
 			errors.WriteError(w, errors.Unauthorized("invalid TOTP code"))
 			return
 		}
@@ -135,9 +169,18 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Issue a short-lived token for updating user
-	token, err := h.authService.IssueShortLivedToken(req.UserID)
+	token, err := h.authService.IssueServiceToken()
 	if err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
+		return
+	}
+	recoveryCodes, recoveryCodeHashes, err := authdomain.GenerateRecoveryCodes()
+	if err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to generate recovery codes", err))
+		return
+	}
+	if err := h.userService.ReplaceRecoveryCodes(userID, recoveryCodeHashes, token); err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to protect recovery codes", err))
 		return
 	}
 
@@ -146,16 +189,17 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		"two_factor_enabled": true,
 	}
 
-	if err := h.userService.UpdateUser(req.UserID, updates, token); err != nil {
+	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}
 
-	slog.Info("2fa enabled", "user_id", req.UserID)
+	slog.Info("2fa enabled", "user_id", userID)
 
 	response := twofactortransport.TwoFactorVerifyResponse{
-		Verified: true,
-		Message:  "2FA has been enabled successfully",
+		Verified:      true,
+		Message:       "2FA has been enabled successfully",
+		RecoveryCodes: recoveryCodes,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -183,8 +227,13 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Get user
-	user, err := h.userService.GetUser(req.UserID)
+	userID, authErr := authenticatedUserID(r, h.authService)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+
+	user, err := h.userService.GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -192,20 +241,19 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 
 	// Generate and store 2FA code
 	code := h.authService.GenerateVerificationCode()
-	if err := h.authService.StoreVerificationCode("2fa_email", req.UserID, code); err != nil {
+	if err := h.authService.StoreVerificationCode("2fa_email", userID, code); err != nil {
 		slog.Error("failed to store 2fa email code", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to store 2FA code", err))
 		return
 	}
 
-	// Send email (mock for now)
 	if err := h.emailService.Send2FACode(user.Email, user.FirstName, code); err != nil {
 		slog.Error("failed to send 2fa email", "error", err)
-		// Mock email sending
-		slog.Info("mock 2fa email sent", "email", user.Email, "code", code)
+		errors.WriteError(w, errors.ServiceUnavailable("2FA email delivery is temporarily unavailable", err))
+		return
 	}
 
-	slog.Info("2fa email code sent", "code", code, "user_id", req.UserID)
+	slog.Info("2fa email code sent", "user_id", userID)
 
 	response := twofactortransport.TwoFactorEmailResponse{
 		Message:  "2FA code sent to your email",
@@ -223,16 +271,30 @@ func (h *EmailHandler) Handle2FAEmailVerify(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Validate the 2FA code
-	if err := h.authService.ValidateVerificationCode("2fa_email", req.UserID, req.Code); err != nil {
+	userID, authErr := authenticatedUserID(r, h.authService)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+
+	if err := h.authService.ValidateVerificationCode("2fa_email", userID, req.Code); err != nil {
 		errors.WriteError(w, errors.Unauthorized("invalid or expired 2FA code"))
 		return
 	}
 
 	// Issue a short-lived token for updating user
-	token, err := h.authService.IssueShortLivedToken(req.UserID)
+	token, err := h.authService.IssueServiceToken()
 	if err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
+		return
+	}
+	recoveryCodes, recoveryCodeHashes, err := authdomain.GenerateRecoveryCodes()
+	if err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to generate recovery codes", err))
+		return
+	}
+	if err := h.userService.ReplaceRecoveryCodes(userID, recoveryCodeHashes, token); err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to protect recovery codes", err))
 		return
 	}
 
@@ -242,18 +304,52 @@ func (h *EmailHandler) Handle2FAEmailVerify(w http.ResponseWriter, r *http.Reque
 		"two_factor_type":    "email",
 	}
 
-	if err := h.userService.UpdateUser(req.UserID, updates, token); err != nil {
+	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}
 
-	slog.Info("email 2fa enabled", "user_id", req.UserID)
+	slog.Info("email 2fa enabled", "user_id", userID)
 
 	response := twofactortransport.TwoFactorVerifyResponse{
-		Verified: true,
-		Message:  "Email-based 2FA has been enabled successfully",
+		Verified:      true,
+		Message:       "Email-based 2FA has been enabled successfully",
+		RecoveryCodes: recoveryCodes,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func authenticatedUserID(r *http.Request, authService *authdomain.Service) (string, *errors.AppError) {
+	authorization := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authorization, "Bearer ") {
+		return "", errors.Unauthorized("missing or invalid authorization header")
+	}
+
+	token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	if token == "" {
+		return "", errors.Unauthorized("missing or invalid authorization header")
+	}
+
+	userID, err := authService.ExtractUserIDFromToken(token)
+	if err != nil {
+		return "", errors.Unauthorized("invalid token")
+	}
+	return userID, nil
+}
+
+func provisioningQRCodeDataURL(key interface {
+	Image(int, int) (image.Image, error)
+}) (string, error) {
+	qrCode, err := key.Image(256, 256)
+	if err != nil {
+		return "", err
+	}
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, qrCode); err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), nil
 }

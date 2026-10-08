@@ -25,14 +25,15 @@ type Workflow struct {
 }
 
 type WorkflowRun struct {
-	ID           uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	WorkflowID   uuid.UUID      `gorm:"type:uuid;index:idx_workflow_runs_workflow_id;not null" json:"workflow_id"`
-	Workflow     *Workflow      `gorm:"foreignKey:WorkflowID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
-	Status       string         `gorm:"not null" json:"status"`
-	TriggerEvent datatypes.JSON `gorm:"type:jsonb" json:"trigger_event,omitempty"`
-	Error        string         `json:"error,omitempty"`
-	StartedAt    time.Time      `gorm:"not null" json:"started_at"`
-	FinishedAt   *time.Time     `json:"finished_at,omitempty"`
+	ID             uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkflowID     uuid.UUID      `gorm:"type:uuid;index:idx_workflow_runs_workflow_id;not null" json:"workflow_id"`
+	IdempotencyKey *string        `gorm:"uniqueIndex:idx_workflow_runs_idempotency_key" json:"-"`
+	Workflow       *Workflow      `gorm:"foreignKey:WorkflowID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	Status         string         `gorm:"not null" json:"status"`
+	TriggerEvent   datatypes.JSON `gorm:"type:jsonb" json:"trigger_event,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	StartedAt      time.Time      `gorm:"not null" json:"started_at"`
+	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
 }
 
 type WorkflowRunStep struct {

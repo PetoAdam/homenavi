@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/PetoAdam/homenavi/user-service/internal/auth"
 	"github.com/PetoAdam/homenavi/user-service/internal/users"
 	"github.com/go-chi/chi/v5"
@@ -77,6 +78,10 @@ func (f *fakeRepo) UpdateFields(_ context.Context, id uuid.UUID, fields map[stri
 	f.users[id] = u
 	return nil
 }
+func (f *fakeRepo) ReplaceRecoveryCodes(_ context.Context, _ uuid.UUID, _ []string) error { return nil }
+func (f *fakeRepo) ConsumeRecoveryCode(_ context.Context, _ uuid.UUID, _ string) (bool, error) {
+	return false, nil
+}
 func (f *fakeRepo) Delete(_ context.Context, id uuid.UUID) error { delete(f.users, id); return nil }
 
 func TestHandleCreateSuccess(t *testing.T) {
@@ -100,6 +105,45 @@ func TestHandleGetNotFound(t *testing.T) {
 	h.HandleGet(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestHandleGetExposesTwoFactorSecretOnlyToAuthService(t *testing.T) {
+	repo := newFakeRepo()
+	id := uuid.New()
+	repo.users[id] = users.User{ID: id, UserName: "alice", Email: "alice@example.com", TwoFactorSecret: "totp-secret"}
+	h := newHandlerWithService(t, repo)
+
+	for _, test := range []struct {
+		name       string
+		claims     *auth.Claims
+		wantSecret bool
+	}{
+		{name: "named auth service", claims: &auth.Claims{Sub: authx.ServicePrincipalAuth, Role: authx.RoleService}, wantSecret: true},
+		{name: "ordinary user", claims: &auth.Claims{Sub: id.String(), Role: "user"}, wantSecret: false},
+		{name: "other service", claims: &auth.Claims{Sub: "other-service", Role: authx.RoleService}, wantSecret: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/users/"+id.String(), nil)
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("id", id.String())
+			req = req.WithContext(auth.WithClaims(context.WithValue(req.Context(), chi.RouteCtxKey, rctx), test.claims))
+			rec := httptest.NewRecorder()
+
+			h.HandleGet(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			var payload map[string]any
+			if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			_, hasSecret := payload["two_factor_secret"]
+			if hasSecret != test.wantSecret {
+				t.Fatalf("two_factor_secret presence = %t, want %t", hasSecret, test.wantSecret)
+			}
+		})
 	}
 }
 

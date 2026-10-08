@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/PetoAdam/homenavi/shared/envx"
 	"github.com/spf13/viper"
 )
@@ -13,12 +14,15 @@ import (
 var routeEnvPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 
 type RouteConfig struct {
-	Path      string   `mapstructure:"path"`
-	Upstream  string   `mapstructure:"upstream"`
-	Methods   []string `mapstructure:"methods"`
-	Access    string   `mapstructure:"access"`
-	Type      string   `mapstructure:"type"`
-	RateLimit *struct {
+	Path       string   `mapstructure:"path"`
+	Upstream   string   `mapstructure:"upstream"`
+	Methods    []string `mapstructure:"methods"`
+	Access     string   `mapstructure:"access"`
+	Scope      string   `mapstructure:"scope"`
+	PathSuffix string   `mapstructure:"path_suffix"`
+	Tool       string   `mapstructure:"tool"`
+	Type       string   `mapstructure:"type"`
+	RateLimit  *struct {
 		RPS   int `mapstructure:"rps"`
 		Burst int `mapstructure:"burst"`
 	} `mapstructure:"rate_limit"`
@@ -34,6 +38,8 @@ type Config struct {
 	ListenAddr       string          `mapstructure:"listen_addr"`
 	Routes           []RouteConfig   `mapstructure:"routes"`
 	JWTPublicKeyPath string          `mapstructure:"jwt_public_key_path"`
+	JWTIssuer        string          `mapstructure:"jwt_issuer"`
+	JWTAPIAudience   string          `mapstructure:"jwt_api_audience"`
 	RateLimit        RateLimitConfig `mapstructure:"rate_limit"`
 }
 
@@ -78,6 +84,14 @@ func LoadConfig(configPath, routesDir string) (Config, error) {
 
 	if envPub := envx.String("JWT_PUBLIC_KEY_PATH", ""); envPub != "" {
 		cfg.JWTPublicKeyPath = envPub
+	}
+	cfg.JWTIssuer = envx.String("JWT_ISSUER", cfg.JWTIssuer)
+	if cfg.JWTIssuer == "" {
+		cfg.JWTIssuer = authx.DefaultIssuer
+	}
+	cfg.JWTAPIAudience = envx.String("JWT_API_AUDIENCE", cfg.JWTAPIAudience)
+	if cfg.JWTAPIAudience == "" {
+		cfg.JWTAPIAudience = authx.AudienceAPI
 	}
 
 	return cfg, nil

@@ -1,6 +1,9 @@
 package http
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -37,6 +40,7 @@ func (s *Server) handleGroupsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGroupsCreate(w http.ResponseWriter, r *http.Request) {
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	var req groupCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -47,7 +51,27 @@ func (s *Server) handleGroupsCreate(w http.ResponseWriter, r *http.Request) {
 	if slug == "" {
 		slug = slugify(name)
 	}
-	group := &dbinfra.Group{Name: name, Slug: slug, Description: strings.TrimSpace(req.Description)}
+	requestHash := groupRequestHash(name, slug, req)
+	if idempotencyKey != "" {
+		if existing, err := s.repo.GetGroupByIdempotencyKey(r.Context(), idempotencyKey); err == nil {
+			if existing.IdempotencyHash != requestHash {
+				writeError(w, http.StatusConflict, "idempotency key belongs to a different request")
+				return
+			}
+			view, viewErr := s.repo.GetGroupView(r.Context(), existing.ID)
+			if viewErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to load group")
+				return
+			}
+			writeJSON(w, http.StatusOK, view)
+			return
+		}
+	}
+	var idempotencyKeyValue *string
+	if idempotencyKey != "" {
+		idempotencyKeyValue = &idempotencyKey
+	}
+	group := &dbinfra.Group{Name: name, Slug: slug, Description: strings.TrimSpace(req.Description), IdempotencyKey: idempotencyKeyValue, IdempotencyHash: requestHash}
 	if req.Meta != nil {
 		b, err := encodeJSONB(req.Meta)
 		if err != nil {
@@ -57,6 +81,19 @@ func (s *Server) handleGroupsCreate(w http.ResponseWriter, r *http.Request) {
 		group.Meta = b
 	}
 	if err := s.repo.CreateGroup(r.Context(), group); err != nil {
+		if idempotencyKey != "" {
+			if existing, lookupErr := s.repo.GetGroupByIdempotencyKey(r.Context(), idempotencyKey); lookupErr == nil {
+				if existing.IdempotencyHash != requestHash {
+					writeError(w, http.StatusConflict, "idempotency key belongs to a different request")
+					return
+				}
+				view, viewErr := s.repo.GetGroupView(r.Context(), existing.ID)
+				if viewErr == nil {
+					writeJSON(w, http.StatusOK, view)
+					return
+				}
+			}
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -72,6 +109,18 @@ func (s *Server) handleGroupsCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	s.emit("ers.group.created", "group", group.ID)
 	writeJSON(w, http.StatusCreated, view)
+}
+
+func groupRequestHash(name, slug string, req groupCreateRequest) string {
+	encoded, _ := json.Marshal(struct {
+		Name        string         `json:"name"`
+		Slug        string         `json:"slug"`
+		Description string         `json:"description"`
+		DeviceIDs   []string       `json:"device_ids"`
+		Meta        map[string]any `json:"meta"`
+	}{name, slug, strings.TrimSpace(req.Description), req.DeviceIDs, req.Meta})
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
 }
 
 func (s *Server) handleGroupsGet(w http.ResponseWriter, r *http.Request) {

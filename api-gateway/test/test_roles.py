@@ -37,8 +37,9 @@ def login(auth_prefix, email, password):
     if r.status_code != 200:
         pytest.skip("Admin login not available")
     data = r.json()
-    if "access_token" in data:
-        return data["access_token"]
+    token = r.cookies.get("auth_token")
+    if token:
+        return token
     if data.get("2fa_required"):
         pytest.skip("2FA required for admin account")
     raise RuntimeError("Unexpected login response")

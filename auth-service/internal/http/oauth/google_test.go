@@ -5,14 +5,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 )
 
 type fakeGoogleAuthService struct {
-	validateCalled     bool
-	exchangeCalled     bool
-	issueAccessCalled  bool
-	issueRefreshCalled bool
+	validateCalled       bool
+	exchangeCalled       bool
+	issueTokenPairCalled bool
 }
 
 func (f *fakeGoogleAuthService) ValidateOAuthState(state string) error {
@@ -25,14 +25,9 @@ func (f *fakeGoogleAuthService) ExchangeGoogleOAuthCode(code, redirectURI string
 	return &clientsinfra.GoogleUserInfo{ID: "google-123", Email: "locked@example.com"}, nil
 }
 
-func (f *fakeGoogleAuthService) IssueAccessToken(user *clientsinfra.User) (string, error) {
-	f.issueAccessCalled = true
-	return "access", nil
-}
-
-func (f *fakeGoogleAuthService) IssueRefreshToken(userID string) (string, error) {
-	f.issueRefreshCalled = true
-	return "refresh", nil
+func (f *fakeGoogleAuthService) IssueTokenPair(user *clientsinfra.User) (*authdomain.TokenPair, error) {
+	f.issueTokenPairCalled = true
+	return &authdomain.TokenPair{AccessToken: "access", RefreshToken: "refresh"}, nil
 }
 
 type fakeGoogleUserService struct {
@@ -75,7 +70,7 @@ func TestHandleOAuthGoogleCallback_BlocksLockedUser(t *testing.T) {
 	if !authSvc.validateCalled || !authSvc.exchangeCalled {
 		t.Fatalf("expected oauth state validate + exchange to be called")
 	}
-	if authSvc.issueAccessCalled || authSvc.issueRefreshCalled {
+	if authSvc.issueTokenPairCalled {
 		t.Fatalf("did not expect tokens to be issued for locked user")
 	}
 }

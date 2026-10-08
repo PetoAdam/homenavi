@@ -32,6 +32,7 @@ mkdir -p "$OUT_DIR"
 
 private_key="$OUT_DIR/jwt_private.pem"
 public_key="$OUT_DIR/jwt_public.pem"
+totp_key="$OUT_DIR/totp_encryption.key"
 
 if [[ ! -f "$private_key" || ! -f "$public_key" ]]; then
   rm -f "$private_key" "$public_key"
@@ -40,4 +41,14 @@ if [[ ! -f "$private_key" || ! -f "$public_key" ]]; then
   echo "Generated JWT keypair in $OUT_DIR"
 else
   echo "JWT keypair already present in $OUT_DIR"
+fi
+
+if [[ ! -s "$totp_key" ]]; then
+  umask 077
+  tmp_key="$totp_key.tmp"
+  openssl rand -base64 32 > "$tmp_key"
+  mv "$tmp_key" "$totp_key"
+  echo "Generated TOTP encryption key in $OUT_DIR"
+else
+  echo "TOTP encryption key already present in $OUT_DIR"
 fi

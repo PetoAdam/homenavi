@@ -1,5 +1,3 @@
-import { onAuthCookieChange } from '../authCookie';
-
 const GLOBAL_KEY = '__homenaviSharedWebSockets__';
 
 function getStore() {
@@ -32,9 +30,6 @@ class SharedWebSocket {
 
     this.messageListeners = new Set();
     this.statusListeners = new Set();
-    this.unsubscribeAuthCookieChange = onAuthCookieChange(() => {
-      this.reconnect('auth-cookie-changed');
-    });
   }
 
   _emitStatus(next, detail) {

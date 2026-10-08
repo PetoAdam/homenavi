@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+import requests
 
 
 def _signup_payload(email: str, username: str, password: str):
@@ -17,10 +18,20 @@ def _login_start(session, auth_prefix: str, email: str, password: str):
     return session.post(f"{auth_prefix}/login/start", json={"email": email, "password": password}, timeout=2.0)
 
 
+def _refresh(auth_prefix: str, refresh_token: str):
+    return requests.post(
+        f"{auth_prefix}/refresh",
+        cookies={"homenavi_refresh_token": refresh_token},
+        timeout=2.0,
+    )
+
+
 def _require_non_2fa_tokens(resp):
     data = resp.json()
-    if "access_token" in data:
-        return data["access_token"], data.get("refresh_token", "")
+    access_token = resp.cookies.get("auth_token")
+    refresh_token = resp.cookies.get("homenavi_refresh_token")
+    if access_token and refresh_token:
+        return access_token, refresh_token
     if data.get("2fa_required"):
         pytest.skip("2FA required; skipping non-interactive auth flow test")
     raise AssertionError(f"Unexpected login response: {data}")
@@ -66,17 +77,28 @@ def test_login_refresh_logout_flow(session, auth_prefix, users_prefix):
     r = session.get(f"{auth_prefix}/me", headers=headers, timeout=2.0)
     assert r.status_code == 200, r.text
 
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
+    r = _refresh(auth_prefix, refresh_token)
     assert r.status_code == 200, r.text
-    new_tokens = r.json()
-    assert new_tokens.get("access_token")
-    assert new_tokens.get("refresh_token")
+    new_access_token = r.cookies.get("auth_token")
+    new_refresh_token = r.cookies.get("homenavi_refresh_token")
+    assert new_access_token
+    assert new_refresh_token
 
-    # Logout should invalidate refresh
+    # Replaying a consumed refresh token revokes its entire replacement family.
+    r = _refresh(auth_prefix, refresh_token)
+    assert r.status_code == 401, r.text
+    r = _refresh(auth_prefix, new_refresh_token)
+    assert r.status_code == 401, r.text
+
+    # Replay revokes the session, invalidating the already-issued access token.
+    r = session.get(f"{auth_prefix}/me", headers=headers, timeout=2.0)
+    assert r.status_code == 401, r.text
+
+    # Authenticated logout also rejects the now-revoked access token.
     r = session.post(f"{auth_prefix}/logout", json={"refresh_token": refresh_token}, headers=headers, timeout=2.0)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 401, r.text
 
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
+    r = _refresh(auth_prefix, refresh_token)
     assert r.status_code == 401, r.text
 
     # /me with invalid token should 401

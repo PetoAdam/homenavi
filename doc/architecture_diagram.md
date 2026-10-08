@@ -13,7 +13,7 @@ This repo is easiest to understand as eight planes:
 - **Observability plane**: Prometheus + Jaeger
 
 The diagram below intentionally keeps the marketplace API out of the core plane and shows the integration runtime as a separate boundary between first-party services and third-party containers.
-For core app traffic, HTTPS and WSS requests always traverse Browser -> Nginx -> API Gateway before reaching internal core services.
+For core app traffic, HTTPS and WSS requests always traverse Browser -> Nginx -> API Gateway before reaching internal core services. MCP clients likewise reach `mcp-service` only through the gateway; MCP domain operations re-enter the gateway with a short-lived delegated token rather than calling domain services directly.
 
 ## High-level system diagram
 
@@ -22,6 +22,7 @@ flowchart LR
   %% Client plane
   subgraph Client["Client plane"]
     Browser["Frontend PWA (Browser)"]
+    MCPClient["MCP client"]
   end
 
   %% Ingress / core control plane
@@ -30,6 +31,7 @@ flowchart LR
     Gateway["API Gateway"]
 
     Auth["Auth Service"]
+    MCP["MCP Service\n(OAuth-protected tools)"]
     User["User Service"]
     Dashboard["Dashboard Service"]
     DeviceHub["Device Hub"]
@@ -93,6 +95,8 @@ flowchart LR
   %% Consistent ingress chain
   Browser -->|HTTPS and WSS| Nginx
   Nginx -->|/api and /ws| Gateway
+  MCPClient -->|HTTPS /mcp| Nginx
+  Nginx -->|/mcp| Gateway
   Nginx -->|/integrations| IntegrationProxy
 
   %% Marketplace access (separate stack)
@@ -102,6 +106,7 @@ flowchart LR
 
   %% Gateway fan-out to core services
   Gateway -->|REST auth routes| Auth
+  Gateway -->|Streamable HTTP /mcp| MCP
   Gateway -->|REST user routes| User
   Gateway -->|REST dashboard routes| Dashboard
   Gateway -->|REST ers routes| ERS
@@ -116,6 +121,8 @@ flowchart LR
   Auth -->|HTTP user profile and admin lookups| User
   Auth -->|HTTP send verification and 2FA emails| Email
   Auth -->|HTTP avatar upload and read| ProfilePic
+  MCP -->|OAuth discovery and token exchange| Auth
+  MCP -->|delegated /api/mcp/* requests| Gateway
   Automation -->|HTTP user resolution| User
   Automation -->|HTTP notify email| Email
   Automation -->|HTTP integration steps and registry| IntegrationProxy
@@ -191,6 +198,7 @@ flowchart LR
 | nginx | Single ingress for core stack (HTTPS/WSS reverse proxy) | HTTPS/WSS from browser | api-gateway, integration-proxy, frontend static assets |
 | api-gateway | Authn/authz edge, route dispatch, WS and MQTT-over-WS upgrade | `/api/*`, `/ws/*` | auth-service, user-service, dashboard-service, device-hub, history-service, automation-service, entity-registry-service, weather-service, echo-service, EMQX |
 | auth-service | Login/session/token lifecycle, OAuth start/callback, 2FA and lockout policy | REST via gateway | user-service, email-service, profile-picture-service, Redis, Postgres |
+| mcp-service | OAuth-protected Streamable HTTP MCP tools, scope enforcement, confirmed controls, and request audit | `/mcp` via gateway | auth-service token exchange, device-hub, ERS, history-service, automation-service |
 | user-service | User identity/profile/role storage and admin operations | REST via gateway and internal callers | Postgres |
 | dashboard-service | Dashboard/widget persistence, integration widget catalog aggregation | REST via gateway | integration-proxy registry, Postgres, optional Redis cache |
 | device-hub | HDP command API, normalized command lifecycle, realtime device state projection | REST via gateway, MQTT HDP topics | EMQX, Postgres |

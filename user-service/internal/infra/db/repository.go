@@ -31,7 +31,7 @@ func New(cfg Config, logger *slog.Logger) (*Repository, error) {
 	for i := 0; i < 30; i++ {
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 		if err == nil {
-			if err = db.AutoMigrate(&userRow{}, &emailVerificationRow{}); err == nil {
+			if err = db.AutoMigrate(&userRow{}, &emailVerificationRow{}, &recoveryCodeRow{}); err == nil {
 				break
 			}
 		}
@@ -123,6 +123,26 @@ func (r *Repository) UpdateFields(ctx context.Context, id uuid.UUID, fields map[
 
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return normalizeError(r.db.WithContext(ctx).Delete(&userRow{}, id).Error)
+}
+
+func (r *Repository) ReplaceRecoveryCodes(ctx context.Context, id uuid.UUID, codeHashes []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", id).Delete(&recoveryCodeRow{}).Error; err != nil {
+			return err
+		}
+		codes := make([]recoveryCodeRow, 0, len(codeHashes))
+		for _, codeHash := range codeHashes {
+			codes = append(codes, recoveryCodeRow{UserID: id, CodeHash: codeHash})
+		}
+		return tx.Create(&codes).Error
+	})
+}
+
+func (r *Repository) ConsumeRecoveryCode(ctx context.Context, id uuid.UUID, codeHash string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&recoveryCodeRow{}).
+		Where("user_id = ? AND code_hash = ? AND used_at IS NULL", id, codeHash).
+		Update("used_at", time.Now().UTC())
+	return result.RowsAffected == 1, result.Error
 }
 
 func (r *Repository) ensureDefaultAdmin() error {

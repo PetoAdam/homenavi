@@ -1,11 +1,11 @@
 package oauth
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
+	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	authhandlers "github.com/PetoAdam/homenavi/auth-service/internal/http/auth"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 )
@@ -13,8 +13,7 @@ import (
 type googleAuthService interface {
 	ValidateOAuthState(state string) error
 	ExchangeGoogleOAuthCode(code, redirectURI string) (*clientsinfra.GoogleUserInfo, error)
-	IssueAccessToken(user *clientsinfra.User) (string, error)
-	IssueRefreshToken(userID string) (string, error)
+	IssueTokenPair(user *clientsinfra.User) (*authdomain.TokenPair, error)
 }
 
 type googleUserService interface {
@@ -98,18 +97,14 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 			http.Redirect(w, r, "/?error=email_conflict", http.StatusTemporaryRedirect)
 			return
 		}
-		// Proceed to token issuance
-		accessToken, err := h.authService.IssueAccessToken(user)
+		// Proceed to session-bound token issuance.
+		tokens, err := h.authService.IssueTokenPair(user)
 		if err != nil {
 			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
 			return
 		}
-		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
-		if err != nil {
-			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
-			return
-		}
-		redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
+		authhandlers.SetSessionCookies(w, r, tokens)
+		redirectURL := "/"
 		slog.Info("oauth google success email path", "user_id", user.ID, "ms", time.Since(started).Milliseconds())
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		return
@@ -124,20 +119,14 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 			redirectOAuthLocked(w, r)
 			return
 		}
-		accessToken, err := h.authService.IssueAccessToken(user)
+		tokens, err := h.authService.IssueTokenPair(user)
 		if err != nil {
 			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
 			return
 		}
 
-		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
-		if err != nil {
-			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
-			return
-		}
-
-		// Redirect back to frontend with tokens
-		redirectURL := "/?access_token=" + accessToken + "&refresh_token=" + refreshToken
+		authhandlers.SetSessionCookies(w, r, tokens)
+		redirectURL := "/"
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		return
 	}
@@ -166,21 +155,15 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 		}
 		// DO NOT override local profile attributes with Google defaults; keep existing first/last/user_name
 
-		// Issue tokens
-		accessToken, err := h.authService.IssueAccessToken(user)
+		// Issue session-bound tokens.
+		tokens, err := h.authService.IssueTokenPair(user)
 		if err != nil {
 			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
 			return
 		}
 
-		refreshToken, err := h.authService.IssueRefreshToken(user.ID)
-		if err != nil {
-			http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
-			return
-		}
-
-		// Redirect back to frontend with tokens
-		redirectURL := "/?access_token=" + accessToken + "&refresh_token=" + refreshToken
+		authhandlers.SetSessionCookies(w, r, tokens)
+		redirectURL := "/"
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		return
 	}
@@ -200,21 +183,15 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Issue tokens for new user
-	accessToken, err := h.authService.IssueAccessToken(user)
+	// Issue session-bound tokens for the new user.
+	tokens, err := h.authService.IssueTokenPair(user)
 	if err != nil {
 		http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
 		return
 	}
 
-	refreshToken, err := h.authService.IssueRefreshToken(user.ID)
-	if err != nil {
-		http.Redirect(w, r, "/?error=token_failed", http.StatusTemporaryRedirect)
-		return
-	}
-
-	// Redirect back to frontend with tokens
-	redirectURL := fmt.Sprintf("/?access_token=%s&refresh_token=%s", accessToken, refreshToken)
+	authhandlers.SetSessionCookies(w, r, tokens)
+	redirectURL := "/"
 	slog.Info("oauth google success", "user_id", user.ID, "ms", time.Since(started).Milliseconds())
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }

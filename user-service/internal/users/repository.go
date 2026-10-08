@@ -15,5 +15,7 @@ type Repository interface {
 	FindByGoogleID(context.Context, string) (User, error)
 	List(context.Context, string, int, int) ([]User, int64, error)
 	UpdateFields(context.Context, uuid.UUID, map[string]any) error
+	ReplaceRecoveryCodes(context.Context, uuid.UUID, []string) error
+	ConsumeRecoveryCode(context.Context, uuid.UUID, string) (bool, error)
 	Delete(context.Context, uuid.UUID) error
 }

@@ -70,16 +70,26 @@ spec:
               apk add --no-cache kubectl openssl >/dev/null
               secret_name={{ include "homenavi.jwtSecretName" . | quote }}
               namespace={{ .Release.Namespace | quote }}
-              if kubectl -n "$namespace" get secret "$secret_name" >/dev/null 2>&1; then
-                echo "JWT secret already exists: $secret_name"
-                exit 0
-              fi
               tmpdir="$(mktemp -d)"
               trap 'rm -rf "$tmpdir"' EXIT
+              if kubectl -n "$namespace" get secret "$secret_name" >/dev/null 2>&1; then
+                if kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.totp_encryption\.key}' | grep -q .; then
+                  echo "JWT and TOTP keys already present: $secret_name"
+                  exit 0
+                fi
+                openssl rand -base64 32 > "$tmpdir/totp_encryption.key"
+                kubectl -n "$namespace" create secret generic "$secret_name" \
+                  --from-file=totp_encryption.key="$tmpdir/totp_encryption.key" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "Added TOTP encryption key to existing secret: $secret_name"
+                exit 0
+              fi
               openssl genrsa -out "$tmpdir/jwt_private.pem" 2048 >/dev/null 2>&1
               openssl rsa -in "$tmpdir/jwt_private.pem" -pubout -out "$tmpdir/jwt_public.pem" >/dev/null 2>&1
+              openssl rand -base64 32 > "$tmpdir/totp_encryption.key"
               kubectl -n "$namespace" create secret generic "$secret_name" \
                 --from-file=jwt_private.pem="$tmpdir/jwt_private.pem" \
                 --from-file=jwt_public.pem="$tmpdir/jwt_public.pem" \
+                --from-file=totp_encryption.key="$tmpdir/totp_encryption.key" \
                 --dry-run=client -o yaml | kubectl apply -f -
 {{- end }}

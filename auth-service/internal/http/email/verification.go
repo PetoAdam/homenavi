@@ -86,7 +86,7 @@ func (h *VerificationHandler) HandleEmailVerifyConfirm(w http.ResponseWriter, r 
 	} else {
 		// Issue a short-lived token for this operation
 		var err error
-		token, err = h.authService.IssueShortLivedToken(req.UserID)
+		token, err = h.authService.IssueServiceToken()
 		if err != nil {
 			errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
 			return

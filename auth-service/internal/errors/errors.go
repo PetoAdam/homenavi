@@ -7,9 +7,9 @@ import (
 )
 
 type AppError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Err     error  `json:"-"`
+	Code    int                    `json:"code"`
+	Message string                 `json:"message"`
+	Err     error                  `json:"-"`
 	Fields  map[string]interface{} `json:"-"`
 }
 
@@ -31,15 +31,21 @@ func NewAppError(code int, message string, err error) *AppError {
 
 // WithField adds a single additional field to be serialized with the error response.
 func (e *AppError) WithField(key string, value interface{}) *AppError {
-	if e.Fields == nil { e.Fields = make(map[string]interface{}) }
+	if e.Fields == nil {
+		e.Fields = make(map[string]interface{})
+	}
 	e.Fields[key] = value
 	return e
 }
 
 // WithFields bulk-adds fields to the error.
 func (e *AppError) WithFields(fields map[string]interface{}) *AppError {
-	if e.Fields == nil { e.Fields = make(map[string]interface{}) }
-	for k,v := range fields { e.Fields[k] = v }
+	if e.Fields == nil {
+		e.Fields = make(map[string]interface{})
+	}
+	for k, v := range fields {
+		e.Fields[k] = v
+	}
 	return e
 }
 
@@ -63,14 +69,27 @@ func InternalServerError(message string, err error) *AppError {
 	return NewAppError(http.StatusInternalServerError, message, err)
 }
 
+func ServiceUnavailable(message string, err error) *AppError {
+	return NewAppError(http.StatusServiceUnavailable, message, err)
+}
+
 func WriteError(w http.ResponseWriter, err *AppError) {
 	w.Header().Set("Content-Type", "application/json")
 	if err.Code == http.StatusLocked {
 		if v, ok := err.Fields["lockout_remaining"]; ok {
 			switch t := v.(type) {
-			case int: if t > 0 { w.Header().Set("Retry-After", strconv.Itoa(t)) }
-			case int64: if t > 0 { w.Header().Set("Retry-After", strconv.FormatInt(t,10)) }
-			case float64: if t > 0 { w.Header().Set("Retry-After", strconv.Itoa(int(t))) }
+			case int:
+				if t > 0 {
+					w.Header().Set("Retry-After", strconv.Itoa(t))
+				}
+			case int64:
+				if t > 0 {
+					w.Header().Set("Retry-After", strconv.FormatInt(t, 10))
+				}
+			case float64:
+				if t > 0 {
+					w.Header().Set("Retry-After", strconv.Itoa(int(t)))
+				}
 			}
 		}
 	}
@@ -79,9 +98,11 @@ func WriteError(w http.ResponseWriter, err *AppError) {
 		"error": err.Message,
 		"code":  err.Code,
 	}
-	for k,v := range err.Fields { // include any supplemental fields
+	for k, v := range err.Fields { // include any supplemental fields
 		// avoid overwriting core keys
-		if k == "error" || k == "code" { continue }
+		if k == "error" || k == "code" {
+			continue
+		}
 		payload[k] = v
 	}
 	json.NewEncoder(w).Encode(payload)

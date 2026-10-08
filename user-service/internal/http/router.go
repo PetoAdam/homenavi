@@ -1,7 +1,6 @@
 package http
 
 import (
-	"crypto/rsa"
 	"net/http"
 
 	sharedobs "github.com/PetoAdam/homenavi/shared/observability"
@@ -11,7 +10,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
-func NewRouter(handler *UsersHandler, promHandler http.Handler, tracer oteltrace.Tracer, pubKey *rsa.PublicKey) http.Handler {
+func NewRouter(handler *UsersHandler, promHandler http.Handler, tracer oteltrace.Tracer, publicKeys auth.RSAPublicKeySet, validation auth.ValidationConfig) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
@@ -27,11 +26,13 @@ func NewRouter(handler *UsersHandler, promHandler http.Handler, tracer oteltrace
 	r.Post("/users/validate", handler.HandleValidate)
 
 	r.Group(func(pr chi.Router) {
-		pr.Use(auth.JWTAuthMiddleware(pubKey))
+		pr.Use(auth.JWTAuthMiddleware(publicKeys, validation))
 		pr.Get("/users/{id}", handler.HandleGet)
 		pr.Get("/users", handler.HandleQuery)
 		pr.Post("/users/{id}/lockout", handler.HandleLockout)
 		pr.Patch("/users/{id}", handler.HandlePatch)
+		pr.Put("/users/{id}/recovery-codes", handler.HandleReplaceRecoveryCodes)
+		pr.Post("/users/{id}/recovery-codes/consume", handler.HandleConsumeRecoveryCode)
 		pr.Delete("/users/{id}", handler.HandleDelete)
 	})
 

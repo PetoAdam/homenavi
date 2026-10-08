@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -220,6 +221,40 @@ func (s *Service) Validate(ctx context.Context, email, password string) (User, e
 	return user, nil
 }
 
+func (s *Service) ReplaceRecoveryCodes(ctx context.Context, actor Actor, id string, codeHashes []string) error {
+	if !isAuthService(actor) || len(codeHashes) == 0 {
+		return ErrForbidden
+	}
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	for _, codeHash := range codeHashes {
+		if len(codeHash) != 64 {
+			return ErrInvalidRecoveryCode
+		}
+	}
+	return s.repo.ReplaceRecoveryCodes(ctx, parsed, codeHashes)
+}
+
+func (s *Service) ConsumeRecoveryCode(ctx context.Context, actor Actor, id, codeHash string) (bool, error) {
+	if !isAuthService(actor) {
+		return false, ErrForbidden
+	}
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return false, err
+	}
+	if len(codeHash) != 64 {
+		return false, ErrInvalidRecoveryCode
+	}
+	return s.repo.ConsumeRecoveryCode(ctx, parsed, codeHash)
+}
+
 func canAccessUser(actor Actor, userID string) bool {
-	return actor.Role == "admin" || actor.Subject == userID
+	return actor.Role == "admin" || actor.Subject == userID || isAuthService(actor)
+}
+
+func isAuthService(actor Actor) bool {
+	return actor.Role == authx.RoleService && actor.Subject == authx.ServicePrincipalAuth
 }

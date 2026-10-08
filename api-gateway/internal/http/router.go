@@ -1,7 +1,6 @@
 package http
 
 import (
-	"crypto/rsa"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -25,13 +24,13 @@ func NewRootRouter(wsRouter, mainRouter http.Handler) http.Handler {
 	return mux
 }
 
-func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) http.Handler {
+func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, publicKeySet apiMiddleware.RSAPublicKeySet) http.Handler {
 	r := chi.NewRouter()
-	registerConfiguredRoutes(r, cfg, redisClient, pubKey)
+	registerConfiguredRoutes(r, cfg, redisClient, publicKeySet)
 	return r
 }
 
-func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey, promHandler http.Handler, tracer oteltrace.Tracer, corsAllowOrigins string) http.Handler {
+func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, publicKeySet apiMiddleware.RSAPublicKeySet, promHandler http.Handler, tracer oteltrace.Tracer, corsAllowOrigins string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -51,7 +50,7 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	registerConfiguredRoutes(r, cfg, redisClient, pubKey)
+	registerConfiguredRoutes(r, cfg, redisClient, publicKeySet)
 
 	r.Get("/api/gateway/routes", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(cfg.Routes)
@@ -67,14 +66,18 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, pubKey
 	return r
 }
 
-func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, pubKey *rsa.PublicKey) {
+func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, publicKeySet apiMiddleware.RSAPublicKeySet) {
+	validation := apiMiddleware.APIValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
+	validation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
+	delegatedValidation := apiMiddleware.DelegatedValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
+	delegatedValidation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {
 		case "websocket", "websocket-mqtt":
-			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeWebSocketProxyHandler(route))
+			h = wrapWithAccessControl(publicKeySet, validation, delegatedValidation, route, proxy.MakeWebSocketProxyHandler(route))
 		default:
-			h = wrapWithAccessControl(pubKey, route.Access, proxy.MakeRestProxyHandler(route))
+			h = wrapWithAccessControl(publicKeySet, validation, delegatedValidation, route, proxy.MakeRestProxyHandler(route))
 		}
 
 		if route.RateLimit != nil {
@@ -95,17 +98,41 @@ func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redi
 	}
 }
 
-func wrapWithAccessControl(pubKey *rsa.PublicKey, access string, next http.Handler) http.Handler {
-	switch access {
+func wrapWithAccessControl(publicKeySet apiMiddleware.RSAPublicKeySet, validation, delegatedValidation apiMiddleware.ValidationConfig, route gateway.RouteConfig, next http.Handler) http.Handler {
+	switch route.Access {
 	case "public":
 		return next
 	case "auth":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(next)
+		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, validation)(next)
 	case "resident":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
+		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, validation)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
 	case "admin":
-		return apiMiddleware.JWTAuthMiddlewareRS256(pubKey)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
+		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, validation)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
+	case "delegated":
+		if strings.TrimSpace(route.Scope) == "" {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"delegated route scope is not configured","code":500}`))
+			})
+		}
+		if suffix := strings.TrimSpace(route.PathSuffix); suffix != "" {
+			next = requirePathSuffix(suffix, next)
+		}
+		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, delegatedValidation)(apiMiddleware.RequireScopeMiddleware(route.Scope)(apiMiddleware.RoleAtLeastMiddleware("resident")(apiMiddleware.DelegatedAuditContextMiddleware(route.Tool)(next))))
 	default:
 		return next
 	}
+}
+
+func requirePathSuffix(suffix string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, suffix) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"not found","code":404}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

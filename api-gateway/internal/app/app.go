@@ -23,9 +23,9 @@ type App struct {
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
-	pubKey, err := apiMiddleware.LoadRSAPublicKey(cfg.JWTPublicKeyPath)
+	publicKeySet, err := apiMiddleware.LoadRSAPublicKeySet(cfg.JWTPublicKeyPaths)
 	if err != nil {
-		return nil, fmt.Errorf("load JWT public key: %w", err)
+		return nil, fmt.Errorf("load JWT public keys: %w", err)
 	}
 
 	redisClient, err := redisx.Connect(context.Background(), cfg.Redis)
@@ -38,8 +38,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		_ = redisClient.Close()
 		return nil, fmt.Errorf("setup observability: %w", err)
 	}
-	wsRouter := httptransport.NewWebSocketRouter(cfg.Gateway, redisClient, pubKey)
-	mainRouter := httptransport.NewMainRouter(cfg.Gateway, redisClient, pubKey, promHandler, tracer, cfg.CORSAllowOrigins)
+	wsRouter := httptransport.NewWebSocketRouter(cfg.Gateway, redisClient, publicKeySet)
+	mainRouter := httptransport.NewMainRouter(cfg.Gateway, redisClient, publicKeySet, promHandler, tracer, cfg.CORSAllowOrigins)
 	root := httptransport.NewRootRouter(wsRouter, mainRouter)
 
 	return &App{

@@ -4,8 +4,9 @@ info:
   version: 0.5.16
   description: |
     HTTP API exposed through the Homenavi API gateway. This document covers the
-    supported public control-plane contract. Event streams are described in
-    doc/asyncapi.yaml.
+    supported public control-plane contract, including MCP resource discovery and
+    OAuth protocol entry points. MCP tool scopes and delegated gateway routes are
+    described in doc/mcp.md. Event streams are described in doc/asyncapi.yaml.
 servers:
   - url: /
     description: Current deployment ingress origin
@@ -16,10 +17,37 @@ security:
 tags:
   - name: Gateway
   - name: Authentication
+  - name: MCP
   - name: Devices
   - name: History
   - name: Automation
 paths:
+  /.well-known/oauth-protected-resource:
+    get:
+      tags: [MCP]
+      security: []
+      operationId: getMCPProtectedResourceMetadata
+      description: Publishes OAuth protected-resource metadata for the public `/mcp` endpoint.
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+  /.well-known/oauth-authorization-server/api/auth:
+    get:
+      tags: [MCP]
+      security: []
+      operationId: getOAuthAuthorizationServerMetadata
+      description: Publishes OAuth authorization-server metadata, including PKCE and dynamic client registration support.
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+  /mcp:
+    post:
+      tags: [MCP]
+      security: []
+      operationId: invokeMCP
+      description: Streamable HTTP MCP endpoint. Authorization and tool scopes are described in `doc/mcp.md`.
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /health:
     get:
       tags: [Gateway]
@@ -97,6 +125,74 @@ paths:
       operationId: logout
       responses:
         '200': { $ref: '#/components/responses/JSONSuccess' }
+  /api/auth/oauth/jwks.json:
+    get:
+      tags: [Authentication]
+      security: []
+      operationId: getJSONWebKeySet
+      description: Public JSON Web Key Set used to verify Homenavi-issued JWTs.
+      responses:
+        '200':
+          description: Active and overlap JWT verification keys.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "public, max-age=300" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      required: [kty, use, alg, kid, n, e]
+                      properties:
+                        kty: { type: string, example: RSA }
+                        use: { type: string, example: sig }
+                        alg: { type: string, example: RS256 }
+                        kid: { type: string }
+                        n: { type: string }
+                        e: { type: string, example: AQAB }
+        '503': { description: No active signing key is available. }
+  /api/auth/oauth/authorize:
+    get:
+      tags: [MCP]
+      security: []
+      operationId: authorizeMCPClient
+      description: Starts the OAuth Authorization Code with PKCE flow for an MCP client.
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '302': { description: Redirect to the validated client redirect URI after approval. }
+    post:
+      tags: [MCP]
+      security: []
+      operationId: submitMCPAuthorization
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+  /api/auth/oauth/token:
+    post:
+      tags: [MCP]
+      security: []
+      operationId: exchangeMCPToken
+      description: Exchanges an authorization code for an MCP token or, for mcp-service only, exchanges an MCP token for a one-scope delegated gateway token.
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/oauth/register:
+    post:
+      tags: [MCP]
+      security: []
+      operationId: registerMCPClient
+      description: Dynamically registers a public MCP client with validated redirect URIs.
+      requestBody: { $ref: '#/components/requestBodies/GenericObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
   /api/auth/me:
     get:
       tags: [Authentication]

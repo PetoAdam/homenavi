@@ -32,16 +32,14 @@ export async function login(email, password) {
   if (d['2fa_required']) {
     return { success: true, twoFA: true, userId: d.user_id, type: d['2fa_type'] };
   }
-  if (d.access_token) setHttpAccessToken(d.access_token);
-  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
+  return { success: true, twoFA: false };
 }
 
 export async function finish2FA(userId, code) {
   const res = await http.post(`${AUTH_BASE}/login/finish`, { user_id: userId, code });
   if (!res.success) return { success: false, error: res.error };
   const d = res.data || {};
-  if (d.access_token) setHttpAccessToken(d.access_token);
-  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
+  return { success: true };
 }
 
 export async function signup(firstName, lastName, userName, email, password) {
@@ -56,17 +54,14 @@ export async function signup(firstName, lastName, userName, email, password) {
   return { success: true, user: res.data };
 }
 
-export async function refreshToken(refreshToken) {
-  const res = await http.post(`${AUTH_BASE}/refresh`, { refresh_token: refreshToken });
+export async function refreshToken() {
+  const res = await http.post(`${AUTH_BASE}/refresh`, {});
   if (!res.success) return { success: false, error: res.error };
-  const d = res.data || {};
-  if (d.access_token) setHttpAccessToken(d.access_token);
-  return { success: true, accessToken: d.access_token, refreshToken: d.refresh_token };
+  return { success: true };
 }
 
-export async function logout(refreshToken, accessToken) {
-  if (!refreshToken) { setHttpAccessToken(null); return { success: true }; }
-  const res = await http.post(`${AUTH_BASE}/logout`, { refresh_token: refreshToken }, { token: accessToken });
+export async function logout() {
+  const res = await http.post(`${AUTH_BASE}/logout`, {});
   setHttpAccessToken(null);
   return res;
 }
@@ -87,17 +82,17 @@ export async function confirmEmailVerify(userId, code, accessToken) {
 }
 
 // 2FA flows
-export async function request2FAEmail(userId, accessToken) {
-  return await http.post(`${AUTH_BASE}/2fa/email/request`, { user_id: userId }, { token: accessToken });
+export async function request2FAEmail(accessToken) {
+  return await http.post(`${AUTH_BASE}/2fa/email/request`, {}, { token: accessToken });
 }
-export async function verify2FAEmail(userId, code, accessToken) {
-  return await http.post(`${AUTH_BASE}/2fa/email/verify`, { user_id: userId, code }, { token: accessToken });
+export async function verify2FAEmail(code, accessToken) {
+  return await http.post(`${AUTH_BASE}/2fa/email/verify`, { code }, { token: accessToken });
 }
-export async function setup2FATOTP(userId, accessToken) {
-  return await http.post(`${AUTH_BASE}/2fa/setup`, {}, { token: accessToken, params: { user_id: userId } });
+export async function setup2FATOTP(accessToken) {
+  return await http.post(`${AUTH_BASE}/2fa/setup`, {}, { token: accessToken });
 }
-export async function verify2FATOTP(userId, code, accessToken) {
-  return await http.post(`${AUTH_BASE}/2fa/verify`, { user_id: userId, code }, { token: accessToken });
+export async function verify2FATOTP(code, accessToken) {
+  return await http.post(`${AUTH_BASE}/2fa/verify`, { code }, { token: accessToken });
 }
 
 // Password management

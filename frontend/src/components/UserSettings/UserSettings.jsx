@@ -5,6 +5,8 @@ import {
   confirmEmailVerify,
   request2FAEmail,
   verify2FAEmail,
+  setup2FATOTP,
+  verify2FATOTP,
   changePassword,
   patchUser as patchUserService,
   generateAvatar,
@@ -24,6 +26,9 @@ export default function UserSettings({ onClose }) {
     status,
     emailCode,
     twoFACode,
+    twoFAMethod,
+    totpQRCodeDataURL,
+    recoveryCodes,
     showEmailCodeInput,
     show2FACodeInput,
     editingProfile,
@@ -76,11 +81,22 @@ export default function UserSettings({ onClose }) {
   };
 
   const handle2FASetup = async () => {
-    if (!user?.id) return;
     setStateField('status', 'Setting up 2FA...');
-    const resp = await request2FAEmail(user.id, accessToken);
+    const resp = twoFAMethod === 'totp'
+      ? await setup2FATOTP(accessToken)
+      : await request2FAEmail(accessToken);
     if (resp.success) {
-      setStateField('status', 'Check your email for the 2FA code.');
+      if (twoFAMethod === 'totp') {
+        const qrCodeDataURL = resp.data?.qr_code_data_url;
+        if (!qrCodeDataURL) {
+          setStateField('status', 'Failed to prepare authenticator setup.');
+          return;
+        }
+        setStateField('totpQRCodeDataURL', qrCodeDataURL);
+        setStateField('status', 'Scan the QR code with your authenticator app, then enter its code.');
+      } else {
+        setStateField('status', 'Check your email for the 2FA code.');
+      }
       setStateField('show2FACodeInput', true);
     } else {
       setStateField('status', '❌ ' + (resp.error || 'Failed to setup 2FA'));
@@ -88,13 +104,17 @@ export default function UserSettings({ onClose }) {
   };
 
   const handle2FAVerify = async () => {
-    if (!user?.id || !twoFACode.trim()) return;
+    if (!twoFACode.trim()) return;
     setStateField('status', 'Verifying 2FA...');
-    const resp = await verify2FAEmail(user.id, twoFACode.trim(), accessToken);
+    const resp = twoFAMethod === 'totp'
+      ? await verify2FATOTP(twoFACode.trim(), accessToken)
+      : await verify2FAEmail(twoFACode.trim(), accessToken);
     if (resp.success) {
       setStateField('status', '✅ 2FA enabled successfully!');
+      setStateField('recoveryCodes', Array.isArray(resp.data?.recovery_codes) ? resp.data.recovery_codes : []);
       setStateField('twoFACode', '');
       setStateField('show2FACodeInput', false);
+      setStateField('totpQRCodeDataURL', '');
       // Refresh user data from backend to get updated two_factor_enabled status
       await refreshUser();
     } else {
@@ -346,15 +366,35 @@ export default function UserSettings({ onClose }) {
               </span>
             </div>
             
+            {!twoFAEnabled && !show2FACodeInput && (
+              <div className="user-settings-input-group">
+                <label htmlFor="two-fa-method">Method</label>
+                <select
+                  id="two-fa-method"
+                  value={twoFAMethod}
+                  onChange={e => setStateField('twoFAMethod', e.target.value)}
+                >
+                  <option value="totp">Authenticator app</option>
+                  <option value="email">Email code</option>
+                </select>
+              </div>
+            )}
+
             <button onClick={handle2FASetup} disabled={twoFAEnabled || show2FACodeInput}>
-              {twoFAEnabled ? '2FA Enabled' : show2FACodeInput ? 'Code Sent' : 'Enable 2FA'}
+              {twoFAEnabled ? '2FA Enabled' : show2FACodeInput ? 'Setup in progress' : 'Enable 2FA'}
             </button>
             
             {show2FACodeInput && !twoFAEnabled && (
               <div className="user-settings-input-group">
+                {twoFAMethod === 'totp' && totpQRCodeDataURL && (
+                  <img className="two-fa-qr-code" src={totpQRCodeDataURL} alt="Authenticator app setup QR code" />
+                )}
                 <input 
                   type="text" 
-                  placeholder="Enter 2FA code" 
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="Enter six-digit code"
                   value={twoFACode}
                   onChange={e => setStateField('twoFACode', e.target.value)}
                 />
@@ -370,6 +410,15 @@ export default function UserSettings({ onClose }) {
                 status.includes('❌') ? 'error' : ''
               }`}>
                 {status}
+              </div>
+            )}
+
+            {recoveryCodes.length > 0 && (
+              <div className="recovery-codes" role="status">
+                <strong>Recovery codes</strong>
+                <div className="recovery-code-list">
+                  {recoveryCodes.map((code) => <code key={code}>{code}</code>)}
+                </div>
               </div>
             )}
             
