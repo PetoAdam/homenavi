@@ -70,14 +70,15 @@ def test_login_refresh_logout_flow(session, auth_prefix, users_prefix):
 
     r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
     assert r.status_code == 200, r.text
-    new_tokens = r.json()
-    assert new_tokens.get("access_token")
-    assert new_tokens.get("refresh_token")
+    new_access_token = r.cookies.get("auth_token")
+    new_refresh_token = r.cookies.get("homenavi_refresh_token")
+    assert new_access_token
+    assert new_refresh_token
 
     # Replaying a consumed refresh token revokes its entire replacement family.
     r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
     assert r.status_code == 401, r.text
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": new_tokens["refresh_token"]}, timeout=2.0)
+    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": new_refresh_token}, timeout=2.0)
     assert r.status_code == 401, r.text
 
     # Replay revokes the session, invalidating the already-issued access token.
