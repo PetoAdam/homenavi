@@ -8,6 +8,31 @@ MCP access uses dynamically registered public clients with validated loopback or
 
 When the browser already has a valid Homenavi web session, the authorization page opens directly at the consent view. A missing or expired web session requires normal Homenavi sign-in and any configured 2FA challenge. Consent grants are bound to the client, resource, and requested scopes, expire after 30 days, and can be revoked through `DELETE /api/auth/oauth/consents/{clientID}` with the user's API bearer token.
 
+### Connection Policy
+
+`POST /api/auth/oauth/register` dynamically registers public MCP clients. Redirect URIs must be a loopback URI or an approved VS Code URI; the authorization-server metadata at `/.well-known/oauth-authorization-server/api/auth` advertises the registration, authorization, token, and JWKS endpoints. Residents and admins use the same tool policy: a tool is available only when its OAuth scope is granted. An admin role does not silently expand the consented scope set.
+
+The OAuth resource is the public `/mcp` URL and is the audience of an MCP access token. When `MCP_RESOURCE_URI` is unset, mcp-service derives that URL from the request's public host and forwarded scheme. This lets Compose and Helm work without MCP-specific host configuration while keeping consent and token audiences bound to the actual public endpoint.
+
+```mermaid
+sequenceDiagram
+	participant C as MCP client
+	participant G as API gateway
+	participant M as mcp-service
+	participant A as auth-service
+	participant D as domain service
+
+	C->>G: Discover resource metadata and call /mcp
+	G->>M: Proxy MCP request
+	M->>A: Exchange MCP token for one delegated scope
+	A-->>M: Two-minute delegated API token
+	M->>G: Call /api/mcp/* with delegated token
+	G->>D: Authorize, audit, and proxy internal request
+	D-->>G: Result
+	G-->>M: Result
+	M-->>C: MCP tool result
+```
+
 ## Tool Surface
 
 Tools are advertised only when their OAuth scope is granted and the optional `MCP_ENABLED_TOOLS` allowlist permits them.
@@ -28,6 +53,24 @@ Write tools are deliberately narrow. Each requires an `idempotency_key` of at le
 Pairing, automation editing, dashboard changes, and user changes remain unavailable through MCP.
 
 The original MCP bearer token is never forwarded to internal domain services. Auth-service is the only direct MCP dependency and is used solely for OAuth and token exchange.
+
+## Delegated Gateway Routes
+
+MCP domain operations are not a general external REST API. mcp-service is their only caller and obtains a distinct two-minute token with `typ=homenavi-delegated`, the API-gateway audience, and exactly one requested scope. The gateway rejects raw MCP tokens, browser API tokens, expired or revoked sessions, non-resident roles, and missing scopes. The requested delegated scope must already be present on the MCP token.
+
+| MCP capability | Gateway route | Delegated scope |
+| --- | --- | --- |
+| Device, integration, and pairing reads | `GET /api/mcp/hdp/devices*`, `/integrations`, `/pairings` | `home.devices.read` |
+| Rooms and device-group reads | `GET /api/mcp/ers/rooms/`, `/groups/*` | `home.inventory.read` |
+| Device-group state | Device-group read plus device reads | `home.inventory.read` and `home.devices.read` |
+| Historical state | `GET /api/mcp/history/state` | `home.history.read` |
+| Device command and online-target preflight | `GET /api/mcp/hdp/device-command-targets/*`; `POST|PATCH /api/mcp/hdp/devices/*/commands` | `home.devices.write` |
+| Device-group command | Group read plus device command | `home.inventory.read` and `home.devices.write` |
+| Group creation | `POST /api/mcp/ers/group-creates` | `home.inventory.write` |
+| Workflow reads | `GET /api/mcp/automation/workflows*` | `home.automation.read` |
+| Workflow run | `POST /api/mcp/automation/workflows/*/run` | `home.automation.execute` |
+
+For the full trust-boundary diagram and token contract, see [MCP Gateway Delegation Plan](mcp_gateway_delegation_plan.md).
 
 ## Planned Account Connection Removal
 

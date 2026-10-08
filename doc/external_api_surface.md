@@ -14,6 +14,8 @@ In the default `docker-compose.yml` config, clients primarily talk to **nginx** 
 - `http://<host>/` → Frontend SPA (container `frontend`)
 - `http://<host>/api/...` → API Gateway (container `api-gateway`)
 - `ws(s)://<host>/ws/...` → API Gateway websocket reverse-proxy (Upgrade)
+- `https://<host>/mcp` → OAuth-protected Streamable HTTP MCP endpoint through API Gateway
+- `https://<host>/.well-known/oauth-protected-resource` → MCP protected-resource metadata
 
 Notes:
 - The SPA is built from `Frontend/` (capital F). (Case matters on Linux/CI.)
@@ -63,6 +65,32 @@ Authenticated:
 - `POST /api/auth/profile/upload-url`
 - `POST /api/auth/profile/upload-complete`
 - `POST /api/auth/profile/upload` (multipart)
+
+OAuth and MCP authorization:
+- `GET /.well-known/oauth-authorization-server/api/auth` publishes authorization-server metadata.
+- `GET|POST /api/auth/oauth/authorize` begins or completes Authorization Code + PKCE consent.
+- `POST /api/auth/oauth/register` dynamically registers a public MCP client. Redirect URIs are restricted to loopback or approved VS Code URIs.
+- `POST /api/auth/oauth/token` exchanges an authorization code for an MCP token. mcp-service also uses this endpoint with `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, a bearer MCP token, gateway resource, and one scope to obtain a delegated token.
+- `GET /api/auth/oauth/jwks.json` publishes signing keys.
+- `POST /api/auth/oauth/consents` and `DELETE /api/auth/oauth/consents/{clientID}` manage authenticated user consent.
+
+### MCP (`mcp-service`)
+
+- `GET /.well-known/oauth-protected-resource` publishes protected-resource metadata for the public `/mcp` URL.
+- `POST /mcp` is the Streamable HTTP MCP endpoint. It requires a resident or admin MCP token after initialization; supported tools and scopes are documented in [MCP](mcp.md).
+
+MCP domain calls use the following dedicated gateway routes. They are not browser API endpoints: `access: delegated` requires a short-lived `homenavi-delegated` token with the API-gateway audience, an active resident/admin session, and the route's exact scope. Raw MCP and browser API tokens are rejected.
+
+| Route family | Methods | Scope |
+| --- | --- | --- |
+| `/api/mcp/hdp/devices`, `/api/mcp/hdp/devices/*`, `/api/mcp/hdp/integrations`, `/api/mcp/hdp/pairings` | `GET` | `home.devices.read` |
+| `/api/mcp/ers/rooms/`, `/api/mcp/ers/groups/*` | `GET` | `home.inventory.read` |
+| `/api/mcp/history/state` | `GET` | `home.history.read` |
+| `/api/mcp/hdp/device-command-targets/*` | `GET` | `home.devices.write` |
+| `/api/mcp/hdp/devices/*/commands` | `POST`, `PATCH` | `home.devices.write` |
+| `/api/mcp/ers/group-creates` | `POST` | `home.inventory.write` |
+| `/api/mcp/automation/workflows*` | `GET` | `home.automation.read` |
+| `/api/mcp/automation/workflows/*/run` | `POST` | `home.automation.execute` |
 
 Public profile picture access:
 - `GET /api/profile-pictures/users/{user_id}`

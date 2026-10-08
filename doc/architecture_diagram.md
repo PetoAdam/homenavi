@@ -13,7 +13,7 @@ This repo is easiest to understand as eight planes:
 - **Observability plane**: Prometheus + Jaeger
 
 The diagram below intentionally keeps the marketplace API out of the core plane and shows the integration runtime as a separate boundary between first-party services and third-party containers.
-For core app traffic, HTTPS and WSS requests always traverse Browser -> Nginx -> API Gateway before reaching internal core services.
+For core app traffic, HTTPS and WSS requests always traverse Browser -> Nginx -> API Gateway before reaching internal core services. MCP clients likewise reach `mcp-service` only through the gateway; MCP domain operations re-enter the gateway with a short-lived delegated token rather than calling domain services directly.
 
 ## High-level system diagram
 
@@ -22,6 +22,7 @@ flowchart LR
   %% Client plane
   subgraph Client["Client plane"]
     Browser["Frontend PWA (Browser)"]
+    MCPClient["MCP client"]
   end
 
   %% Ingress / core control plane
@@ -94,6 +95,8 @@ flowchart LR
   %% Consistent ingress chain
   Browser -->|HTTPS and WSS| Nginx
   Nginx -->|/api and /ws| Gateway
+  MCPClient -->|HTTPS /mcp| Nginx
+  Nginx -->|/mcp| Gateway
   Nginx -->|/integrations| IntegrationProxy
 
   %% Marketplace access (separate stack)
@@ -118,11 +121,8 @@ flowchart LR
   Auth -->|HTTP user profile and admin lookups| User
   Auth -->|HTTP send verification and 2FA emails| Email
   Auth -->|HTTP avatar upload and read| ProfilePic
-  MCP -->|OAuth token exchange| Auth
-  MCP -->|delegated workflow reads| Automation
-  MCP -->|read-only queries| DeviceHub
-  MCP -->|read-only queries| ERS
-  MCP -->|read-only queries| History
+  MCP -->|OAuth discovery and token exchange| Auth
+  MCP -->|delegated /api/mcp/* requests| Gateway
   Automation -->|HTTP user resolution| User
   Automation -->|HTTP notify email| Email
   Automation -->|HTTP integration steps and registry| IntegrationProxy

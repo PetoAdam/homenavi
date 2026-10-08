@@ -1,5 +1,8 @@
 # MCP Gateway Delegation Plan
 
+> Status: implemented. This document records the intended and delivered delegation
+> design. For current operator and client guidance, use [MCP](mcp.md).
+
 ## Goal
 
 Route every MCP-originated device, group, history, and automation operation through
@@ -12,7 +15,7 @@ The original MCP token is never accepted by the gateway and is never forwarded t
 downstream service. `mcp-service` exchanges it for a short-lived, gateway-audience
 delegated token with only the requested scope.
 
-## Target Request Flow
+## Implemented Request Flow
 
 ```mermaid
 sequenceDiagram
@@ -59,7 +62,7 @@ trust the internal network; automation-service also validates the delegated toke
 receives. Internal MQTT is outside this user-token flow and remains protected by
 network isolation and broker credentials.
 
-## Implementation Plan
+## Implemented Design
 
 ### 1. Define the delegated gateway token contract
 

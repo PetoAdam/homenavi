@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+import requests
 
 
 def _signup_payload(email: str, username: str, password: str):
@@ -15,6 +16,14 @@ def _signup_payload(email: str, username: str, password: str):
 
 def _login_start(session, auth_prefix: str, email: str, password: str):
     return session.post(f"{auth_prefix}/login/start", json={"email": email, "password": password}, timeout=2.0)
+
+
+def _refresh(auth_prefix: str, refresh_token: str):
+    return requests.post(
+        f"{auth_prefix}/refresh",
+        cookies={"homenavi_refresh_token": refresh_token},
+        timeout=2.0,
+    )
 
 
 def _require_non_2fa_tokens(resp):
@@ -68,7 +77,7 @@ def test_login_refresh_logout_flow(session, auth_prefix, users_prefix):
     r = session.get(f"{auth_prefix}/me", headers=headers, timeout=2.0)
     assert r.status_code == 200, r.text
 
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
+    r = _refresh(auth_prefix, refresh_token)
     assert r.status_code == 200, r.text
     new_access_token = r.cookies.get("auth_token")
     new_refresh_token = r.cookies.get("homenavi_refresh_token")
@@ -76,9 +85,9 @@ def test_login_refresh_logout_flow(session, auth_prefix, users_prefix):
     assert new_refresh_token
 
     # Replaying a consumed refresh token revokes its entire replacement family.
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
+    r = _refresh(auth_prefix, refresh_token)
     assert r.status_code == 401, r.text
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": new_refresh_token}, timeout=2.0)
+    r = _refresh(auth_prefix, new_refresh_token)
     assert r.status_code == 401, r.text
 
     # Replay revokes the session, invalidating the already-issued access token.
@@ -89,7 +98,7 @@ def test_login_refresh_logout_flow(session, auth_prefix, users_prefix):
     r = session.post(f"{auth_prefix}/logout", json={"refresh_token": refresh_token}, headers=headers, timeout=2.0)
     assert r.status_code == 401, r.text
 
-    r = session.post(f"{auth_prefix}/refresh", json={"refresh_token": refresh_token}, timeout=2.0)
+    r = _refresh(auth_prefix, refresh_token)
     assert r.status_code == 401, r.text
 
     # /me with invalid token should 401

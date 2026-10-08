@@ -1,5 +1,10 @@
 # Homenavi MCP and Authentication Security Roadmap
 
+> Historical implementation roadmap. The OAuth, delegated-token, and MCP-service
+> work described here is implemented; use [MCP](mcp.md) and
+> [MCP Gateway Delegation Plan](mcp_gateway_delegation_plan.md) for the current
+> operational design.
+
 ## Purpose
 
 This roadmap introduces a first-party Homenavi Model Context Protocol (MCP) server
@@ -11,7 +16,7 @@ The target is a deliberate agent-control boundary: clients can perform a small s
 typed, policy-controlled home actions, but cannot use MCP as a generic proxy to REST,
 HDP, MQTT, or internal services.
 
-## Current State and Gaps
+## Baseline Before Implementation
 
 Homenavi currently signs RS256 access tokens that contain `sub`, `role`, `name`,
 `iat`, and `exp`. `api-gateway` validates the signature and role hierarchy, then
