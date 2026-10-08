@@ -24,8 +24,8 @@ def login() -> str:
         timeout=10,
     )
     response.raise_for_status()
-    token = response.json().get("access_token")
-    assert token, "login response did not include access_token"
+    token = response.cookies.get("auth_token")
+    assert token, "login response did not set auth_token cookie"
     return str(token)
 
 

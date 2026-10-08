@@ -19,8 +19,10 @@ def _login_start(session, auth_prefix: str, email: str, password: str):
 
 def _require_non_2fa_tokens(resp):
     data = resp.json()
-    if "access_token" in data:
-        return data["access_token"], data.get("refresh_token", "")
+    access_token = resp.cookies.get("auth_token")
+    refresh_token = resp.cookies.get("homenavi_refresh_token")
+    if access_token and refresh_token:
+        return access_token, refresh_token
     if data.get("2fa_required"):
         pytest.skip("2FA required; skipping non-interactive auth flow test")
     raise AssertionError(f"Unexpected login response: {data}")

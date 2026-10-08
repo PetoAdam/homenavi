@@ -16,6 +16,7 @@ on:
       - "automation-service/**"
       - "integration-proxy/**"
       - "mock-adapter/**"
+      - "mcp-service/**"
       - ".github/workflows/helm_minikube_ha_smoke.yaml"
   push:
     branches:
@@ -34,6 +35,7 @@ on:
       - "automation-service/**"
       - "integration-proxy/**"
       - "mock-adapter/**"
+      - "mcp-service/**"
       - ".github/workflows/helm_minikube_ha_smoke.yaml"
 
 jobs:
@@ -62,7 +64,7 @@ jobs:
       - name: Build commit-scoped service images
         run: |
           set -euo pipefail
-          for service in api-gateway auth-service user-service mock-adapter device-hub entity-registry-service history-service automation-service integration-proxy; do
+          for service in api-gateway auth-service user-service mock-adapter device-hub entity-registry-service history-service automation-service integration-proxy mcp-service; do
             minikube image build \
               --tag "ghcr.io/petoadam/homenavi-${service}:${HN_VERSION}" \
               --file "./${service}/Dockerfile" \
@@ -110,6 +112,10 @@ jobs:
             integration-proxy:
               image:
                 repository: ghcr.io/petoadam/homenavi-integration-proxy
+                pullPolicy: Never
+            mcp-service:
+              image:
+                repository: ghcr.io/petoadam/homenavi-mcp-service
                 pullPolicy: Never
           EOF
 
@@ -225,12 +231,12 @@ jobs:
               cat /tmp/homenavi-ha-gateway.log >&2 || true
               exit 1
             fi
-            login_status=$(curl --silent --show-error --output /tmp/homenavi-ha-login.json --write-out '%{http_code}' \
+            login_status=$(curl --silent --show-error --cookie-jar /tmp/homenavi-ha-login.cookies --output /tmp/homenavi-ha-login.json --write-out '%{http_code}' \
               -H 'Content-Type: application/json' \
               -d "{\"email\":\"$admin_email\",\"password\":\"$admin_password\"}" \
               http://127.0.0.1:18080/api/auth/login/start || true)
             if [ "$login_status" = "200" ]; then
-              admin_token=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], "r", encoding="utf-8")).get("access_token", ""))' /tmp/homenavi-ha-login.json)
+              admin_token=$(awk '$6 == "auth_token" { print $7 }' /tmp/homenavi-ha-login.cookies)
               if [ -n "$admin_token" ]; then
                 break
               fi
@@ -268,6 +274,9 @@ jobs:
           kubectl -n "$NAMESPACE" get all -o wide
           kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
           kubectl -n "$NAMESPACE" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/instance="$RELEASE" || true
+          for pod in $(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/instance="$RELEASE" -o name); do
+            kubectl -n "$NAMESPACE" logs --all-containers --prefix --previous --tail=100 "$pod" || true
+          done
           test -f /tmp/homenavi-ha-gateway.log && cat /tmp/homenavi-ha-gateway.log || true
           test -f /tmp/homenavi-ha-emqx.log && cat /tmp/homenavi-ha-emqx.log || true
 

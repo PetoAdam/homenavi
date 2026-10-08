@@ -62,8 +62,8 @@ def admin_token(session: requests.Session, gateway_url: str) -> str:
     payload = response.json()
     if payload.get("2fa_required"):
         pytest.skip("Admin login requires 2FA; HA smoke tests expect a non-interactive admin account")
-    token = payload.get("access_token")
-    assert token, "admin login did not return access_token"
+    token = response.cookies.get("auth_token")
+    assert token, "admin login did not set auth_token cookie"
     return str(token)
 
 

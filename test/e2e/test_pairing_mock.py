@@ -61,9 +61,9 @@ def login() -> str:
     )
     resp.raise_for_status()
     payload = resp.json()
-    token = payload.get("access_token")
+    token = resp.cookies.get("auth_token")
     if not token:
-        raise RuntimeError("login missing access_token")
+        raise RuntimeError("login missing auth_token cookie")
     return token
 
 
