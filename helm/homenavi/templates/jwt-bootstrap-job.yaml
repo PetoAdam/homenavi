@@ -72,24 +72,42 @@ spec:
               namespace={{ .Release.Namespace | quote }}
               tmpdir="$(mktemp -d)"
               trap 'rm -rf "$tmpdir"' EXIT
+              secret_exists=false
+              has_private_key=false
+              has_public_key=false
+              has_totp_key=false
               if kubectl -n "$namespace" get secret "$secret_name" >/dev/null 2>&1; then
-                if kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.totp_encryption\.key}' | grep -q .; then
+                secret_exists=true
+                kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.jwt_private\.pem}' | grep -q . && has_private_key=true || true
+                kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.jwt_public\.pem}' | grep -q . && has_public_key=true || true
+                kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.totp_encryption\.key}' | grep -q . && has_totp_key=true || true
+                if "$has_private_key" && "$has_public_key" && "$has_totp_key"; then
                   echo "JWT and TOTP keys already present: $secret_name"
                   exit 0
                 fi
+              fi
+
+              set --
+              if ! "$has_private_key"; then
+                openssl genrsa -out "$tmpdir/jwt_private.pem" 2048 >/dev/null 2>&1
+                openssl rsa -in "$tmpdir/jwt_private.pem" -pubout -out "$tmpdir/jwt_public.pem" >/dev/null 2>&1
+                set -- "$@" --from-file=jwt_private.pem="$tmpdir/jwt_private.pem" --from-file=jwt_public.pem="$tmpdir/jwt_public.pem"
+              elif ! "$has_public_key"; then
+                kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.jwt_private\.pem}' | base64 -d > "$tmpdir/jwt_private.pem"
+                openssl rsa -in "$tmpdir/jwt_private.pem" -pubout -out "$tmpdir/jwt_public.pem" >/dev/null 2>&1
+                set -- "$@" --from-file=jwt_public.pem="$tmpdir/jwt_public.pem"
+              fi
+
+              if ! "$has_totp_key"; then
                 openssl rand -base64 32 > "$tmpdir/totp_encryption.key"
-                kubectl -n "$namespace" create secret generic "$secret_name" \
-                  --from-file=totp_encryption.key="$tmpdir/totp_encryption.key" \
-                  --dry-run=client -o yaml | kubectl apply -f -
-                echo "Added TOTP encryption key to existing secret: $secret_name"
+                set -- "$@" --from-file=totp_encryption.key="$tmpdir/totp_encryption.key"
+              fi
+
+              if "$secret_exists"; then
+                data="$(kubectl create secret generic "$secret_name" "$@" --dry-run=client -o jsonpath='{.data}')"
+                kubectl -n "$namespace" patch secret "$secret_name" --type merge --patch "{\"data\":$data}"
+                echo "Repaired missing JWT or TOTP keys: $secret_name"
                 exit 0
               fi
-              openssl genrsa -out "$tmpdir/jwt_private.pem" 2048 >/dev/null 2>&1
-              openssl rsa -in "$tmpdir/jwt_private.pem" -pubout -out "$tmpdir/jwt_public.pem" >/dev/null 2>&1
-              openssl rand -base64 32 > "$tmpdir/totp_encryption.key"
-              kubectl -n "$namespace" create secret generic "$secret_name" \
-                --from-file=jwt_private.pem="$tmpdir/jwt_private.pem" \
-                --from-file=jwt_public.pem="$tmpdir/jwt_public.pem" \
-                --from-file=totp_encryption.key="$tmpdir/totp_encryption.key" \
-                --dry-run=client -o yaml | kubectl apply -f -
+              kubectl -n "$namespace" create secret generic "$secret_name" "$@"
 {{- end }}
