@@ -9,3 +9,103 @@ routes:
     methods: [POST]
     access: public
     type: rest
+  - path: /api/mcp/hdp/devices
+    upstream: http://device-hub:8090/api/hdp/devices
+    methods: [GET]
+    access: delegated
+    scope: home.devices.read
+    tool: list_devices
+    type: rest
+  - path: /api/mcp/hdp/devices/*
+    upstream: http://device-hub:8090/api/hdp/devices/*
+    methods: [GET]
+    access: delegated
+    scope: home.devices.read
+    tool: get_device
+    type: rest
+  - path: /api/mcp/hdp/integrations
+    upstream: http://device-hub:8090/api/hdp/integrations
+    methods: [GET]
+    access: delegated
+    scope: home.devices.read
+    tool: list_device_integrations
+    type: rest
+  - path: /api/mcp/hdp/pairings
+    upstream: http://device-hub:8090/api/hdp/pairings
+    methods: [GET]
+    access: delegated
+    scope: home.devices.read
+    tool: list_pairings
+    type: rest
+  - path: /api/mcp/ers/rooms/
+    upstream: http://entity-registry-service:8095/api/ers/rooms/
+    methods: [GET]
+    access: delegated
+    scope: home.inventory.read
+    tool: list_rooms
+    type: rest
+  - path: /api/mcp/ers/groups/
+    upstream: http://entity-registry-service:8095/api/ers/groups/
+    methods: [GET]
+    access: delegated
+    scope: home.inventory.read
+    tool: list_device_groups
+    type: rest
+  - path: /api/mcp/ers/groups/*
+    upstream: http://entity-registry-service:8095/api/ers/groups/*
+    methods: [GET]
+    access: delegated
+    scope: home.inventory.read
+    tool: get_device_group
+    type: rest
+  - path: /api/mcp/history/state
+    upstream: http://history-service:8093/api/history/state
+    methods: [GET]
+    access: delegated
+    scope: home.history.read
+    tool: query_state_history
+    type: rest
+  - path: /api/mcp/hdp/device-command-targets/*
+    upstream: http://device-hub:8090/api/hdp/devices/*
+    methods: [GET]
+    access: delegated
+    scope: home.devices.write
+    tool: send_device_command
+    type: rest
+  - path: /api/mcp/hdp/devices/*
+    upstream: http://device-hub:8090/api/hdp/devices/*
+    methods: [POST, PATCH]
+    access: delegated
+    scope: home.devices.write
+    path_suffix: /commands
+    tool: send_device_command
+    type: rest
+  - path: /api/mcp/ers/group-creates
+    upstream: http://entity-registry-service:8095/api/ers/groups/
+    methods: [POST]
+    access: delegated
+    scope: home.inventory.write
+    tool: create_device_group
+    type: rest
+  - path: /api/mcp/automation/workflows
+    upstream: http://automation-service:8094/api/automation/workflows
+    methods: [GET]
+    access: delegated
+    scope: home.automation.read
+    tool: list_automation_workflows
+    type: rest
+  - path: /api/mcp/automation/workflows/*
+    upstream: http://automation-service:8094/api/automation/workflows/*
+    methods: [GET]
+    access: delegated
+    scope: home.automation.read
+    tool: get_automation_workflow
+    type: rest
+  - path: /api/mcp/automation/workflows/*
+    upstream: http://automation-service:8094/api/automation/workflows/*
+    methods: [POST]
+    access: delegated
+    scope: home.automation.execute
+    path_suffix: /run
+    tool: run_automation_workflow
+    type: rest

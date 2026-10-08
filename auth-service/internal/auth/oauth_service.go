@@ -116,16 +116,19 @@ func (s *Service) ExchangeMCPAccessToken(ctx context.Context, tokenString, resou
 		return "", fmt.Errorf("validate MCP subject token: %w", err)
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
-	if requestedScope != "home.automation.read" && requestedScope != "home.automation.execute" {
+	switch requestedScope {
+	case "home.automation.read", "home.automation.execute", "home.devices.read", "home.devices.write", "home.history.read", "home.inventory.read", "home.inventory.write":
+	default:
 		return "", fmt.Errorf("unsupported delegated scope")
 	}
 	if !ok || claims[authx.ClaimTokenType] != authx.TokenTypeMCP || !authx.HasScope(fmt.Sprint(claims[authx.ClaimScope]), requestedScope) {
-		return "", fmt.Errorf("MCP token is not authorized for the requested automation scope")
+		return "", fmt.Errorf("MCP token is not authorized for the requested delegated scope")
 	}
 	subject, _ := claims.GetSubject()
 	sessionID, _ := claims[authx.ClaimSessionID].(string)
 	role, _ := claims["role"].(string)
-	if subject == "" || sessionID == "" || role == "" {
+	clientID, _ := claims[authx.ClaimAuthorizedParty].(string)
+	if subject == "" || sessionID == "" || role == "" || clientID == "" {
 		return "", fmt.Errorf("MCP token is missing delegation claims")
 	}
 	if err := s.requireActiveSession(sessionID); err != nil {
@@ -135,19 +138,24 @@ func (s *Service) ExchangeMCPAccessToken(ctx context.Context, tokenString, resou
 	if err != nil {
 		return "", fmt.Errorf("generate delegated token ID: %w", err)
 	}
+	audience := strings.TrimSpace(s.config.JWTAPIAudience)
+	if audience == "" {
+		audience = authx.AudienceAPI
+	}
 	now := time.Now()
 	return s.keyRing.Sign(jwt.MapClaims{
-		"iss":                s.config.JWTIssuer,
-		"sub":                subject,
-		"aud":                []string{authx.AudienceAutomation},
-		"exp":                now.Add(DelegatedAccessTokenTTL).Unix(),
-		"iat":                now.Unix(),
-		"nbf":                now.Unix(),
-		"jti":                tokenID,
-		"role":               role,
-		authx.ClaimSessionID: sessionID,
-		authx.ClaimScope:     requestedScope,
-		authx.ClaimTokenType: authx.TokenTypeDelegated,
+		"iss":                      s.config.JWTIssuer,
+		"sub":                      subject,
+		"aud":                      []string{audience},
+		"exp":                      now.Add(DelegatedAccessTokenTTL).Unix(),
+		"iat":                      now.Unix(),
+		"nbf":                      now.Unix(),
+		"jti":                      tokenID,
+		"role":                     role,
+		authx.ClaimSessionID:       sessionID,
+		authx.ClaimAuthorizedParty: clientID,
+		authx.ClaimScope:           requestedScope,
+		authx.ClaimTokenType:       authx.TokenTypeDelegated,
 	})
 }
 

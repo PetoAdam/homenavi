@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,19 +10,82 @@ import (
 
 func TestHTTPDeviceClientListsBoundedSafeFields(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/hdp/devices" {
+		if r.URL.Path != "/api/mcp/hdp/devices" {
 			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer delegated-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		_, _ = w.Write([]byte(`[{"id":"internal-id","device_id":"zigbee/1","type":"light","online":true,"state":{"on":true},"firmware":"private"}]`))
 	}))
 	defer upstream.Close()
 
-	devices, err := (&httpDeviceClient{baseURL: upstream.URL, client: upstream.Client()}).List(context.Background())
+	devices, err := (&httpDeviceClient{readBaseURL: upstream.URL + "/api/mcp/hdp", client: upstream.Client()}).List(context.Background(), "delegated-token")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(devices) != 1 || devices[0].DeviceID != "zigbee/1" || !devices[0].Online || devices[0].State["on"] != true {
 		t.Fatalf("unexpected devices: %#v", devices)
+	}
+}
+
+func TestHTTPDeviceClientCommandsThroughGatewayWithDelegatedToken(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/mcp/hdp/devices/zigbee/1/commands" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer delegated-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("content type = %q", r.Header.Get("Content-Type"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["correlation_id"] != "command-1" {
+			t.Fatalf("correlation ID = %#v", body["correlation_id"])
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"queued"}`))
+	}))
+	defer upstream.Close()
+
+	client := &httpDeviceClient{commandBaseURL: upstream.URL + "/api/mcp/hdp/devices", client: upstream.Client()}
+	if _, err := client.Command(context.Background(), "zigbee/1", map[string]any{"on": true}, nil, "command-1", "delegated-token"); err != nil {
+		t.Fatalf("command: %v", err)
+	}
+}
+
+func TestReadClientsUseGatewayForHistoryAndGroupCreation(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer delegated-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		switch r.URL.Path {
+		case "/api/mcp/history/state":
+			if r.Method != http.MethodGet || r.URL.Query().Get("device_id") != "zigbee/1" {
+				t.Fatalf("history request = %s %s", r.Method, r.URL.String())
+			}
+			_, _ = w.Write([]byte(`[{"state":{"on":true}}]`))
+		case "/api/mcp/ers/group-creates":
+			if r.Method != http.MethodPost || r.Header.Get("Idempotency-Key") != "group-1" {
+				t.Fatalf("group create request = %s idempotency=%q", r.Method, r.Header.Get("Idempotency-Key"))
+			}
+			_, _ = w.Write([]byte(`{"id":"group-1"}`))
+		default:
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	if _, err := client.QueryStateHistory(context.Background(), historyInput{DeviceID: "zigbee/1"}, "delegated-token"); err != nil {
+		t.Fatalf("query history: %v", err)
+	}
+	if _, err := client.CreateGroup(context.Background(), groupCreateInput{Name: "Kitchen"}, "group-1", "delegated-token"); err != nil {
+		t.Fatalf("create group: %v", err)
 	}
 }
 

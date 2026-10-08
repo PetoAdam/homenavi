@@ -43,7 +43,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect Redis: %w", err)
 	}
-	handler := mcpserver.New(mcpserver.Config{Enabled: cfg.Enabled, Issuer: cfg.Issuer, Resource: cfg.Resource, PublicKey: publicKey, DeviceHubURL: cfg.DeviceHubURL, HistoryURL: cfg.HistoryURL, EntityRegistryURL: cfg.EntityRegistryURL, AutomationURL: cfg.AutomationURL, AuthServiceURL: cfg.AuthServiceURL, AllowedOrigins: cfg.AllowedOrigins, EnabledTools: cfg.EnabledTools, RateLimitPerMinute: cfg.RateLimitPerMinute, Logger: logger, SessionValidator: func(ctx context.Context, sessionID string) (bool, error) {
+	handler := mcpserver.New(mcpserver.Config{Enabled: cfg.Enabled, Issuer: cfg.Issuer, Resource: cfg.Resource, PublicKey: publicKey, AuthServiceURL: cfg.AuthServiceURL, APIGatewayURL: cfg.APIGatewayURL, AllowedOrigins: cfg.AllowedOrigins, EnabledTools: cfg.EnabledTools, RateLimitPerMinute: cfg.RateLimitPerMinute, Logger: logger, SessionValidator: func(ctx context.Context, sessionID string) (bool, error) {
 		status, err := redisClient.Get(ctx, authx.SessionStatusKey(sessionID)).Result()
 		return status == authx.SessionStatusActive, err
 	}, RateLimiter: func(ctx context.Context, sessionID string) (bool, error) {

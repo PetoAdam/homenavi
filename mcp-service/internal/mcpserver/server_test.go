@@ -116,6 +116,27 @@ func TestMCPUsesConfiguredResource(t *testing.T) {
 	}
 }
 
+func TestMCPDerivesResourceFromForwardedRequest(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil)
+	request.Host = "ignored.internal"
+	request.Header.Set("X-Forwarded-Host", "home.example.test")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	New(Config{Enabled: true}).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var metadata struct {
+		Resource string `json:"resource"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Resource != "https://home.example.test/mcp" {
+		t.Fatalf("resource = %q", metadata.Resource)
+	}
+}
+
 func TestMCPToolDiscoveryIsScoped(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -152,40 +173,53 @@ func TestMCPToolDiscoveryIsScoped(t *testing.T) {
 	}
 }
 
-func TestMCPGroupToolsAreScopeGated(t *testing.T) {
+func TestMCPGroupToolsRequireAllScopes(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey}
-	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`))
-	request.Header.Set("Authorization", "Bearer "+signedTokenWithScopes(t, privateKey, config, "home.inventory.read home.devices.write"))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json, text/event-stream")
-	request.Header.Set("MCP-Protocol-Version", "2025-03-26")
-	response := httptest.NewRecorder()
-	New(config).ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
-	}
-	var result struct {
-		Result struct {
-			Tools []struct {
-				Name string `json:"name"`
-			} `json:"tools"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	names := map[string]bool{}
-	for _, tool := range result.Result.Tools {
-		names[tool.Name] = true
-	}
-	for _, name := range []string{"list_device_groups", "get_device_group", "get_device_group_state", "send_device_group_command"} {
-		if !names[name] {
-			t.Fatalf("missing scoped group tool %q: %#v", name, names)
-		}
+	for _, test := range []struct {
+		name                     string
+		scopes                   string
+		groupState, groupCommand bool
+	}{
+		{name: "inventory read only", scopes: "home.inventory.read"},
+		{name: "device read only", scopes: "home.devices.read"},
+		{name: "device write only", scopes: "home.devices.write"},
+		{name: "inventory and device read", scopes: "home.inventory.read home.devices.read", groupState: true},
+		{name: "inventory read and device write", scopes: "home.inventory.read home.devices.write", groupCommand: true},
+		{name: "all group tool scopes", scopes: "home.inventory.read home.devices.read home.devices.write", groupState: true, groupCommand: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`))
+			request.Header.Set("Authorization", "Bearer "+signedTokenWithScopes(t, privateKey, config, test.scopes))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept", "application/json, text/event-stream")
+			request.Header.Set("MCP-Protocol-Version", "2025-03-26")
+			response := httptest.NewRecorder()
+			New(config).ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			var result struct {
+				Result struct {
+					Tools []struct {
+						Name string `json:"name"`
+					} `json:"tools"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			names := map[string]bool{}
+			for _, tool := range result.Result.Tools {
+				names[tool.Name] = true
+			}
+			if names["get_device_group_state"] != test.groupState || names["send_device_group_command"] != test.groupCommand {
+				t.Fatalf("unexpected composite group tools: %#v", names)
+			}
+		})
 	}
 }
 

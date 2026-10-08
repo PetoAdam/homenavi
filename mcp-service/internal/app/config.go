@@ -12,11 +12,8 @@ type Config struct {
 	Issuer             string
 	Resource           string
 	PublicKeyPath      string
-	DeviceHubURL       string
-	HistoryURL         string
-	EntityRegistryURL  string
-	AutomationURL      string
 	AuthServiceURL     string
+	APIGatewayURL      string
 	AllowedOrigins     map[string]struct{}
 	EnabledTools       map[string]struct{}
 	RateLimitPerMinute int
@@ -29,11 +26,8 @@ func LoadConfig() Config {
 		Issuer:             strings.TrimSpace(os.Getenv("MCP_AUTHORIZATION_SERVER_ISSUER")),
 		Resource:           strings.TrimSpace(os.Getenv("MCP_RESOURCE_URI")),
 		PublicKeyPath:      value("JWT_PUBLIC_KEY_PATH", "/app/keys/jwt_public.pem"),
-		DeviceHubURL:       value("DEVICE_HUB_URL", "http://device-hub:8090"),
-		HistoryURL:         value("HISTORY_SERVICE_URL", "http://history-service:8093"),
-		EntityRegistryURL:  value("ENTITY_REGISTRY_SERVICE_URL", "http://entity-registry-service:8095"),
-		AutomationURL:      value("AUTOMATION_SERVICE_URL", "http://automation-service:8094"),
 		AuthServiceURL:     value("AUTH_SERVICE_URL", "http://auth-service:8000"),
+		APIGatewayURL:      value("API_GATEWAY_URL", "http://api-gateway:8080"),
 		AllowedOrigins:     origins(os.Getenv("MCP_ALLOWED_ORIGINS")),
 		EnabledTools:       tools(os.Getenv("MCP_ENABLED_TOOLS")),
 		RateLimitPerMinute: positiveInt("MCP_RATE_LIMIT_PER_MINUTE", 60),

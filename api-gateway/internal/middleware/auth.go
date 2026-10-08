@@ -17,10 +17,12 @@ import (
 )
 
 type Claims struct {
-	Role      string `json:"role"`
-	Name      string `json:"name"`
-	SessionID string `json:"sid"`
-	TokenType string `json:"typ"`
+	Role            string `json:"role"`
+	Name            string `json:"name"`
+	SessionID       string `json:"sid"`
+	Scope           string `json:"scope"`
+	AuthorizedParty string `json:"azp"`
+	TokenType       string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
@@ -188,6 +190,52 @@ func APIValidationConfig(issuer, audience string) ValidationConfig {
 		Audience:  audience,
 		TokenType: authx.TokenTypeAPI,
 		ClockSkew: 30 * time.Second,
+	}
+}
+
+func DelegatedValidationConfig(issuer, audience string) ValidationConfig {
+	return ValidationConfig{
+		Issuer:    issuer,
+		Audience:  audience,
+		TokenType: authx.TokenTypeDelegated,
+		ClockSkew: 30 * time.Second,
+	}
+}
+
+func RequireScopeMiddleware(requiredScope string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := r.Context().Value(ClaimsKey).(*Claims)
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if !authx.HasScope(claims.Scope, requiredScope) {
+				writeJSONError(w, http.StatusForbidden, "insufficient scope")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func DelegatedAuditContextMiddleware(tool string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := r.Context().Value(ClaimsKey).(*Claims)
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			r.Header.Set("X-Homenavi-Subject", claims.Subject)
+			r.Header.Set("X-Homenavi-Client-ID", claims.AuthorizedParty)
+			r.Header.Set("X-Homenavi-Scope", claims.Scope)
+			r.Header.Set("X-Homenavi-Tool", tool)
+			if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" {
+				r.Header.Set("X-Homenavi-Request-ID", requestID)
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 

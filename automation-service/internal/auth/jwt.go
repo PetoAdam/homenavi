@@ -74,7 +74,7 @@ func JWTAuthMiddlewareRS256(pubKey *rsa.PublicKey, validators ...SessionValidato
 					return
 				}
 			case authx.TokenTypeDelegated:
-				if !authx.HasAudience(claims.Audience, authx.AudienceAutomation) || (!authx.HasScope(claims.Scope, "home.automation.read") && !authx.HasScope(claims.Scope, "home.automation.execute")) {
+				if !authx.HasAudience(claims.Audience, authx.AudienceAPI) || (!authx.HasScope(claims.Scope, "home.automation.read") && !authx.HasScope(claims.Scope, "home.automation.execute")) {
 					writeJSONError(w, http.StatusUnauthorized, "invalid delegated token")
 					return
 				}

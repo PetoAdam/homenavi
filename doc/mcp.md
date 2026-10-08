@@ -14,20 +14,20 @@ Tools are advertised only when their OAuth scope is granted and the optional `MC
 
 | Scope | Tools |
 | --- | --- |
-| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `list_device_integrations`, `list_pairings` |
-| `home.devices.write` | `send_device_command`, `send_device_group_command` |
-| `home.inventory.read` | `list_rooms`, `list_device_groups`, `get_device_group`, `get_device_group_state` |
+| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: `get_device_group_state` |
+| `home.devices.write` | `send_device_command`; with `home.inventory.read`: `send_device_group_command` |
+| `home.inventory.read` | `list_rooms`, `list_device_groups`, `get_device_group`; with `home.devices.read`: `get_device_group_state`; with `home.devices.write`: `send_device_group_command` |
 | `home.inventory.write` | `create_device_group` |
 | `home.history.read` | `query_state_history` |
 | `home.automation.read` | `list_automation_workflows`, `get_automation_workflow` |
 | `home.automation.execute` | `run_automation_workflow` |
 | Any authenticated MCP session | `describe_homenavi_api`, `list_event_channels`, `get_write_policy` |
 
-Write tools are deliberately narrow. Each requires an `idempotency_key` of at least eight characters and is available only to resident or admin MCP tokens. Device commands additionally require an online device and reuse device-hub's persisted correlation lifecycle and capability validation. Group creation and workflow runs persist their idempotency keys and replay the original result on retry. Automation workflow runs receive a short-lived delegated token scoped only to `home.automation.execute`; automation-service validates its source session on each delegated request. No separate browser confirmation is required after OAuth consent.
+Write tools are deliberately narrow. Each requires an `idempotency_key` of at least eight characters and is available only to resident or admin MCP tokens. Device commands additionally require an online device and reuse device-hub's persisted correlation lifecycle and capability validation. Group creation and workflow runs persist their idempotency keys and replay the original result on retry. Before invoking a domain tool, mcp-service exchanges the MCP token for a two-minute delegated token with the API-gateway audience and only the required scope. All MCP device, inventory, history, and automation operations pass through dedicated gateway routes; automation-service additionally validates the delegated token it receives. No separate browser confirmation is required after OAuth consent.
 
 Pairing, automation editing, dashboard changes, and user changes remain unavailable through MCP.
 
-Automation workflow reads use a token exchange: mcp-service submits the validated MCP credential to auth-service and receives a two-minute delegated token limited to the automation-service audience and `home.automation.read`. The original MCP bearer token is never forwarded to internal services.
+The original MCP bearer token is never forwarded to internal domain services. Auth-service is the only direct MCP dependency and is used solely for OAuth and token exchange.
 
 ## Planned Account Connection Removal
 
@@ -41,4 +41,4 @@ MCP access should be removed from an account-level **Connected applications** se
 
 ## Operations
 
-Set `MCP_ENABLED=false` to disable MCP entirely. `MCP_RATE_LIMIT_PER_MINUTE` sets the per-session request ceiling; the production limiter is Redis-backed. Successful MCP requests emit structured logs with the authenticated subject, client ID, request ID, JSON-RPC method, called tool name when applicable, and response status. Request arguments and returned data are not logged.
+Set `MCP_ENABLED=false` to disable MCP entirely. `MCP_RATE_LIMIT_PER_MINUTE` sets the per-session request ceiling; the production limiter is Redis-backed. With an empty `MCP_RESOURCE_URI`, MCP derives its public resource from the request host and forwarded scheme, so Compose and Helm need no MCP-specific resource setup. Set `MCP_RESOURCE_URI` only when MCP uses a distinct public gateway URL. `API_GATEWAY_URL` defaults to `http://api-gateway:8080` and is used for delegated MCP operations. Successful MCP requests emit structured logs with the authenticated subject, client ID, request ID, JSON-RPC method, called tool name when applicable, and response status. Request arguments and returned data are not logged.

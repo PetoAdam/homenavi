@@ -82,11 +82,8 @@ services:
       - MCP_RESOURCE_URI=${MCP_RESOURCE_URI:-}
       - MCP_AUTHORIZATION_SERVER_ISSUER=${MCP_AUTHORIZATION_SERVER_ISSUER:-}
       - JWT_PUBLIC_KEY_PATH=/app/keys/jwt_public.pem
-      - DEVICE_HUB_URL=http://device-hub:${DEVICE_HUB_PORT}
-      - HISTORY_SERVICE_URL=http://history-service:${HISTORY_SERVICE_PORT}
-      - ENTITY_REGISTRY_SERVICE_URL=http://entity-registry-service:${ENTITY_REGISTRY_PORT}
-      - AUTOMATION_SERVICE_URL=http://automation-service:${AUTOMATION_SERVICE_PORT}
       - AUTH_SERVICE_URL=http://auth-service:${AUTH_SERVICE_PORT}
+      - API_GATEWAY_URL=http://api-gateway:${API_GATEWAY_PORT}
       - MCP_ALLOWED_ORIGINS=${MCP_ALLOWED_ORIGINS:-}
       - MCP_ENABLED_TOOLS=${MCP_ENABLED_TOOLS:-}
       - MCP_RATE_LIMIT_PER_MINUTE=${MCP_RATE_LIMIT_PER_MINUTE:-60}
@@ -98,8 +95,6 @@ services:
     depends_on:
       jwt-bootstrap:
         condition: service_completed_successfully
-      device-hub:
-        condition: service_started
       redis:
         condition: service_healthy
     networks:

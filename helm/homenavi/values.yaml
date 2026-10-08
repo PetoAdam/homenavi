@@ -291,21 +291,13 @@ services:
       MCP_ENABLED: "true"
       MCP_AUTHORIZATION_SERVER_ISSUER: ""
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
-      DEVICE_HUB_URL: http://device-hub:8090
-      HISTORY_SERVICE_URL: http://history-service:8093
-      ENTITY_REGISTRY_SERVICE_URL: http://entity-registry-service:8095
+      API_GATEWAY_URL: http://api-gateway:8080
       MCP_ALLOWED_ORIGINS: ""
       MCP_ENABLED_TOOLS: ""
       MCP_RATE_LIMIT_PER_MINUTE: "60"
       REDIS_MODE: sentinel
     envFromSecrets: []
     dependsOn:
-      - host: device-hub
-        port: 8090
-      - host: history-service
-        port: 8093
-      - host: entity-registry-service
-        port: 8095
       - host: redis
         port: 6379
     readinessProbe:

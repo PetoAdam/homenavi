@@ -24,11 +24,8 @@ type Config struct {
 	Issuer             string
 	Resource           string
 	PublicKey          *rsa.PublicKey
-	DeviceHubURL       string
-	HistoryURL         string
-	EntityRegistryURL  string
-	AutomationURL      string
 	AuthServiceURL     string
+	APIGatewayURL      string
 	AllowedOrigins     map[string]struct{}
 	EnabledTools       map[string]struct{}
 	RateLimitPerMinute int
@@ -217,8 +214,9 @@ func (l *requestLimiter) Allow(key string) bool {
 
 func New(config Config) http.Handler {
 	client := &http.Client{Timeout: 5 * time.Second}
-	devices := &httpDeviceClient{baseURL: strings.TrimRight(config.DeviceHubURL, "/"), client: client}
-	service := &server{config: config, clients: &readClients{devices: devices, historyURL: strings.TrimRight(config.HistoryURL, "/"), entityRegistryURL: strings.TrimRight(config.EntityRegistryURL, "/"), automationURL: strings.TrimRight(config.AutomationURL, "/"), authServiceURL: strings.TrimRight(config.AuthServiceURL, "/"), client: client}, limiter: newRequestLimiter(config.RateLimitPerMinute)}
+	gatewayURL := strings.TrimRight(config.APIGatewayURL, "/")
+	devices := &httpDeviceClient{readBaseURL: gatewayURL + "/api/mcp/hdp", commandReadURL: gatewayURL + "/api/mcp/hdp/device-command-targets", commandBaseURL: gatewayURL + "/api/mcp/hdp/devices", client: client}
+	service := &server{config: config, clients: &readClients{devices: devices, gatewayURL: gatewayURL, authServiceURL: strings.TrimRight(config.AuthServiceURL, "/"), client: client}, limiter: newRequestLimiter(config.RateLimitPerMinute)}
 	service.mcp = mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		return service.mcpServerFor(principalFromContext(request.Context()))
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, Logger: config.Logger, MaxRequestBodyBytes: 64 << 10, PropagateRequestCancellation: true})
@@ -259,7 +257,11 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 	})
 	if principal.hasScope("home.devices.read") && s.toolEnabled("list_devices") {
 		mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_devices", Description: "List the devices available in the current Homenavi deployment."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listDevicesOutput, error) {
-			devices, err := s.clients.devices.List(ctx)
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+			if err != nil {
+				return nil, listDevicesOutput{}, err
+			}
+			devices, err := s.clients.devices.List(ctx, token)
 			if err != nil {
 				return nil, listDevicesOutput{}, err
 			}
@@ -267,57 +269,93 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 		})
 		if s.toolEnabled("get_device") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device", Description: "Get one device by its canonical Homenavi device identifier."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceInput) (*mcp.CallToolResult, device, error) {
-				device, err := s.clients.GetDevice(ctx, input.DeviceID)
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, device{}, err
+				}
+				device, err := s.clients.GetDevice(ctx, input.DeviceID, token)
 				return nil, device, err
 			})
 		}
 		if s.toolEnabled("get_device_state") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device_state", Description: "Get the current state for one Homenavi device."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceInput) (*mcp.CallToolResult, device, error) {
-				device, err := s.clients.GetDevice(ctx, input.DeviceID)
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, device{}, err
+				}
+				device, err := s.clients.GetDevice(ctx, input.DeviceID, token)
 				return nil, device, err
 			})
 		}
 		if s.toolEnabled("list_device_integrations") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_device_integrations", Description: "List configured device integrations without credentials."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, dataOutput, error) {
-				result, err := s.clients.ListIntegrations(ctx)
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				result, err := s.clients.ListIntegrations(ctx, token)
 				return nil, dataOutput{Data: result}, err
 			})
 		}
 		if s.toolEnabled("list_pairings") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_pairings", Description: "List active and recent device pairing sessions."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, dataOutput, error) {
-				result, err := s.clients.ListPairings(ctx)
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				result, err := s.clients.ListPairings(ctx, token)
 				return nil, dataOutput{Data: result}, err
 			})
 		}
 	}
 	if principal.hasScope("home.inventory.read") && s.toolEnabled("list_rooms") {
 		mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_rooms", Description: "List rooms in the Homenavi entity registry."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, dataOutput, error) {
-			result, err := s.clients.ListRooms(ctx)
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+			if err != nil {
+				return nil, dataOutput{}, err
+			}
+			result, err := s.clients.ListRooms(ctx, token)
 			return nil, dataOutput{Data: result}, err
 		})
 	}
 	if principal.hasScope("home.inventory.read") {
 		if s.toolEnabled("list_device_groups") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_device_groups", Description: "List Homenavi device groups and their member devices."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, dataOutput, error) {
-				result, err := s.clients.ListGroups(ctx)
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				result, err := s.clients.ListGroups(ctx, token)
 				return nil, dataOutput{Data: result}, err
 			})
 		}
 		if s.toolEnabled("get_device_group") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device_group", Description: "Get a Homenavi device group and its member devices."}, func(ctx context.Context, _ *mcp.CallToolRequest, input groupInput) (*mcp.CallToolResult, dataOutput, error) {
-				result, err := s.clients.GetGroup(ctx, input.GroupID)
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				result, err := s.clients.GetGroup(ctx, input.GroupID, token)
 				return nil, dataOutput{Data: result}, err
 			})
 		}
-		if s.toolEnabled("get_device_group_state") {
+		if principal.hasScope("home.devices.read") && s.toolEnabled("get_device_group_state") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device_group_state", Description: "Get the current state of every device in a Homenavi group."}, func(ctx context.Context, _ *mcp.CallToolRequest, input groupInput) (*mcp.CallToolResult, dataOutput, error) {
-				group, err := s.clients.GetGroup(ctx, input.GroupID)
+				inventoryToken, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				deviceToken, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				group, err := s.clients.GetGroup(ctx, input.GroupID, inventoryToken)
 				if err != nil {
 					return nil, dataOutput{}, err
 				}
 				devices := make([]device, 0, len(group.HDPExternalIDs))
 				for _, deviceID := range group.HDPExternalIDs {
-					member, err := s.clients.GetDevice(ctx, deviceID)
+					member, err := s.clients.GetDevice(ctx, deviceID, deviceToken)
 					if err != nil {
 						return nil, dataOutput{}, fmt.Errorf("load group member %q: %w", deviceID, err)
 					}
@@ -330,7 +368,7 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 	if principal.hasScope("home.automation.read") {
 		if s.toolEnabled("list_automation_workflows") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_automation_workflows", Description: "List configured automation workflows without changing them."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, dataOutput, error) {
-				token, err := s.clients.exchangeAutomationToken(ctx, principal.token, s.config.Resource, "home.automation.read")
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.automation.read")
 				if err != nil {
 					return nil, dataOutput{}, err
 				}
@@ -340,7 +378,7 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 		}
 		if s.toolEnabled("get_automation_workflow") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_automation_workflow", Description: "Get one automation workflow by identifier without changing it."}, func(ctx context.Context, _ *mcp.CallToolRequest, input workflowInput) (*mcp.CallToolResult, dataOutput, error) {
-				token, err := s.clients.exchangeAutomationToken(ctx, principal.token, s.config.Resource, "home.automation.read")
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.automation.read")
 				if err != nil {
 					return nil, dataOutput{}, err
 				}
@@ -351,21 +389,25 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 	}
 	if principal.hasScope("home.devices.write") && s.toolEnabled("send_device_command") {
 		mcp.AddTool(mcpServer, &mcp.Tool{Name: "send_device_command", Description: "Send an idempotent state command to an online device."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceCommandInput) (*mcp.CallToolResult, dataOutput, error) {
-			device, err := s.clients.GetDevice(ctx, input.DeviceID)
+			if err := validateWritePolicy(input.controlledWrite); err != nil {
+				return nil, dataOutput{}, err
+			}
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.write")
+			if err != nil {
+				return nil, dataOutput{}, err
+			}
+			device, err := s.clients.GetCommandTarget(ctx, input.DeviceID, token)
 			if err != nil {
 				return nil, dataOutput{}, err
 			}
 			if !device.Online {
 				return nil, dataOutput{}, fmt.Errorf("device is offline")
 			}
-			if err := validateWritePolicy(input.controlledWrite); err != nil {
-				return nil, dataOutput{}, err
-			}
-			result, err := s.clients.devices.Command(ctx, input.DeviceID, input.State, input.TransitionMs, input.IdempotencyKey)
+			result, err := s.clients.devices.Command(ctx, input.DeviceID, input.State, input.TransitionMs, input.IdempotencyKey, token)
 			return nil, dataOutput{Data: result}, err
 		})
 	}
-	if principal.hasScope("home.devices.write") && s.toolEnabled("send_device_group_command") {
+	if principal.hasScope("home.devices.write") && principal.hasScope("home.inventory.read") && s.toolEnabled("send_device_group_command") {
 		mcp.AddTool(mcpServer, &mcp.Tool{Name: "send_device_group_command", Description: "Apply an idempotent state command to every device in a Homenavi group."}, func(ctx context.Context, _ *mcp.CallToolRequest, input groupCommandInput) (*mcp.CallToolResult, groupCommandOutput, error) {
 			if err := validateWritePolicy(input.controlledWrite); err != nil {
 				return nil, groupCommandOutput{}, err
@@ -373,16 +415,24 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 			if len(input.State) == 0 {
 				return nil, groupCommandOutput{}, fmt.Errorf("state is required")
 			}
-			group, err := s.clients.GetGroup(ctx, input.GroupID)
+			inventoryToken, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+			if err != nil {
+				return nil, groupCommandOutput{}, err
+			}
+			group, err := s.clients.GetGroup(ctx, input.GroupID, inventoryToken)
 			if err != nil {
 				return nil, groupCommandOutput{}, err
 			}
 			if len(group.HDPExternalIDs) == 0 {
 				return nil, groupCommandOutput{}, fmt.Errorf("group has no commandable devices")
 			}
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.write")
+			if err != nil {
+				return nil, groupCommandOutput{}, err
+			}
 			members := make([]device, 0, len(group.HDPExternalIDs))
 			for _, deviceID := range group.HDPExternalIDs {
-				member, err := s.clients.GetDevice(ctx, deviceID)
+				member, err := s.clients.GetCommandTarget(ctx, deviceID, token)
 				if err != nil {
 					return nil, groupCommandOutput{}, fmt.Errorf("load group member %q: %w", deviceID, err)
 				}
@@ -393,7 +443,7 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 			}
 			result := groupCommandOutput{GroupID: group.ID, Results: make([]groupDeviceCommandResult, 0, len(members))}
 			for _, member := range members {
-				memberResult, err := s.clients.devices.Command(ctx, member.DeviceID, input.State, input.TransitionMs, input.IdempotencyKey+":"+member.DeviceID)
+				memberResult, err := s.clients.devices.Command(ctx, member.DeviceID, input.State, input.TransitionMs, input.IdempotencyKey+":"+member.DeviceID, token)
 				entry := groupDeviceCommandResult{DeviceID: member.DeviceID, Result: memberResult}
 				if err != nil {
 					entry.Error = err.Error()
@@ -408,7 +458,7 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 			if err := validateWritePolicy(input.controlledWrite); err != nil {
 				return nil, dataOutput{}, err
 			}
-			token, err := s.clients.exchangeAutomationToken(ctx, principal.token, s.config.Resource, "home.automation.execute")
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.automation.execute")
 			if err != nil {
 				return nil, dataOutput{}, err
 			}
@@ -421,13 +471,21 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 			if err := validateWritePolicy(input.controlledWrite); err != nil {
 				return nil, dataOutput{}, err
 			}
-			result, err := s.clients.CreateGroup(ctx, input, input.IdempotencyKey)
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.write")
+			if err != nil {
+				return nil, dataOutput{}, err
+			}
+			result, err := s.clients.CreateGroup(ctx, input, input.IdempotencyKey, token)
 			return nil, dataOutput{Data: result}, err
 		})
 	}
 	if principal.hasScope("home.history.read") && s.toolEnabled("query_state_history") {
 		mcp.AddTool(mcpServer, &mcp.Tool{Name: "query_state_history", Description: "Query a bounded history of device state observations."}, func(ctx context.Context, _ *mcp.CallToolRequest, input historyInput) (*mcp.CallToolResult, dataOutput, error) {
-			result, err := s.clients.QueryStateHistory(ctx, input)
+			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.history.read")
+			if err != nil {
+				return nil, dataOutput{}, err
+			}
+			result, err := s.clients.QueryStateHistory(ctx, input, token)
 			return nil, dataOutput{Data: result}, err
 		})
 	}
@@ -551,8 +609,34 @@ func (s *server) allowRequest(ctx context.Context, sessionID string) (bool, erro
 }
 
 func (s *server) resourceForRequest(request *http.Request) (string, error) {
-	resource := s.config.Resource
+	resource := strings.TrimSpace(s.config.Resource)
+	if resource == "" {
+		resource = publicMCPResource(request)
+	}
 	return validMCPResource(resource)
+}
+
+func publicMCPResource(request *http.Request) string {
+	host := forwardedValue(request.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(request.Host)
+	}
+	if host == "" {
+		return ""
+	}
+	scheme := forwardedValue(request.Header.Get("X-Forwarded-Proto"))
+	if scheme == "" {
+		scheme = "http"
+		if request.TLS != nil {
+			scheme = "https"
+		}
+	}
+	return scheme + "://" + host + "/mcp"
+}
+
+func forwardedValue(value string) string {
+	value, _, _ = strings.Cut(value, ",")
+	return strings.TrimSpace(value)
 }
 
 func principalFromContext(ctx context.Context) *mcpPrincipal {

@@ -11,12 +11,10 @@ import (
 )
 
 type readClients struct {
-	devices           *httpDeviceClient
-	historyURL        string
-	entityRegistryURL string
-	automationURL     string
-	authServiceURL    string
-	client            *http.Client
+	devices        *httpDeviceClient
+	gatewayURL     string
+	authServiceURL string
+	client         *http.Client
 }
 
 type deviceGroup struct {
@@ -27,47 +25,47 @@ type deviceGroup struct {
 	HDPExternalIDs []string `json:"hdp_external_ids"`
 }
 
-func (c *readClients) ListGroups(ctx context.Context) (any, error) {
-	return c.getAny(ctx, c.entityRegistryURL, "/api/ers/groups/", nil)
+func (c *readClients) ListGroups(ctx context.Context, delegatedToken string) (any, error) {
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/groups/", delegatedToken)
 }
 
-func (c *readClients) GetGroup(ctx context.Context, groupID string) (deviceGroup, error) {
+func (c *readClients) GetGroup(ctx context.Context, groupID, delegatedToken string) (deviceGroup, error) {
 	if strings.TrimSpace(groupID) == "" {
 		return deviceGroup{}, fmt.Errorf("group_id is required")
 	}
 	var result deviceGroup
-	if err := c.get(ctx, c.entityRegistryURL, "/api/ers/groups/"+url.PathEscape(groupID), nil, &result); err != nil {
+	if err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/groups/"+url.PathEscape(groupID), delegatedToken, &result); err != nil {
 		return deviceGroup{}, err
 	}
 	return result, nil
 }
 
 func (c *readClients) ListAutomationWorkflows(ctx context.Context, delegatedToken string) (any, error) {
-	return c.getAuthorizedAny(ctx, c.automationURL, "/api/automation/workflows", delegatedToken)
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/automation/workflows", delegatedToken)
 }
 
 func (c *readClients) GetAutomationWorkflow(ctx context.Context, workflowID, delegatedToken string) (any, error) {
 	if strings.TrimSpace(workflowID) == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
-	return c.getAuthorizedAny(ctx, c.automationURL, "/api/automation/workflows/"+url.PathEscape(workflowID), delegatedToken)
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/automation/workflows/"+url.PathEscape(workflowID), delegatedToken)
 }
 
 func (c *readClients) RunAutomationWorkflow(ctx context.Context, workflowID, delegatedToken, idempotencyKey string) (any, error) {
 	if strings.TrimSpace(workflowID) == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
-	return c.postAuthorizedAny(ctx, c.automationURL, "/api/automation/workflows/"+url.PathEscape(workflowID)+"/run", delegatedToken, nil, idempotencyKey)
+	return c.postAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/automation/workflows/"+url.PathEscape(workflowID)+"/run", delegatedToken, nil, idempotencyKey)
 }
 
-func (c *readClients) CreateGroup(ctx context.Context, input groupCreateInput, idempotencyKey string) (any, error) {
+func (c *readClients) CreateGroup(ctx context.Context, input groupCreateInput, idempotencyKey, delegatedToken string) (any, error) {
 	if strings.TrimSpace(input.Name) == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	return c.postAuthorizedAny(ctx, c.entityRegistryURL, "/api/ers/groups/", "", map[string]any{"name": input.Name, "description": input.Description, "device_ids": input.DeviceIDs}, idempotencyKey)
+	return c.postAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/group-creates", delegatedToken, map[string]any{"name": input.Name, "description": input.Description, "device_ids": input.DeviceIDs}, idempotencyKey)
 }
 
-func (c *readClients) exchangeAutomationToken(ctx context.Context, subjectToken, resource, scope string) (string, error) {
+func (c *readClients) exchangeDelegatedToken(ctx context.Context, subjectToken, resource, scope string) (string, error) {
 	form := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"}, "resource": {resource}, "scope": {scope}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.authServiceURL, "/")+"/api/auth/oauth/token", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -92,25 +90,31 @@ func (c *readClients) exchangeAutomationToken(ctx context.Context, subjectToken,
 	return payload.AccessToken, nil
 }
 
-func (c *readClients) GetDevice(ctx context.Context, deviceID string) (device, error) {
+func (c *readClients) GetDevice(ctx context.Context, deviceID, delegatedToken string) (device, error) {
 	var result device
-	err := c.get(ctx, c.devices.baseURL, "/api/hdp/devices/"+url.PathEscape(strings.TrimSpace(deviceID)), nil, &result)
+	err := c.getAuthorized(ctx, c.devices.readBaseURL, "/devices/"+url.PathEscape(strings.TrimSpace(deviceID)), delegatedToken, &result)
 	return result, err
 }
 
-func (c *readClients) ListIntegrations(ctx context.Context) (any, error) {
-	return c.getAny(ctx, c.devices.baseURL, "/api/hdp/integrations", nil)
+func (c *readClients) GetCommandTarget(ctx context.Context, deviceID, delegatedToken string) (device, error) {
+	var result device
+	err := c.getAuthorized(ctx, c.devices.commandReadURL, "/"+url.PathEscape(strings.TrimSpace(deviceID)), delegatedToken, &result)
+	return result, err
 }
 
-func (c *readClients) ListPairings(ctx context.Context) (any, error) {
-	return c.getAny(ctx, c.devices.baseURL, "/api/hdp/pairings", nil)
+func (c *readClients) ListIntegrations(ctx context.Context, delegatedToken string) (any, error) {
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/hdp/integrations", delegatedToken)
 }
 
-func (c *readClients) ListRooms(ctx context.Context) (any, error) {
-	return c.getAny(ctx, c.entityRegistryURL, "/api/ers/rooms/", nil)
+func (c *readClients) ListPairings(ctx context.Context, delegatedToken string) (any, error) {
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/hdp/pairings", delegatedToken)
 }
 
-func (c *readClients) QueryStateHistory(ctx context.Context, input historyInput) (any, error) {
+func (c *readClients) ListRooms(ctx context.Context, delegatedToken string) (any, error) {
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/rooms/", delegatedToken)
+}
+
+func (c *readClients) QueryStateHistory(ctx context.Context, input historyInput, delegatedToken string) (any, error) {
 	if strings.TrimSpace(input.DeviceID) == "" {
 		return nil, fmt.Errorf("device_id is required")
 	}
@@ -132,7 +136,7 @@ func (c *readClients) QueryStateHistory(ctx context.Context, input historyInput)
 	} else if input.Order != "" {
 		return nil, fmt.Errorf("order must be asc or desc")
 	}
-	return c.getAny(ctx, c.historyURL, "/api/history/state", query)
+	return c.getAuthorizedAnyWithQuery(ctx, c.gatewayURL, "/api/mcp/history/state", delegatedToken, query)
 }
 
 func (c *readClients) getAny(ctx context.Context, baseURL, endpoint string, query url.Values) (any, error) {
@@ -144,8 +148,12 @@ func (c *readClients) getAny(ctx context.Context, baseURL, endpoint string, quer
 }
 
 func (c *readClients) getAuthorizedAny(ctx context.Context, baseURL, endpoint, bearer string) (any, error) {
+	return c.getAuthorizedAnyWithQuery(ctx, baseURL, endpoint, bearer, nil)
+}
+
+func (c *readClients) getAuthorizedAnyWithQuery(ctx context.Context, baseURL, endpoint, bearer string, query url.Values) (any, error) {
 	var result any
-	if err := c.getAuthorized(ctx, baseURL, endpoint, bearer, &result); err != nil {
+	if err := c.getAuthorizedWithQuery(ctx, baseURL, endpoint, bearer, query, &result); err != nil {
 		return nil, err
 	}
 	return redact(result), nil
@@ -176,8 +184,16 @@ func (c *readClients) get(ctx context.Context, baseURL, endpoint string, query u
 }
 
 func (c *readClients) getAuthorized(ctx context.Context, baseURL, endpoint, bearer string, output any) error {
-	requestURL := strings.TrimRight(baseURL, "/") + endpoint
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	return c.getAuthorizedWithQuery(ctx, baseURL, endpoint, bearer, nil, output)
+}
+
+func (c *readClients) getAuthorizedWithQuery(ctx context.Context, baseURL, endpoint, bearer string, query url.Values, output any) error {
+	requestURL, err := url.Parse(strings.TrimRight(baseURL, "/") + endpoint)
+	if err != nil {
+		return fmt.Errorf("build read request: %w", err)
+	}
+	requestURL.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
 	if err != nil {
 		return fmt.Errorf("build read request: %w", err)
 	}

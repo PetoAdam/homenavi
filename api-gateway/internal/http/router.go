@@ -69,13 +69,15 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, public
 func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redis.UniversalClient, publicKeySet apiMiddleware.RSAPublicKeySet) {
 	validation := apiMiddleware.APIValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
 	validation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
+	delegatedValidation := apiMiddleware.DelegatedValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
+	delegatedValidation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {
 		case "websocket", "websocket-mqtt":
-			h = wrapWithAccessControl(publicKeySet, validation, route.Access, proxy.MakeWebSocketProxyHandler(route))
+			h = wrapWithAccessControl(publicKeySet, validation, delegatedValidation, route, proxy.MakeWebSocketProxyHandler(route))
 		default:
-			h = wrapWithAccessControl(publicKeySet, validation, route.Access, proxy.MakeRestProxyHandler(route))
+			h = wrapWithAccessControl(publicKeySet, validation, delegatedValidation, route, proxy.MakeRestProxyHandler(route))
 		}
 
 		if route.RateLimit != nil {
@@ -96,8 +98,8 @@ func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redi
 	}
 }
 
-func wrapWithAccessControl(publicKeySet apiMiddleware.RSAPublicKeySet, validation apiMiddleware.ValidationConfig, access string, next http.Handler) http.Handler {
-	switch access {
+func wrapWithAccessControl(publicKeySet apiMiddleware.RSAPublicKeySet, validation, delegatedValidation apiMiddleware.ValidationConfig, route gateway.RouteConfig, next http.Handler) http.Handler {
+	switch route.Access {
 	case "public":
 		return next
 	case "auth":
@@ -106,7 +108,31 @@ func wrapWithAccessControl(publicKeySet apiMiddleware.RSAPublicKeySet, validatio
 		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, validation)(apiMiddleware.RoleAtLeastMiddleware("resident")(next))
 	case "admin":
 		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, validation)(apiMiddleware.RoleAtLeastMiddleware("admin")(next))
+	case "delegated":
+		if strings.TrimSpace(route.Scope) == "" {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"delegated route scope is not configured","code":500}`))
+			})
+		}
+		if suffix := strings.TrimSpace(route.PathSuffix); suffix != "" {
+			next = requirePathSuffix(suffix, next)
+		}
+		return apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, delegatedValidation)(apiMiddleware.RequireScopeMiddleware(route.Scope)(apiMiddleware.RoleAtLeastMiddleware("resident")(apiMiddleware.DelegatedAuditContextMiddleware(route.Tool)(next))))
 	default:
 		return next
 	}
+}
+
+func requirePathSuffix(suffix string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, suffix) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"not found","code":404}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

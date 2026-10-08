@@ -204,6 +204,69 @@ func TestJWTAuthMiddlewareRS256ValidatesSessionState(t *testing.T) {
 	}
 }
 
+func TestDelegatedTokenRequiresScopeAndResidentRole(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	validation := DelegatedValidationConfig("https://auth.example.test", authx.AudienceAPI)
+	validation.SessionValidator = func(context.Context, string) (bool, error) { return true, nil }
+	base := JWTAuthMiddlewareRS256(&privateKey.PublicKey, validation)(RequireScopeMiddleware("home.devices.write")(RoleAtLeastMiddleware(authx.RoleResident)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))))
+	for _, test := range []struct {
+		name      string
+		role      string
+		scope     string
+		tokenType string
+		status    int
+	}{
+		{name: "resident with scope", role: authx.RoleResident, scope: "home.devices.write", tokenType: authx.TokenTypeDelegated, status: http.StatusNoContent},
+		{name: "user with scope", role: authx.RoleUser, scope: "home.devices.write", tokenType: authx.TokenTypeDelegated, status: http.StatusForbidden},
+		{name: "resident without scope", role: authx.RoleResident, scope: "home.inventory.write", tokenType: authx.TokenTypeDelegated, status: http.StatusForbidden},
+		{name: "MCP token", role: authx.RoleResident, scope: "home.devices.write", tokenType: authx.TokenTypeMCP, status: http.StatusUnauthorized},
+		{name: "API token", role: authx.RoleResident, scope: "home.devices.write", tokenType: authx.TokenTypeAPI, status: http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			token := jwt.NewWithClaims(jwt.SigningMethodRS256, Claims{Role: test.role, Scope: test.scope, SessionID: "session-1", TokenType: test.tokenType, RegisteredClaims: jwt.RegisteredClaims{Issuer: validation.Issuer, Subject: "user-1", Audience: []string{validation.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Second)), IssuedAt: jwt.NewNumericDate(time.Now()), ID: "token-1"}})
+			keyID, keyErr := authx.KeyIDForRSAPublicKey(&privateKey.PublicKey)
+			if keyErr != nil {
+				t.Fatalf("derive key ID: %v", keyErr)
+			}
+			token.Header["kid"] = keyID
+			tokenString, signErr := token.SignedString(privateKey)
+			if signErr != nil {
+				t.Fatalf("sign token: %v", signErr)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/api/mcp/hdp/devices/device/commands", nil)
+			request.Header.Set("Authorization", "Bearer "+tokenString)
+			response := httptest.NewRecorder()
+			base.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
+func TestDelegatedAuditContextUsesValidatedClaims(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/mcp/hdp/devices/device/commands", nil)
+	request.Header.Set("X-Homenavi-Subject", "spoofed")
+	request.Header.Set("X-Request-ID", "request-1")
+	request = request.WithContext(context.WithValue(request.Context(), ClaimsKey, &Claims{Role: authx.RoleResident, Scope: "home.devices.write", AuthorizedParty: "mcp-cli", RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}}))
+	response := httptest.NewRecorder()
+	handler := DelegatedAuditContextMiddleware("send_device_command")(http.HandlerFunc(func(writer http.ResponseWriter, received *http.Request) {
+		if received.Header.Get("X-Homenavi-Subject") != "user-1" || received.Header.Get("X-Homenavi-Client-ID") != "mcp-cli" || received.Header.Get("X-Homenavi-Scope") != "home.devices.write" || received.Header.Get("X-Homenavi-Tool") != "send_device_command" || received.Header.Get("X-Homenavi-Request-ID") != "request-1" {
+			t.Fatalf("unexpected audit headers: %#v", received.Header)
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNoContent)
+	}
+}
+
 func requiredTestClaims(validation ValidationConfig, now time.Time) Claims {
 	return Claims{
 		Role:      authx.RoleResident,

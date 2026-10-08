@@ -14,12 +14,15 @@ import (
 var routeEnvPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 
 type RouteConfig struct {
-	Path      string   `mapstructure:"path"`
-	Upstream  string   `mapstructure:"upstream"`
-	Methods   []string `mapstructure:"methods"`
-	Access    string   `mapstructure:"access"`
-	Type      string   `mapstructure:"type"`
-	RateLimit *struct {
+	Path       string   `mapstructure:"path"`
+	Upstream   string   `mapstructure:"upstream"`
+	Methods    []string `mapstructure:"methods"`
+	Access     string   `mapstructure:"access"`
+	Scope      string   `mapstructure:"scope"`
+	PathSuffix string   `mapstructure:"path_suffix"`
+	Tool       string   `mapstructure:"tool"`
+	Type       string   `mapstructure:"type"`
+	RateLimit  *struct {
 		RPS   int `mapstructure:"rps"`
 		Burst int `mapstructure:"burst"`
 	} `mapstructure:"rate_limit"`
