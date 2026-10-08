@@ -336,6 +336,7 @@ services:
       port: 8001
     env:
       USER_SERVICE_PORT: "8001"
+      REDIS_MODE: sentinel
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: homenavi

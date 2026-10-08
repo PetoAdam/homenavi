@@ -22,7 +22,7 @@ type Config struct {
 func LoadConfig() Config {
 	return Config{
 		Enabled:            !strings.EqualFold(os.Getenv("MCP_ENABLED"), "false"),
-		Port:               value("MCP_SERVICE_PORT", "8096"),
+		Port:               value("MCP_PORT", "8096"),
 		Issuer:             strings.TrimSpace(os.Getenv("MCP_AUTHORIZATION_SERVER_ISSUER")),
 		Resource:           strings.TrimSpace(os.Getenv("MCP_RESOURCE_URI")),
 		PublicKeyPath:      value("JWT_PUBLIC_KEY_PATH", "/app/keys/jwt_public.pem"),
