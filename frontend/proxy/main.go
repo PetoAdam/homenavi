@@ -19,16 +19,23 @@ func main() {
 	apiProxy := mustProxy(envOrDefault("API_GATEWAY_URL", "http://api-gateway:8080"))
 	integrationProxy := mustProxy(envOrDefault("INTEGRATION_PROXY_URL", "http://integration-proxy:8099"))
 
+	handler := newHandler(staticRoot, apiProxy, integrationProxy)
+
+	logger.Printf("serving frontend on %s with static root %s", addr, staticRoot)
+	if err := http.ListenAndServe(addr, logRequests(logger, handler)); err != nil {
+		logger.Fatalf("server failed: %v", err)
+	}
+}
+
+func newHandler(staticRoot string, apiProxy, integrationProxy http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiProxy)
 	mux.Handle("/integrations/", integrationProxy)
 	mux.Handle("/ws/", apiProxy)
+	mux.Handle("/mcp", apiProxy)
+	mux.Handle("/.well-known/", apiProxy)
 	mux.HandleFunc("/", spaHandler(staticRoot))
-
-	logger.Printf("serving frontend on %s with static root %s", addr, staticRoot)
-	if err := http.ListenAndServe(addr, logRequests(logger, mux)); err != nil {
-		logger.Fatalf("server failed: %v", err)
-	}
+	return mux
 }
 
 func envOrDefault(key, fallback string) string {
