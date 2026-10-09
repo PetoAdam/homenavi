@@ -44,6 +44,11 @@ if ! grep -Fq 'return 301 /integrations/;' "$rendered"; then
   exit 1
 fi
 
+if [ "$(grep -Fc 'proxy_set_header X-Forwarded-Host $host;' "$rendered")" -ne 6 ]; then
+  echo "every edge upstream route must forward the public host" >&2
+  exit 1
+fi
+
 for direct_path in /api /ws /mcp /.well-known /integrations; do
   if grep -Fq "path: $direct_path" "$rendered"; then
     echo "ingress must not route $direct_path directly" >&2
