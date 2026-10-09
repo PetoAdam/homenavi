@@ -4,13 +4,13 @@ Homenavi exposes a scoped Streamable HTTP MCP endpoint at `/mcp`. It is a protec
 
 ## Authentication and Consent
 
-MCP access uses dynamically registered public clients with validated loopback or approved VS Code redirects. Only resident and admin users can authorize an MCP connection. Access tokens are audience-bound to `/mcp`, signed with RS256, scoped, session-bound, and valid for one hour. Browser application sessions use HttpOnly, Secure (on HTTPS), SameSite=Strict access and refresh cookies; browser JavaScript never receives bearer or refresh credentials.
+MCP access uses dynamically registered public clients with validated HTTPS or loopback redirects. Only resident and admin users can authorize an MCP connection. Access tokens are audience-bound to `/mcp`, signed with RS256, scoped, session-bound, and valid for one hour. Browser application sessions use HttpOnly, Secure (on HTTPS), SameSite=Strict access and refresh cookies; browser JavaScript never receives bearer or refresh credentials.
 
 When the browser already has a valid Homenavi web session, the authorization page opens directly at the consent view. A missing or expired web session requires normal Homenavi sign-in and any configured 2FA challenge. Consent grants are bound to the client, resource, and requested scopes, expire after 30 days, and can be revoked through `DELETE /api/auth/oauth/consents/{clientID}` with the user's API bearer token.
 
 ### Connection Policy
 
-`POST /api/auth/oauth/register` dynamically registers public MCP clients. Redirect URIs must be a loopback URI or an approved VS Code URI; the authorization-server metadata at `/.well-known/oauth-authorization-server/api/auth` advertises the registration, authorization, token, and JWKS endpoints. Residents and admins use the same tool policy: a tool is available only when its OAuth scope is granted. An admin role does not silently expand the consented scope set.
+`POST /api/auth/oauth/register` dynamically registers public MCP clients. Redirect URIs must be HTTPS or loopback HTTP; HTTPS URIs are matched exactly and loopback clients may use an ephemeral port. The authorization-server metadata at `/.well-known/oauth-authorization-server/api/auth` advertises the registration, authorization, token, and JWKS endpoints. Residents and admins use the same tool policy: a tool is available only when its OAuth scope is granted. An admin role does not silently expand the consented scope set. See [Connect an MCP Client](mcp_connection.md) for client setup and redirect requirements.
 
 The OAuth resource is the public `/mcp` URL and is the audience of an MCP access token. When `MCP_RESOURCE_URI` is unset, mcp-service derives that URL from the request's public host and forwarded scheme. This lets Compose and Helm work without MCP-specific host configuration while keeping consent and token audiences bound to the actual public endpoint.
 

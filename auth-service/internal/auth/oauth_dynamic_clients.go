@@ -71,18 +71,21 @@ func validateDynamicOAuthClientRedirectURIs(redirectURIs []string) error {
 	}
 	for _, rawURI := range redirectURIs {
 		uri, err := url.Parse(rawURI)
-		if err != nil || uri.Fragment != "" || uri.RawQuery != "" || uri.User != nil || !isDynamicOAuthRedirectURI(uri) {
-			return fmt.Errorf("dynamic clients require a loopback or approved VS Code redirect URI")
+		if err != nil || uri.Fragment != "" || uri.User != nil || !isDynamicOAuthRedirectURI(uri) {
+			return fmt.Errorf("dynamic clients require an HTTPS or loopback redirect URI")
 		}
 	}
 	return nil
 }
 
 func isDynamicOAuthRedirectURI(uri *url.URL) bool {
+	if uri.Host == "" {
+		return false
+	}
 	if uri.Scheme == "http" {
 		return isLoopbackHost(uri.Hostname())
 	}
-	return uri.Scheme == "https" && uri.Path == "/redirect" && (uri.Host == "vscode.dev" || uri.Host == "insiders.vscode.dev")
+	return uri.Scheme == "https"
 }
 
 func isLoopbackHost(host string) bool {

@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func TestRegisterOAuthClientAllowsApprovedNativeRedirects(t *testing.T) {
+func TestRegisterOAuthClientAllowsHTTPSAndLoopbackRedirects(t *testing.T) {
 	service := newRefreshTestService(t, newMemoryRefreshStore())
-	redirectURIs := []string{"http://127.0.0.1/", "http://127.0.0.1:33418/", "https://vscode.dev/redirect", "https://insiders.vscode.dev/redirect"}
-	client, err := service.RegisterOAuthClient(context.Background(), "VS Code", redirectURIs)
+	redirectURIs := []string{"http://127.0.0.1/", "http://127.0.0.1:33418/", "http://[::1]:33418/callback", "https://openwebui.example/oauth/callback", "https://client.example/callback?connection=homenavi"}
+	client, err := service.RegisterOAuthClient(context.Background(), "MCP client", redirectURIs)
 	if err != nil {
 		t.Fatalf("register dynamic client: %v", err)
 	}
@@ -23,15 +23,19 @@ func TestRegisterOAuthClientAllowsApprovedNativeRedirects(t *testing.T) {
 	if _, err := service.validateOAuthRequest(context.Background(), request); err != nil {
 		t.Fatalf("validate registered client: %v", err)
 	}
+	request.RedirectURI = "https://openwebui.example/oauth/callback"
+	if _, err := service.validateOAuthRequest(context.Background(), request); err != nil {
+		t.Fatalf("validate registered HTTPS client: %v", err)
+	}
 	request.Scope = "home.devices.write home.automation.execute"
 	if _, err := service.validateOAuthRequest(context.Background(), request); err != nil {
 		t.Fatalf("validate registered controlled scopes: %v", err)
 	}
 }
 
-func TestRegisterOAuthClientRejectsNonLoopbackRedirects(t *testing.T) {
+func TestRegisterOAuthClientRejectsUnsafeRedirects(t *testing.T) {
 	service := newRefreshTestService(t, newMemoryRefreshStore())
-	for _, redirectURI := range []string{"http://client.example/callback", "https://client.example/callback", "https://vscode.dev/not-redirect", "http://localhost:33418/callback?state=bad"} {
+	for _, redirectURI := range []string{"http://client.example/callback", "ftp://client.example/callback", "https://user@client.example/callback", "https://client.example/callback#fragment", "/callback", "http://localhost:33418/callback#fragment"} {
 		if _, err := service.RegisterOAuthClient(context.Background(), "Unsafe client", []string{redirectURI}); err == nil {
 			t.Fatalf("expected redirect URI %q to be rejected", redirectURI)
 		}
