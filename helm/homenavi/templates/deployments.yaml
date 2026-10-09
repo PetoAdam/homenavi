@@ -21,11 +21,8 @@ spec:
       {{- $zigbee2mqttExistingConfigMap := trim (default "" $svc.existingConfigurationConfigMap) }}
       {{- $zigbee2mqttConfigKey := default "configuration.yaml" $svc.configurationConfigMapKey }}
       {{- $zigbee2mqttHasConfigSource := and (eq $name "zigbee2mqtt") (or (ne $zigbee2mqttInlineConfig "") (ne $zigbee2mqttExistingConfigMap "")) }}
-      {{- if or (eq $name "frontend") (eq $name "integration-proxy") (eq $name "emqx") $zigbee2mqttHasConfigSource (eq (include "homenavi.jwtStaticSecret" $) "true") }}
+      {{- if or (eq $name "integration-proxy") (eq $name "emqx") $zigbee2mqttHasConfigSource (eq (include "homenavi.jwtStaticSecret" $) "true") }}
       annotations:
-        {{- if eq $name "frontend" }}
-        checksum/frontend-nginx-config: {{ include (print $.Template.BasePath "/frontend-nginx-config.yaml") $ | sha256sum }}
-        {{- end }}
         {{- if eq $name "integration-proxy" }}
         checksum/integration-proxy-config: {{ include (print $.Template.BasePath "/integration-proxy-config.yaml") $ | sha256sum }}
         {{- end }}

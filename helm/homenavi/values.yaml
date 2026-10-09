@@ -99,12 +99,6 @@ redis:
       size: 2Gi
       storageClassName: ""
 
-frontendProxy:
-  apiGatewayHost: api-gateway
-  apiGatewayPort: 8080
-  integrationProxyHost: integration-proxy
-  integrationProxyPort: 8099
-
 jwt:
   createSecret: true
   existingSecretName: ""
@@ -141,14 +135,22 @@ ingress:
           pathType: Prefix
           service: api-gateway
           port: 8080
+        - path: /ws
+          pathType: Prefix
+          service: api-gateway
+          port: 8080
         - path: /mcp
           pathType: Exact
           service: api-gateway
           port: 8080
-        - path: /.well-known/oauth-protected-resource
-          pathType: Exact
+        - path: /.well-known
+          pathType: Prefix
           service: api-gateway
           port: 8080
+        - path: /integrations
+          pathType: Prefix
+          service: integration-proxy
+          port: 8099
   tls: []
 
 persistentVolumeClaims:
@@ -192,14 +194,6 @@ services:
     env: {}
     envFromSecrets: []
     resources: {}
-    volumeMounts:
-      - name: frontend-nginx-config
-        mountPath: /etc/nginx/conf.d/default.conf
-        subPath: default.conf
-    volumes:
-      - name: frontend-nginx-config
-        type: configMap
-        configMapName: homenavi-frontend-nginx
 
   api-gateway:
     enabled: true

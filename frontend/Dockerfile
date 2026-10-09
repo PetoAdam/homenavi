@@ -11,14 +11,7 @@ RUN npm ci --no-audit --no-fund
 COPY . ./
 RUN npm run build
 
-FROM golang:1.26.1-alpine3.22 AS server-build
-WORKDIR /src
-COPY proxy/go.mod ./
-COPY proxy/main.go ./
-RUN CGO_ENABLED=0 GOWORK=off go build -o /out/frontend-proxy .
-
-FROM scratch
-COPY --from=server-build /out/frontend-proxy /frontend-proxy
-COPY --from=build /app/dist /app/dist
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
-ENTRYPOINT ["/frontend-proxy"]
