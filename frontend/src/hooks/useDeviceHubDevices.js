@@ -21,6 +21,7 @@ const REALTIME_SUBSCRIPTION_FILTERS = [
 ];
 const DEVICE_LIST_CONNECT_REFRESH_FRESHNESS_MS = 3000;
 const DEVICE_LIST_CACHE_TTL_MS = 20 * 1000;
+const COOKIE_SESSION = 'cookie-session';
 
 const CANONICAL_ZIGBEE_ID_RE = /^zigbee\/0x[0-9a-f]{16}$/i;
 
@@ -657,6 +658,17 @@ function nowMs() {
   return Date.now();
 }
 
+export function buildDeviceHubFetchOptions(accessToken = '') {
+  const token = typeof accessToken === 'string' ? accessToken.trim() : '';
+  if (!token || token === COOKIE_SESSION) {
+    return { credentials: 'include' };
+  }
+  return {
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${token}` },
+  };
+}
+
 export default function useDeviceHubDevices(options = {}) {
   const {
     enabled = true,
@@ -756,15 +768,7 @@ export default function useDeviceHubDevices(options = {}) {
     }
   }, []);
 
-  const buildFetchOptions = useCallback(() => {
-    const headers = {};
-    if (typeof accessToken === 'string' && accessToken.trim()) {
-      headers.Authorization = `Bearer ${accessToken.trim()}`;
-    }
-    return Object.keys(headers).length > 0
-      ? { credentials: 'include', headers }
-      : { credentials: 'include' };
-  }, [accessToken]);
+  const buildFetchOptions = useCallback(() => buildDeviceHubFetchOptions(accessToken), [accessToken]);
 
   const refreshPairings = useCallback(async () => {
     try {

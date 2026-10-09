@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildDeviceHubFetchOptions,
   buildPairingProgressSession,
   mergePairingAddedDevices,
   mergeMetadataRecord,
@@ -11,6 +12,19 @@ import {
   sessionsArrayToMap,
   shouldSkipFreshDeviceListFetch,
 } from './useDeviceHubDevices.js';
+
+describe('buildDeviceHubFetchOptions', () => {
+  it('uses the HttpOnly cookie session without a bearer header', () => {
+    expect(buildDeviceHubFetchOptions('cookie-session')).toEqual({ credentials: 'include' });
+  });
+
+  it('preserves bearer authentication for token-based callers', () => {
+    expect(buildDeviceHubFetchOptions(' access-token ')).toEqual({
+      credentials: 'include',
+      headers: { Authorization: 'Bearer access-token' },
+    });
+  });
+});
 
 describe('normalizeDeviceConfiguration', () => {
   it('marks devices as configured when capabilities are present', () => {
