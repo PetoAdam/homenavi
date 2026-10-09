@@ -41,11 +41,27 @@ type deviceClient interface {
 }
 
 type device struct {
-	ID       string         `json:"id"`
-	DeviceID string         `json:"device_id"`
-	Type     string         `json:"type"`
-	Online   bool           `json:"online"`
-	State    map[string]any `json:"state"`
+	ID          string         `json:"id"`
+	DeviceID    string         `json:"device_id"`
+	Name        string         `json:"name,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Room        *deviceRoom    `json:"room,omitempty"`
+	Tags        []deviceTag    `json:"tags,omitempty"`
+	Type        string         `json:"type"`
+	Online      bool           `json:"online"`
+	State       map[string]any `json:"state"`
+}
+
+type deviceRoom struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type deviceTag struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 type listDevicesOutput struct {
@@ -264,6 +280,21 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 			devices, err := s.clients.devices.List(ctx, token)
 			if err != nil {
 				return nil, listDevicesOutput{}, err
+			}
+			if principal.hasScope("home.inventory.read") {
+				inventoryToken, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+				if err != nil {
+					return nil, listDevicesOutput{}, err
+				}
+				entities, err := s.clients.ListInventoryDevices(ctx, inventoryToken)
+				if err != nil {
+					return nil, listDevicesOutput{}, err
+				}
+				rooms, err := s.clients.ListInventoryRooms(ctx, inventoryToken)
+				if err != nil {
+					return nil, listDevicesOutput{}, err
+				}
+				enrichDevices(devices, entities, rooms)
 			}
 			return nil, listDevicesOutput{Devices: devices}, nil
 		})

@@ -29,6 +29,51 @@ func TestHTTPDeviceClientListsBoundedSafeFields(t *testing.T) {
 	}
 }
 
+func TestReadClientsLoadInventoryMetadataAndEnrichDevices(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer inventory-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		switch r.URL.Path {
+		case "/api/mcp/ers/devices/":
+			_, _ = w.Write([]byte(`[{"name":"Bedroom Wardrobe","description":"TRADFRI LED driver","room_id":"room-1","tags":[{"id":"tag-1","name":"lights","slug":"lights"}],"hdp_external_ids":["zigbee/wardrobe"]}]`))
+		case "/api/mcp/ers/rooms/":
+			_, _ = w.Write([]byte(`[{"id":"room-1","name":"Bedroom","slug":"bedroom"}]`))
+		default:
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	entities, err := client.ListInventoryDevices(context.Background(), "inventory-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rooms, err := client.ListInventoryRooms(context.Background(), "inventory-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices := []device{{ID: "device-1", DeviceID: "zigbee/wardrobe"}, {ID: "device-2", DeviceID: "zigbee/unbound"}}
+	enrichDevices(devices, entities, rooms)
+
+	if devices[0].Name != "Bedroom Wardrobe" || devices[0].Description != "TRADFRI LED driver" || devices[0].Room == nil || devices[0].Room.Name != "Bedroom" || len(devices[0].Tags) != 1 || devices[0].Tags[0].Name != "lights" {
+		t.Fatalf("unexpected enriched device: %#v", devices[0])
+	}
+	if devices[1].Name != "" || devices[1].Room != nil || len(devices[1].Tags) != 0 {
+		t.Fatalf("unbound device was enriched: %#v", devices[1])
+	}
+}
+
+func TestEnrichDevicesLeavesUnknownRoomsUnset(t *testing.T) {
+	roomID := "unknown-room"
+	devices := []device{{DeviceID: "zigbee/wardrobe"}}
+	enrichDevices(devices, []inventoryDevice{{Name: "Bedroom Wardrobe", RoomID: &roomID, HDPExternalIDs: []string{"zigbee/wardrobe"}}}, nil)
+	if devices[0].Name != "Bedroom Wardrobe" || devices[0].Room != nil {
+		t.Fatalf("unexpected enrichment: %#v", devices[0])
+	}
+}
+
 func TestHTTPDeviceClientCommandsThroughGatewayWithDelegatedToken(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/mcp/hdp/devices/zigbee/1/commands" {

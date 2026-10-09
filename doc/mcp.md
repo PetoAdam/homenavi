@@ -39,7 +39,7 @@ Tools are advertised only when their OAuth scope is granted and the optional `MC
 
 | Scope | Tools |
 | --- | --- |
-| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: `get_device_group_state` |
+| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: device inventory also includes entity names, descriptions, rooms, and tags, plus `get_device_group_state` |
 | `home.devices.write` | `send_device_command`; with `home.inventory.read`: `send_device_group_command` |
 | `home.inventory.read` | `list_rooms`, `list_device_groups`, `get_device_group`; with `home.devices.read`: `get_device_group_state`; with `home.devices.write`: `send_device_group_command` |
 | `home.inventory.write` | `create_device_group` |

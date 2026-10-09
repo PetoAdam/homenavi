@@ -25,6 +25,63 @@ type deviceGroup struct {
 	HDPExternalIDs []string `json:"hdp_external_ids"`
 }
 
+type inventoryDevice struct {
+	Name           string      `json:"name"`
+	Description    string      `json:"description"`
+	RoomID         *string     `json:"room_id"`
+	Tags           []deviceTag `json:"tags"`
+	HDPExternalIDs []string    `json:"hdp_external_ids"`
+}
+
+func (c *readClients) ListInventoryDevices(ctx context.Context, delegatedToken string) ([]inventoryDevice, error) {
+	var result []inventoryDevice
+	err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/devices/", delegatedToken, &result)
+	return result, err
+}
+
+func (c *readClients) ListInventoryRooms(ctx context.Context, delegatedToken string) ([]deviceRoom, error) {
+	var result []deviceRoom
+	err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/rooms/", delegatedToken, &result)
+	return result, err
+}
+
+func enrichDevices(devices []device, entities []inventoryDevice, rooms []deviceRoom) {
+	entitiesByExternalID := make(map[string]inventoryDevice, len(entities))
+	for _, entity := range entities {
+		for _, externalID := range entity.HDPExternalIDs {
+			if externalID = strings.TrimSpace(externalID); externalID != "" {
+				entitiesByExternalID[externalID] = entity
+			}
+		}
+	}
+	roomsByID := make(map[string]deviceRoom, len(rooms))
+	for _, room := range rooms {
+		if room.ID = strings.TrimSpace(room.ID); room.ID != "" {
+			roomsByID[room.ID] = room
+		}
+	}
+	for index := range devices {
+		entity, ok := entitiesByExternalID[strings.TrimSpace(devices[index].DeviceID)]
+		if !ok {
+			continue
+		}
+		devices[index].Name = entity.Name
+		devices[index].Description = entity.Description
+		devices[index].Tags = entity.Tags
+		if entity.RoomID != nil {
+			devices[index].Room = roomForID(roomsByID, *entity.RoomID)
+		}
+	}
+}
+
+func roomForID(roomsByID map[string]deviceRoom, id string) *deviceRoom {
+	room, ok := roomsByID[strings.TrimSpace(id)]
+	if !ok {
+		return nil
+	}
+	return &room
+}
+
 func (c *readClients) ListGroups(ctx context.Context, delegatedToken string) (any, error) {
 	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/groups/", delegatedToken)
 }

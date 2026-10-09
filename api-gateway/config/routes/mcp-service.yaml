@@ -44,6 +44,13 @@ routes:
     scope: home.inventory.read
     tool: list_rooms
     type: rest
+  - path: /api/mcp/ers/devices/
+    upstream: http://entity-registry-service:8095/api/ers/devices/
+    methods: [GET]
+    access: delegated
+    scope: home.inventory.read
+    tool: list_devices
+    type: rest
   - path: /api/mcp/ers/groups/
     upstream: http://entity-registry-service:8095/api/ers/groups/
     methods: [GET]
