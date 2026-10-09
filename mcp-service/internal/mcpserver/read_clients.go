@@ -35,13 +35,13 @@ type inventoryDevice struct {
 
 func (c *readClients) ListInventoryDevices(ctx context.Context, delegatedToken string) ([]inventoryDevice, error) {
 	var result []inventoryDevice
-	err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/devices/", delegatedToken, &result)
+	err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/devices", delegatedToken, &result)
 	return result, err
 }
 
 func (c *readClients) ListInventoryRooms(ctx context.Context, delegatedToken string) ([]deviceRoom, error) {
 	var result []deviceRoom
-	err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/rooms/", delegatedToken, &result)
+	err := c.getAuthorized(ctx, c.gatewayURL, "/api/mcp/ers/rooms", delegatedToken, &result)
 	return result, err
 }
 
@@ -83,7 +83,7 @@ func roomForID(roomsByID map[string]deviceRoom, id string) *deviceRoom {
 }
 
 func (c *readClients) ListGroups(ctx context.Context, delegatedToken string) (any, error) {
-	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/groups/", delegatedToken)
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/groups", delegatedToken)
 }
 
 func (c *readClients) GetGroup(ctx context.Context, groupID, delegatedToken string) (deviceGroup, error) {
@@ -168,7 +168,7 @@ func (c *readClients) ListPairings(ctx context.Context, delegatedToken string) (
 }
 
 func (c *readClients) ListRooms(ctx context.Context, delegatedToken string) (any, error) {
-	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/rooms/", delegatedToken)
+	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/rooms", delegatedToken)
 }
 
 func (c *readClients) QueryStateHistory(ctx context.Context, input historyInput, delegatedToken string) (any, error) {

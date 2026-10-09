@@ -35,9 +35,9 @@ func TestReadClientsLoadInventoryMetadataAndEnrichDevices(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		switch r.URL.Path {
-		case "/api/mcp/ers/devices/":
+		case "/api/mcp/ers/devices":
 			_, _ = w.Write([]byte(`[{"name":"Bedroom Wardrobe","description":"TRADFRI LED driver","room_id":"room-1","tags":[{"id":"tag-1","name":"lights","slug":"lights"}],"hdp_external_ids":["zigbee/wardrobe"]}]`))
-		case "/api/mcp/ers/rooms/":
+		case "/api/mcp/ers/rooms":
 			_, _ = w.Write([]byte(`[{"id":"room-1","name":"Bedroom","slug":"bedroom"}]`))
 		default:
 			t.Fatalf("path = %s", r.URL.Path)
