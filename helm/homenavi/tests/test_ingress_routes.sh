@@ -30,9 +30,23 @@ assert_route() {
   fi
 }
 
-assert_route / Prefix frontend 3000
-assert_route /api Prefix api-gateway 8080
-assert_route /ws Prefix api-gateway 8080
-assert_route /mcp Exact api-gateway 8080
-assert_route /.well-known Prefix api-gateway 8080
-assert_route /integrations Prefix integration-proxy 8099
+assert_route / Prefix edge-proxy 80
+
+for upstream in http://api-gateway:8080 http://integration-proxy:8099 http://frontend:80; do
+  if ! grep -Fq "proxy_pass $upstream;" "$rendered"; then
+    echo "missing edge route upstream: $upstream" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq 'return 301 /integrations/;' "$rendered"; then
+  echo "missing /integrations canonical-path redirect" >&2
+  exit 1
+fi
+
+for direct_path in /api /ws /mcp /.well-known /integrations; do
+  if grep -Fq "path: $direct_path" "$rendered"; then
+    echo "ingress must not route $direct_path directly" >&2
+    exit 1
+  fi
+done

@@ -197,6 +197,7 @@ services:
     volumes:
       - ./nginx/nginx.conf.dev.template:/etc/nginx/nginx.conf.dev.template:ro
       - ./nginx/nginx.conf.prod.template:/etc/nginx/nginx.conf.prod.template:ro
+      - ./helm/homenavi/files/edge-routes.conf:/etc/nginx/routes.conf:ro
       - ./nginx/entrypoint.sh:/entrypoint.sh:ro
       - ${NGINX_CERT_ORIGIN}:/etc/nginx/certs/nginx.crt:ro
       - ${NGINX_KEY_ORIGIN}:/etc/nginx/certs/nginx.key:ro
