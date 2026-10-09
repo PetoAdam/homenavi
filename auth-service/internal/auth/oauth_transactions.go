@@ -26,6 +26,7 @@ func (s *Service) BeginOAuthAuthorization(ctx context.Context, request OAuthAuth
 	if s.cacheStore == nil {
 		return OAuthAuthorizationTransaction{}, fmt.Errorf("authorization transactions are unavailable")
 	}
+	request = s.normalizeOAuthAuthorizationRequest(request)
 	if _, err := s.validateOAuthRequest(ctx, request); err != nil {
 		return OAuthAuthorizationTransaction{}, err
 	}

@@ -25,6 +25,7 @@ func (s *Service) AuthorizeOAuthForSession(ctx context.Context, request OAuthAut
 	if s.oauthClients == nil || s.oauthCodes == nil || s.oauthConsents == nil || strings.TrimSpace(subject) == "" || strings.TrimSpace(sessionID) == "" {
 		return "", fmt.Errorf("OAuth authorization is not configured")
 	}
+	request = s.normalizeOAuthAuthorizationRequest(request)
 	if _, err := s.validateOAuthRequest(ctx, request); err != nil {
 		return "", err
 	}
@@ -50,10 +51,18 @@ func (s *Service) GrantOAuthConsent(ctx context.Context, request OAuthAuthorizat
 	if s.oauthClients == nil || s.oauthConsents == nil || strings.TrimSpace(subject) == "" || strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("OAuth authorization is not configured")
 	}
+	request = s.normalizeOAuthAuthorizationRequest(request)
 	if _, err := s.validateOAuthRequest(ctx, request); err != nil {
 		return err
 	}
 	return s.oauthConsents.Grant(ctx, subject, request)
+}
+
+func (s *Service) normalizeOAuthAuthorizationRequest(request OAuthAuthorizationRequest) OAuthAuthorizationRequest {
+	if s.oauthClients == nil {
+		return request
+	}
+	return s.oauthClients.normalizeAuthorizationRequest(request)
 }
 
 func (s *Service) RevokeOAuthConsent(ctx context.Context, subject, clientID string) error {

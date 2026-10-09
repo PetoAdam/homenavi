@@ -48,6 +48,13 @@ func NewOAuthClientRegistry(clients []OAuthClient, resource string) (*OAuthClien
 	return registry, nil
 }
 
+func (r *OAuthClientRegistry) normalizeAuthorizationRequest(request OAuthAuthorizationRequest) OAuthAuthorizationRequest {
+	if request.Resource == "" && r.resource != "" {
+		request.Resource = r.resource
+	}
+	return request
+}
+
 func (r *OAuthClientRegistry) ValidateAuthorizationRequest(request OAuthAuthorizationRequest) (OAuthClient, error) {
 	client, exists := r.clients[request.ClientID]
 	if !exists || !client.Enabled {

@@ -44,3 +44,22 @@ func TestOAuthAuthorizationCodeRejectsWrongVerifierAndConsumesCode(t *testing.T)
 		t.Fatal("expected failed exchange to consume authorization code")
 	}
 }
+
+func TestOAuthAuthorizationCodeDefaultsOmittedResource(t *testing.T) {
+	store := newMemoryRefreshStore()
+	manager := NewOAuthAuthorizationCodeManager(store)
+	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+	digest := sha256.Sum256([]byte(verifier))
+	input := OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "open-webui", RedirectURI: "https://openwebui.example/oauth/callback", Scope: "home.devices.read", Resource: "https://home.example/mcp", CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:])}
+	code, err := manager.Issue(context.Background(), input)
+	if err != nil {
+		t.Fatalf("issue code: %v", err)
+	}
+	grant, err := manager.Consume(context.Background(), code, OAuthAuthorizationCodeExchange{ClientID: input.ClientID, RedirectURI: input.RedirectURI, CodeVerifier: verifier})
+	if err != nil {
+		t.Fatalf("consume code without resource: %v", err)
+	}
+	if grant.Resource != input.Resource {
+		t.Fatalf("resource = %q, want %q", grant.Resource, input.Resource)
+	}
+}

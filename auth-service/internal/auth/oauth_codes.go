@@ -84,6 +84,9 @@ func (m *OAuthAuthorizationCodeManager) Consume(ctx context.Context, code string
 	if err := json.Unmarshal([]byte(recordJSON), &record); err != nil {
 		return OAuthAuthorizationGrant{}, fmt.Errorf("decode authorization code: %w", err)
 	}
+	if exchange.Resource == "" {
+		exchange.Resource = record.Resource
+	}
 	if record.ClientID != exchange.ClientID || record.RedirectURI != exchange.RedirectURI || record.Resource != exchange.Resource {
 		return OAuthAuthorizationGrant{}, fmt.Errorf("authorization code binding does not match")
 	}
