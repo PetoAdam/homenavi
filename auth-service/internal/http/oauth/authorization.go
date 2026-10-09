@@ -36,8 +36,12 @@ func (h *AuthorizationHandler) HandleRegisterClient(w http.ResponseWriter, r *ht
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "invalid registration request")
 		return
 	}
-	if request.ApplicationType != "" && request.ApplicationType != "native" || request.TokenEndpointAuthMethod != "" && request.TokenEndpointAuthMethod != "none" {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "only native public clients are supported")
+	applicationType := request.ApplicationType
+	if applicationType == "" {
+		applicationType = "native"
+	}
+	if applicationType != "native" && applicationType != "web" || request.TokenEndpointAuthMethod != "" && request.TokenEndpointAuthMethod != "none" {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "only public web or native clients are supported")
 		return
 	}
 	client, err := h.authorizer.RegisterOAuthClient(r.Context(), request.ClientName, request.RedirectURIs)
@@ -48,7 +52,7 @@ func (h *AuthorizationHandler) HandleRegisterClient(w http.ResponseWriter, r *ht
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]any{"client_id": client.ClientID, "client_name": client.DisplayName, "redirect_uris": client.RedirectURIs, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "application_type": "native", "scope": strings.Join(client.Scopes, " ")})
+	_ = json.NewEncoder(w).Encode(map[string]any{"client_id": client.ClientID, "client_name": client.DisplayName, "redirect_uris": client.RedirectURIs, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "application_type": applicationType, "scope": strings.Join(client.Scopes, " ")})
 }
 
 type browserAuthenticator interface {

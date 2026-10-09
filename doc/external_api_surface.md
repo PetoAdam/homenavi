@@ -69,7 +69,7 @@ Authenticated:
 OAuth and MCP authorization:
 - `GET /.well-known/oauth-authorization-server/api/auth` publishes authorization-server metadata.
 - `GET|POST /api/auth/oauth/authorize` begins or completes Authorization Code + PKCE consent.
-- `POST /api/auth/oauth/register` dynamically registers a public MCP client. Redirect URIs are restricted to loopback or approved VS Code URIs.
+- `POST /api/auth/oauth/register` dynamically registers a public native or web MCP client. Redirect URIs must be HTTPS or loopback HTTP; remote HTTP redirects are rejected.
 - `POST /api/auth/oauth/token` exchanges an authorization code for an MCP token. mcp-service also uses this endpoint with `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, a bearer MCP token, gateway resource, and one scope to obtain a delegated token.
 - `GET /api/auth/oauth/jwks.json` publishes signing keys.
 - `POST /api/auth/oauth/consents` and `DELETE /api/auth/oauth/consents/{clientID}` manage authenticated user consent.

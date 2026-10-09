@@ -16,14 +16,16 @@ import (
 )
 
 type fakeOAuthAuthorizer struct {
-	subject     string
-	sessionID   string
-	role        string
-	err         error
-	request     authdomain.OAuthAuthorizationRequest
-	granted     bool
-	revoked     string
-	transaction authdomain.OAuthAuthorizationTransaction
+	subject                string
+	sessionID              string
+	role                   string
+	err                    error
+	request                authdomain.OAuthAuthorizationRequest
+	registeredName         string
+	registeredRedirectURIs []string
+	granted                bool
+	revoked                string
+	transaction            authdomain.OAuthAuthorizationTransaction
 }
 
 func (f *fakeOAuthAuthorizer) ExtractOAuthSession(string) (authdomain.OAuthSession, error) {
@@ -57,6 +59,8 @@ func (f *fakeOAuthAuthorizer) RegisterOAuthClient(_ context.Context, name string
 	if f.err != nil {
 		return authdomain.OAuthClient{}, f.err
 	}
+	f.registeredName = name
+	f.registeredRedirectURIs = append([]string(nil), redirectURIs...)
 	return authdomain.OAuthClient{ClientID: "dynamic-client", DisplayName: name, RedirectURIs: redirectURIs}, nil
 }
 
@@ -103,6 +107,29 @@ func (f *fakeOAuthAuthorizer) DeleteOAuthAuthorizationTransaction(_ context.Cont
 func TestAuthorizationHandlerIssuesRedirectBoundCode(t *testing.T) {
 	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1"}
 	handler := NewAuthorizationHandler(authorizer)
+func TestAuthorizationHandlerRegistersPublicWebClient(t *testing.T) {
+	authorizer := &fakeOAuthAuthorizer{}
+	handler := NewAuthorizationHandler(authorizer)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/register", strings.NewReader(`{"client_name":"Open WebUI","redirect_uris":["https://openwebui.example/oauth/clients/homenavi-mcp/callback"],"application_type":"web","token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}`))
+	response := httptest.NewRecorder()
+
+	handler.HandleRegisterClient(response, request)
+
+	if response.Code != http.StatusCreated || authorizer.registeredName != "Open WebUI" || len(authorizer.registeredRedirectURIs) != 1 || authorizer.registeredRedirectURIs[0] != "https://openwebui.example/oauth/clients/homenavi-mcp/callback" {
+		t.Fatalf("unexpected registration response: status=%d authorizer=%#v", response.Code, authorizer)
+	}
+	var registered struct {
+		ApplicationType string `json:"application_type"`
+		ClientID        string `json:"client_id"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&registered); err != nil {
+		t.Fatalf("decode registration response: %v", err)
+	}
+	if registered.ApplicationType != "web" || registered.ClientID != "dynamic-client" {
+		t.Fatalf("unexpected registered client: %#v", registered)
+	}
+}
+
 	query := url.Values{
 		"client_id":             {"mcp-cli"},
 		"redirect_uri":          {"https://client.example/callback?from=client"},
