@@ -11,11 +11,13 @@ var pkceVerifierPattern = regexp.MustCompile(`^[A-Za-z0-9\-._~]{43,128}$`)
 
 // OAuthClient is an administratively configured OAuth client.
 type OAuthClient struct {
-	ClientID     string   `json:"client_id"`
-	DisplayName  string   `json:"display_name"`
-	RedirectURIs []string `json:"redirect_uris"`
-	Scopes       []string `json:"scopes"`
-	Enabled      bool     `json:"enabled"`
+	ClientID                string   `json:"client_id"`
+	DisplayName             string   `json:"display_name"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	Scopes                  []string `json:"scopes"`
+	ApplicationType         string   `json:"application_type,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	Enabled                 bool     `json:"enabled"`
 }
 
 type OAuthAuthorizationRequest struct {
@@ -104,7 +106,7 @@ func validateOAuthClient(client OAuthClient) error {
 	}
 	for _, rawURI := range client.RedirectURIs {
 		uri, err := url.Parse(rawURI)
-		if err != nil || uri.Fragment != "" || uri.Host == "" || !validOAuthRedirectURI(uri) {
+		if err != nil || uri.Fragment != "" || uri.User != nil || !validOAuthClientRedirectURI(client, uri) {
 			return fmt.Errorf("OAuth client %q has invalid redirect URI", client.ClientID)
 		}
 	}
@@ -114,11 +116,26 @@ func validateOAuthClient(client OAuthClient) error {
 	return nil
 }
 
-func validOAuthRedirectURI(uri *url.URL) bool {
+func validOAuthClientRedirectURI(client OAuthClient, uri *url.URL) bool {
 	if uri.Scheme == "https" {
+		return uri.Host != ""
+	}
+	if uri.Scheme == "http" {
+		return uri.Host != "" && isLoopbackHost(uri.Hostname())
+	}
+	return client.ApplicationType == "native" && validNativeCustomOAuthRedirectURI(uri)
+}
+
+func validNativeCustomOAuthRedirectURI(uri *url.URL) bool {
+	if uri.Scheme == "" || uri.Host == "" || uri.Opaque != "" {
+		return false
+	}
+	switch strings.ToLower(uri.Scheme) {
+	case "about", "data", "file", "ftp", "ftps", "javascript", "mailto", "tel", "ws", "wss":
+		return false
+	default:
 		return true
 	}
-	return uri.Scheme == "http" && (uri.Hostname() == "localhost" || uri.Hostname() == "127.0.0.1" || uri.Hostname() == "::1")
 }
 
 func matchesRegisteredOAuthRedirectURI(registeredURIs []string, requestedURI string) bool {

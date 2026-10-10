@@ -7,11 +7,34 @@ import (
 	"testing"
 )
 
-func TestMetadataHandlerRejectsMissingConfiguredIssuer(t *testing.T) {
+func TestMetadataHandlerDerivesIssuerFromForwardedRequest(t *testing.T) {
 	handler := NewMetadataHandler("")
 	request := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+	request.Header.Set("X-Forwarded-Host", "home.example.test")
+	request.Header.Set("X-Forwarded-Proto", "https")
 	response := httptest.NewRecorder()
 	handler.HandleAuthorizationServerMetadata(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected metadata response: %d %s", response.Code, response.Body.String())
+	}
+	var metadata struct{ Issuer string `json:"issuer"` }
+	if err := json.NewDecoder(response.Body).Decode(&metadata); err != nil {
+		t.Fatalf("decode metadata: %v", err)
+	}
+	if metadata.Issuer != "https://home.example.test/api/auth" {
+		t.Fatalf("issuer = %q", metadata.Issuer)
+	}
+}
+
+func TestMetadataHandlerRejectsUnsafeForwardedScheme(t *testing.T) {
+	handler := NewMetadataHandler("")
+	request := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+	request.Header.Set("X-Forwarded-Host", "home.example.test")
+	request.Header.Set("X-Forwarded-Proto", "javascript")
+	response := httptest.NewRecorder()
+
+	handler.HandleAuthorizationServerMetadata(response, request)
+
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("unexpected metadata response: %d %s", response.Code, response.Body.String())
 	}

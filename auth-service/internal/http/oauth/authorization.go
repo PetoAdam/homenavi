@@ -22,7 +22,7 @@ type oauthAuthorizer interface {
 	AuthorizeOAuthForSession(context.Context, authdomain.OAuthAuthorizationRequest, string, string) (string, error)
 	GrantOAuthConsent(context.Context, authdomain.OAuthAuthorizationRequest, string, string) error
 	RevokeOAuthConsent(context.Context, string, string) error
-	RegisterOAuthClient(context.Context, string, []string) (authdomain.OAuthClient, error)
+	RegisterDynamicOAuthClient(context.Context, authdomain.DynamicOAuthClientRegistration) (authdomain.OAuthClient, error)
 }
 
 func (h *AuthorizationHandler) HandleRegisterClient(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +44,12 @@ func (h *AuthorizationHandler) HandleRegisterClient(w http.ResponseWriter, r *ht
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "only public web or native clients are supported")
 		return
 	}
-	client, err := h.authorizer.RegisterOAuthClient(r.Context(), request.ClientName, request.RedirectURIs)
+	client, err := h.authorizer.RegisterDynamicOAuthClient(r.Context(), authdomain.DynamicOAuthClientRegistration{
+		Name:                    request.ClientName,
+		RedirectURIs:            request.RedirectURIs,
+		ApplicationType:         applicationType,
+		TokenEndpointAuthMethod: request.TokenEndpointAuthMethod,
+	})
 	if err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "client registration was rejected")
 		return
@@ -52,7 +57,7 @@ func (h *AuthorizationHandler) HandleRegisterClient(w http.ResponseWriter, r *ht
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]any{"client_id": client.ClientID, "client_name": client.DisplayName, "redirect_uris": client.RedirectURIs, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "application_type": applicationType, "scope": strings.Join(client.Scopes, " ")})
+	_ = json.NewEncoder(w).Encode(map[string]any{"client_id": client.ClientID, "client_name": client.DisplayName, "redirect_uris": client.RedirectURIs, "token_endpoint_auth_method": client.TokenEndpointAuthMethod, "grant_types": []string{"authorization_code"}, "response_types": []string{"code"}, "application_type": client.ApplicationType, "scope": strings.Join(client.Scopes, " ")})
 }
 
 type browserAuthenticator interface {
@@ -92,7 +97,8 @@ func (h *AuthorizationHandler) HandleAuthorize(w http.ResponseWriter, r *http.Re
 	bearer := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	if bearer == "" {
 		transaction, err := h.authorizer.BeginOAuthAuthorization(r.Context(), request)
-		if err != nil || h.authorizationUIURL == "" {
+		authorizationUIURL, urlErr := h.authorizationUIURLForRequest(r)
+		if err != nil || urlErr != nil {
 			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "authorization request was rejected")
 			return
 		}
@@ -107,7 +113,7 @@ func (h *AuthorizationHandler) HandleAuthorize(w http.ResponseWriter, r *http.Re
 			}
 		}
 		h.setBrowserTransaction(w, r, transaction.ID)
-		http.Redirect(w, r, h.authorizationUIURL, http.StatusFound)
+		http.Redirect(w, r, authorizationUIURL, http.StatusFound)
 		return
 	}
 	session, err := h.authorizer.ExtractOAuthSession(bearer)
@@ -130,6 +136,17 @@ func (h *AuthorizationHandler) HandleAuthorize(w http.ResponseWriter, r *http.Re
 	values.Set("state", request.State)
 	redirect.RawQuery = values.Encode()
 	http.Redirect(w, r, redirect.String(), http.StatusFound)
+}
+
+func (h *AuthorizationHandler) authorizationUIURLForRequest(request *http.Request) (string, error) {
+	if h.authorizationUIURL != "" {
+		return h.authorizationUIURL, nil
+	}
+	origin, err := publicOriginForRequest(request)
+	if err != nil {
+		return "", err
+	}
+	return origin + "/oauth/authorize", nil
 }
 
 func (h *AuthorizationHandler) HandleAuthorizationTransaction(w http.ResponseWriter, r *http.Request) {

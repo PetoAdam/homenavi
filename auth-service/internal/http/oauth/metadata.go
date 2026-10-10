@@ -41,6 +41,13 @@ func (h *MetadataHandler) HandleAuthorizationServerMetadata(w http.ResponseWrite
 
 func (h *MetadataHandler) issuerForRequest(request *http.Request) (string, error) {
 	issuer := h.issuer
+	if issuer == "" {
+		origin, err := publicOriginForRequest(request)
+		if err != nil {
+			return "", err
+		}
+		issuer = origin + "/api/auth"
+	}
 	parsed, err := url.Parse(issuer)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "/api/auth" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", fmt.Errorf("authorization-server issuer must be an absolute /api/auth URI")

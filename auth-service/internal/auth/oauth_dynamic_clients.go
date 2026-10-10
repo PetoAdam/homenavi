@@ -21,18 +21,43 @@ var dynamicClientScopes = []string{
 	"home.automation.execute",
 }
 
+type DynamicOAuthClientRegistration struct {
+	Name                    string
+	RedirectURIs            []string
+	ApplicationType         string
+	TokenEndpointAuthMethod string
+}
+
 func (s *Service) RegisterOAuthClient(ctx context.Context, name string, redirectURIs []string) (OAuthClient, error) {
-	if s.cacheStore == nil || strings.TrimSpace(name) == "" {
+	return s.RegisterDynamicOAuthClient(ctx, DynamicOAuthClientRegistration{
+		Name:                    name,
+		RedirectURIs:            redirectURIs,
+		ApplicationType:         "native",
+		TokenEndpointAuthMethod: "none",
+	})
+}
+
+func (s *Service) RegisterDynamicOAuthClient(ctx context.Context, registration DynamicOAuthClientRegistration) (OAuthClient, error) {
+	if s.cacheStore == nil || strings.TrimSpace(registration.Name) == "" {
 		return OAuthClient{}, fmt.Errorf("invalid dynamic client registration")
 	}
-	if err := validateDynamicOAuthClientRedirectURIs(redirectURIs); err != nil {
+	if registration.ApplicationType == "" {
+		registration.ApplicationType = "native"
+	}
+	if registration.TokenEndpointAuthMethod == "" {
+		registration.TokenEndpointAuthMethod = "none"
+	}
+	if registration.ApplicationType != "native" && registration.ApplicationType != "web" || registration.TokenEndpointAuthMethod != "none" {
+		return OAuthClient{}, fmt.Errorf("unsupported dynamic client metadata")
+	}
+	if err := validateDynamicOAuthClientRedirectURIs(registration.RedirectURIs, registration.ApplicationType); err != nil {
 		return OAuthClient{}, err
 	}
 	clientID, err := newTokenID()
 	if err != nil {
 		return OAuthClient{}, err
 	}
-	client := OAuthClient{ClientID: "hn_" + clientID, DisplayName: strings.TrimSpace(name), RedirectURIs: redirectURIs, Scopes: dynamicClientScopes, Enabled: true}
+	client := OAuthClient{ClientID: "hn_" + clientID, DisplayName: strings.TrimSpace(registration.Name), RedirectURIs: registration.RedirectURIs, Scopes: dynamicClientScopes, ApplicationType: registration.ApplicationType, TokenEndpointAuthMethod: registration.TokenEndpointAuthMethod, Enabled: true}
 	if err := validateOAuthClient(client); err != nil {
 		return OAuthClient{}, err
 	}
@@ -58,6 +83,12 @@ func (s *Service) validateOAuthRequest(ctx context.Context, request OAuthAuthori
 	if json.Unmarshal([]byte(encoded), &client) != nil {
 		return OAuthClient{}, fmt.Errorf("invalid OAuth client")
 	}
+	if client.ApplicationType == "" {
+		client.ApplicationType = "native"
+	}
+	if client.TokenEndpointAuthMethod == "" {
+		client.TokenEndpointAuthMethod = "none"
+	}
 	registry, err := NewOAuthClientRegistry([]OAuthClient{client}, s.config.OAuthMCPResource)
 	if err != nil {
 		return OAuthClient{}, err
@@ -65,27 +96,27 @@ func (s *Service) validateOAuthRequest(ctx context.Context, request OAuthAuthori
 	return registry.ValidateAuthorizationRequest(request)
 }
 
-func validateDynamicOAuthClientRedirectURIs(redirectURIs []string) error {
+func validateDynamicOAuthClientRedirectURIs(redirectURIs []string, applicationType string) error {
 	if len(redirectURIs) == 0 || len(redirectURIs) != len(unique(redirectURIs)) {
 		return fmt.Errorf("at least one unique redirect URI is required")
 	}
 	for _, rawURI := range redirectURIs {
 		uri, err := url.Parse(rawURI)
-		if err != nil || uri.Fragment != "" || uri.User != nil || !isDynamicOAuthRedirectURI(uri) {
-			return fmt.Errorf("dynamic clients require an HTTPS or loopback redirect URI")
+		if err != nil || uri.Fragment != "" || uri.User != nil || !isDynamicOAuthRedirectURI(uri, applicationType) {
+			return fmt.Errorf("dynamic clients require a valid %s redirect URI", applicationType)
 		}
 	}
 	return nil
 }
 
-func isDynamicOAuthRedirectURI(uri *url.URL) bool {
-	if uri.Host == "" {
-		return false
-	}
+func isDynamicOAuthRedirectURI(uri *url.URL, applicationType string) bool {
 	if uri.Scheme == "http" {
-		return isLoopbackHost(uri.Hostname())
+		return applicationType == "native" && uri.Host != "" && isLoopbackHost(uri.Hostname())
 	}
-	return uri.Scheme == "https"
+	if uri.Scheme == "https" {
+		return uri.Host != ""
+	}
+	return applicationType == "native" && validNativeCustomOAuthRedirectURI(uri)
 }
 
 func isLoopbackHost(host string) bool {

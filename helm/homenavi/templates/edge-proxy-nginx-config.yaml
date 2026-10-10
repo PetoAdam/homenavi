@@ -12,4 +12,4 @@ data:
       include /etc/nginx/routes.conf;
     }
   routes.conf: |
-{{ .Files.Get "files/edge-routes.conf" | indent 4 }}
+{{ tpl (.Files.Get "files/edge-routes.conf") . | indent 4 }}

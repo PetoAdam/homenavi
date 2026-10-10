@@ -23,6 +23,7 @@ type fakeOAuthAuthorizer struct {
 	request                authdomain.OAuthAuthorizationRequest
 	registeredName         string
 	registeredRedirectURIs []string
+	registration           authdomain.DynamicOAuthClientRegistration
 	granted                bool
 	revoked                string
 	transaction            authdomain.OAuthAuthorizationTransaction
@@ -55,13 +56,14 @@ func (f *fakeOAuthAuthorizer) RevokeOAuthConsent(_ context.Context, _ string, cl
 	return f.err
 }
 
-func (f *fakeOAuthAuthorizer) RegisterOAuthClient(_ context.Context, name string, redirectURIs []string) (authdomain.OAuthClient, error) {
+func (f *fakeOAuthAuthorizer) RegisterDynamicOAuthClient(_ context.Context, registration authdomain.DynamicOAuthClientRegistration) (authdomain.OAuthClient, error) {
 	if f.err != nil {
 		return authdomain.OAuthClient{}, f.err
 	}
-	f.registeredName = name
-	f.registeredRedirectURIs = append([]string(nil), redirectURIs...)
-	return authdomain.OAuthClient{ClientID: "dynamic-client", DisplayName: name, RedirectURIs: redirectURIs}, nil
+	f.registeredName = registration.Name
+	f.registeredRedirectURIs = append([]string(nil), registration.RedirectURIs...)
+	f.registration = registration
+	return authdomain.OAuthClient{ClientID: "dynamic-client", DisplayName: registration.Name, RedirectURIs: registration.RedirectURIs, ApplicationType: registration.ApplicationType, TokenEndpointAuthMethod: registration.TokenEndpointAuthMethod}, nil
 }
 
 func (f *fakeOAuthAuthorizer) BeginOAuthAuthorization(_ context.Context, request authdomain.OAuthAuthorizationRequest) (authdomain.OAuthAuthorizationTransaction, error) {
@@ -104,9 +106,6 @@ func (f *fakeOAuthAuthorizer) DeleteOAuthAuthorizationTransaction(_ context.Cont
 	return f.err
 }
 
-func TestAuthorizationHandlerIssuesRedirectBoundCode(t *testing.T) {
-	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1"}
-	handler := NewAuthorizationHandler(authorizer)
 func TestAuthorizationHandlerRegistersPublicWebClient(t *testing.T) {
 	authorizer := &fakeOAuthAuthorizer{}
 	handler := NewAuthorizationHandler(authorizer)
@@ -128,8 +127,27 @@ func TestAuthorizationHandlerRegistersPublicWebClient(t *testing.T) {
 	if registered.ApplicationType != "web" || registered.ClientID != "dynamic-client" {
 		t.Fatalf("unexpected registered client: %#v", registered)
 	}
+	if authorizer.registration.ApplicationType != "web" || authorizer.registration.TokenEndpointAuthMethod != "none" {
+		t.Fatalf("unexpected registration metadata: %#v", authorizer.registration)
+	}
 }
 
+func TestAuthorizationHandlerRegistersNativeCustomSchemeClient(t *testing.T) {
+	authorizer := &fakeOAuthAuthorizer{}
+	handler := NewAuthorizationHandler(authorizer)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/register", strings.NewReader(`{"client_name":"Homenavi Mobile","redirect_uris":["mcp-agent://callback"],"application_type":"native","token_endpoint_auth_method":"none"}`))
+	response := httptest.NewRecorder()
+
+	handler.HandleRegisterClient(response, request)
+
+	if response.Code != http.StatusCreated || authorizer.registration.ApplicationType != "native" || authorizer.registration.RedirectURIs[0] != "mcp-agent://callback" {
+		t.Fatalf("unexpected registration response: status=%d registration=%#v", response.Code, authorizer.registration)
+	}
+}
+
+func TestAuthorizationHandlerIssuesRedirectBoundCode(t *testing.T) {
+	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1"}
+	handler := NewAuthorizationHandler(authorizer)
 	query := url.Values{
 		"client_id":             {"mcp-cli"},
 		"redirect_uri":          {"https://client.example/callback?from=client"},
@@ -169,6 +187,20 @@ func TestAuthorizationHandlerStartsBrowserTransactionWithoutBearer(t *testing.T)
 	response := httptest.NewRecorder()
 	handler.HandleAuthorize(response, request)
 	if response.Code != http.StatusFound || response.Header().Get("Location") != "http://localhost:5173/oauth/authorize" || !strings.Contains(response.Header().Get("Set-Cookie"), "homenavi_oauth_transaction=transaction-1") {
+		t.Fatalf("unexpected browser transaction response: status=%d headers=%#v", response.Code, response.Header())
+	}
+}
+
+func TestAuthorizationHandlerDerivesBrowserRedirectFromForwardedRequest(t *testing.T) {
+	handler := NewAuthorizationHandler(&fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1"})
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/authorize?client_id=mcp-cli", nil)
+	request.Header.Set("X-Forwarded-Host", "home.example.test")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+
+	handler.HandleAuthorize(response, request)
+
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "https://home.example.test/oauth/authorize" {
 		t.Fatalf("unexpected browser transaction response: status=%d headers=%#v", response.Code, response.Header())
 	}
 }

@@ -98,6 +98,8 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 	oauthMCPResource := strings.TrimSpace(envx.String("MCP_RESOURCE_URI", ""))
+	mcpAuthorizationServerIssuer := strings.TrimSpace(envx.String("MCP_AUTHORIZATION_SERVER_ISSUER", ""))
+	oAuthAuthorizationUIURL := strings.TrimSpace(envx.String("OAUTH_AUTHORIZATION_UI_URL", ""))
 	if len(oauthTrustedClients) > 0 {
 		if _, err := authdomain.NewOAuthClientRegistry(oauthTrustedClients, oauthMCPResource); err != nil {
 			return Config{}, fmt.Errorf("validate OAuth trusted clients: %w", err)
@@ -130,8 +132,8 @@ func LoadConfig() (Config, error) {
 		CodeLockoutSeconds:           envx.Int("CODE_LOCKOUT_SECONDS", 600),
 		TOTPEncryptionKey:            totpEncryptionKey,
 		OAuthMCPResource:             oauthMCPResource,
-		MCPAuthorizationServerIssuer: strings.TrimSpace(envx.String("MCP_AUTHORIZATION_SERVER_ISSUER", "")),
-		OAuthAuthorizationUIURL:      strings.TrimSpace(envx.String("OAUTH_AUTHORIZATION_UI_URL", "http://localhost:5173/oauth/authorize")),
+		MCPAuthorizationServerIssuer: mcpAuthorizationServerIssuer,
+		OAuthAuthorizationUIURL:      oAuthAuthorizationUIURL,
 		OAuthTrustedClients:          oauthTrustedClients,
 	}, nil
 }
