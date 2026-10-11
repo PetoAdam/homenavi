@@ -191,3 +191,18 @@ func TestExchangeMCPAccessTokenAllowsDelegatedReadScopes(t *testing.T) {
 		t.Fatalf("delegated scope = %q", scope)
 	}
 }
+
+func TestVerifySecondFactorAcceptsStoredEmailCodeAndRejectsInvalidCode(t *testing.T) {
+	store := newMemoryRefreshStore()
+	service := newRefreshTestService(t, store)
+	user := &clientsinfra.User{ID: "user-1", TwoFactorEnabled: true, TwoFactorType: "email"}
+	if err := service.StoreVerificationCode("2fa_email", user.ID, "123456"); err != nil {
+		t.Fatalf("store email code: %v", err)
+	}
+	if err := service.VerifySecondFactor(user, "000000"); err == nil || err.Code != 401 {
+		t.Fatalf("invalid code error = %#v, want unauthorized", err)
+	}
+	if err := service.VerifySecondFactor(user, "123456"); err != nil {
+		t.Fatalf("valid code rejected: %v", err)
+	}
+}

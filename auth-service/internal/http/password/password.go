@@ -136,6 +136,12 @@ func (h *ChangeHandler) HandleChangePassword(w http.ResponseWriter, r *http.Requ
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
 	}
+	if user.TwoFactorEnabled {
+		if err := h.authService.VerifySecondFactor(user, req.TwoFactorCode); err != nil {
+			errors.WriteError(w, err)
+			return
+		}
+	}
 
 	// Validate current password by attempting login
 	_, err = h.userService.ValidateCredentials(user.Email, req.CurrentPassword)

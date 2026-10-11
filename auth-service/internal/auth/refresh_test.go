@@ -35,6 +35,17 @@ func (s *memoryRefreshStore) Get(_ context.Context, key string) (string, error) 
 	return value, nil
 }
 
+func (s *memoryRefreshStore) Scan(_ context.Context, pattern string, _ int64) ([]string, error) {
+	prefix := strings.TrimSuffix(pattern, "*")
+	keys := make([]string, 0)
+	for key := range s.values {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
 func (s *memoryRefreshStore) Delete(_ context.Context, keys ...string) error {
 	for _, key := range keys {
 		delete(s.values, key)
@@ -109,11 +120,13 @@ func newRefreshTestService(t *testing.T, store *memoryRefreshStore) *Service {
 		t.Fatalf("generate key: %v", err)
 	}
 	return NewService(Config{
-		JWTPrivateKey:   privateKey,
-		JWTIssuer:       "https://auth.example.test",
-		JWTAPIAudience:  "https://api.example.test",
-		AccessTokenTTL:  time.Minute,
-		RefreshTokenTTL: time.Hour,
+		JWTPrivateKey:      privateKey,
+		JWTIssuer:          "https://auth.example.test",
+		JWTAPIAudience:     "https://api.example.test",
+		AccessTokenTTL:     time.Minute,
+		RefreshTokenTTL:    time.Hour,
+		CodeMaxFailures:    5,
+		CodeLockoutSeconds: 60,
 	}, store)
 }
 
@@ -191,5 +204,34 @@ func TestRefreshReplayRevokesAccessTokenSession(t *testing.T) {
 	}
 	if got := store.values[authx.SessionStatusKey(sessionID)]; got != authx.SessionStatusRevoked {
 		t.Fatalf("session status = %q, want %q", got, authx.SessionStatusRevoked)
+	}
+}
+
+func TestOAuthRefreshTokenRotatesAndIsSessionBound(t *testing.T) {
+	store := newMemoryRefreshStore()
+	service := newRefreshTestService(t, store)
+	grant := OAuthAuthorizationGrant{Subject: "user-1", SessionID: "session-1", ClientID: "open-webui", Scope: "home.devices.read", Resource: "https://home.example/mcp"}
+	if err := service.activateSession(grant.SessionID); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := service.oauthConsents.Grant(context.Background(), grant.Subject, OAuthAuthorizationRequest{ClientID: grant.ClientID, Scope: grant.Scope, Resource: grant.Resource}); err != nil {
+		t.Fatalf("grant OAuth consent: %v", err)
+	}
+	refreshToken, err := service.IssueOAuthRefreshToken(grant)
+	if err != nil {
+		t.Fatalf("issue OAuth refresh token: %v", err)
+	}
+	renewedGrant, replacementToken, err := service.RefreshOAuthAuthorizationGrant(refreshToken)
+	if err != nil {
+		t.Fatalf("refresh OAuth authorization: %v", err)
+	}
+	if replacementToken == "" || replacementToken == refreshToken || renewedGrant != grant {
+		t.Fatalf("unexpected refresh result: grant=%#v replacement=%q", renewedGrant, replacementToken)
+	}
+	if _, _, err := service.RefreshOAuthAuthorizationGrant(refreshToken); err == nil {
+		t.Fatal("expected replayed OAuth refresh token to fail")
+	}
+	if store.values[authx.SessionStatusKey(grant.SessionID)] != authx.SessionStatusRevoked {
+		t.Fatalf("session status = %q, want revoked", store.values[authx.SessionStatusKey(grant.SessionID)])
 	}
 }

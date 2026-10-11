@@ -42,3 +42,25 @@ func TestOAuthConsentIsScopeBoundAndRevocable(t *testing.T) {
 		t.Fatalf("revoked consent = %t, %v", granted, err)
 	}
 }
+
+func TestOAuthConsentListIsSubjectScopedAndNewestFirst(t *testing.T) {
+	store := newMemoryRefreshStore()
+	manager := NewOAuthConsentManager(store)
+	context := context.Background()
+	if err := manager.Grant(context, "user-1", OAuthAuthorizationRequest{ClientID: "older-client", Resource: "https://home.example/mcp", Scope: "home.devices.read"}); err != nil {
+		t.Fatalf("grant older consent: %v", err)
+	}
+	if err := manager.Grant(context, "user-2", OAuthAuthorizationRequest{ClientID: "other-user-client", Resource: "https://home.example/mcp", Scope: "home.devices.read"}); err != nil {
+		t.Fatalf("grant other user consent: %v", err)
+	}
+	store.values[oauthConsentKey("user-1", "newer-client")] = `{"client_id":"newer-client","resource":"https://home.example/mcp","scopes":["home.history.read"],"granted_at":2}`
+	store.values[oauthConsentKey("user-1", "older-client")] = `{"client_id":"older-client","resource":"https://home.example/mcp","scopes":["home.devices.read"],"granted_at":1}`
+
+	consents, err := manager.List(context, "user-1")
+	if err != nil {
+		t.Fatalf("list consents: %v", err)
+	}
+	if len(consents) != 2 || consents[0].ClientID != "newer-client" || consents[1].ClientID != "older-client" {
+		t.Fatalf("unexpected consents: %#v", consents)
+	}
+}

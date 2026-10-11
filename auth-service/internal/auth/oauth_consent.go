@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -77,6 +78,30 @@ func (m *OAuthConsentManager) Revoke(ctx context.Context, subject, clientID stri
 		return fmt.Errorf("invalid OAuth consent revocation")
 	}
 	return m.store.Delete(ctx, oauthConsentKey(subject, clientID))
+}
+
+func (m *OAuthConsentManager) List(ctx context.Context, subject string) ([]OAuthConsent, error) {
+	if m == nil || m.store == nil || strings.TrimSpace(subject) == "" {
+		return nil, fmt.Errorf("OAuth consent is not configured")
+	}
+	keys, err := m.store.Scan(ctx, oauthConsentPrefix+subject+":*", 100)
+	if err != nil {
+		return nil, fmt.Errorf("list OAuth consents: %w", err)
+	}
+	consents := make([]OAuthConsent, 0, len(keys))
+	for _, key := range keys {
+		encoded, err := m.store.Get(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("load OAuth consent: %w", err)
+		}
+		var consent OAuthConsent
+		if err := json.Unmarshal([]byte(encoded), &consent); err != nil || consent.ClientID == "" {
+			return nil, fmt.Errorf("decode OAuth consent")
+		}
+		consents = append(consents, consent)
+	}
+	sort.Slice(consents, func(left, right int) bool { return consents[left].GrantedAt > consents[right].GrantedAt })
+	return consents, nil
 }
 
 func oauthConsentKey(subject, clientID string) string {

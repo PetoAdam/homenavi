@@ -23,6 +23,7 @@ const (
 type Store interface {
 	Set(ctx context.Context, key string, value string, ttl time.Duration) error
 	Get(ctx context.Context, key string) (string, error)
+	Scan(ctx context.Context, pattern string, count int64) ([]string, error)
 	Delete(ctx context.Context, keys ...string) error
 	TTL(ctx context.Context, key string) (time.Duration, error)
 	Increment(ctx context.Context, key string) (int64, error)
@@ -57,6 +58,22 @@ func (s *RedisStore) Get(ctx context.Context, key string) (string, error) {
 		return "", err
 	}
 	return value, nil
+}
+
+func (s *RedisStore) Scan(ctx context.Context, pattern string, count int64) ([]string, error) {
+	var keys []string
+	var cursor uint64
+	for {
+		batch, next, err := s.client.Scan(ctx, cursor, pattern, count).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		if next == 0 {
+			return keys, nil
+		}
+		cursor = next
+	}
 }
 
 func (s *RedisStore) Delete(ctx context.Context, keys ...string) error {

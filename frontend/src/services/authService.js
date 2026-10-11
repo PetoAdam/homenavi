@@ -94,6 +94,9 @@ export async function setup2FATOTP(accessToken) {
 export async function verify2FATOTP(code, accessToken) {
   return await http.post(`${AUTH_BASE}/2fa/verify`, { code }, { token: accessToken });
 }
+export async function disable2FA(code, accessToken) {
+  return await http.post(`${AUTH_BASE}/2fa/disable`, { code }, { token: accessToken });
+}
 
 // Password management
 export async function requestPasswordReset(email) {
@@ -102,8 +105,16 @@ export async function requestPasswordReset(email) {
 export async function confirmPasswordReset(email, code, newPassword) {
   return await http.post(`${AUTH_BASE}/password/reset/confirm`, { email, code, new_password: newPassword });
 }
-export async function changePassword(currentPassword, newPassword, accessToken) {
-  return await http.post(`${AUTH_BASE}/password/change`, { current_password: currentPassword, new_password: newPassword }, { token: accessToken });
+export async function changePassword(currentPassword, newPassword, twoFactorCode, accessToken) {
+  return await http.post(`${AUTH_BASE}/password/change`, { current_password: currentPassword, new_password: newPassword, two_factor_code: twoFactorCode }, { token: accessToken });
+}
+
+export async function listOAuthConsents(accessToken) {
+  return await http.get(`${AUTH_BASE}/oauth/consents`, { token: accessToken });
+}
+
+export async function revokeOAuthConsent(clientId, accessToken) {
+  return await http.delete(`${AUTH_BASE}/oauth/consents/${encodeURIComponent(clientId)}`, { token: accessToken });
 }
 
 // Profile picture
@@ -163,9 +174,12 @@ export default {
   verify2FAEmail,
   setup2FATOTP,
   verify2FATOTP,
+  disable2FA,
   requestPasswordReset,
   confirmPasswordReset,
   changePassword,
+  listOAuthConsents,
+  revokeOAuthConsent,
   generateAvatar,
   uploadProfilePicture,
   initiateGoogleLogin,

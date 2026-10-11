@@ -17,7 +17,9 @@ func TestMetadataHandlerDerivesIssuerFromForwardedRequest(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("unexpected metadata response: %d %s", response.Code, response.Body.String())
 	}
-	var metadata struct{ Issuer string `json:"issuer"` }
+	var metadata struct {
+		Issuer string `json:"issuer"`
+	}
 	if err := json.NewDecoder(response.Body).Decode(&metadata); err != nil {
 		t.Fatalf("decode metadata: %v", err)
 	}
@@ -55,7 +57,7 @@ func TestAuthorizationServerMetadataUsesConfiguredIssuer(t *testing.T) {
 		t.Fatalf("decode metadata: %v", err)
 	}
 	var issuer, jwksURI, authorizationEndpoint, tokenEndpoint, registrationEndpoint string
-	var pkceMethods, scopes []string
+	var pkceMethods, scopes, grantTypes []string
 	for field, target := range map[string]any{
 		"issuer":                 &issuer,
 		"jwks_uri":               &jwksURI,
@@ -73,6 +75,9 @@ func TestAuthorizationServerMetadataUsesConfiguredIssuer(t *testing.T) {
 	if err := json.Unmarshal(metadata["scopes_supported"], &scopes); err != nil {
 		t.Fatalf("decode supported scopes: %v", err)
 	}
+	if err := json.Unmarshal(metadata["grant_types_supported"], &grantTypes); err != nil {
+		t.Fatalf("decode supported grant types: %v", err)
+	}
 	if issuer != "https://home.example/api/auth" || jwksURI != "https://home.example/api/auth/oauth/jwks.json" || authorizationEndpoint != "https://home.example/api/auth/oauth/authorize" || tokenEndpoint != "https://home.example/api/auth/oauth/token" || registrationEndpoint != "https://home.example/api/auth/oauth/register" {
 		t.Fatal("unexpected OAuth metadata")
 	}
@@ -81,5 +86,8 @@ func TestAuthorizationServerMetadataUsesConfiguredIssuer(t *testing.T) {
 	}
 	if len(scopes) != 7 || scopes[0] != "home.devices.read" || scopes[6] != "home.automation.execute" {
 		t.Fatalf("unexpected supported scopes: %#v", scopes)
+	}
+	if len(grantTypes) != 3 || grantTypes[1] != "refresh_token" {
+		t.Fatalf("unexpected supported grant types: %#v", grantTypes)
 	}
 }

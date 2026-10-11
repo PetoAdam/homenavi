@@ -7,7 +7,10 @@ import {
   verify2FAEmail,
   setup2FATOTP,
   verify2FATOTP,
+  disable2FA,
   changePassword,
+  listOAuthConsents,
+  revokeOAuthConsent,
   patchUser as patchUserService,
   generateAvatar,
   uploadProfilePicture
@@ -31,12 +34,17 @@ export default function UserSettings({ onClose }) {
     recoveryCodes,
     showEmailCodeInput,
     show2FACodeInput,
+    show2FADisableForm,
+    twoFADisableCode,
     editingProfile,
     profileForm,
     showPasswordReset,
     passwordForm,
     showProfilePictureModal,
     profilePictureFile,
+    oauthConsents,
+    oauthLoading,
+    disconnectClientID,
   } = state;
 
   const setStateField = (key, value) => dispatch({ type: 'set-field', key, value });
@@ -47,6 +55,17 @@ export default function UserSettings({ onClose }) {
       dispatch({ type: 'reset-from-user', user });
     }
   }, [user]);
+
+  useEffect(() => {
+    const loadConsents = async () => {
+      if (!accessToken) return;
+      setStateField('oauthLoading', true);
+      const response = await listOAuthConsents(accessToken);
+      setStateField('oauthConsents', response.success && Array.isArray(response.data?.consents) ? response.data.consents : []);
+      setStateField('oauthLoading', false);
+    };
+    loadConsents();
+  }, [accessToken]);
 
   const handleLogoutAndClose = async () => {
     await handleLogout();
@@ -122,6 +141,32 @@ export default function UserSettings({ onClose }) {
     }
   };
 
+  const handle2FADisable = async () => {
+    if (!twoFADisableCode.trim()) return;
+    setStateField('status', 'Disabling 2FA...');
+    const response = await disable2FA(twoFADisableCode.trim(), accessToken);
+    if (!response.success) {
+      setStateField('status', '❌ ' + (response.error || 'Failed to disable 2FA'));
+      return;
+    }
+    setStateField('status', '✅ 2FA disabled. You can now choose a new method.');
+    setStateField('twoFADisableCode', '');
+    setStateField('show2FADisableForm', false);
+    await refreshUser();
+  };
+
+  const handleConsentRevoke = async (clientID) => {
+    setStateField('disconnectClientID', clientID);
+    const response = await revokeOAuthConsent(clientID, accessToken);
+    if (response.success) {
+      setStateField('oauthConsents', oauthConsents.filter((consent) => consent.client_id !== clientID));
+      setStateField('status', '✅ Connected application removed.');
+    } else {
+      setStateField('status', '❌ ' + (response.error || 'Failed to remove connected application'));
+    }
+    setStateField('disconnectClientID', '');
+  };
+
   const handleProfileSave = async () => {
     if (!user?.id || !profileForm.firstName.trim() || !profileForm.lastName.trim()) {
       setStateField('status', '❌ First name and last name are required');
@@ -160,7 +205,11 @@ export default function UserSettings({ onClose }) {
     }
     setStateField('status', 'Updating password...');
     console.log('Attempting password change...');
-    const resp = await changePassword(passwordForm.currentPassword, passwordForm.newPassword, accessToken);
+    if (twoFAEnabled && !passwordForm.twoFactorCode.trim()) {
+      setStateField('status', '❌ Enter your current 2FA code to update your password');
+      return;
+    }
+    const resp = await changePassword(passwordForm.currentPassword, passwordForm.newPassword, passwordForm.twoFactorCode.trim(), accessToken);
     console.log('Password change response:', resp);
     if (resp.success) {
       setStateField('status', '✅ Password updated successfully!');
@@ -380,6 +429,34 @@ export default function UserSettings({ onClose }) {
               </div>
             )}
 
+            {twoFAEnabled && (
+              <div className="security-action-row">
+                <span>Your enrolled factor is required before this setting can change.</span>
+                <button onClick={() => setStateField('show2FADisableForm', !show2FADisableForm)} className="secondary">
+                  {show2FADisableForm ? 'Cancel' : 'Change or Disable 2FA'}
+                </button>
+              </div>
+            )}
+
+            {show2FADisableForm && (
+              <div className="security-confirmation">
+                <strong>Confirm with your current 2FA code</strong>
+                <p>Disabling 2FA also removes its recovery codes. Enable a new method immediately if you are changing it.</p>
+                <div className="user-settings-input-group">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    placeholder="Six-digit code"
+                    value={twoFADisableCode}
+                    onChange={e => setStateField('twoFADisableCode', e.target.value)}
+                  />
+                  <button onClick={handle2FADisable} className="danger" disabled={!twoFADisableCode.trim()}>Disable 2FA</button>
+                </div>
+              </div>
+            )}
+
             <button onClick={handle2FASetup} disabled={twoFAEnabled || show2FACodeInput}>
               {twoFAEnabled ? '2FA Enabled' : show2FACodeInput ? 'Setup in progress' : 'Enable 2FA'}
             </button>
@@ -440,6 +517,21 @@ export default function UserSettings({ onClose }) {
                     />
                     <label htmlFor="current-password">Current Password</label>
                   </div>
+                  {twoFAEnabled && (
+                    <div className="user-settings-field-input">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        placeholder=" "
+                        value={passwordForm.twoFactorCode}
+                        onChange={e => dispatch({ type: 'update-password-form', value: { twoFactorCode: e.target.value } })}
+                        id="password-two-factor-code"
+                      />
+                      <label htmlFor="password-two-factor-code">Current 2FA Code</label>
+                    </div>
+                  )}
                   <div className="user-settings-field-input">
                     <input
                       type="password"
@@ -475,6 +567,30 @@ export default function UserSettings({ onClose }) {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="user-settings-card connected-apps-card">
+            <h3>Connected Applications</h3>
+            <p className="settings-supporting-text">Applications authorized to access Homenavi on your behalf.</p>
+            {oauthLoading && <p className="settings-supporting-text">Loading connected applications...</p>}
+            {!oauthLoading && oauthConsents.length === 0 && <p className="settings-supporting-text">No connected applications.</p>}
+            {oauthConsents.map((consent) => (
+              <div className="connected-app-row" key={`${consent.client_id}-${consent.resource}`}>
+                <div>
+                  <strong>{consent.client_id}</strong>
+
+                  <span>{Array.isArray(consent.scopes) && consent.scopes.length > 0 ? consent.scopes.join(', ') : 'No scopes'}</span>
+                </div>
+                <button
+                  className="danger"
+                  onClick={() => handleConsentRevoke(consent.client_id)}
+                  disabled={disconnectClientID === consent.client_id}
+                >
+                  {disconnectClientID === consent.client_id ? 'Disconnecting...' : 'Disconnect'}
+                </button>
+              </div>
+            ))}
+            {status && status.includes('Connected application') && <div className={`card-status ${status.includes('✅') ? 'success' : 'error'}`}>{status}</div>}
           </div>
 
           {/* Logout Card */}

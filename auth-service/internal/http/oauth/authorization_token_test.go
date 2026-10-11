@@ -26,6 +26,7 @@ type fakeOAuthAuthorizer struct {
 	registration           authdomain.DynamicOAuthClientRegistration
 	granted                bool
 	revoked                string
+	consents               []authdomain.OAuthConsent
 	transaction            authdomain.OAuthAuthorizationTransaction
 }
 
@@ -54,6 +55,10 @@ func (f *fakeOAuthAuthorizer) GrantOAuthConsent(_ context.Context, request authd
 func (f *fakeOAuthAuthorizer) RevokeOAuthConsent(_ context.Context, _ string, clientID string) error {
 	f.revoked = clientID
 	return f.err
+}
+
+func (f *fakeOAuthAuthorizer) ListOAuthConsents(_ context.Context, _ string) ([]authdomain.OAuthConsent, error) {
+	return f.consents, f.err
 }
 
 func (f *fakeOAuthAuthorizer) RegisterDynamicOAuthClient(_ context.Context, registration authdomain.DynamicOAuthClientRegistration) (authdomain.OAuthClient, error) {
@@ -263,6 +268,20 @@ func TestAuthorizationHandlerGrantsAndRevokesConsent(t *testing.T) {
 	}
 }
 
+func TestAuthorizationHandlerListsAuthenticatedUserConsents(t *testing.T) {
+	authorizer := &fakeOAuthAuthorizer{subject: "user-1", consents: []authdomain.OAuthConsent{{ClientID: "mcp-cli", Resource: "https://home.example/mcp", Scopes: []string{"home.devices.read"}, GrantedAt: 1}}}
+	handler := NewAuthorizationHandler(authorizer)
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/consents", nil)
+	request.Header.Set("Authorization", "Bearer browser-token")
+	response := httptest.NewRecorder()
+
+	handler.HandleListConsents(response, request)
+
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(response.Body.String(), `"client_id":"mcp-cli"`) {
+		t.Fatalf("unexpected consent list response: status=%d headers=%#v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+}
+
 func TestAuthorizationTransactionApprovalReturnsRedirect(t *testing.T) {
 	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1", transaction: authdomain.OAuthAuthorizationTransaction{
 		ID:      "transaction-1",
@@ -282,12 +301,27 @@ func TestAuthorizationTransactionApprovalReturnsRedirect(t *testing.T) {
 }
 
 type fakeOAuthTokenIssuer struct {
-	grant authdomain.OAuthAuthorizationGrant
-	err   error
+	grant        authdomain.OAuthAuthorizationGrant
+	refreshToken string
+	err          error
 }
 
 func (f fakeOAuthTokenIssuer) ExchangeOAuthAuthorizationCode(_ context.Context, _ string, _ authdomain.OAuthAuthorizationCodeExchange) (authdomain.OAuthAuthorizationGrant, error) {
 	return f.grant, f.err
+}
+
+func (f fakeOAuthTokenIssuer) IssueOAuthRefreshToken(authdomain.OAuthAuthorizationGrant) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.refreshToken, nil
+}
+
+func (f fakeOAuthTokenIssuer) RefreshOAuthAuthorizationGrant(string) (authdomain.OAuthAuthorizationGrant, string, error) {
+	if f.err != nil {
+		return authdomain.OAuthAuthorizationGrant{}, "", f.err
+	}
+	return f.grant, f.refreshToken, nil
 }
 
 func (f fakeOAuthTokenIssuer) IssueMCPAccessToken(_ *clientsinfra.User, _ authdomain.OAuthAuthorizationGrant) (string, error) {
@@ -315,7 +349,7 @@ func (f fakeOAuthUserProvider) GetUser(string) (*clientsinfra.User, error) {
 
 func TestTokenHandlerExchangesAuthorizationCode(t *testing.T) {
 	handler := NewTokenHandler(
-		fakeOAuthTokenIssuer{grant: authdomain.OAuthAuthorizationGrant{Subject: "user-1", Scope: "home.devices.read"}},
+		fakeOAuthTokenIssuer{grant: authdomain.OAuthAuthorizationGrant{Subject: "user-1", Scope: "home.devices.read"}, refreshToken: "refresh-token"},
 		fakeOAuthUserProvider{user: &clientsinfra.User{ID: "user-1"}},
 	)
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {"code"}, "client_id": {"mcp-cli"}, "redirect_uri": {"https://client.example/callback"}, "resource": {"https://home.example/mcp"}, "code_verifier": {"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"}}
@@ -332,11 +366,27 @@ func TestTokenHandlerExchangesAuthorizationCode(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload["access_token"] != "mcp-access-token" || payload["token_type"] != "Bearer" {
+	if payload["access_token"] != "mcp-access-token" || payload["refresh_token"] != "refresh-token" || payload["token_type"] != "Bearer" {
 		t.Fatalf("unexpected payload: %#v", payload)
 	}
 	if payload["expires_in"] != float64(authdomain.MCPAccessTokenTTL.Seconds()) {
 		t.Fatalf("unexpected token lifetime: %#v", payload["expires_in"])
+	}
+}
+
+func TestTokenHandlerRefreshesMCPToken(t *testing.T) {
+	handler := NewTokenHandler(
+		fakeOAuthTokenIssuer{grant: authdomain.OAuthAuthorizationGrant{Subject: "user-1", Scope: "home.devices.read"}, refreshToken: "rotated-refresh-token"},
+		fakeOAuthUserProvider{user: &clientsinfra.User{ID: "user-1"}},
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/token", strings.NewReader("grant_type=refresh_token&refresh_token=refresh-token"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	handler.HandleToken(response, request)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"refresh_token":"rotated-refresh-token"`) {
+		t.Fatalf("unexpected refresh response: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

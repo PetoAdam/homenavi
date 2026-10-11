@@ -110,9 +110,12 @@ const (
 )
 
 type refreshTokenRecord struct {
-	UserID    string `json:"user_id"`
-	FamilyID  string `json:"family_id"`
-	SessionID string `json:"session_id"`
+	UserID        string `json:"user_id"`
+	FamilyID      string `json:"family_id"`
+	SessionID     string `json:"session_id"`
+	OAuthClientID string `json:"oauth_client_id,omitempty"`
+	OAuthScope    string `json:"oauth_scope,omitempty"`
+	OAuthResource string `json:"oauth_resource,omitempty"`
 }
 
 func NewService(cfg Config, cacheStore cacheinfra.Store) *Service {
@@ -207,22 +210,26 @@ func (s *Service) IssueRefreshToken(userID string) (string, error) {
 }
 
 func (s *Service) issueRefreshToken(userID, familyID, sessionID string) (string, error) {
+	return s.issueRefreshTokenRecord(refreshTokenRecord{UserID: userID, FamilyID: familyID, SessionID: sessionID})
+}
+
+func (s *Service) issueRefreshTokenRecord(record refreshTokenRecord) (string, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return "", fmt.Errorf("generate refresh token: %w", err)
 	}
 
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
-	recordBytes, err := json.Marshal(refreshTokenRecord{UserID: userID, FamilyID: familyID, SessionID: sessionID})
+	recordBytes, err := json.Marshal(record)
 	if err != nil {
 		return "", fmt.Errorf("encode refresh token record: %w", err)
 	}
 	ctx := context.Background()
-	if err := s.cacheStore.Set(ctx, refreshTokenFamilyKey(familyID), refreshTokenFamilyActive, s.config.RefreshTokenTTL); err != nil {
+	if err := s.cacheStore.Set(ctx, refreshTokenFamilyKey(record.FamilyID), refreshTokenFamilyActive, s.config.RefreshTokenTTL); err != nil {
 		return "", fmt.Errorf("store refresh token family: %w", err)
 	}
 	if err := s.cacheStore.Set(ctx, refreshTokenKey(token), string(recordBytes), s.config.RefreshTokenTTL); err != nil {
-		_ = s.cacheStore.Delete(ctx, refreshTokenFamilyKey(familyID))
+		_ = s.cacheStore.Delete(ctx, refreshTokenFamilyKey(record.FamilyID))
 		return "", fmt.Errorf("store refresh token: %w", err)
 	}
 	return token, nil
@@ -703,45 +710,55 @@ func (s *Service) FinishLogin(userID, code string, users UserProvider) (*TokenPa
 	if err != nil {
 		return nil, errors.NotFound("user not found")
 	}
+	if err := s.VerifySecondFactor(user, code); err != nil {
+		return nil, err
+	}
+	return s.IssueTokenPair(user)
+}
+
+func (s *Service) VerifySecondFactor(user *clientsinfra.User, code string) *errors.AppError {
+	if user == nil {
+		return errors.NotFound("user not found")
+	}
+	userID := user.ID
 	if user.LockoutEnabled {
-		return nil, errors.NewAppError(423, "account locked", nil).WithField("reason", ReasonAdminLock)
+		return errors.NewAppError(423, "account locked", nil).WithField("reason", ReasonAdminLock)
 	}
 	if !user.TwoFactorEnabled {
-		return nil, errors.BadRequest("2FA not enabled for user")
+		return errors.BadRequest("2FA not enabled for user")
 	}
 
 	if locked, ttl, _ := s.IsCodeLocked(userID, user.TwoFactorType); locked {
-		return nil, timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
+		return timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
 	}
 
 	switch user.TwoFactorType {
 	case "totp":
 		secret, err := s.DecryptTOTPSecret(user.TwoFactorSecret)
 		if err != nil {
-			return nil, errors.InternalServerError("failed to read TOTP secret", err)
+			return errors.InternalServerError("failed to read TOTP secret", err)
 		}
 		if !validateTOTP(code, secret) {
 			locked, ttl, _ := s.RegisterCodeFailure(userID, "totp")
 			if locked {
-				return nil, timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
+				return timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
 			}
-			return nil, errors.Unauthorized("invalid TOTP code")
+			return errors.Unauthorized("invalid TOTP code")
 		}
 		s.ClearCodeFailures(userID, "totp")
 	case "email":
 		if err := s.ValidateVerificationCode("2fa_email", userID, code); err != nil {
 			locked, ttl, _ := s.RegisterCodeFailure(userID, "email")
 			if locked {
-				return nil, timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
+				return timedLockoutError("2fa locked", ReasonTwoFALockout, ttl)
 			}
-			return nil, errors.Unauthorized("invalid or expired 2FA code")
+			return errors.Unauthorized("invalid or expired 2FA code")
 		}
 		s.ClearCodeFailures(userID, "email")
 	default:
-		return nil, errors.BadRequest("unsupported 2FA type")
+		return errors.BadRequest("unsupported 2FA type")
 	}
-
-	return s.IssueTokenPair(user)
+	return nil
 }
 
 func (s *Service) FinishLoginWithRecoveryCode(userID, code string, users UserProvider, recoveryCodes RecoveryCodeConsumer) (*TokenPair, error) {

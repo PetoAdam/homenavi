@@ -26,6 +26,7 @@ type Routes struct {
 	HandleEmailVerifyConfirm    http.HandlerFunc
 	HandleTwoFactorSetup        http.HandlerFunc
 	HandleTwoFactorVerify       http.HandlerFunc
+	HandleTwoFactorDisable      http.HandlerFunc
 	HandleTwoFactorEmailReq     http.HandlerFunc
 	HandleTwoFactorEmailVerify  http.HandlerFunc
 	HandleMe                    http.HandlerFunc
@@ -52,6 +53,7 @@ type Routes struct {
 	HandleOAuthDenial           http.HandlerFunc
 	HandleOAuthConsentGrant     http.HandlerFunc
 	HandleOAuthConsentRevoke    http.HandlerFunc
+	HandleOAuthConsentList      http.HandlerFunc
 }
 
 func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer) http.Handler {
@@ -84,6 +86,7 @@ func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer)
 		r.Post("/email/verify/confirm", orNotImplemented(routes.HandleEmailVerifyConfirm))
 		r.Post("/2fa/setup", orNotImplemented(routes.HandleTwoFactorSetup))
 		r.Post("/2fa/verify", orNotImplemented(routes.HandleTwoFactorVerify))
+		r.Post("/2fa/disable", orNotImplemented(routes.HandleTwoFactorDisable))
 		r.Post("/2fa/email/request", orNotImplemented(routes.HandleTwoFactorEmailReq))
 		r.Post("/2fa/email/verify", orNotImplemented(routes.HandleTwoFactorEmailVerify))
 		r.Get("/me", orNotImplemented(routes.HandleMe))
@@ -109,6 +112,7 @@ func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer)
 		r.Post("/oauth/transaction/approve", orNotImplemented(routes.HandleOAuthApproval))
 		r.Post("/oauth/transaction/deny", orNotImplemented(routes.HandleOAuthDenial))
 		r.Post("/oauth/consents", orNotImplemented(routes.HandleOAuthConsentGrant))
+		r.Get("/oauth/consents", orNotImplemented(routes.HandleOAuthConsentList))
 		r.Delete("/oauth/consents/{clientID}", orNotImplemented(routes.HandleOAuthConsentRevoke))
 	})
 

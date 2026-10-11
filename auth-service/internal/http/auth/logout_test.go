@@ -24,6 +24,9 @@ func (failingRevocationStore) Set(context.Context, string, string, time.Duration
 func (failingRevocationStore) Get(context.Context, string) (string, error) {
 	return `{"user_id":"user-1","family_id":"family-1"}`, nil
 }
+func (failingRevocationStore) Scan(context.Context, string, int64) ([]string, error) {
+	return nil, nil
+}
 func (failingRevocationStore) Delete(context.Context, ...string) error {
 	return errors.New("redis unavailable")
 }

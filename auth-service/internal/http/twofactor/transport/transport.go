@@ -40,6 +40,17 @@ type TwoFactorEmailVerifyRequest struct {
 	Code string `json:"code"`
 }
 
+type TwoFactorDisableRequest struct {
+	Code string `json:"code"`
+}
+
+func (r *TwoFactorDisableRequest) Validate() error {
+	if !sharedtransport.IsValidCode(r.Code) {
+		return fmt.Errorf("code must be exactly 6 digits")
+	}
+	return nil
+}
+
 func (r *TwoFactorEmailVerifyRequest) Validate() error {
 	if err := sharedtransport.ValidateRequired(map[string]string{
 		"code": r.Code,

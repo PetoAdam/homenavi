@@ -104,6 +104,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		HandleEmailVerifyConfirm:   emailVerifyHandler.HandleEmailVerifyConfirm,
 		HandleTwoFactorSetup:       twoFactorSetupHandler.Handle2FASetup,
 		HandleTwoFactorVerify:      twoFactorVerifyHandler.Handle2FAVerify,
+		HandleTwoFactorDisable:     twoFactorVerifyHandler.Handle2FADisable,
 		HandleTwoFactorEmailReq:    twoFactorEmailHandler.Handle2FAEmailRequest,
 		HandleTwoFactorEmailVerify: twoFactorEmailHandler.Handle2FAEmailVerify,
 		HandleMe:                   profileHandler.HandleMe,
@@ -139,6 +140,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		HandleOAuthDenial:           oauthAuthorizationHandler.HandleAuthorizationDenial,
 		HandleOAuthConsentGrant:     oauthAuthorizationHandler.HandleGrantConsent,
 		HandleOAuthConsentRevoke:    oauthAuthorizationHandler.HandleRevokeConsent,
+		HandleOAuthConsentList:      oauthAuthorizationHandler.HandleListConsents,
 	}, promHandler, tracer)
 
 	return &App{

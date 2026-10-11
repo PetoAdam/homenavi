@@ -49,6 +49,7 @@ func (r *PasswordResetConfirmRequest) Validate() error {
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
+	TwoFactorCode   string `json:"two_factor_code"`
 }
 
 func (r *ChangePasswordRequest) Validate() error {

@@ -22,6 +22,7 @@ type oauthAuthorizer interface {
 	AuthorizeOAuthForSession(context.Context, authdomain.OAuthAuthorizationRequest, string, string) (string, error)
 	GrantOAuthConsent(context.Context, authdomain.OAuthAuthorizationRequest, string, string) error
 	RevokeOAuthConsent(context.Context, string, string) error
+	ListOAuthConsents(context.Context, string) ([]authdomain.OAuthConsent, error)
 	RegisterDynamicOAuthClient(context.Context, authdomain.DynamicOAuthClientRegistration) (authdomain.OAuthClient, error)
 }
 
@@ -490,6 +491,21 @@ func (h *AuthorizationHandler) HandleRevokeConsent(w http.ResponseWriter, r *htt
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AuthorizationHandler) HandleListConsents(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.sessionFromRequest(w, r)
+	if !ok {
+		return
+	}
+	consents, err := h.authorizer.ListOAuthConsents(r.Context(), session.Subject)
+	if err != nil {
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "connected applications are unavailable")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"consents": consents})
 }
 
 func (h *AuthorizationHandler) sessionFromRequest(w http.ResponseWriter, r *http.Request) (authdomain.OAuthSession, bool) {

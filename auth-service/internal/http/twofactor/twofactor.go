@@ -206,6 +206,45 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response)
 }
 
+func (h *VerifyHandler) Handle2FADisable(w http.ResponseWriter, r *http.Request) {
+	var req twofactortransport.TwoFactorDisableRequest
+	if err := sharedtransport.ParseAndValidateJSON(r, &req); err != nil {
+		errors.WriteError(w, errors.BadRequest(err.Error()))
+		return
+	}
+	userID, authErr := authenticatedUserID(r, h.authService)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+	user, err := h.userService.GetUser(userID)
+	if err != nil {
+		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if err := h.authService.VerifySecondFactor(user, req.Code); err != nil {
+		errors.WriteError(w, err)
+		return
+	}
+	token, err := h.authService.IssueServiceToken()
+	if err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
+		return
+	}
+	if err := h.userService.ReplaceRecoveryCodes(userID, []string{}, token); err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to remove recovery codes", err))
+		return
+	}
+	updates := map[string]interface{}{"two_factor_enabled": false, "two_factor_type": "", "two_factor_secret": ""}
+	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to disable 2FA", err))
+		return
+	}
+	slog.Info("2fa disabled", "user_id", userID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"disabled": true})
+}
+
 type EmailHandler struct {
 	authService  *authdomain.Service
 	userService  *clientsinfra.UserClient

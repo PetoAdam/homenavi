@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/golang-jwt/jwt/v5"
@@ -67,6 +68,69 @@ func (s *Service) normalizeOAuthAuthorizationRequest(request OAuthAuthorizationR
 
 func (s *Service) RevokeOAuthConsent(ctx context.Context, subject, clientID string) error {
 	return s.oauthConsents.Revoke(ctx, subject, clientID)
+}
+
+func (s *Service) IssueOAuthRefreshToken(grant OAuthAuthorizationGrant) (string, error) {
+	if grant.Subject == "" || grant.SessionID == "" || grant.ClientID == "" || grant.Resource == "" || strings.TrimSpace(grant.Scope) == "" {
+		return "", fmt.Errorf("invalid OAuth refresh token grant")
+	}
+	familyID, err := newTokenID()
+	if err != nil {
+		return "", fmt.Errorf("generate OAuth refresh token family ID: %w", err)
+	}
+	return s.issueRefreshTokenRecord(refreshTokenRecord{
+		UserID:        grant.Subject,
+		FamilyID:      familyID,
+		SessionID:     grant.SessionID,
+		OAuthClientID: grant.ClientID,
+		OAuthScope:    grant.Scope,
+		OAuthResource: grant.Resource,
+	})
+}
+
+func (s *Service) RefreshOAuthAuthorizationGrant(token string) (OAuthAuthorizationGrant, string, error) {
+	if strings.TrimSpace(token) == "" {
+		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	current, err := s.loadRefreshTokenRecord(context.Background(), refreshTokenKey(token))
+	if err != nil {
+		consumedJSON, consumedErr := s.cacheStore.Get(context.Background(), refreshTokenConsumedKey(token))
+		if consumedErr != nil {
+			return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+		}
+		consumed, decodeErr := decodeRefreshTokenRecord(consumedJSON)
+		if decodeErr != nil || consumed.OAuthClientID == "" || consumed.OAuthScope == "" || consumed.OAuthResource == "" {
+			return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+		}
+		_, _, rotateErr := s.rotateRefreshToken(token)
+		if rotateErr != nil {
+			return OAuthAuthorizationGrant{}, "", rotateErr
+		}
+		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	if current.OAuthClientID == "" || current.OAuthScope == "" || current.OAuthResource == "" {
+		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	status, err := s.cacheStore.Get(context.Background(), authx.SessionStatusKey(current.SessionID))
+	if err != nil || status != authx.SessionStatusActive {
+		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	granted, err := s.oauthConsents.Has(context.Background(), current.UserID, OAuthAuthorizationRequest{ClientID: current.OAuthClientID, Scope: current.OAuthScope, Resource: current.OAuthResource})
+	if err != nil || !granted {
+		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	record, replacement, err := s.rotateRefreshToken(token)
+	if err != nil {
+		return OAuthAuthorizationGrant{}, "", err
+	}
+	if record.OAuthClientID == "" || record.OAuthScope == "" || record.OAuthResource == "" {
+		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
+	}
+	return OAuthAuthorizationGrant{Subject: record.UserID, SessionID: record.SessionID, ClientID: record.OAuthClientID, Scope: record.OAuthScope, Resource: record.OAuthResource}, replacement, nil
+}
+
+func (s *Service) ListOAuthConsents(ctx context.Context, subject string) ([]OAuthConsent, error) {
+	return s.oauthConsents.List(ctx, subject)
 }
 
 func (s *Service) ExchangeOAuthAuthorizationCode(ctx context.Context, code string, exchange OAuthAuthorizationCodeExchange) (OAuthAuthorizationGrant, error) {

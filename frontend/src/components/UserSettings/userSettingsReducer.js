@@ -10,6 +10,8 @@ export function userSettingsInitialState(user = null) {
     recoveryCodes: [],
     showEmailCodeInput: false,
     show2FACodeInput: false,
+    show2FADisableForm: false,
+    twoFADisableCode: '',
     editingProfile: false,
     profileForm: {
       firstName: user?.first_name || '',
@@ -20,7 +22,11 @@ export function userSettingsInitialState(user = null) {
       currentPassword: '',
       newPassword: '',
       confirmPassword: '',
+      twoFactorCode: '',
     },
+    oauthConsents: [],
+    oauthLoading: false,
+    disconnectClientID: '',
     showProfilePictureModal: false,
     profilePictureFile: null,
   };
@@ -63,6 +69,7 @@ export function userSettingsReducer(state, action) {
           currentPassword: '',
           newPassword: '',
           confirmPassword: '',
+          twoFactorCode: '',
         },
       };
     default:

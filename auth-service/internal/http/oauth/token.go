@@ -14,6 +14,8 @@ import (
 
 type oauthTokenIssuer interface {
 	ExchangeOAuthAuthorizationCode(context.Context, string, authdomain.OAuthAuthorizationCodeExchange) (authdomain.OAuthAuthorizationGrant, error)
+	IssueOAuthRefreshToken(authdomain.OAuthAuthorizationGrant) (string, error)
+	RefreshOAuthAuthorizationGrant(string) (authdomain.OAuthAuthorizationGrant, string, error)
 	IssueMCPAccessToken(user *clientsinfra.User, grant authdomain.OAuthAuthorizationGrant) (string, error)
 	ExchangeMCPAccessToken(context.Context, string, string, string) (string, error)
 }
@@ -53,8 +55,12 @@ func (h *TokenHandler) HandleToken(w http.ResponseWriter, r *http.Request) {
 		h.exchangeDelegatedToken(w, r, form)
 		return
 	}
+	if form.Get("grant_type") == "refresh_token" {
+		h.refreshMCPToken(w, r, form)
+		return
+	}
 	if form.Get("grant_type") != "authorization_code" {
-		writeOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", "authorization_code is required")
+		writeOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", "authorization_code or refresh_token is required")
 		return
 	}
 	grant, err := h.issuer.ExchangeOAuthAuthorizationCode(r.Context(), form.Get("code"), authdomain.OAuthAuthorizationCodeExchange{
@@ -77,9 +83,37 @@ func (h *TokenHandler) HandleToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to issue access token")
 		return
 	}
+	refreshToken, err := h.issuer.IssueOAuthRefreshToken(grant)
+	if err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to issue refresh token")
+		return
+	}
+	h.writeMCPTokenResponse(w, accessToken, refreshToken, grant.Scope)
+}
+
+func (h *TokenHandler) refreshMCPToken(w http.ResponseWriter, r *http.Request, form url.Values) {
+	grant, refreshToken, err := h.issuer.RefreshOAuthAuthorizationGrant(form.Get("refresh_token"))
+	if err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token is invalid or expired")
+		return
+	}
+	user, err := h.userProvider.GetUser(grant.Subject)
+	if err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization subject is unavailable")
+		return
+	}
+	accessToken, err := h.issuer.IssueMCPAccessToken(user, grant)
+	if err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to issue access token")
+		return
+	}
+	h.writeMCPTokenResponse(w, accessToken, refreshToken, grant.Scope)
+}
+
+func (h *TokenHandler) writeMCPTokenResponse(w http.ResponseWriter, accessToken, refreshToken, scope string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"access_token": accessToken, "token_type": "Bearer", "expires_in": int(authdomain.MCPAccessTokenTTL.Seconds()), "scope": grant.Scope})
+	_ = json.NewEncoder(w).Encode(map[string]any{"access_token": accessToken, "refresh_token": refreshToken, "token_type": "Bearer", "expires_in": int(authdomain.MCPAccessTokenTTL.Seconds()), "scope": scope})
 }
 
 func (h *TokenHandler) exchangeDelegatedToken(w http.ResponseWriter, r *http.Request, form url.Values) {
