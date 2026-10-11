@@ -408,26 +408,43 @@ export default function UserSettings({ onClose }) {
             )}
             
             {/* 2FA Section */}
-            <div className="user-settings-field" style={{ marginTop: '1.5rem' }}>
-              <strong>Two-Factor Authentication:</strong>
-              <span className={`status-indicator ${twoFAEnabled ? 'verified' : 'unverified'}`}>
-                {twoFAEnabled ? '✅ Enabled' : '❌ Disabled'}
-              </span>
-            </div>
-            
-            {!twoFAEnabled && !show2FACodeInput && (
-              <div className="user-settings-input-group">
-                <label htmlFor="two-fa-method">Method</label>
-                <select
-                  id="two-fa-method"
-                  value={twoFAMethod}
-                  onChange={e => setStateField('twoFAMethod', e.target.value)}
-                >
-                  <option value="totp">Authenticator app</option>
-                  <option value="email">Email code</option>
-                </select>
+            <section className="two-factor-section" aria-labelledby="two-factor-heading">
+              <div className="two-factor-heading-row">
+                <div>
+                  <h4 id="two-factor-heading">Two-Factor Authentication</h4>
+                  <p>{twoFAEnabled ? 'Your account requires an additional verification step.' : 'Protect sensitive account changes with a second factor.'}</p>
+                </div>
+                <span className={`status-indicator ${twoFAEnabled ? 'verified' : 'unverified'}`}>
+                  {twoFAEnabled ? 'Enabled' : 'Disabled'}
+                </span>
               </div>
-            )}
+
+              {!twoFAEnabled && !show2FACodeInput && (
+                <div className="two-factor-setup-panel">
+                  <span className="two-factor-label">Choose a verification method</span>
+                  <div className="two-factor-methods" role="group" aria-label="Two-factor authentication method">
+                    <button
+                      type="button"
+                      className={`two-factor-method ${twoFAMethod === 'totp' ? 'active' : ''}`}
+                      onClick={() => setStateField('twoFAMethod', 'totp')}
+                    >
+                      <span>Authenticator app</span>
+                      <small>Recommended</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={`two-factor-method ${twoFAMethod === 'email' ? 'active' : ''}`}
+                      onClick={() => setStateField('twoFAMethod', 'email')}
+                    >
+                      <span>Email code</span>
+                      <small>Use your inbox</small>
+                    </button>
+                  </div>
+                  <button onClick={handle2FASetup} className="two-factor-primary-action">
+                    Continue with {twoFAMethod === 'totp' ? 'authenticator app' : 'email code'}
+                  </button>
+                </div>
+              )}
 
             {twoFAEnabled && (
               <div className="security-action-row">
@@ -457,29 +474,32 @@ export default function UserSettings({ onClose }) {
               </div>
             )}
 
-            <button onClick={handle2FASetup} disabled={twoFAEnabled || show2FACodeInput}>
-              {twoFAEnabled ? '2FA Enabled' : show2FACodeInput ? 'Setup in progress' : 'Enable 2FA'}
-            </button>
-            
             {show2FACodeInput && !twoFAEnabled && (
-              <div className="user-settings-input-group">
+              <div className="two-factor-setup-panel two-factor-verification-panel">
+                <div className="two-factor-verification-copy">
+                  <strong>{twoFAMethod === 'totp' ? 'Confirm your authenticator app' : 'Confirm your email code'}</strong>
+                  <span>{twoFAMethod === 'totp' ? 'Scan the code, then enter the six-digit value from your app.' : 'Enter the six-digit code sent to your email address.'}</span>
+                </div>
                 {twoFAMethod === 'totp' && totpQRCodeDataURL && (
                   <img className="two-fa-qr-code" src={totpQRCodeDataURL} alt="Authenticator app setup QR code" />
                 )}
-                <input 
-                  type="text" 
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="Enter six-digit code"
-                  value={twoFACode}
-                  onChange={e => setStateField('twoFACode', e.target.value)}
-                />
-                <button onClick={handle2FAVerify} disabled={!twoFACode.trim()}>
-                  Enable 2FA
-                </button>
+                <div className="two-factor-code-row">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    placeholder="Six-digit code"
+                    value={twoFACode}
+                    onChange={e => setStateField('twoFACode', e.target.value)}
+                  />
+                  <button onClick={handle2FAVerify} disabled={!twoFACode.trim()}>
+                    Confirm
+                  </button>
+                </div>
               </div>
             )}
+            </section>
             
             {status && status.includes('2FA') && (
               <div className={`card-status ${
