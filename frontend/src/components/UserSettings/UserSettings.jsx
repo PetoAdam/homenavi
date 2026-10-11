@@ -1,4 +1,6 @@
-import React, { useEffect, useReducer } from 'react';
+import React, { useEffect, useEffectEvent, useReducer } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCamera, faFolderOpen, faPlug, faRightFromBracket, faShieldHalved, faUser, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../../context/AuthContext';
 import { 
   requestEmailVerify, 
@@ -6,6 +8,7 @@ import {
   request2FAEmail,
   verify2FAEmail,
   setup2FATOTP,
+  cancel2FASetup,
   verify2FATOTP,
   disable2FA,
   changePassword,
@@ -33,6 +36,7 @@ export default function UserSettings({ onClose }) {
     totpQRCodeDataURL,
     recoveryCodes,
     showEmailCodeInput,
+    show2FASetup,
     show2FACodeInput,
     show2FADisableForm,
     twoFADisableCode,
@@ -44,6 +48,7 @@ export default function UserSettings({ onClose }) {
     profilePictureFile,
     oauthConsents,
     oauthLoading,
+    oauthError,
     disconnectClientID,
   } = state;
 
@@ -56,20 +61,45 @@ export default function UserSettings({ onClose }) {
     }
   }, [user]);
 
+  const loadOAuthConsents = useEffectEvent(async () => {
+    if (!accessToken) {
+      setStateField('oauthConsents', []);
+      setStateField('oauthError', 'Sign in again to view connected applications.');
+      return;
+    }
+    setStateField('oauthLoading', true);
+    setStateField('oauthError', '');
+    const response = await listOAuthConsents(accessToken);
+    if (response.success && Array.isArray(response.data?.consents)) {
+      setStateField('oauthConsents', response.data.consents);
+    } else {
+      setStateField('oauthConsents', []);
+      setStateField('oauthError', response.error || 'Could not load connected applications.');
+    }
+    setStateField('oauthLoading', false);
+  });
+
   useEffect(() => {
-    const loadConsents = async () => {
-      if (!accessToken) return;
-      setStateField('oauthLoading', true);
-      const response = await listOAuthConsents(accessToken);
-      setStateField('oauthConsents', response.success && Array.isArray(response.data?.consents) ? response.data.consents : []);
-      setStateField('oauthLoading', false);
-    };
-    loadConsents();
-  }, [accessToken]);
+    void loadOAuthConsents();
+  }, [accessToken, loadOAuthConsents]);
 
   const handleLogoutAndClose = async () => {
     await handleLogout();
     onClose();
+  };
+
+  const handle2FASetupCancel = async () => {
+    setStateField('status', 'Cancelling 2FA setup...');
+    const response = await cancel2FASetup(accessToken);
+    if (!response.success) {
+      setStateField('status', '❌ ' + (response.error || 'Failed to cancel 2FA setup'));
+      return;
+    }
+    setStateField('twoFACode', '');
+    setStateField('totpQRCodeDataURL', '');
+    setStateField('show2FACodeInput', false);
+    setStateField('show2FASetup', false);
+    setStateField('status', '');
   };
 
   const handleEmailVerify = async () => {
@@ -152,6 +182,7 @@ export default function UserSettings({ onClose }) {
     setStateField('status', '✅ 2FA disabled. You can now choose a new method.');
     setStateField('twoFADisableCode', '');
     setStateField('show2FADisableForm', false);
+    setStateField('show2FASetup', false);
     await refreshUser();
   };
 
@@ -283,7 +314,7 @@ export default function UserSettings({ onClose }) {
           {/* Profile Card */}
           <div className="user-settings-card">
             <h3>
-              <span className="user-settings-card-icon">👤</span>
+              <span className="user-settings-card-icon"><FontAwesomeIcon icon={faUser} /></span>
               Profile
             </h3>
             
@@ -298,7 +329,7 @@ export default function UserSettings({ onClose }) {
                   <UserAvatar user={user} size={64} />
                 </div>
                 <div className="profile-avatar-overlay">
-                  <span className="profile-avatar-overlay-icon">📷</span>
+                  <span className="profile-avatar-overlay-icon"><FontAwesomeIcon icon={faCamera} /></span>
                   <div className="profile-avatar-overlay-label">Change Photo</div>
                 </div>
               </div>
@@ -368,7 +399,7 @@ export default function UserSettings({ onClose }) {
           {/* Security Card */}
           <div className="user-settings-card">
             <h3>
-              <span className="user-settings-card-icon">🔒</span>
+              <span className="user-settings-card-icon"><FontAwesomeIcon icon={faShieldHalved} /></span>
               Security
             </h3>
             
@@ -419,7 +450,13 @@ export default function UserSettings({ onClose }) {
                 </span>
               </div>
 
-              {!twoFAEnabled && !show2FACodeInput && (
+              {!twoFAEnabled && !show2FACodeInput && !show2FASetup && (
+                <button type="button" className="secondary" onClick={() => setStateField('show2FASetup', true)}>
+                  Set up 2FA
+                </button>
+              )}
+
+              {!twoFAEnabled && !show2FACodeInput && show2FASetup && (
                 <div className="two-factor-setup-panel">
                   <span className="two-factor-label">Choose a verification method</span>
                   <div className="two-factor-methods" role="group" aria-label="Two-factor authentication method">
@@ -442,6 +479,9 @@ export default function UserSettings({ onClose }) {
                   </div>
                   <button onClick={handle2FASetup} className="two-factor-primary-action">
                     Continue with {twoFAMethod === 'totp' ? 'authenticator app' : 'email code'}
+                  </button>
+                  <button type="button" className="secondary two-factor-cancel-action" onClick={() => setStateField('show2FASetup', false)}>
+                    Cancel
                   </button>
                 </div>
               )}
@@ -495,6 +535,9 @@ export default function UserSettings({ onClose }) {
                   />
                   <button onClick={handle2FAVerify} disabled={!twoFACode.trim()}>
                     Confirm
+                  </button>
+                  <button type="button" className="secondary" onClick={handle2FASetupCancel}>
+                    Cancel setup
                   </button>
                 </div>
               </div>
@@ -590,10 +633,16 @@ export default function UserSettings({ onClose }) {
           </div>
 
           <div className="user-settings-card connected-apps-card">
-            <h3>Connected Applications</h3>
+            <h3><span className="user-settings-card-icon"><FontAwesomeIcon icon={faPlug} /></span>Connected Applications</h3>
             <p className="settings-supporting-text">Applications authorized to access Homenavi on your behalf.</p>
             {oauthLoading && <p className="settings-supporting-text">Loading connected applications...</p>}
-            {!oauthLoading && oauthConsents.length === 0 && <p className="settings-supporting-text">No connected applications.</p>}
+            {!oauthLoading && oauthError && (
+              <div className="card-status error" role="alert">
+                {oauthError}
+                <button type="button" className="secondary" onClick={() => void loadOAuthConsents()}>Try again</button>
+              </div>
+            )}
+            {!oauthLoading && !oauthError && oauthConsents.length === 0 && <p className="settings-supporting-text">No connected applications. Authorize an MCP client to manage it here.</p>}
             {oauthConsents.map((consent) => (
               <div className="connected-app-row" key={`${consent.client_id}-${consent.resource}`}>
                 <div>
@@ -616,7 +665,7 @@ export default function UserSettings({ onClose }) {
           {/* Logout Card */}
           <div className="user-settings-card">
             <h3>
-              <span className="user-settings-card-icon">🚪</span>
+              <span className="user-settings-card-icon"><FontAwesomeIcon icon={faRightFromBracket} /></span>
               Account Actions
             </h3>
             
@@ -636,7 +685,7 @@ export default function UserSettings({ onClose }) {
               <div className="profile-picture-options">
                 <div className="profile-picture-option">
                   <button onClick={handleGenerateAvatar} className="secondary">
-                    🎨 Generate Pixel Avatar
+                    <FontAwesomeIcon icon={faWandMagicSparkles} /> Generate Pixel Avatar
                   </button>
                   <p>Create a unique pixel art avatar</p>
                 </div>
@@ -652,7 +701,7 @@ export default function UserSettings({ onClose }) {
                     style={{ display: 'none' }}
                   />
                   <label htmlFor="profile-picture-upload" className="upload-label">
-                    📁 Choose Image
+                    <FontAwesomeIcon icon={faFolderOpen} /> Choose Image
                   </label>
                   {profilePictureFile && (
                     <div className="file-selected">

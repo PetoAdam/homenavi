@@ -63,6 +63,8 @@ helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
 - Persistent storage can be enabled through `persistentVolumeClaims` and referenced by service volumes.
 - `integration-proxy` defaults to `INTEGRATIONS_RUNTIME_MODE=helm` in this chart.
 - Released charts default service image tags to the chart `appVersion`, so tag-based releases stay aligned with GHCR images by default.
+- The ingress host is the public hostname source of truth. OAuth and MCP derive their absolute URLs from the host and scheme forwarded through the edge proxy; explicit per-service endpoint values remain available for split-domain deployments.
+- Set `global.otelExporterOtlpTracesEndpoint` once to inject the collector endpoint into all OTEL-capable services. An explicit per-service endpoint remains an override.
 
 ## Runtime secrets from env file (Kubernetes-native)
 

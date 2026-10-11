@@ -12,7 +12,9 @@ describe('userSettingsReducer', () => {
 
     expect(state.emailVerified).toBe(true);
     expect(state.twoFAMethod).toBe('totp');
+    expect(state.show2FASetup).toBe(false);
     expect(state.recoveryCodes).toEqual([]);
+    expect(state.oauthError).toBe('');
     expect(state.profileForm).toEqual({ firstName: 'Ada', lastName: 'Lovelace' });
   });
 
@@ -32,6 +34,6 @@ describe('userSettingsReducer', () => {
 
   it('resets password form', () => {
     const next = userSettingsReducer(userSettingsInitialState(), { type: 'reset-password-form' });
-    expect(next.passwordForm).toEqual({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    expect(next.passwordForm).toEqual({ currentPassword: '', newPassword: '', confirmPassword: '', twoFactorCode: '' });
   });
 });

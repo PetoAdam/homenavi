@@ -91,6 +91,9 @@ export async function verify2FAEmail(code, accessToken) {
 export async function setup2FATOTP(accessToken) {
   return await http.post(`${AUTH_BASE}/2fa/setup`, {}, { token: accessToken });
 }
+export async function cancel2FASetup(accessToken) {
+  return await http.post(`${AUTH_BASE}/2fa/cancel`, {}, { token: accessToken });
+}
 export async function verify2FATOTP(code, accessToken) {
   return await http.post(`${AUTH_BASE}/2fa/verify`, { code }, { token: accessToken });
 }
@@ -173,6 +176,7 @@ export default {
   request2FAEmail,
   verify2FAEmail,
   setup2FATOTP,
+  cancel2FASetup,
   verify2FATOTP,
   disable2FA,
   requestPasswordReset,

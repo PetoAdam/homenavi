@@ -103,6 +103,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		HandleEmailVerifyRequest:   emailVerifyHandler.HandleEmailVerifyRequest,
 		HandleEmailVerifyConfirm:   emailVerifyHandler.HandleEmailVerifyConfirm,
 		HandleTwoFactorSetup:       twoFactorSetupHandler.Handle2FASetup,
+		HandleTwoFactorCancel:      twoFactorSetupHandler.Handle2FASetupCancel,
 		HandleTwoFactorVerify:      twoFactorVerifyHandler.Handle2FAVerify,
 		HandleTwoFactorDisable:     twoFactorVerifyHandler.Handle2FADisable,
 		HandleTwoFactorEmailReq:    twoFactorEmailHandler.Handle2FAEmailRequest,

@@ -19,6 +19,7 @@ func TestEnrollmentHandlersRequireBearerToken(t *testing.T) {
 		body    string
 	}{
 		{name: "totp setup", handler: (&SetupHandler{}).Handle2FASetup, body: `{}`},
+		{name: "cancel setup", handler: (&SetupHandler{}).Handle2FASetupCancel, body: ``},
 		{name: "totp verify", handler: (&VerifyHandler{}).Handle2FAVerify, body: `{"code":"123456"}`},
 		{name: "disable 2fa", handler: (&VerifyHandler{}).Handle2FADisable, body: `{"code":"123456"}`},
 		{name: "email request", handler: (&EmailHandler{}).Handle2FAEmailRequest, body: `{}`},

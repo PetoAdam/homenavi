@@ -206,3 +206,17 @@ func TestVerifySecondFactorAcceptsStoredEmailCodeAndRejectsInvalidCode(t *testin
 		t.Fatalf("valid code rejected: %v", err)
 	}
 }
+
+func TestCancelVerificationCodeDeletesPendingCode(t *testing.T) {
+	store := newMemoryRefreshStore()
+	service := newRefreshTestService(t, store)
+	if err := service.StoreVerificationCode("2fa_email", "user-1", "123456"); err != nil {
+		t.Fatalf("store email code: %v", err)
+	}
+	if err := service.CancelVerificationCode("2fa_email", "user-1"); err != nil {
+		t.Fatalf("cancel verification code: %v", err)
+	}
+	if err := service.ValidateVerificationCode("2fa_email", "user-1", "123456"); err == nil {
+		t.Fatal("cancelled email code was accepted")
+	}
+}

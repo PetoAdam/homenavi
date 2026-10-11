@@ -25,6 +25,7 @@ type Routes struct {
 	HandleEmailVerifyRequest    http.HandlerFunc
 	HandleEmailVerifyConfirm    http.HandlerFunc
 	HandleTwoFactorSetup        http.HandlerFunc
+	HandleTwoFactorCancel       http.HandlerFunc
 	HandleTwoFactorVerify       http.HandlerFunc
 	HandleTwoFactorDisable      http.HandlerFunc
 	HandleTwoFactorEmailReq     http.HandlerFunc
@@ -85,6 +86,7 @@ func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer)
 		r.Post("/email/verify/request", orNotImplemented(routes.HandleEmailVerifyRequest))
 		r.Post("/email/verify/confirm", orNotImplemented(routes.HandleEmailVerifyConfirm))
 		r.Post("/2fa/setup", orNotImplemented(routes.HandleTwoFactorSetup))
+		r.Post("/2fa/cancel", orNotImplemented(routes.HandleTwoFactorCancel))
 		r.Post("/2fa/verify", orNotImplemented(routes.HandleTwoFactorVerify))
 		r.Post("/2fa/disable", orNotImplemented(routes.HandleTwoFactorDisable))
 		r.Post("/2fa/email/request", orNotImplemented(routes.HandleTwoFactorEmailReq))

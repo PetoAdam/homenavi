@@ -110,6 +110,41 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (h *SetupHandler) Handle2FASetupCancel(w http.ResponseWriter, r *http.Request) {
+	userID, authErr := authenticatedUserID(r, h.authService)
+	if authErr != nil {
+		errors.WriteError(w, authErr)
+		return
+	}
+	user, err := h.userService.GetUser(userID)
+	if err != nil {
+		errors.WriteError(w, errors.NotFound("user not found"))
+		return
+	}
+	if user.TwoFactorEnabled {
+		errors.WriteError(w, errors.BadRequest("2FA is already enabled for this user"))
+		return
+	}
+	if err := h.authService.CancelVerificationCode("2fa_email", userID); err != nil {
+		errors.WriteError(w, errors.InternalServerError("failed to cancel 2FA email verification", err))
+		return
+	}
+	if user.TwoFactorSecret != "" || user.TwoFactorType != "" {
+		token, err := h.authService.IssueServiceToken()
+		if err != nil {
+			errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
+			return
+		}
+		updates := map[string]interface{}{"two_factor_enabled": false, "two_factor_type": "", "two_factor_secret": ""}
+		if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+			errors.WriteError(w, errors.InternalServerError("failed to cancel 2FA setup", err))
+			return
+		}
+	}
+	slog.Info("2fa setup cancelled", "user_id", userID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type VerifyHandler struct {
 	authService *authdomain.Service
 	userService *clientsinfra.UserClient

@@ -93,18 +93,22 @@ Primary references:
 git clone https://github.com/PetoAdam/homenavi.git
 cd homenavi
 cp .env.example .env
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
 Notes:
+- This starts the prebuilt Homenavi release images from GitHub Container Registry (GHCR). Set `HN_VERSION=vX.Y.Z` in `.env` to pin a release; use `docker compose up --build` only when developing from source.
+- Open `http://localhost` after `docker compose ps` reports the edge services running.
 - The stack defaults to EMQX for MQTT.
 - Mock adapter is opt-in via profile.
-- zigbee2mqtt is included and can be used with a USB coordinator.
+- Zigbee2MQTT is opt-in through the `hardware` profile so a local evaluation never attempts to claim a USB coordinator.
 
 ## 5. Deployments (Docker and Kubernetes)
 
 ### Docker deployment
 Use Compose as the canonical local and small-instance deployment path:
+- Production deployment: [doc/deployment_guide.md](doc/deployment_guide.md)
 - Build/run details: [doc/local_build.md](doc/local_build.md)
 - Nginx behavior and TLS/dev modes: [doc/nginx_guide.md](doc/nginx_guide.md)
 - MQTT bridging patterns: [doc/mqtt_broker_topologies.md](doc/mqtt_broker_topologies.md)
@@ -116,6 +120,7 @@ helm upgrade --install homenavi ./helm/homenavi -n homenavi --create-namespace
 ```
 
 Operational runbooks:
+- Production deployment: [doc/deployment_guide.md](doc/deployment_guide.md)
 - Minikube MVP path: [doc/minikube_helm_mvp_runbook.md](doc/minikube_helm_mvp_runbook.md)
 - HA/operations notes: [doc/helm_ha_operations.md](doc/helm_ha_operations.md)
 - Deployment model guidance: [doc/deployment_modes_compose_helm_implementation_plan.md](doc/deployment_modes_compose_helm_implementation_plan.md)

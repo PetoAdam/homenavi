@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
@@ -466,6 +467,13 @@ func (s *Service) ValidateVerificationCode(codeType, userID, code string) error 
 	}
 	_ = s.cacheStore.Delete(ctx, key)
 	return nil
+}
+
+func (s *Service) CancelVerificationCode(codeType, userID string) error {
+	if strings.TrimSpace(codeType) == "" || strings.TrimSpace(userID) == "" {
+		return fmt.Errorf("verification code type and user ID are required")
+	}
+	return s.cacheStore.Delete(context.Background(), fmt.Sprintf("%s:%s", codeType, userID))
 }
 
 func (s *Service) GenerateVerificationCode() string {
