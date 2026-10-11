@@ -141,7 +141,7 @@ routes:
     type: rest
   - path: /api/auth/oauth/consents
     upstream: http://auth-service:8000/api/auth/oauth/consents
-    methods: [POST]
+    methods: [GET, POST]
     access: auth
     type: rest
   - path: /api/auth/oauth/consents/{clientID}
