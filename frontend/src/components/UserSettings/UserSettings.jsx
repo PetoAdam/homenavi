@@ -1,4 +1,4 @@
-import React, { useEffect, useEffectEvent, useReducer } from 'react';
+import React, { useCallback, useEffect, useReducer } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCamera, faFolderOpen, faPlug, faRightFromBracket, faShieldHalved, faUser, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -61,23 +61,29 @@ export default function UserSettings({ onClose }) {
     }
   }, [user]);
 
-  const loadOAuthConsents = useEffectEvent(async () => {
+  const loadOAuthConsents = useCallback(async () => {
     if (!accessToken) {
-      setStateField('oauthConsents', []);
-      setStateField('oauthError', 'Sign in again to view connected applications.');
+      dispatch({ type: 'set-field', key: 'oauthConsents', value: [] });
+      dispatch({ type: 'set-field', key: 'oauthError', value: 'Sign in again to view connected applications.' });
       return;
     }
-    setStateField('oauthLoading', true);
-    setStateField('oauthError', '');
-    const response = await listOAuthConsents(accessToken);
-    if (response.success && Array.isArray(response.data?.consents)) {
-      setStateField('oauthConsents', response.data.consents);
-    } else {
-      setStateField('oauthConsents', []);
-      setStateField('oauthError', response.error || 'Could not load connected applications.');
+    dispatch({ type: 'set-field', key: 'oauthLoading', value: true });
+    dispatch({ type: 'set-field', key: 'oauthError', value: '' });
+    try {
+      const response = await listOAuthConsents(accessToken);
+      if (response.success && Array.isArray(response.data?.consents)) {
+        dispatch({ type: 'set-field', key: 'oauthConsents', value: response.data.consents });
+      } else {
+        dispatch({ type: 'set-field', key: 'oauthConsents', value: [] });
+        dispatch({ type: 'set-field', key: 'oauthError', value: response.error || 'Could not load connected applications.' });
+      }
+    } catch {
+      dispatch({ type: 'set-field', key: 'oauthConsents', value: [] });
+      dispatch({ type: 'set-field', key: 'oauthError', value: 'Could not load connected applications.' });
+    } finally {
+      dispatch({ type: 'set-field', key: 'oauthLoading', value: false });
     }
-    setStateField('oauthLoading', false);
-  });
+  }, [accessToken]);
 
   useEffect(() => {
     void loadOAuthConsents();
