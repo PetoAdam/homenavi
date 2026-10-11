@@ -6,7 +6,7 @@ Homenavi exposes a scoped Streamable HTTP MCP endpoint at `/mcp`. It is a protec
 
 MCP access uses dynamically registered public clients with validated HTTPS or loopback redirects. Only resident and admin users can authorize an MCP connection. Access tokens are audience-bound to `/mcp`, signed with RS256, scoped, session-bound, and valid for one hour. OAuth clients receive a rotating refresh token with a 30-day sliding idle timeout and no absolute expiry; it is bound to the client, resource, scopes, consent, and authenticated session. Reuse of a refresh token revokes its session. Browser application sessions use HttpOnly, Secure (on HTTPS), SameSite=Strict access and refresh cookies; browser JavaScript never receives bearer or refresh credentials.
 
-When the browser already has a valid Homenavi web session, the authorization page opens directly at the consent view. A missing or expired web session requires normal Homenavi sign-in and any configured 2FA challenge. Consent grants are bound to the client, resource, and requested scopes, expire after 30 days, and can be revoked through `DELETE /api/auth/oauth/consents/{clientID}` with the user's API bearer token.
+When the browser already has a valid Homenavi web session, the authorization page opens directly at the consent view. A missing or expired web session requires normal Homenavi sign-in and any configured 2FA challenge. Consent grants are bound to the client, resource, and requested scopes; they remain valid until explicitly revoked through `DELETE /api/auth/oauth/consents/{clientID}` with the user's API bearer token.
 
 ### Connection Policy
 

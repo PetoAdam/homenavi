@@ -23,8 +23,8 @@ func TestOAuthConsentIsScopeBoundAndRevocable(t *testing.T) {
 	if err := manager.Grant(context.Background(), "user-1", request); err != nil {
 		t.Fatalf("grant consent: %v", err)
 	}
-	if store.lastTTL != oauthConsentTTL {
-		t.Fatalf("consent TTL = %v, want %v", store.lastTTL, oauthConsentTTL)
+	if store.lastTTL != 0 {
+		t.Fatalf("consent TTL = %v, want persistent storage", store.lastTTL)
 	}
 	granted, err := manager.Has(context.Background(), "user-1", request)
 	if err != nil || !granted {

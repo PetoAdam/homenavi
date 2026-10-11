@@ -13,7 +13,7 @@ import (
 
 const (
 	oauthConsentPrefix = "oauth_consent:"
-	oauthConsentTTL    = 30 * 24 * time.Hour
+	oauthConsentTTL    = 0
 )
 
 type OAuthConsent struct {
@@ -69,6 +69,9 @@ func (m *OAuthConsentManager) Has(ctx context.Context, subject string, request O
 		if _, ok := granted[scope]; !ok {
 			return false, nil
 		}
+	}
+	if err := m.store.Set(ctx, oauthConsentKey(subject, request.ClientID), encoded, oauthConsentTTL); err != nil {
+		return false, fmt.Errorf("persist OAuth consent: %w", err)
 	}
 	return true, nil
 }
