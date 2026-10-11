@@ -214,6 +214,10 @@ func (s *Service) issueRefreshToken(userID, familyID, sessionID string) (string,
 }
 
 func (s *Service) issueRefreshTokenRecord(record refreshTokenRecord) (string, error) {
+	return s.issueRefreshTokenRecordWithTTL(record, s.config.RefreshTokenTTL)
+}
+
+func (s *Service) issueRefreshTokenRecordWithTTL(record refreshTokenRecord, ttl time.Duration) (string, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return "", fmt.Errorf("generate refresh token: %w", err)
@@ -225,10 +229,10 @@ func (s *Service) issueRefreshTokenRecord(record refreshTokenRecord) (string, er
 		return "", fmt.Errorf("encode refresh token record: %w", err)
 	}
 	ctx := context.Background()
-	if err := s.cacheStore.Set(ctx, refreshTokenFamilyKey(record.FamilyID), refreshTokenFamilyActive, s.config.RefreshTokenTTL); err != nil {
+	if err := s.cacheStore.Set(ctx, refreshTokenFamilyKey(record.FamilyID), refreshTokenFamilyActive, ttl); err != nil {
 		return "", fmt.Errorf("store refresh token family: %w", err)
 	}
-	if err := s.cacheStore.Set(ctx, refreshTokenKey(token), string(recordBytes), s.config.RefreshTokenTTL); err != nil {
+	if err := s.cacheStore.Set(ctx, refreshTokenKey(token), string(recordBytes), ttl); err != nil {
 		_ = s.cacheStore.Delete(ctx, refreshTokenFamilyKey(record.FamilyID))
 		return "", fmt.Errorf("store refresh token: %w", err)
 	}

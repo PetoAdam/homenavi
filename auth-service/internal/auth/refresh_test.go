@@ -16,14 +16,16 @@ import (
 
 type memoryRefreshStore struct {
 	values map[string]string
+	ttls   map[string]time.Duration
 }
 
 func newMemoryRefreshStore() *memoryRefreshStore {
-	return &memoryRefreshStore{values: make(map[string]string)}
+	return &memoryRefreshStore{values: make(map[string]string), ttls: make(map[string]time.Duration)}
 }
 
-func (s *memoryRefreshStore) Set(_ context.Context, key, value string, _ time.Duration) error {
+func (s *memoryRefreshStore) Set(_ context.Context, key, value string, ttl time.Duration) error {
 	s.values[key] = value
+	s.ttls[key] = ttl
 	return nil
 }
 
@@ -49,6 +51,7 @@ func (s *memoryRefreshStore) Scan(_ context.Context, pattern string, _ int64) ([
 func (s *memoryRefreshStore) Delete(_ context.Context, keys ...string) error {
 	for _, key := range keys {
 		delete(s.values, key)
+		delete(s.ttls, key)
 	}
 	return nil
 }
@@ -64,7 +67,11 @@ func (s *memoryRefreshStore) Increment(_ context.Context, key string) (int64, er
 	return 0, nil
 }
 
-func (s *memoryRefreshStore) Expire(_ context.Context, key string, _ time.Duration) error {
+func (s *memoryRefreshStore) Expire(_ context.Context, key string, ttl time.Duration) error {
+	if _, ok := s.values[key]; !ok {
+		return cacheinfra.ErrNotFound
+	}
+	s.ttls[key] = ttl
 	return nil
 }
 
@@ -93,8 +100,12 @@ func (s *memoryRefreshStore) RotateRefreshToken(_ context.Context, currentKey, c
 		return "", cacheinfra.RefreshTokenFamilyRevoked, nil
 	}
 	delete(s.values, currentKey)
+	currentTTL := s.ttls[currentKey]
+	delete(s.ttls, currentKey)
 	s.values[consumedKey] = current
 	s.values[replacementKey] = current
+	s.ttls[consumedKey] = currentTTL
+	s.ttls[replacementKey] = currentTTL
 	return current, cacheinfra.RefreshTokenRotated, nil
 }
 
@@ -221,12 +232,18 @@ func TestOAuthRefreshTokenRotatesAndIsSessionBound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue OAuth refresh token: %v", err)
 	}
+	if store.ttls[refreshTokenKey(refreshToken)] != OAuthRefreshTokenTTL || store.ttls[authx.SessionStatusKey(grant.SessionID)] != OAuthRefreshTokenTTL {
+		t.Fatalf("OAuth refresh TTLs = token:%v session:%v, want %v", store.ttls[refreshTokenKey(refreshToken)], store.ttls[authx.SessionStatusKey(grant.SessionID)], OAuthRefreshTokenTTL)
+	}
 	renewedGrant, replacementToken, err := service.RefreshOAuthAuthorizationGrant(refreshToken)
 	if err != nil {
 		t.Fatalf("refresh OAuth authorization: %v", err)
 	}
 	if replacementToken == "" || replacementToken == refreshToken || renewedGrant != grant {
 		t.Fatalf("unexpected refresh result: grant=%#v replacement=%q", renewedGrant, replacementToken)
+	}
+	if store.ttls[refreshTokenKey(replacementToken)] != OAuthRefreshTokenTTL || store.ttls[refreshTokenConsumedKey(refreshToken)] != OAuthRefreshTokenTTL {
+		t.Fatalf("rotated OAuth refresh TTLs = replacement:%v consumed:%v, want %v", store.ttls[refreshTokenKey(replacementToken)], store.ttls[refreshTokenConsumedKey(refreshToken)], OAuthRefreshTokenTTL)
 	}
 	if _, _, err := service.RefreshOAuthAuthorizationGrant(refreshToken); err == nil {
 		t.Fatal("expected replayed OAuth refresh token to fail")

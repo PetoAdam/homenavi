@@ -16,6 +16,7 @@ import (
 const (
 	MCPAccessTokenTTL       = time.Hour
 	DelegatedAccessTokenTTL = 2 * time.Minute
+	OAuthRefreshTokenTTL    = 30 * 24 * time.Hour
 )
 
 func (s *Service) AuthorizeOAuth(ctx context.Context, request OAuthAuthorizationRequest, subject string) (string, error) {
@@ -78,14 +79,17 @@ func (s *Service) IssueOAuthRefreshToken(grant OAuthAuthorizationGrant) (string,
 	if err != nil {
 		return "", fmt.Errorf("generate OAuth refresh token family ID: %w", err)
 	}
-	return s.issueRefreshTokenRecord(refreshTokenRecord{
+	if err := s.cacheStore.Expire(context.Background(), authx.SessionStatusKey(grant.SessionID), OAuthRefreshTokenTTL); err != nil {
+		return "", fmt.Errorf("extend OAuth session: %w", err)
+	}
+	return s.issueRefreshTokenRecordWithTTL(refreshTokenRecord{
 		UserID:        grant.Subject,
 		FamilyID:      familyID,
 		SessionID:     grant.SessionID,
 		OAuthClientID: grant.ClientID,
 		OAuthScope:    grant.Scope,
 		OAuthResource: grant.Resource,
-	})
+	}, OAuthRefreshTokenTTL)
 }
 
 func (s *Service) RefreshOAuthAuthorizationGrant(token string) (OAuthAuthorizationGrant, string, error) {
@@ -119,6 +123,9 @@ func (s *Service) RefreshOAuthAuthorizationGrant(token string) (OAuthAuthorizati
 	if err != nil || !granted {
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
+	if err := s.renewOAuthRefreshTokenTTL(token, current); err != nil {
+		return OAuthAuthorizationGrant{}, "", errors.ServiceUnavailable("refresh token renewal unavailable", err)
+	}
 	record, replacement, err := s.rotateRefreshToken(token)
 	if err != nil {
 		return OAuthAuthorizationGrant{}, "", err
@@ -127,6 +134,16 @@ func (s *Service) RefreshOAuthAuthorizationGrant(token string) (OAuthAuthorizati
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
 	return OAuthAuthorizationGrant{Subject: record.UserID, SessionID: record.SessionID, ClientID: record.OAuthClientID, Scope: record.OAuthScope, Resource: record.OAuthResource}, replacement, nil
+}
+
+func (s *Service) renewOAuthRefreshTokenTTL(token string, record refreshTokenRecord) error {
+	ctx := context.Background()
+	for _, key := range []string{refreshTokenKey(token), refreshTokenFamilyKey(record.FamilyID), authx.SessionStatusKey(record.SessionID)} {
+		if err := s.cacheStore.Expire(ctx, key, OAuthRefreshTokenTTL); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) ListOAuthConsents(ctx context.Context, subject string) ([]OAuthConsent, error) {
