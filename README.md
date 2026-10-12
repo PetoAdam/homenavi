@@ -58,7 +58,7 @@ Current repo state at a glance:
 - The frontend state architecture has been consolidated around React Query for server state, Zustand for durable client preferences, and reducers for complex local workflows.
 - Compose remains the fastest way to run the full platform locally, while Helm charts cover the current Kubernetes path.
 - Integration-first extension points, marketplace metadata, and separate integration repositories are part of the normal development model.
-- An OAuth-protected MCP endpoint gives resident and admin AI clients scoped, audited access to Homenavi devices, inventory, history, workflow reads, and narrowly authorized control actions.
+- An OAuth-protected MCP endpoint gives resident and admin AI clients scoped, audited access to Homenavi devices, inventory, history, workflow reads, and narrowly authorized control actions. Connected applications can be revoked independently, immediately ending that client's MCP and delegated gateway access without signing the user out.
 
 What is still true:
 - Some roadmap and design-plan documents remain in `doc/` for larger future work.
