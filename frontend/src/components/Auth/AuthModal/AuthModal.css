@@ -113,6 +113,18 @@
   line-height: 1.4;
 }
 
+.auth-modal-factor {
+  align-items: center;
+  background: rgba(20, 100, 76, 0.2);
+  border: 1px solid rgba(80, 190, 145, 0.34);
+  color: var(--color-primary);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 0.45rem;
+  padding: 0.38rem 0.65rem;
+}
+
 .auth-modal-form {
   width: 100%;
   max-width: 320px;

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { faUserCircle, faLock } from '@fortawesome/free-solid-svg-icons';
+import { faUserCircle, faLock, faEnvelope, faMobileScreenButton } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle as faGoogleBrand } from '@fortawesome/free-brands-svg-icons';
 import { requestPasswordReset, confirmPasswordReset } from '../../../services/authService';
 import ModalTabs from '../../common/ModalTabs/ModalTabs';
 import BaseModal from '../../common/BaseModal/BaseModal';
+import { requiresTwoFactor } from './authModalState';
 import './AuthModal.css';
 
 export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, onSignup, onCancel, onRequestNewCode, loading = false }) {
@@ -21,6 +22,7 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const [forgotPasswordStep, setForgotPasswordStep] = useState(1); // 1: email, 2: code + password
   const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [formLoading, setFormLoading] = useState(false); // Local loading state for form submissions
+  const twoFAInputRef = useRef(null);
   // Clear stale errors and transient form states whenever the modal is newly opened
   useEffect(() => {
     if (open) {
@@ -34,6 +36,13 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
       setAttemptedLogin(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !twoFAState) return;
+    setTab('login');
+    const frame = requestAnimationFrame(() => twoFAInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open, twoFAState]);
 
   const handleCancel = () => {
     // Reset form state
@@ -59,10 +68,11 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
     try {
       const result = await onAuth(loginForm.email, loginForm.password);
       setAttemptedLogin(true);
-      if (result && result.success) {
+      if (requiresTwoFactor(result)) {
+        setLoginForm(form => ({ ...form, password: '', twofa: '' }));
+        setAttemptedLogin(false);
+      } else if (result && result.success) {
         onClose();
-      } else if (result && result.twoFA) {
-        // 2FA path handled by parent
       } else if (result) {
         // result may contain error, lockoutRemaining, reason, unlockAt
         if (result.lockoutRemaining != null) {
@@ -213,14 +223,14 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
   const modal = (
     <BaseModal open={open} onClose={onClose}>
       <div>
-        <ModalTabs
+        {!twoFAState && <ModalTabs
           tabs={[
             { id: 'login', label: 'Log In' },
             { id: 'signup', label: 'Sign Up' },
           ]}
           activeTab={tab}
           onChange={setTab}
-        />
+        />}
         <div className="auth-modal-content-outer">
           <div className={contentClass}>
             {/* LOGIN FORM */}
@@ -302,22 +312,30 @@ export default function AuthModal({ open, onClose, twoFAState, onAuth, on2FA, on
               <form className="auth-modal-form" onSubmit={handle2FA} autoComplete="off">
                 <div className="auth-modal-header">
                   <FontAwesomeIcon icon={faLock} className="auth-modal-avatar" />
-                  <span className="auth-modal-title">Enter 2FA Code</span>
+                  <span className="auth-modal-title">Confirm your sign-in</span>
+                  <div className="auth-modal-factor" role="status">
+                    <FontAwesomeIcon icon={twoFAState?.type === 'email' ? faEnvelope : faMobileScreenButton} />
+                    {twoFAState?.type === 'email' ? 'Email verification code' : 'Authenticator app code'}
+                  </div>
                   <div className="auth-modal-subtitle">
-                    {twoFAState?.type === 'email' ? 'Check your email for the verification code' : 'Enter your 2FA code'}
+                    {twoFAState?.type === 'email' ? 'We sent a six-digit code to your email address.' : 'Open your authenticator app and enter its current six-digit code.'}
                   </div>
                 </div>
                 <div className="auth-modal-field">
                   <input
                     type="text"
                     className="auth-modal-input"
+                    ref={twoFAInputRef}
                     value={loginForm.twofa}
                     onChange={e => setLoginForm(f => ({ ...f, twofa: e.target.value }))}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
                     required
                     placeholder=" "
                     id="login-2fa"
                   />
-                  <label className="auth-modal-label" htmlFor="login-2fa">2FA Code</label>
+                  <label className="auth-modal-label" htmlFor="login-2fa">{twoFAState?.type === 'email' ? 'Email code' : 'Authenticator code'}</label>
                 </div>
                 {loginError && <div className="auth-modal-error">{loginError}</div>}
                 <button 
