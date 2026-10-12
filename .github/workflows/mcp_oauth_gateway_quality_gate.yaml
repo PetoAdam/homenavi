@@ -30,8 +30,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: ./go.work
+          go-version-file: ./shared/go.mod
           cache: false
+      - name: Download modules
+        working-directory: ./${{ matrix.module }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if go mod download; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Module download failed; retrying (${attempt}/3)"
+            sleep "$attempt"
+          done
       - name: Static analysis
         working-directory: ./${{ matrix.module }}
         run: go vet ./...
