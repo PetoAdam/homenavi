@@ -33,8 +33,21 @@
 }
 
 .unauthorized-icon-badge {
-  font-size: 1.6rem;
-  filter: saturate(0.9);
+  color: var(--color-secondary-light);
+  font-size: 1.7rem;
+}
+
+.unauthorized-page--awaiting-access .unauthorized-icon {
+  background: rgba(20, 100, 76, 0.2);
+  border-color: rgba(80, 190, 145, 0.36);
+}
+
+.unauthorized-page--awaiting-access .unauthorized-icon-badge {
+  color: var(--color-primary);
+}
+
+.unauthorized-page--awaiting-access .unauthorized-pulse {
+  border-color: rgba(80, 190, 145, 0.36);
 }
 
 .unauthorized-pulse {
@@ -67,6 +80,27 @@
   align-items: center;
   justify-content: center;
   margin-top: 0.2rem;
+}
+
+.unauthorized-awaiting-copy {
+  background: rgba(20, 100, 76, 0.16);
+  border: 1px solid rgba(80, 190, 145, 0.3);
+  display: grid;
+  gap: 0.3rem;
+  max-width: 520px;
+  padding: 0.9rem 1rem;
+  text-align: center;
+}
+
+.unauthorized-awaiting-copy strong {
+  color: var(--color-white);
+  font-size: 0.95rem;
+}
+
+.unauthorized-awaiting-copy span {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .unauthorized-login-pill {

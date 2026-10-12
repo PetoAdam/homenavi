@@ -545,10 +545,15 @@ export default function Dashboard() {
   }
 
   if (!isResidentOrAdmin) {
+    const awaitingAccess = Boolean(user);
+    const preferredName = user?.first_name || user?.user_name || '';
     return (
       <UnauthorizedView
         title=""
-        message="Sign in with a resident or admin account to view your dashboard."
+        message={awaitingAccess
+          ? `Welcome${preferredName ? `, ${preferredName}` : ''}. Your account is registered and awaiting access.`
+          : 'Sign in with a resident or admin account to view your dashboard.'}
+        awaitingAccess={awaitingAccess}
         hideHeader
       />
     );
