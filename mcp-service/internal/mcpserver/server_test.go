@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +138,56 @@ func TestMCPDerivesResourceFromForwardedRequest(t *testing.T) {
 	}
 }
 
+func TestMCPUsesDerivedResourceForDelegatedRead(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := "https://home.example.test/mcp"
+	var exchangedResource string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/oauth/token":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse token exchange: %v", err)
+			}
+			exchangedResource = r.Form.Get("resource")
+			if r.Form.Get("scope") != "home.devices.read" {
+				t.Fatalf("delegated scope = %q", r.Form.Get("scope"))
+			}
+			_, _ = w.Write([]byte(`{"access_token":"delegated-token"}`))
+		case "/api/mcp/hdp/devices":
+			if r.Header.Get("Authorization") != "Bearer delegated-token" {
+				t.Fatalf("gateway authorization = %q", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	config := Config{Enabled: true, Issuer: "https://home.example.test/api/auth", PublicKey: &privateKey.PublicKey, AuthServiceURL: upstream.URL, APIGatewayURL: upstream.URL}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_devices","arguments":{}}}`))
+	request.Host = "mcp.internal"
+	request.Header.Set("X-Forwarded-Host", "home.example.test")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("Authorization", "Bearer "+signedToken(t, privateKey, config, authx.TokenTypeMCP, resource))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", "2025-03-26")
+	response := httptest.NewRecorder()
+	New(config).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if exchangedResource != resource {
+		t.Fatalf("exchanged resource = %q, want %q", exchangedResource, resource)
+	}
+	if _, err := url.Parse(exchangedResource); err != nil {
+		t.Fatalf("derived resource is not a URL: %v", err)
+	}
+}
+
 func TestMCPToolDiscoveryIsScoped(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -170,6 +221,15 @@ func TestMCPToolDiscoveryIsScoped(t *testing.T) {
 	}
 	if !names["list_devices"] || names["list_rooms"] || names["query_state_history"] {
 		t.Fatalf("unexpected scoped tools: %#v", names)
+	}
+}
+
+func TestMCPCatalogReadToolsMatchScopesAndPolicy(t *testing.T) {
+	service := &server{config: Config{EnabledTools: map[string]struct{}{"list_devices": {}, "list_rooms": {}}}}
+	principal := &mcpPrincipal{scopes: authx.ParseScopes("home.devices.read home.inventory.read")}
+	tools := service.availableReadTools(principal)
+	if len(tools) != 2 || tools[0] != "list_devices" || tools[1] != "list_rooms" {
+		t.Fatalf("catalog tools = %#v", tools)
 	}
 }
 
@@ -230,6 +290,25 @@ func TestMCPRejectsRevokedSession(t *testing.T) {
 	}
 	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey, SessionValidator: func(_ context.Context, sessionID string) (bool, error) {
 		return sessionID != "session-1", nil
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`))
+	request.Header.Set("Authorization", "Bearer "+signedToken(t, privateKey, config, authx.TokenTypeMCP, config.Resource))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	response := httptest.NewRecorder()
+	New(config).ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestMCPRejectsRevokedGrant(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey, GrantValidator: func(_ context.Context, grantID string) (bool, error) {
+		return grantID != "grant-1", nil
 	}}
 	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`))
 	request.Header.Set("Authorization", "Bearer "+signedToken(t, privateKey, config, authx.TokenTypeMCP, config.Resource))
@@ -306,7 +385,7 @@ func signedTokenWithClaimsAndRole(t *testing.T, privateKey *rsa.PrivateKey, conf
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"iss": config.Issuer, "sub": "user-1", "aud": []string{audience}, "exp": time.Now().Add(time.Minute).Unix(), authx.ClaimSessionID: "session-1", authx.ClaimAuthorizedParty: "mcp-cli", authx.ClaimTokenType: tokenType, authx.ClaimScope: scopes, "role": role})
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"iss": config.Issuer, "sub": "user-1", "aud": []string{audience}, "exp": time.Now().Add(time.Minute).Unix(), authx.ClaimSessionID: "session-1", authx.ClaimAuthorizedParty: "mcp-cli", authx.ClaimMCPGrantID: "grant-1", authx.ClaimTokenType: tokenType, authx.ClaimScope: scopes, "role": role})
 	token.Header["kid"] = keyID
 	signed, err := token.SignedString(privateKey)
 	if err != nil {

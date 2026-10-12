@@ -30,6 +30,7 @@ type Config struct {
 	EnabledTools       map[string]struct{}
 	RateLimitPerMinute int
 	SessionValidator   func(context.Context, string) (bool, error)
+	GrantValidator     func(context.Context, string) (bool, error)
 	RateLimiter        func(context.Context, string) (bool, error)
 	Logger             *slog.Logger
 }
@@ -151,7 +152,7 @@ type writePolicyOutput struct {
 	IdempotencyKey   bool     `json:"idempotency_key_required"`
 	CapabilityCheck  bool     `json:"capability_check_required"`
 	AuditRequired    bool     `json:"audit_required"`
-	DeferredWrites   []string `json:"deferred_writes"`
+	DeferredWrites   []string `json:"deferred_writes,omitempty"`
 }
 
 type server struct {
@@ -164,6 +165,8 @@ type server struct {
 type mcpPrincipal struct {
 	scopes    map[string]struct{}
 	sessionID string
+	grantID   string
+	resource  string
 	subject   string
 	clientID  string
 	token     string
@@ -248,28 +251,14 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 	if principal == nil {
 		return mcpServer
 	}
-	mcp.AddTool(mcpServer, &mcp.Tool{Name: "describe_homenavi_api", Description: "Describe Homenavi's MCP read tools, deferred writes, and event channels."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, catalogOutput, error) {
-		return nil, catalogOutput{
-			ReadTools:      []string{"list_devices", "get_device", "get_device_state", "list_device_groups", "get_device_group", "get_device_group_state", "list_device_integrations", "list_pairings", "list_rooms", "list_automation_workflows", "get_automation_workflow", "query_state_history"},
-			DeferredWrites: []string{"pairing", "automation changes", "dashboard changes", "user/account changes"},
-			EventChannels:  []string{"/ws/automation/runs/{run_id}", "/ws/ers", "/ws/hdp (MQTT-over-WebSocket)"},
-		}, nil
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "describe_homenavi_api", Description: "Describe Homenavi's available MCP read tools."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, catalogOutput, error) {
+		return nil, catalogOutput{ReadTools: s.availableReadTools(principal)}, nil
 	})
-	mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_event_channels", Description: "List typed, scope-gated Homenavi event subscription capabilities. Raw WebSocket and MQTT transports are not exposed."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, []eventChannel, error) {
-		channels := []eventChannel{}
-		if principal.hasScope("home.automation.read") {
-			channels = append(channels, eventChannel{Name: "automation_run_status", Scope: "home.automation.read", Delivery: "deferred_typed_subscription", SupportedFilters: []string{"run_id"}})
-		}
-		if principal.hasScope("home.inventory.read") {
-			channels = append(channels, eventChannel{Name: "entity_registry_changes", Scope: "home.inventory.read", Delivery: "deferred_typed_subscription", SupportedFilters: []string{"entity_type", "entity_id"}})
-		}
-		if principal.hasScope("home.devices.read") {
-			channels = append(channels, eventChannel{Name: "device_state_changes", Scope: "home.devices.read", Delivery: "deferred_typed_subscription", SupportedFilters: []string{"device_id"}})
-		}
-		return nil, channels, nil
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_event_channels", Description: "List available MCP event subscription capabilities."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, []eventChannel, error) {
+		return nil, []eventChannel{}, nil
 	})
-	mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_write_policy", Description: "Describe requirements for future controlled Homenavi write capabilities."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, writePolicyOutput, error) {
-		return nil, writePolicyOutput{ApprovalRequired: false, IdempotencyKey: true, CapabilityCheck: true, AuditRequired: true, DeferredWrites: []string{"pairing", "automation changes", "dashboard changes", "user/account changes"}}, nil
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_write_policy", Description: "Describe requirements for available controlled Homenavi write capabilities."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, writePolicyOutput, error) {
+		return nil, writePolicyOutput{ApprovalRequired: false, IdempotencyKey: true, CapabilityCheck: true, AuditRequired: true}, nil
 	})
 	if principal.hasScope("home.devices.read") && s.toolEnabled("list_devices") {
 		mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_devices", Description: "List the devices available in the current Homenavi deployment."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listDevicesOutput, error) {
@@ -523,6 +512,30 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 	return mcpServer
 }
 
+func (s *server) availableReadTools(principal *mcpPrincipal) []string {
+	tools := []string{}
+	add := func(scope, name string) {
+		if principal.hasScope(scope) && s.toolEnabled(name) {
+			tools = append(tools, name)
+		}
+	}
+	add("home.devices.read", "list_devices")
+	add("home.devices.read", "get_device")
+	add("home.devices.read", "get_device_state")
+	add("home.devices.read", "list_device_integrations")
+	add("home.devices.read", "list_pairings")
+	add("home.inventory.read", "list_rooms")
+	add("home.inventory.read", "list_device_groups")
+	add("home.inventory.read", "get_device_group")
+	if principal.hasScope("home.inventory.read") && principal.hasScope("home.devices.read") && s.toolEnabled("get_device_group_state") {
+		tools = append(tools, "get_device_group_state")
+	}
+	add("home.automation.read", "list_automation_workflows")
+	add("home.automation.read", "get_automation_workflow")
+	add("home.history.read", "query_state_history")
+	return tools
+}
+
 func validateWritePolicy(input controlledWrite) error {
 	if len(strings.TrimSpace(input.IdempotencyKey)) < 8 {
 		return fmt.Errorf("idempotency_key must be at least 8 characters")
@@ -593,6 +606,14 @@ func (s *server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		}
+		if s.config.GrantValidator != nil {
+			active, err := s.config.GrantValidator(r.Context(), principal.grantID)
+			if err != nil || !active {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		principal.resource = resource
 		allowed, err := s.allowRequest(r.Context(), principal.sessionID)
 		if err != nil {
 			http.Error(w, "rate limiter unavailable", http.StatusServiceUnavailable)
@@ -733,7 +754,11 @@ func (s *server) parseToken(tokenString, resource string) (*mcpPrincipal, error)
 	if subject == "" || clientID == "" || (role != authx.RoleResident && role != authx.RoleAdmin) {
 		return nil, fmt.Errorf("MCP token is missing principal claims")
 	}
-	return &mcpPrincipal{scopes: scopes, sessionID: sessionID, subject: subject, clientID: clientID, token: tokenString}, nil
+	grantID, _ := claims[authx.ClaimMCPGrantID].(string)
+	if grantID == "" {
+		return nil, fmt.Errorf("MCP token has no grant ID")
+	}
+	return &mcpPrincipal{scopes: scopes, sessionID: sessionID, grantID: grantID, subject: subject, clientID: clientID, token: tokenString}, nil
 }
 
 func (s *server) authorizationServerIssuer(resource string) (string, error) {

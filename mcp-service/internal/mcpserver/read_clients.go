@@ -123,6 +123,14 @@ func (c *readClients) CreateGroup(ctx context.Context, input groupCreateInput, i
 }
 
 func (c *readClients) exchangeDelegatedToken(ctx context.Context, subjectToken, resource, scope string) (string, error) {
+	if strings.TrimSpace(resource) == "" {
+		if principal := principalFromContext(ctx); principal != nil {
+			resource = principal.resource
+		}
+	}
+	if strings.TrimSpace(resource) == "" {
+		return "", fmt.Errorf("MCP resource is required for token exchange")
+	}
 	form := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"}, "resource": {resource}, "scope": {scope}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.authServiceURL, "/")+"/api/auth/oauth/token", strings.NewReader(form.Encode()))
 	if err != nil {

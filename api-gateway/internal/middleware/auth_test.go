@@ -211,6 +211,7 @@ func TestDelegatedTokenRequiresScopeAndResidentRole(t *testing.T) {
 	}
 	validation := DelegatedValidationConfig("https://auth.example.test", authx.AudienceAPI)
 	validation.SessionValidator = func(context.Context, string) (bool, error) { return true, nil }
+	validation.GrantValidator = func(context.Context, string) (bool, error) { return true, nil }
 	base := JWTAuthMiddlewareRS256(&privateKey.PublicKey, validation)(RequireScopeMiddleware("home.devices.write")(RoleAtLeastMiddleware(authx.RoleResident)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))))
@@ -228,7 +229,7 @@ func TestDelegatedTokenRequiresScopeAndResidentRole(t *testing.T) {
 		{name: "API token", role: authx.RoleResident, scope: "home.devices.write", tokenType: authx.TokenTypeAPI, status: http.StatusUnauthorized},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			token := jwt.NewWithClaims(jwt.SigningMethodRS256, Claims{Role: test.role, Scope: test.scope, SessionID: "session-1", TokenType: test.tokenType, RegisteredClaims: jwt.RegisteredClaims{Issuer: validation.Issuer, Subject: "user-1", Audience: []string{validation.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Second)), IssuedAt: jwt.NewNumericDate(time.Now()), ID: "token-1"}})
+			token := jwt.NewWithClaims(jwt.SigningMethodRS256, Claims{Role: test.role, Scope: test.scope, SessionID: "session-1", MCPGrantID: "grant-1", TokenType: test.tokenType, RegisteredClaims: jwt.RegisteredClaims{Issuer: validation.Issuer, Subject: "user-1", Audience: []string{validation.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), NotBefore: jwt.NewNumericDate(time.Now()), IssuedAt: jwt.NewNumericDate(time.Now()), ID: "token-1"}})
 			keyID, keyErr := authx.KeyIDForRSAPublicKey(&privateKey.PublicKey)
 			if keyErr != nil {
 				t.Fatalf("derive key ID: %v", keyErr)
@@ -246,6 +247,34 @@ func TestDelegatedTokenRequiresScopeAndResidentRole(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.Code, test.status)
 			}
 		})
+	}
+}
+
+func TestDelegatedTokenRejectsRevokedGrant(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	validation := DelegatedValidationConfig("https://auth.example.test", authx.AudienceAPI)
+	validation.SessionValidator = func(context.Context, string) (bool, error) { return true, nil }
+	validation.GrantValidator = func(context.Context, string) (bool, error) { return false, nil }
+	handler := JWTAuthMiddlewareRS256(&privateKey.PublicKey, validation)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, Claims{Role: authx.RoleResident, Scope: "home.devices.read", SessionID: "session-1", MCPGrantID: "grant-1", TokenType: authx.TokenTypeDelegated, RegisteredClaims: jwt.RegisteredClaims{Issuer: validation.Issuer, Subject: "user-1", Audience: []string{validation.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), NotBefore: jwt.NewNumericDate(time.Now()), IssuedAt: jwt.NewNumericDate(time.Now()), ID: "token-1"}})
+	keyID, err := authx.KeyIDForRSAPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("derive key ID: %v", err)
+	}
+	token.Header["kid"] = keyID
+	tokenString, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("Authorization", "Bearer "+tokenString)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
 	}
 }
 

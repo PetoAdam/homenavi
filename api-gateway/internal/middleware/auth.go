@@ -22,6 +22,7 @@ type Claims struct {
 	SessionID       string `json:"sid"`
 	Scope           string `json:"scope"`
 	AuthorizedParty string `json:"azp"`
+	MCPGrantID      string `json:"gnt"`
 	TokenType       string `json:"typ"`
 	jwt.RegisteredClaims
 }
@@ -32,6 +33,7 @@ type ValidationConfig struct {
 	TokenType        string
 	ClockSkew        time.Duration
 	SessionValidator SessionValidator
+	GrantValidator   SessionValidator
 }
 
 type SessionValidator func(context.Context, string) (bool, error)
@@ -42,6 +44,22 @@ func NewRedisSessionValidator(client redis.UniversalClient) SessionValidator {
 			return false, errors.New("session store is not configured")
 		}
 		status, err := client.Get(ctx, authx.SessionStatusKey(sessionID)).Result()
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return status == authx.SessionStatusActive, nil
+	}
+}
+
+func NewRedisMCPGrantValidator(client redis.UniversalClient) SessionValidator {
+	return func(ctx context.Context, grantID string) (bool, error) {
+		if client == nil {
+			return false, errors.New("grant store is not configured")
+		}
+		status, err := client.Get(ctx, authx.MCPGrantStatusKey(grantID)).Result()
 		if errors.Is(err, redis.Nil) {
 			return false, nil
 		}
@@ -157,9 +175,20 @@ func JWTAuthMiddlewareRS256KeySet(keySet RSAPublicKeySet, cfg ValidationConfig) 
 				writeJSONError(w, http.StatusUnauthorized, "invalid token type")
 				return
 			}
-			if claims.Subject == "" || claims.Role == "" || claims.SessionID == "" || claims.ID == "" || claims.NotBefore == nil || claims.IssuedAt == nil {
+			if claims.Subject == "" || claims.Role == "" || claims.SessionID == "" || claims.ID == "" || claims.NotBefore == nil || claims.IssuedAt == nil || (cfg.TokenType == authx.TokenTypeDelegated && claims.MCPGrantID == "") {
 				writeJSONError(w, http.StatusUnauthorized, "invalid token claims")
 				return
+			}
+			if cfg.GrantValidator != nil {
+				active, err := cfg.GrantValidator(r.Context(), claims.MCPGrantID)
+				if err != nil {
+					writeJSONError(w, http.StatusServiceUnavailable, "grant verification unavailable")
+					return
+				}
+				if !active {
+					writeJSONError(w, http.StatusUnauthorized, "grant revoked")
+					return
+				}
 			}
 			if cfg.SessionValidator != nil {
 				active, err := cfg.SessionValidator(r.Context(), claims.SessionID)

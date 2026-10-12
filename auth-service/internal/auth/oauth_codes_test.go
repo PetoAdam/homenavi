@@ -13,7 +13,7 @@ func TestOAuthAuthorizationCodeConsumesOnceWithBoundPKCE(t *testing.T) {
 	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
 	digest := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(digest[:])
-	input := OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", RedirectURI: "https://client.example/callback", Scope: "home.devices.read", Resource: "https://home.example/mcp", CodeChallenge: challenge}
+	input := OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", RedirectURI: "https://client.example/callback", Scope: "home.devices.read", Resource: "https://home.example/mcp", GrantID: "grant-1", CodeChallenge: challenge}
 	code, err := manager.Issue(context.Background(), input)
 	if err != nil {
 		t.Fatalf("issue code: %v", err)
@@ -32,7 +32,7 @@ func TestOAuthAuthorizationCodeRejectsWrongVerifierAndConsumesCode(t *testing.T)
 	manager := NewOAuthAuthorizationCodeManager(store)
 	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
 	digest := sha256.Sum256([]byte(verifier))
-	code, err := manager.Issue(context.Background(), OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", RedirectURI: "https://client.example/callback", Scope: "read", Resource: "https://home.example/mcp", CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:])})
+	code, err := manager.Issue(context.Background(), OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", RedirectURI: "https://client.example/callback", Scope: "read", Resource: "https://home.example/mcp", GrantID: "grant-1", CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:])})
 	if err != nil {
 		t.Fatalf("issue code: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestOAuthAuthorizationCodeDefaultsOmittedResource(t *testing.T) {
 	manager := NewOAuthAuthorizationCodeManager(store)
 	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
 	digest := sha256.Sum256([]byte(verifier))
-	input := OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "open-webui", RedirectURI: "https://openwebui.example/oauth/callback", Scope: "home.devices.read", Resource: "https://home.example/mcp", CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:])}
+	input := OAuthAuthorizationCodeInput{Subject: "user-1", SessionID: "session-1", ClientID: "open-webui", RedirectURI: "https://openwebui.example/oauth/callback", Scope: "home.devices.read", Resource: "https://home.example/mcp", GrantID: "grant-1", CodeChallenge: base64.RawURLEncoding.EncodeToString(digest[:])}
 	code, err := manager.Issue(context.Background(), input)
 	if err != nil {
 		t.Fatalf("issue code: %v", err)

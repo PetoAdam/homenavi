@@ -1,0 +1,40 @@
+name: MCP OAuth Gateway Quality Gate
+
+"on":
+  pull_request:
+    branches: [main]
+    paths:
+      - "shared/authx/**"
+      - "auth-service/**"
+      - "mcp-service/**"
+      - "api-gateway/**"
+      - ".github/workflows/mcp_oauth_gateway_quality_gate.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "shared/authx/**"
+      - "auth-service/**"
+      - "mcp-service/**"
+      - "api-gateway/**"
+      - ".github/workflows/mcp_oauth_gateway_quality_gate.yaml"
+
+jobs:
+  test:
+    name: ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [shared, auth-service, mcp-service, api-gateway]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ./go.work
+          cache: false
+      - name: Static analysis
+        working-directory: ./${{ matrix.module }}
+        run: go vet ./...
+      - name: Unit and component tests
+        working-directory: ./${{ matrix.module }}
+        run: go test -count=1 ./...

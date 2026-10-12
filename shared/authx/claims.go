@@ -12,6 +12,7 @@ import (
 
 const (
 	ClaimAuthorizedParty = "azp"
+	ClaimMCPGrantID      = "gnt"
 	ClaimHomeID          = "home_id"
 	ClaimSessionID       = "sid"
 	ClaimScope           = "scope"
@@ -74,6 +75,11 @@ func HasAudience(audiences []string, requiredAudience string) bool {
 // SessionStatusKey returns the shared Redis key used to enforce access-token session revocation.
 func SessionStatusKey(sessionID string) string {
 	return "auth_session:" + sessionID
+}
+
+// MCPGrantStatusKey returns the shared Redis key used to revoke one MCP client grant without revoking the user's session.
+func MCPGrantStatusKey(grantID string) string {
+	return "auth_mcp_grant:" + grantID
 }
 
 // KeyIDForRSAPublicKey returns the stable identifier shared by JWT issuers and verifiers.

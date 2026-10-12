@@ -117,6 +117,7 @@ type refreshTokenRecord struct {
 	OAuthClientID string `json:"oauth_client_id,omitempty"`
 	OAuthScope    string `json:"oauth_scope,omitempty"`
 	OAuthResource string `json:"oauth_resource,omitempty"`
+	OAuthGrantID  string `json:"oauth_grant_id,omitempty"`
 }
 
 func NewService(cfg Config, cacheStore cacheinfra.Store) *Service {

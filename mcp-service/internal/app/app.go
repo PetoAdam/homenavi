@@ -59,6 +59,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			}
 		}
 		return count <= int64(cfg.RateLimitPerMinute), nil
+	}, GrantValidator: func(ctx context.Context, grantID string) (bool, error) {
+		status, err := redisClient.Get(ctx, authx.MCPGrantStatusKey(grantID)).Result()
+		return status == authx.SessionStatusActive, err
 	}})
 	shutdownObs, promHandler, tracer, err := sharedobs.SetupObservability("mcp-service")
 	if err != nil {

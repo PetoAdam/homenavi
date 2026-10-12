@@ -31,11 +31,15 @@ func (s *Service) AuthorizeOAuthForSession(ctx context.Context, request OAuthAut
 	if _, err := s.validateOAuthRequest(ctx, request); err != nil {
 		return "", err
 	}
-	granted, err := s.oauthConsents.Has(ctx, subject, request)
+	consent, found, err := s.oauthConsents.find(ctx, subject, request.ClientID)
 	if err != nil {
 		return "", err
 	}
-	if !granted {
+	grantedScopes := make(map[string]struct{}, len(consent.Scopes))
+	for _, scope := range consent.Scopes {
+		grantedScopes[scope] = struct{}{}
+	}
+	if !found || consent.ClientID != request.ClientID || consent.Resource != request.Resource || !containsAllScopes(grantedScopes, request.Scope) || !s.oauthConsents.isActiveGrant(ctx, consent.GrantID) {
 		return "", fmt.Errorf("OAuth consent is required")
 	}
 	return s.oauthCodes.Issue(ctx, OAuthAuthorizationCodeInput{
@@ -45,6 +49,7 @@ func (s *Service) AuthorizeOAuthForSession(ctx context.Context, request OAuthAut
 		RedirectURI:   request.RedirectURI,
 		Scope:         strings.Join(strings.Fields(request.Scope), " "),
 		Resource:      request.Resource,
+		GrantID:       consent.GrantID,
 		CodeChallenge: request.CodeChallenge,
 	})
 }
@@ -72,7 +77,7 @@ func (s *Service) RevokeOAuthConsent(ctx context.Context, subject, clientID stri
 }
 
 func (s *Service) IssueOAuthRefreshToken(grant OAuthAuthorizationGrant) (string, error) {
-	if grant.Subject == "" || grant.SessionID == "" || grant.ClientID == "" || grant.Resource == "" || strings.TrimSpace(grant.Scope) == "" {
+	if grant.Subject == "" || grant.SessionID == "" || grant.ClientID == "" || grant.Resource == "" || grant.GrantID == "" || strings.TrimSpace(grant.Scope) == "" {
 		return "", fmt.Errorf("invalid OAuth refresh token grant")
 	}
 	familyID, err := newTokenID()
@@ -89,6 +94,7 @@ func (s *Service) IssueOAuthRefreshToken(grant OAuthAuthorizationGrant) (string,
 		OAuthClientID: grant.ClientID,
 		OAuthScope:    grant.Scope,
 		OAuthResource: grant.Resource,
+		OAuthGrantID:  grant.GrantID,
 	}, OAuthRefreshTokenTTL)
 }
 
@@ -112,15 +118,19 @@ func (s *Service) RefreshOAuthAuthorizationGrant(token string) (OAuthAuthorizati
 		}
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
-	if current.OAuthClientID == "" || current.OAuthScope == "" || current.OAuthResource == "" {
+	if current.OAuthClientID == "" || current.OAuthScope == "" || current.OAuthResource == "" || current.OAuthGrantID == "" {
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
 	status, err := s.cacheStore.Get(context.Background(), authx.SessionStatusKey(current.SessionID))
 	if err != nil || status != authx.SessionStatusActive {
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
-	granted, err := s.oauthConsents.Has(context.Background(), current.UserID, OAuthAuthorizationRequest{ClientID: current.OAuthClientID, Scope: current.OAuthScope, Resource: current.OAuthResource})
-	if err != nil || !granted {
+	consent, found, err := s.oauthConsents.find(context.Background(), current.UserID, current.OAuthClientID)
+	grantedScopes := make(map[string]struct{}, len(consent.Scopes))
+	for _, scope := range consent.Scopes {
+		grantedScopes[scope] = struct{}{}
+	}
+	if err != nil || !found || consent.GrantID != current.OAuthGrantID || !s.oauthConsents.isActiveGrant(context.Background(), current.OAuthGrantID) || !containsAllScopes(grantedScopes, current.OAuthScope) || consent.Resource != current.OAuthResource {
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
 	if err := s.renewOAuthRefreshTokenTTL(token, current); err != nil {
@@ -130,10 +140,10 @@ func (s *Service) RefreshOAuthAuthorizationGrant(token string) (OAuthAuthorizati
 	if err != nil {
 		return OAuthAuthorizationGrant{}, "", err
 	}
-	if record.OAuthClientID == "" || record.OAuthScope == "" || record.OAuthResource == "" {
+	if record.OAuthClientID == "" || record.OAuthScope == "" || record.OAuthResource == "" || record.OAuthGrantID == "" {
 		return OAuthAuthorizationGrant{}, "", errors.Unauthorized("invalid or expired refresh token")
 	}
-	return OAuthAuthorizationGrant{Subject: record.UserID, SessionID: record.SessionID, ClientID: record.OAuthClientID, Scope: record.OAuthScope, Resource: record.OAuthResource}, replacement, nil
+	return OAuthAuthorizationGrant{Subject: record.UserID, SessionID: record.SessionID, ClientID: record.OAuthClientID, Scope: record.OAuthScope, Resource: record.OAuthResource, GrantID: record.OAuthGrantID}, replacement, nil
 }
 
 func (s *Service) renewOAuthRefreshTokenTTL(token string, record refreshTokenRecord) error {
@@ -165,7 +175,7 @@ func (s *Service) ExchangeOAuthAuthorizationCode(ctx context.Context, code strin
 }
 
 func (s *Service) IssueMCPAccessToken(user *clientsinfra.User, grant OAuthAuthorizationGrant) (string, error) {
-	if user == nil || user.ID == "" || grant.Subject != user.ID || grant.SessionID == "" || grant.ClientID == "" || grant.Resource == "" {
+	if user == nil || user.ID == "" || grant.Subject != user.ID || grant.SessionID == "" || grant.ClientID == "" || grant.Resource == "" || grant.GrantID == "" {
 		return "", fmt.Errorf("invalid MCP token grant")
 	}
 	if !MCPRoleAllowed(user.Role) {
@@ -191,6 +201,7 @@ func (s *Service) IssueMCPAccessToken(user *clientsinfra.User, grant OAuthAuthor
 		authx.ClaimSessionID:       grant.SessionID,
 		"role":                     user.Role,
 		authx.ClaimAuthorizedParty: grant.ClientID,
+		authx.ClaimMCPGrantID:      grant.GrantID,
 		authx.ClaimScope:           grant.Scope,
 		authx.ClaimTokenType:       authx.TokenTypeMCP,
 	}
@@ -225,11 +236,16 @@ func (s *Service) ExchangeMCPAccessToken(ctx context.Context, tokenString, resou
 	sessionID, _ := claims[authx.ClaimSessionID].(string)
 	role, _ := claims["role"].(string)
 	clientID, _ := claims[authx.ClaimAuthorizedParty].(string)
-	if subject == "" || sessionID == "" || role == "" || clientID == "" {
+	grantID, _ := claims[authx.ClaimMCPGrantID].(string)
+	if subject == "" || sessionID == "" || role == "" || clientID == "" || grantID == "" {
 		return "", fmt.Errorf("MCP token is missing delegation claims")
 	}
 	if err := s.requireActiveSession(sessionID); err != nil {
 		return "", err
+	}
+	active, err := s.oauthConsents.GrantActive(ctx, grantID)
+	if err != nil || !active {
+		return "", fmt.Errorf("MCP grant is inactive")
 	}
 	tokenID, err := newTokenID()
 	if err != nil {
@@ -251,6 +267,7 @@ func (s *Service) ExchangeMCPAccessToken(ctx context.Context, tokenString, resou
 		"role":                     role,
 		authx.ClaimSessionID:       sessionID,
 		authx.ClaimAuthorizedParty: clientID,
+		authx.ClaimMCPGrantID:      grantID,
 		authx.ClaimScope:           requestedScope,
 		authx.ClaimTokenType:       authx.TokenTypeDelegated,
 	})

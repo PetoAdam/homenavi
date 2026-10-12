@@ -88,7 +88,7 @@ func TestIssueMCPAccessTokenUsesMCPAudienceAndType(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 	service := NewService(Config{JWTPrivateKey: privateKey, JWTIssuer: "https://auth.example.test"}, nil)
-	tokenString, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", Scope: "home.devices.read", Resource: "https://home.example/mcp"})
+	tokenString, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", Scope: "home.devices.read", Resource: "https://home.example/mcp", GrantID: "grant-1"})
 	if err != nil {
 		t.Fatalf("issue MCP token: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestIssueMCPAccessTokenUsesMCPAudienceAndType(t *testing.T) {
 	if err != nil || !authx.HasAudience(audience, "https://home.example/mcp") || authx.HasAudience(audience, authx.AudienceAPI) {
 		t.Fatalf("unexpected MCP audience: %v, %v", audience, err)
 	}
-	if claims[authx.ClaimTokenType] != authx.TokenTypeMCP || claims[authx.ClaimAuthorizedParty] != "mcp-cli" {
+	if claims[authx.ClaimTokenType] != authx.TokenTypeMCP || claims[authx.ClaimAuthorizedParty] != "mcp-cli" || claims[authx.ClaimMCPGrantID] != "grant-1" {
 		t.Fatalf("unexpected MCP claims: %#v", claims)
 	}
 	if claims[authx.ClaimSessionID] != "session-1" {
@@ -120,7 +120,7 @@ func TestIssueMCPAccessTokenRejectsNonResidentUser(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 	service := NewService(Config{JWTPrivateKey: privateKey, JWTIssuer: "https://auth.example.test"}, nil)
-	_, err = service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleUser}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", Scope: "home.devices.read", Resource: "https://home.example/mcp"})
+	_, err = service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleUser}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: "session-1", ClientID: "mcp-cli", Scope: "home.devices.read", Resource: "https://home.example/mcp", GrantID: "grant-1"})
 	if err == nil || !strings.Contains(err.Error(), "resident role") {
 		t.Fatalf("expected resident role error, got %v", err)
 	}
@@ -142,7 +142,10 @@ func TestExchangeMCPAccessTokenIssuesGatewayDelegatedToken(t *testing.T) {
 	if err := store.Set(context.Background(), authx.SessionStatusKey(sessionID), authx.SessionStatusActive, time.Hour); err != nil {
 		t.Fatalf("activate session: %v", err)
 	}
-	mcpToken, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: sessionID, ClientID: "mcp-cli", Scope: "home.devices.write", Resource: "https://mcp.example.test/mcp"})
+	if err := store.Set(context.Background(), authx.MCPGrantStatusKey("grant-1"), authx.SessionStatusActive, 0); err != nil {
+		t.Fatalf("activate grant: %v", err)
+	}
+	mcpToken, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: sessionID, ClientID: "mcp-cli", Scope: "home.devices.write", Resource: "https://mcp.example.test/mcp", GrantID: "grant-1"})
 	if err != nil {
 		t.Fatalf("issue MCP token: %v", err)
 	}
@@ -159,7 +162,7 @@ func TestExchangeMCPAccessTokenIssuesGatewayDelegatedToken(t *testing.T) {
 	if err != nil || !authx.HasAudience(audience, "https://gateway.example.test") {
 		t.Fatalf("unexpected delegated audience: %v, %v", audience, err)
 	}
-	if claims[authx.ClaimTokenType] != authx.TokenTypeDelegated || claims[authx.ClaimScope] != "home.devices.write" || claims[authx.ClaimSessionID] != sessionID || claims[authx.ClaimAuthorizedParty] != "mcp-cli" || claims["role"] != authx.RoleResident {
+	if claims[authx.ClaimTokenType] != authx.TokenTypeDelegated || claims[authx.ClaimScope] != "home.devices.write" || claims[authx.ClaimSessionID] != sessionID || claims[authx.ClaimAuthorizedParty] != "mcp-cli" || claims[authx.ClaimMCPGrantID] != "grant-1" || claims["role"] != authx.RoleResident {
 		t.Fatalf("unexpected delegated claims: %#v", claims)
 	}
 }
@@ -175,7 +178,10 @@ func TestExchangeMCPAccessTokenAllowsDelegatedReadScopes(t *testing.T) {
 	if err := store.Set(context.Background(), authx.SessionStatusKey(sessionID), authx.SessionStatusActive, time.Hour); err != nil {
 		t.Fatalf("activate session: %v", err)
 	}
-	mcpToken, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: sessionID, ClientID: "mcp-cli", Scope: "home.history.read", Resource: "https://mcp.example.test/mcp"})
+	if err := store.Set(context.Background(), authx.MCPGrantStatusKey("grant-1"), authx.SessionStatusActive, 0); err != nil {
+		t.Fatalf("activate grant: %v", err)
+	}
+	mcpToken, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: sessionID, ClientID: "mcp-cli", Scope: "home.history.read", Resource: "https://mcp.example.test/mcp", GrantID: "grant-1"})
 	if err != nil {
 		t.Fatalf("issue MCP token: %v", err)
 	}
@@ -189,6 +195,32 @@ func TestExchangeMCPAccessTokenAllowsDelegatedReadScopes(t *testing.T) {
 	}
 	if scope := parsed.Claims.(jwt.MapClaims)[authx.ClaimScope]; scope != "home.history.read" {
 		t.Fatalf("delegated scope = %q", scope)
+	}
+}
+
+func TestExchangeMCPAccessTokenRejectsRevokedGrant(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	store := newMemoryRefreshStore()
+	service := NewService(Config{JWTPrivateKey: privateKey, JWTIssuer: "https://auth.example.test", JWTAPIAudience: "https://gateway.example.test", MCPAuthorizationServerIssuer: "https://auth.example.test"}, store)
+	const sessionID = "session-1"
+	if err := store.Set(context.Background(), authx.SessionStatusKey(sessionID), authx.SessionStatusActive, time.Hour); err != nil {
+		t.Fatalf("activate session: %v", err)
+	}
+	if err := store.Set(context.Background(), authx.MCPGrantStatusKey("grant-1"), authx.SessionStatusActive, 0); err != nil {
+		t.Fatalf("activate grant: %v", err)
+	}
+	mcpToken, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: sessionID, ClientID: "mcp-cli", Scope: "home.devices.read", Resource: "https://mcp.example.test/mcp", GrantID: "grant-1"})
+	if err != nil {
+		t.Fatalf("issue MCP token: %v", err)
+	}
+	if err := store.Delete(context.Background(), authx.MCPGrantStatusKey("grant-1")); err != nil {
+		t.Fatalf("revoke grant: %v", err)
+	}
+	if _, err := service.ExchangeMCPAccessToken(context.Background(), mcpToken, "https://mcp.example.test/mcp", "home.devices.read"); err == nil {
+		t.Fatal("expected revoked grant to reject token exchange")
 	}
 }
 

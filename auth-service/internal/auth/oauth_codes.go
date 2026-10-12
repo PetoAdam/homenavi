@@ -23,6 +23,7 @@ type OAuthAuthorizationCodeInput struct {
 	RedirectURI   string
 	Scope         string
 	Resource      string
+	GrantID       string
 	CodeChallenge string
 }
 
@@ -39,6 +40,7 @@ type OAuthAuthorizationGrant struct {
 	ClientID  string
 	Scope     string
 	Resource  string
+	GrantID   string
 }
 
 type oauthAuthorizationCodeRecord struct {
@@ -54,7 +56,7 @@ func NewOAuthAuthorizationCodeManager(store cacheinfra.Store) *OAuthAuthorizatio
 }
 
 func (m *OAuthAuthorizationCodeManager) Issue(ctx context.Context, input OAuthAuthorizationCodeInput) (string, error) {
-	if input.Subject == "" || input.SessionID == "" || input.ClientID == "" || input.RedirectURI == "" || input.Resource == "" || !pkceVerifierPattern.MatchString(input.CodeChallenge) {
+	if input.Subject == "" || input.SessionID == "" || input.ClientID == "" || input.RedirectURI == "" || input.Resource == "" || input.GrantID == "" || !pkceVerifierPattern.MatchString(input.CodeChallenge) {
 		return "", fmt.Errorf("invalid authorization code input")
 	}
 	codeBytes := make([]byte, 32)
@@ -95,7 +97,7 @@ func (m *OAuthAuthorizationCodeManager) Consume(ctx context.Context, code string
 	if subtle.ConstantTimeCompare([]byte(record.CodeChallenge), []byte(challenge)) != 1 {
 		return OAuthAuthorizationGrant{}, fmt.Errorf("PKCE verification failed")
 	}
-	return OAuthAuthorizationGrant{Subject: record.Subject, SessionID: record.SessionID, ClientID: record.ClientID, Scope: record.Scope, Resource: record.Resource}, nil
+	return OAuthAuthorizationGrant{Subject: record.Subject, SessionID: record.SessionID, ClientID: record.ClientID, Scope: record.Scope, Resource: record.Resource, GrantID: record.GrantID}, nil
 }
 
 func oauthAuthorizationCodeKey(code string) string {

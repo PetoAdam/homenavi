@@ -228,6 +228,11 @@ func TestOAuthRefreshTokenRotatesAndIsSessionBound(t *testing.T) {
 	if err := service.oauthConsents.Grant(context.Background(), grant.Subject, OAuthAuthorizationRequest{ClientID: grant.ClientID, Scope: grant.Scope, Resource: grant.Resource}); err != nil {
 		t.Fatalf("grant OAuth consent: %v", err)
 	}
+	consent, found, err := service.oauthConsents.find(context.Background(), grant.Subject, grant.ClientID)
+	if err != nil || !found {
+		t.Fatalf("load OAuth consent: %v", err)
+	}
+	grant.GrantID = consent.GrantID
 	refreshToken, err := service.IssueOAuthRefreshToken(grant)
 	if err != nil {
 		t.Fatalf("issue OAuth refresh token: %v", err)

@@ -71,6 +71,7 @@ func registerConfiguredRoutes(r chi.Router, cfg gateway.Config, redisClient redi
 	validation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
 	delegatedValidation := apiMiddleware.DelegatedValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
 	delegatedValidation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
+	delegatedValidation.GrantValidator = apiMiddleware.NewRedisMCPGrantValidator(redisClient)
 	for _, route := range cfg.Routes {
 		var h http.Handler
 		switch route.Type {
