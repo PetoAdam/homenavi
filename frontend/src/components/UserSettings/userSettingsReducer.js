@@ -29,6 +29,7 @@ export function userSettingsInitialState(user = null) {
     oauthLoading: false,
     oauthError: '',
     disconnectClientID: '',
+    showConnectedApps: false,
     showProfilePictureModal: false,
     profilePictureFile: null,
   };

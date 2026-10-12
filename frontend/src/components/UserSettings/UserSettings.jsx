@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useReducer } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCamera, faFolderOpen, faPlug, faRightFromBracket, faShieldHalved, faUser, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
+import { faCamera, faChevronDown, faChevronUp, faEnvelope, faFolderOpen, faKey, faPlug, faRightFromBracket, faShieldHalved, faUser, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../../context/AuthContext';
 import { 
   requestEmailVerify, 
@@ -50,6 +50,7 @@ export default function UserSettings({ onClose }) {
     oauthLoading,
     oauthError,
     disconnectClientID,
+    showConnectedApps,
   } = state;
 
   const setStateField = (key, value) => dispatch({ type: 'set-field', key, value });
@@ -410,10 +411,13 @@ export default function UserSettings({ onClose }) {
             </h3>
             
             {/* Email Verification */}
-            <div className="user-settings-field">
-              <strong>Email Status:</strong>
+            <div className="security-setting-row">
+              <div>
+                <strong><FontAwesomeIcon icon={faEnvelope} /> Email verification</strong>
+                <span>{emailVerified ? 'Your email is verified.' : 'Verify your email to secure account recovery.'}</span>
+              </div>
               <span className={`status-indicator ${emailVerified ? 'verified' : 'unverified'}`}>
-                {emailVerified ? '✅ Verified' : '❌ Not Verified'}
+                {emailVerified ? 'Verified' : 'Not verified'}
               </span>
             </div>
             
@@ -422,16 +426,22 @@ export default function UserSettings({ onClose }) {
             </button>
             
             {showEmailCodeInput && !emailVerified && (
-              <div className="user-settings-input-group">
-                <input 
-                  type="text" 
-                  placeholder="Enter verification code" 
-                  value={emailCode}
-                  onChange={e => setStateField('emailCode', e.target.value)}
-                />
-                <button onClick={handleEmailConfirm} disabled={!emailCode.trim()}>
-                  Confirm Email
-                </button>
+              <div className="security-workflow-panel" aria-live="polite">
+                <strong>Enter your email verification code</strong>
+                <span>We sent a code to your email address.</span>
+                <div className="user-settings-input-group">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="Verification code"
+                    value={emailCode}
+                    onChange={e => setStateField('emailCode', e.target.value)}
+                  />
+                  <button onClick={handleEmailConfirm} disabled={!emailCode.trim()}>
+                    Verify email
+                  </button>
+                </div>
               </div>
             )}
             
@@ -569,13 +579,22 @@ export default function UserSettings({ onClose }) {
             )}
             
             {/* Change Password */}
-            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(60,70,90,0.3)' }}>
-              <button onClick={() => setStateField('showPasswordReset', !showPasswordReset)} className="secondary">
-                {showPasswordReset ? 'Cancel Password Change' : 'Change Password'}
-              </button>
+            <div className="password-change-section">
+              <div className="security-setting-row">
+                <div>
+                  <strong><FontAwesomeIcon icon={faKey} /> Password</strong>
+                  <span>Use a unique password to protect your account.</span>
+                </div>
+                <button onClick={() => setStateField('showPasswordReset', !showPasswordReset)} className="secondary">
+                  {showPasswordReset ? 'Cancel' : 'Change password'}
+                </button>
+              </div>
               
               {showPasswordReset && (
-                <div className="user-settings-input-group">
+                <div className="security-workflow-panel password-change-panel">
+                  <strong>Choose a new password</strong>
+                  <span>Confirm your current password before applying this change.</span>
+                  <div className="user-settings-input-group">
                   <div className="user-settings-field-input">
                     <input
                       type="password"
@@ -624,6 +643,7 @@ export default function UserSettings({ onClose }) {
                   <button onClick={handlePasswordReset} disabled={!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}>
                     Update Password
                   </button>
+                  </div>
                 </div>
               )}
               
@@ -639,7 +659,17 @@ export default function UserSettings({ onClose }) {
           </div>
 
           <div className="user-settings-card connected-apps-card">
-            <h3><span className="user-settings-card-icon"><FontAwesomeIcon icon={faPlug} /></span>Connected Applications</h3>
+            <button
+              type="button"
+              className="connected-apps-toggle"
+              onClick={() => setStateField('showConnectedApps', !showConnectedApps)}
+              aria-expanded={showConnectedApps}
+            >
+              <span className="user-settings-card-icon"><FontAwesomeIcon icon={faPlug} /></span>
+              <span className="connected-apps-toggle-copy"><strong>Connected Applications</strong><small>{oauthLoading ? 'Loading connections' : `${oauthConsents.length} connected`}</small></span>
+              <FontAwesomeIcon icon={showConnectedApps ? faChevronUp : faChevronDown} />
+            </button>
+            {showConnectedApps && <>
             <p className="settings-supporting-text">Applications authorized to access Homenavi on your behalf.</p>
             {oauthLoading && <p className="settings-supporting-text">Loading connected applications...</p>}
             {!oauthLoading && oauthError && (
@@ -652,8 +682,8 @@ export default function UserSettings({ onClose }) {
             {oauthConsents.map((consent) => (
               <div className="connected-app-row" key={`${consent.client_id}-${consent.resource}`}>
                 <div>
-                  <strong>{consent.client_id}</strong>
-
+                  <strong>{consent.client_name || 'Connected application'}</strong>
+                  {consent.client_name && <small className="connected-app-client-id">{consent.client_id}</small>}
                   <span>{Array.isArray(consent.scopes) && consent.scopes.length > 0 ? consent.scopes.join(', ') : 'No scopes'}</span>
                 </div>
                 <button
@@ -666,6 +696,7 @@ export default function UserSettings({ onClose }) {
               </div>
             ))}
             {status && status.includes('Connected application') && <div className={`card-status ${status.includes('✅') ? 'success' : 'error'}`}>{status}</div>}
+            </>}
           </div>
 
           {/* Logout Card */}

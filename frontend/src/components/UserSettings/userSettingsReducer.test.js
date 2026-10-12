@@ -15,6 +15,7 @@ describe('userSettingsReducer', () => {
     expect(state.show2FASetup).toBe(false);
     expect(state.recoveryCodes).toEqual([]);
     expect(state.oauthError).toBe('');
+    expect(state.showConnectedApps).toBe(false);
     expect(state.profileForm).toEqual({ firstName: 'Ada', lastName: 'Lovelace' });
   });
 

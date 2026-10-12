@@ -96,6 +96,26 @@ func (s *Service) validateOAuthRequest(ctx context.Context, request OAuthAuthori
 	return registry.ValidateAuthorizationRequest(request)
 }
 
+func (s *Service) oauthClientDisplayName(ctx context.Context, clientID string) string {
+	if s.oauthClients != nil {
+		if client, ok := s.oauthClients.clients[clientID]; ok {
+			return client.DisplayName
+		}
+	}
+	if s.cacheStore == nil {
+		return ""
+	}
+	encoded, err := s.cacheStore.Get(ctx, oauthDynamicClientPrefix+clientID)
+	if err != nil {
+		return ""
+	}
+	var client OAuthClient
+	if json.Unmarshal([]byte(encoded), &client) != nil {
+		return ""
+	}
+	return client.DisplayName
+}
+
 func validateDynamicOAuthClientRedirectURIs(redirectURIs []string, applicationType string) error {
 	if len(redirectURIs) == 0 || len(redirectURIs) != len(unique(redirectURIs)) {
 		return fmt.Errorf("at least one unique redirect URI is required")

@@ -64,3 +64,28 @@ func TestOAuthConsentListIsSubjectScopedAndNewestFirst(t *testing.T) {
 		t.Fatalf("unexpected consents: %#v", consents)
 	}
 }
+
+func TestListOAuthConsentsIncludesRegisteredClientName(t *testing.T) {
+	store := newMemoryRefreshStore()
+	manager := NewOAuthConsentManager(store)
+	registry, err := NewOAuthClientRegistry([]OAuthClient{{
+		ClientID:     "homenavi-desktop",
+		DisplayName:  "Homenavi Desktop",
+		RedirectURIs: []string{"https://desktop.example/callback"},
+		Scopes:       []string{"home.devices.read"},
+		Enabled:      true,
+	}}, "https://home.example/mcp")
+	if err != nil {
+		t.Fatalf("new OAuth client registry: %v", err)
+	}
+	service := &Service{cacheStore: store, oauthClients: registry, oauthConsents: manager}
+	request := OAuthAuthorizationRequest{ClientID: "homenavi-desktop", Resource: "https://home.example/mcp", Scope: "home.devices.read"}
+	if err := manager.Grant(context.Background(), "user-1", request); err != nil {
+		t.Fatalf("grant consent: %v", err)
+	}
+
+	consents, err := service.ListOAuthConsents(context.Background(), "user-1")
+	if err != nil || len(consents) != 1 || consents[0].ClientName != "Homenavi Desktop" {
+		t.Fatalf("unexpected consents: %#v, %v", consents, err)
+	}
+}

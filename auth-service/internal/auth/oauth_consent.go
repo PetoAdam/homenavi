@@ -17,10 +17,11 @@ const (
 )
 
 type OAuthConsent struct {
-	ClientID  string   `json:"client_id"`
-	Resource  string   `json:"resource"`
-	Scopes    []string `json:"scopes"`
-	GrantedAt int64    `json:"granted_at"`
+	ClientID   string   `json:"client_id"`
+	ClientName string   `json:"client_name,omitempty"`
+	Resource   string   `json:"resource"`
+	Scopes     []string `json:"scopes"`
+	GrantedAt  int64    `json:"granted_at"`
 }
 
 type OAuthConsentManager struct {

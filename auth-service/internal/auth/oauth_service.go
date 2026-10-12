@@ -147,7 +147,14 @@ func (s *Service) renewOAuthRefreshTokenTTL(token string, record refreshTokenRec
 }
 
 func (s *Service) ListOAuthConsents(ctx context.Context, subject string) ([]OAuthConsent, error) {
-	return s.oauthConsents.List(ctx, subject)
+	consents, err := s.oauthConsents.List(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	for index := range consents {
+		consents[index].ClientName = s.oauthClientDisplayName(ctx, consents[index].ClientID)
+	}
+	return consents, nil
 }
 
 func (s *Service) ExchangeOAuthAuthorizationCode(ctx context.Context, code string, exchange OAuthAuthorizationCodeExchange) (OAuthAuthorizationGrant, error) {

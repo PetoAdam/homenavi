@@ -394,6 +394,98 @@
   margin-top: 1rem;
 }
 
+.security-setting-row,
+.connected-apps-toggle {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.security-setting-row {
+  margin-top: 1.2rem;
+}
+
+.security-setting-row > div,
+.connected-apps-toggle-copy {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.security-setting-row strong {
+  color: var(--color-white);
+  font-size: 1rem;
+}
+
+.security-setting-row strong svg {
+  color: var(--color-primary);
+  margin-right: 0.55rem;
+}
+
+.security-setting-row span,
+.security-workflow-panel > span,
+.connected-apps-toggle-copy small,
+.connected-app-client-id {
+  color: var(--color-secondary-light);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.security-workflow-panel {
+  background: rgba(40, 48, 60, 0.4);
+  border: 1px solid rgba(60, 70, 90, 0.45);
+  border-left: 3px solid var(--color-primary);
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+  padding: 1rem;
+}
+
+.security-workflow-panel > strong {
+  color: var(--color-white);
+}
+
+.password-change-section {
+  border-top: 1px solid rgba(60, 70, 90, 0.38);
+  margin-top: 1.5rem;
+  padding-top: 0.3rem;
+}
+
+.connected-apps-card {
+  padding: 0;
+}
+
+.user-settings button.connected-apps-toggle:not(.auth-modal-close) {
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-white);
+  margin: 0;
+  padding: clamp(1.2rem, 4vw, 2.2rem) clamp(1rem, 3vw, 2rem);
+  text-align: left;
+  width: 100%;
+}
+
+.user-settings button.connected-apps-toggle:not(.auth-modal-close):hover:not(:disabled) {
+  background: rgba(40, 48, 60, 0.32);
+  transform: none;
+}
+
+.connected-apps-toggle-copy {
+  flex: 1;
+}
+
+.connected-apps-toggle-copy strong {
+  font-size: 1.25rem;
+}
+
+.connected-apps-card > .settings-supporting-text,
+.connected-apps-card > .card-status,
+.connected-apps-card > .connected-app-row {
+  margin-left: clamp(1rem, 3vw, 2rem);
+  margin-right: clamp(1rem, 3vw, 2rem);
+}
+
 .security-action-row span,
 .settings-supporting-text,
 .connected-app-row span,
@@ -431,6 +523,10 @@
 
 .connected-app-row strong,
 .connected-app-row span {
+  overflow-wrap: anywhere;
+}
+
+.connected-app-client-id {
   overflow-wrap: anywhere;
 }
 
@@ -676,7 +772,8 @@
   }
 
   .security-action-row,
-  .connected-app-row {
+  .connected-app-row,
+  .security-setting-row {
     align-items: flex-start;
     flex-direction: column;
   }
