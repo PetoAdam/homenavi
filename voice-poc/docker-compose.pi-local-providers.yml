@@ -1,0 +1,8 @@
+services:
+  voice-gateway:
+    network_mode: host
+    ports: !reset []
+    depends_on: !reset []
+    environment:
+      STT_URL: http://127.0.0.1:${LOCAL_STT_PORT:-18001}/v1/audio/transcriptions
+      TTS_URL: http://127.0.0.1:${LOCAL_TTS_PORT:-18002}/tts

@@ -1,0 +1,33 @@
+services:
+  faster-whisper:
+    build: ./faster-whisper
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-small.en}
+    ports:
+      - "${LOCAL_STT_PORT:-18001}:8000"
+    volumes:
+      - local-whisper-models:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  piper:
+    build: ./piper
+    environment:
+      PIPER_VOICE: ${PIPER_VOICE:-en_US-ryan-high}
+      PIPER_MODEL_URL: ${PIPER_MODEL_URL:-https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx}
+    ports:
+      - "${LOCAL_TTS_PORT:-18002}:8000"
+    volumes:
+      - local-piper-models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  local-whisper-models:
+  local-piper-models:

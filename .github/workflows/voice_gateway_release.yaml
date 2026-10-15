@@ -1,0 +1,32 @@
+name: Release Voice Service Images
+
+"on":
+  push:
+    tags: ["voice-v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  gateway:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: voice-gateway
+      context: .
+      dockerfile: ./voice-gateway/Dockerfile
+    secrets: inherit
+  stt:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: voice-stt
+      context: ./voice-poc/faster-whisper
+      dockerfile: ./voice-poc/faster-whisper/Dockerfile
+    secrets: inherit
+  tts:
+    uses: ./.github/workflows/service_release.yml
+    with:
+      service: voice-tts
+      context: ./voice-poc/piper
+      dockerfile: ./voice-poc/piper/Dockerfile
+    secrets: inherit
