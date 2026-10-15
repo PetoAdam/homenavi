@@ -42,10 +42,9 @@ jobs:
               "homenavi-voice-stt",
               "homenavi-voice-tts",
             ]) {
-              await github.rest.packages.updatePackageForUser({
+              await github.request("PATCH /user/packages/{package_type}/{package_name}", {
                 package_type: "container",
                 package_name: packageName,
-                username: context.repo.owner,
                 visibility: "public",
               });
             }
