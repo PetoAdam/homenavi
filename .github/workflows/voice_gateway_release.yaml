@@ -2,7 +2,7 @@ name: Release Voice Service Images
 
 "on":
   push:
-    tags: ["voice-v*"]
+    tags: ["orion-voice-v*"]
 
 permissions:
   contents: write
