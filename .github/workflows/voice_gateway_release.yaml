@@ -30,3 +30,22 @@ jobs:
       context: ./voice-poc/piper
       dockerfile: ./voice-poc/piper/Dockerfile
     secrets: inherit
+  make-packages-public:
+    needs: [gateway, stt, tts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            for (const packageName of [
+              "homenavi-voice-gateway",
+              "homenavi-voice-stt",
+              "homenavi-voice-tts",
+            ]) {
+              await github.rest.packages.updatePackageForUser({
+                package_type: "container",
+                package_name: packageName,
+                username: context.repo.owner,
+                visibility: "public",
+              });
+            }
