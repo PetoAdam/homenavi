@@ -515,19 +515,54 @@
   border-top: 1px solid rgba(60, 70, 90, 0.38);
 }
 
-.connected-app-row div {
+.connected-app-details {
   display: grid;
   gap: 0.3rem;
+  flex: 1;
   min-width: 0;
 }
 
 .connected-app-row strong,
-.connected-app-row span {
+.connected-app-row span,
+.connected-app-scopes span {
   overflow-wrap: anywhere;
 }
 
 .connected-app-client-id {
   overflow-wrap: anywhere;
+}
+
+.connected-app-row > button {
+  flex: 0 0 auto;
+}
+
+.connected-app-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.connected-app-scopes span {
+  background: rgba(57, 170, 121, 0.12);
+  border: 1px solid rgba(57, 170, 121, 0.3);
+  border-radius: 0.4rem;
+  color: var(--color-secondary-light);
+  font-size: 0.78rem;
+  padding: 0.2rem 0.45rem;
+}
+
+.connected-app-action-error {
+  align-items: center;
+  color: #ff9f9f;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+.connected-app-action-error button {
+  flex: 0 0 auto;
+  margin: 0;
 }
 
 .user-settings-input-group input {
@@ -787,7 +822,8 @@
   }
 
   .two-factor-code-row button,
-  .user-settings button.two-factor-primary-action:not(.auth-modal-close) {
+  .user-settings button.two-factor-primary-action:not(.auth-modal-close),
+  .connected-app-row > button {
     width: 100%;
   }
 }

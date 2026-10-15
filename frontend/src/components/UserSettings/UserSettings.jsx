@@ -50,6 +50,9 @@ export default function UserSettings({ onClose }) {
     oauthLoading,
     oauthError,
     disconnectClientID,
+    oauthActionError,
+    oauthActionErrorClientID,
+    oauthActionSuccess,
     showConnectedApps,
   } = state;
 
@@ -195,12 +198,16 @@ export default function UserSettings({ onClose }) {
 
   const handleConsentRevoke = async (clientID) => {
     setStateField('disconnectClientID', clientID);
+    setStateField('oauthActionError', '');
+    setStateField('oauthActionErrorClientID', '');
+    setStateField('oauthActionSuccess', '');
     const response = await revokeOAuthConsent(clientID, accessToken);
     if (response.success) {
       setStateField('oauthConsents', oauthConsents.filter((consent) => consent.client_id !== clientID));
-      setStateField('status', '✅ Connected application removed.');
+      setStateField('oauthActionSuccess', 'Connected application disconnected.');
     } else {
-      setStateField('status', '❌ ' + (response.error || 'Failed to remove connected application'));
+      setStateField('oauthActionErrorClientID', clientID);
+      setStateField('oauthActionError', response.error || 'Could not disconnect this application.');
     }
     setStateField('disconnectClientID', '');
   };
@@ -681,10 +688,20 @@ export default function UserSettings({ onClose }) {
             {!oauthLoading && !oauthError && oauthConsents.length === 0 && <p className="settings-supporting-text">No connected applications. Authorize an MCP client to manage it here.</p>}
             {oauthConsents.map((consent) => (
               <div className="connected-app-row" key={`${consent.client_id}-${consent.resource}`}>
-                <div>
+                <div className="connected-app-details">
                   <strong>{consent.client_name || 'Connected application'}</strong>
                   {consent.client_name && <small className="connected-app-client-id">{consent.client_id}</small>}
-                  <span>{Array.isArray(consent.scopes) && consent.scopes.length > 0 ? consent.scopes.join(', ') : 'No scopes'}</span>
+                  <div className="connected-app-scopes" aria-label="Granted permissions">
+                    {Array.isArray(consent.scopes) && consent.scopes.length > 0
+                      ? consent.scopes.map((scope) => <span key={scope}>{scope}</span>)
+                      : <span>No scopes</span>}
+                  </div>
+                  {oauthActionErrorClientID === consent.client_id && (
+                    <div className="connected-app-action-error" role="alert">
+                      <span>{oauthActionError}</span>
+                      <button type="button" className="secondary" onClick={() => handleConsentRevoke(consent.client_id)}>Retry</button>
+                    </div>
+                  )}
                 </div>
                 <button
                   className="danger"
@@ -695,7 +712,7 @@ export default function UserSettings({ onClose }) {
                 </button>
               </div>
             ))}
-            {status && status.includes('Connected application') && <div className={`card-status ${status.includes('✅') ? 'success' : 'error'}`}>{status}</div>}
+            {oauthActionSuccess && <div className="card-status success" role="status">{oauthActionSuccess}</div>}
             </>}
           </div>
 
