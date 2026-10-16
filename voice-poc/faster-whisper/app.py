@@ -5,7 +5,11 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from faster_whisper import WhisperModel
 
 app = FastAPI()
-model = WhisperModel(os.getenv("WHISPER_MODEL", "base.en"), device="cpu", compute_type="int8")
+model = WhisperModel(
+    os.getenv("WHISPER_MODEL", "base.en"),
+    device=os.getenv("WHISPER_DEVICE", "cuda"),
+    compute_type=os.getenv("WHISPER_COMPUTE_TYPE", "float16"),
+)
 
 
 @app.get("/healthz")

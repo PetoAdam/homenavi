@@ -22,6 +22,7 @@ jobs:
       service: voice-stt
       context: ./voice-poc/faster-whisper
       dockerfile: ./voice-poc/faster-whisper/Dockerfile
+      platforms: linux/amd64
     secrets: inherit
   tts:
     uses: ./.github/workflows/service_release.yml

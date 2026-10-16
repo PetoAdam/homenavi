@@ -88,11 +88,13 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		http.Error(writer, "invalid or empty audio request", http.StatusBadRequest)
 		return
 	}
+	sttStarted := time.Now()
 	transcript, err := cfg.transcribe(request.Context(), audio)
 	if err != nil {
 		serverError(writer, "speech transcription failed", err)
 		return
 	}
+	slog.Info("voice provider timing", "provider", "stt", "duration", time.Since(sttStarted), "audio_bytes", len(audio), "transcript_chars", len(transcript))
 	if transcript == "" {
 		http.Error(writer, "speech was not recognized", http.StatusUnprocessableEntity)
 		return
@@ -109,6 +111,8 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	_ = stream.SetBoundary(boundary)
 	sessionID := strings.TrimSpace(request.Header.Get("X-Orion-Session-ID"))
 	var responseText strings.Builder
+	llmStarted := time.Now()
+	llmFirstResponse := true
 	for sentence, err := range cfg.chat(request.Context(), transcript, sessionID) {
 		if err != nil {
 			slog.Warn("chat stream ended", "error", err)
@@ -119,11 +123,17 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		if spoken == "" {
 			continue
 		}
+		if llmFirstResponse {
+			slog.Info("voice provider timing", "provider", "llm", "phase", "first_response", "duration", time.Since(llmStarted))
+			llmFirstResponse = false
+		}
+		ttsStarted := time.Now()
 		wav, err := cfg.synthesize(request.Context(), spoken)
 		if err != nil {
 			slog.Warn("tts failed", "error", err)
 			return
 		}
+		slog.Info("voice provider timing", "provider", "tts", "duration", time.Since(ttsStarted), "text_chars", len(spoken), "audio_bytes", len(wav))
 		if cfg.LogContent {
 			slog.Info("voice response sentence", "text", spoken)
 		}
@@ -140,6 +150,7 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 			flusher.Flush()
 		}
 	}
+	slog.Info("voice provider timing", "provider", "llm", "phase", "complete_response", "duration", time.Since(llmStarted))
 	_ = stream.Close()
 	cfg.Conversations.addAssistant(sessionID, responseText.String())
 }
