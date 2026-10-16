@@ -204,7 +204,9 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string) func(f
 		turnID := fmt.Sprintf("voice-%d", time.Now().UnixNano())
 		userMessageID := turnID + "-user"
 		assistantMessageID := turnID + "-assistant"
-		chatID, err := cfg.createVoiceChat(ctx, transcript, userMessageID, assistantMessageID)
+		messages := cfg.Conversations.messages(sessionID, transcript)
+		slog.Info("voice conversation", "session_id", sessionID, "history_messages", len(messages)-2)
+		chatID, err := cfg.createVoiceChat(ctx, messages, userMessageID, assistantMessageID)
 		if err != nil {
 			yield("", err)
 			return
@@ -212,7 +214,7 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string) func(f
 		payload := map[string]any{
 			"model":                cfg.OpenWebUIModel,
 			"stream":               true,
-			"messages":             cfg.Conversations.messages(sessionID, transcript),
+			"messages":             messages,
 			"id":                   assistantMessageID,
 			"chat_id":              chatID,
 			"parent_id":            userMessageID,
@@ -402,15 +404,13 @@ func (store *conversationStore) addAssistant(sessionID, text string) {
 	store.entries[sessionID] = entry
 }
 
-func (cfg config) createVoiceChat(ctx context.Context, transcript, userMessageID, assistantMessageID string) (string, error) {
+func (cfg config) createVoiceChat(ctx context.Context, messages []map[string]string, userMessageID, assistantMessageID string) (string, error) {
+	historyMessages := voiceChatHistory(messages, userMessageID, assistantMessageID, cfg.OpenWebUIModel)
 	chat := map[string]any{
 		"title":  "Orion Voice",
 		"models": []string{cfg.OpenWebUIModel},
 		"params": map[string]string{"tool_approval_mode": "full"},
-		"history": map[string]any{"currentId": assistantMessageID, "messages": map[string]any{
-			userMessageID:      map[string]any{"id": userMessageID, "role": "user", "content": transcript, "childrenIds": []string{assistantMessageID}},
-			assistantMessageID: map[string]any{"id": assistantMessageID, "role": "assistant", "content": "", "parentId": userMessageID, "childrenIds": []string{}, "done": false, "model": cfg.OpenWebUIModel},
-		}},
+		"history": map[string]any{"currentId": assistantMessageID, "messages": historyMessages},
 	}
 	body, err := json.Marshal(map[string]any{"chat": chat})
 	if err != nil {
@@ -440,6 +440,41 @@ func (cfg config) createVoiceChat(ctx context.Context, transcript, userMessageID
 		return "", errors.New("Open WebUI chat creation returned no ID")
 	}
 	return created.ID, nil
+}
+
+func voiceChatHistory(messages []map[string]string, userMessageID, assistantMessageID, model string) map[string]any {
+	history := map[string]any{}
+	parentID := ""
+	messageNumber := 0
+	conversationMessages := 0
+	for _, message := range messages {
+		if message["role"] != "system" {
+			conversationMessages++
+		}
+	}
+	for _, message := range messages {
+		if message["role"] == "system" {
+			continue
+		}
+		messageNumber++
+		messageID := fmt.Sprintf("%s-history-%d", userMessageID, messageNumber)
+		if messageNumber == conversationMessages {
+			messageID = userMessageID
+		}
+		node := map[string]any{"id": messageID, "role": message["role"], "content": message["content"], "childrenIds": []string{}}
+		if parentID != "" {
+			node["parentId"] = parentID
+			parent := history[parentID].(map[string]any)
+			parent["childrenIds"] = []string{messageID}
+		}
+		history[messageID] = node
+		parentID = messageID
+	}
+	history[assistantMessageID] = map[string]any{"id": assistantMessageID, "role": "assistant", "content": "", "parentId": userMessageID, "childrenIds": []string{}, "done": false, "model": model}
+	if user, ok := history[userMessageID].(map[string]any); ok {
+		user["childrenIds"] = []string{assistantMessageID}
+	}
+	return history
 }
 
 func (cfg config) chatMessage(ctx context.Context, chatID, messageID string) (string, error) {

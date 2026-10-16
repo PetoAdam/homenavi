@@ -29,3 +29,34 @@ func TestConversationStoreExpiresSessionHistory(t *testing.T) {
 		t.Fatalf("expected expired history to be discarded, got %#v", messages)
 	}
 }
+
+func TestVoiceChatHistoryPreservesConversation(t *testing.T) {
+	messages := []map[string]string{
+		{"role": "system", "content": "Voice assistant"},
+		{"role": "user", "content": "Turn on the lamps"},
+		{"role": "assistant", "content": "The lamps are on."},
+		{"role": "user", "content": "Confirm that."},
+	}
+	history := voiceChatHistory(messages, "current-user", "current-assistant", "orion")
+
+	if len(history) != 4 {
+		t.Fatalf("expected three conversation messages plus placeholder, got %#v", history)
+	}
+	priorUser, ok := history["current-user-history-1"].(map[string]any)
+	if !ok || priorUser["content"] != "Turn on the lamps" {
+		t.Fatalf("prior user turn was not preserved: %#v", history)
+	}
+	currentUser, ok := history["current-user"].(map[string]any)
+	if !ok || currentUser["content"] != "Confirm that." || currentUser["childrenIds"].([]string)[0] != "current-assistant" {
+		t.Fatalf("current turn was not linked to assistant placeholder: %#v", history)
+	}
+}
+
+func TestVoiceChatHistoryDoesNotRequireSystemMessage(t *testing.T) {
+	history := voiceChatHistory([]map[string]string{{"role": "user", "content": "Hello"}}, "current-user", "current-assistant", "orion")
+
+	currentUser, ok := history["current-user"].(map[string]any)
+	if !ok || currentUser["content"] != "Hello" || currentUser["childrenIds"].([]string)[0] != "current-assistant" {
+		t.Fatalf("current user turn was not linked without a system message: %#v", history)
+	}
+}
