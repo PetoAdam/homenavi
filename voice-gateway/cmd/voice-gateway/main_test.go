@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -69,5 +72,36 @@ func TestAssistantMessageContentDoesNotReturnPriorAssistantTurn(t *testing.T) {
 	}
 	if content, ok := assistantMessageContent(data, "prior-assistant"); !ok || content != "Previous response." {
 		t.Fatalf("expected the requested prior response, got %q", content)
+	}
+}
+
+func TestTextprotoHeaderCopiesPCMFormat(t *testing.T) {
+	responseHeaders := http.Header{
+		"X-Audio-Sample-Rate":  {"22050"},
+		"X-Audio-Sample-Width": {"2"},
+		"X-Audio-Channels":     {"1"},
+	}
+	header := textprotoHeader("audio/L16", "Hello.", responseHeaders)
+	values := http.Header(header)
+
+	if values.Get("Content-Type") != "audio/L16" || values.Get("X-Voice-Text") != "Hello." {
+		t.Fatalf("unexpected base headers: %#v", header)
+	}
+	if values.Get("X-Audio-Sample-Rate") != "22050" || values.Get("X-Audio-Sample-Width") != "2" || values.Get("X-Audio-Channels") != "1" {
+		t.Fatalf("missing PCM headers: %#v", header)
+	}
+}
+
+func TestCopyAndFlushStreamsAllAudio(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	var destination bytes.Buffer
+	payload := []byte("streamed-pcm")
+
+	written, err := copyAndFlush(&destination, bytes.NewReader(payload), recorder, time.Now())
+	if err != nil {
+		t.Fatalf("copyAndFlush returned an error: %v", err)
+	}
+	if written != int64(len(payload)) || !bytes.Equal(destination.Bytes(), payload) {
+		t.Fatalf("unexpected streamed payload: written=%d payload=%q", written, destination.Bytes())
 	}
 }

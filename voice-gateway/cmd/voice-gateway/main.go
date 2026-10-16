@@ -113,7 +113,7 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	var responseText strings.Builder
 	llmStarted := time.Now()
 	llmFirstResponse := true
-	for sentence, err := range cfg.chat(request.Context(), transcript, sessionID) {
+	for sentence, err := range cfg.chat(request.Context(), transcript, sessionID, llmStarted) {
 		if err != nil {
 			slog.Warn("chat stream ended", "error", err)
 			writeStreamError(stream, "chat_unavailable")
@@ -124,31 +124,32 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 			continue
 		}
 		if llmFirstResponse {
-			slog.Info("voice provider timing", "provider", "llm", "phase", "first_response", "duration", time.Since(llmStarted))
+			slog.Info("voice provider timing", "provider", "llm", "phase", "first_completed_sentence", "duration", time.Since(llmStarted))
 			llmFirstResponse = false
 		}
 		ttsStarted := time.Now()
-		wav, err := cfg.synthesize(request.Context(), spoken)
+		ttsResponse, err := cfg.synthesize(request.Context(), spoken)
 		if err != nil {
 			slog.Warn("tts failed", "error", err)
 			return
 		}
-		slog.Info("voice provider timing", "provider", "tts", "duration", time.Since(ttsStarted), "text_chars", len(spoken), "audio_bytes", len(wav))
+		part, err := stream.CreatePart(textprotoHeader(ttsResponse.Header.Get("Content-Type"), spoken, ttsResponse.Header))
+		if err != nil {
+			ttsResponse.Body.Close()
+			return
+		}
+		audioBytes, err := copyAndFlush(part, ttsResponse.Body, writer, ttsStarted)
+		ttsResponse.Body.Close()
+		if err != nil {
+			slog.Warn("tts stream failed", "error", err)
+			return
+		}
+		slog.Info("voice provider timing", "provider", "tts", "phase", "complete_response", "duration", time.Since(ttsStarted), "text_chars", len(spoken), "audio_bytes", audioBytes)
 		if cfg.LogContent {
 			slog.Info("voice response sentence", "text", spoken)
 		}
 		responseText.WriteString(spoken)
 		responseText.WriteByte(' ')
-		part, err := stream.CreatePart(textprotoHeader("audio/wav", spoken))
-		if err != nil {
-			return
-		}
-		if _, err = part.Write(wav); err != nil {
-			return
-		}
-		if flusher, ok := writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
 	}
 	slog.Info("voice provider timing", "provider", "llm", "phase", "complete_response", "duration", time.Since(llmStarted))
 	_ = stream.Close()
@@ -199,7 +200,7 @@ func (cfg config) transcribe(ctx context.Context, audio []byte) (string, error) 
 	return strings.TrimSpace(decoded.Text), nil
 }
 
-func (cfg config) chat(ctx context.Context, transcript, sessionID string) func(func(string, error) bool) {
+func (cfg config) chat(ctx context.Context, transcript, sessionID string, started time.Time) func(func(string, error) bool) {
 	return func(yield func(string, error) bool) {
 		turnID := fmt.Sprintf("voice-%d", time.Now().UnixNano())
 		userMessageID := turnID + "-user"
@@ -286,6 +287,7 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string) func(f
 		buffer := ""
 		delivered := ""
 		sentText := false
+		firstTextDelta := true
 		scanner := bufio.NewScanner(response.Body)
 		scanner.Buffer(make([]byte, 4096), 1<<20)
 		for scanner.Scan() {
@@ -320,6 +322,10 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string) func(f
 			}
 			if delta == "" {
 				continue
+			}
+			if firstTextDelta {
+				slog.Info("voice provider timing", "provider", "llm", "phase", "first_text_delta", "duration", time.Since(started))
+				firstTextDelta = false
 			}
 			buffer += delta
 			for {
@@ -407,9 +413,9 @@ func (store *conversationStore) addAssistant(sessionID, text string) {
 func (cfg config) createVoiceChat(ctx context.Context, messages []map[string]string, userMessageID, assistantMessageID string) (string, error) {
 	historyMessages := voiceChatHistory(messages, userMessageID, assistantMessageID, cfg.OpenWebUIModel)
 	chat := map[string]any{
-		"title":  "Orion Voice",
-		"models": []string{cfg.OpenWebUIModel},
-		"params": map[string]string{"tool_approval_mode": "full"},
+		"title":   "Orion Voice",
+		"models":  []string{cfg.OpenWebUIModel},
+		"params":  map[string]string{"tool_approval_mode": "full"},
 		"history": map[string]any{"currentId": assistantMessageID, "messages": historyMessages},
 	}
 	body, err := json.Marshal(map[string]any{"chat": chat})
@@ -564,7 +570,7 @@ func (cfg config) authorize(request *http.Request) {
 	}
 }
 
-func (cfg config) synthesize(ctx context.Context, text string) ([]byte, error) {
+func (cfg config) synthesize(ctx context.Context, text string) (*http.Response, error) {
 	body, err := json.Marshal(map[string]string{"text": text})
 	if err != nil {
 		return nil, err
@@ -578,11 +584,40 @@ func (cfg config) synthesize(ctx context.Context, text string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
+		response.Body.Close()
 		return nil, fmt.Errorf("TTS returned %s", response.Status)
 	}
-	return io.ReadAll(io.LimitReader(response.Body, 20<<20))
+	return response, nil
+}
+
+func copyAndFlush(destination io.Writer, source io.Reader, responseWriter http.ResponseWriter, started time.Time) (int64, error) {
+	buffer := make([]byte, 32*1024)
+	var written int64
+	firstAudioByte := true
+	for {
+		read, readErr := source.Read(buffer)
+		if read > 0 {
+			if firstAudioByte {
+				slog.Info("voice provider timing", "provider", "tts", "phase", "first_audio_byte", "duration", time.Since(started))
+				firstAudioByte = false
+			}
+			bytesWritten, writeErr := destination.Write(buffer[:read])
+			written += int64(bytesWritten)
+			if writeErr != nil {
+				return written, writeErr
+			}
+			if flusher, ok := responseWriter.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return written, nil
+		}
+		if readErr != nil {
+			return written, readErr
+		}
+	}
 }
 
 func nextSentence(text string) (string, string) {
@@ -606,8 +641,17 @@ var (
 	markdownPrefix = regexp.MustCompile(`(?m)(^|\s)(?:[-*+]\s+|\d+[.)]\s+)`)
 )
 
-func textprotoHeader(contentType, text string) map[string][]string {
-	return map[string][]string{"Content-Type": {contentType}, "X-Voice-Text": {text}}
+func textprotoHeader(contentType, text string, sourceHeaders ...http.Header) map[string][]string {
+	header := map[string][]string{"Content-Type": {contentType}, "X-Voice-Text": {text}}
+	if len(sourceHeaders) == 0 {
+		return header
+	}
+	for _, name := range []string{"X-Audio-Sample-Rate", "X-Audio-Sample-Width", "X-Audio-Channels"} {
+		if value := sourceHeaders[0].Get(name); value != "" {
+			header[name] = []string{value}
+		}
+	}
+	return header
 }
 
 func value(key, fallback string) string {

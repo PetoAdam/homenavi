@@ -1,10 +1,8 @@
-import io
 import os
 import urllib.request
-import wave
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 from piper import PiperVoice
 from pydantic import BaseModel
 
@@ -45,7 +43,17 @@ def tts(request: Request):
     text = request.text.strip()
     if not text or len(text) > 1000:
         raise HTTPException(status_code=400, detail="text must be 1-1000 characters")
-    output = io.BytesIO()
-    with wave.open(output, "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file)
-    return Response(content=output.getvalue(), media_type="audio/wav")
+
+    def pcm_chunks():
+        for chunk in voice.synthesize(text):
+            yield chunk.audio_int16_bytes
+
+    return StreamingResponse(
+        pcm_chunks(),
+        media_type="audio/L16",
+        headers={
+            "X-Audio-Sample-Rate": str(voice.config.sample_rate),
+            "X-Audio-Sample-Width": "2",
+            "X-Audio-Channels": "1",
+        },
+    )
