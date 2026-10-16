@@ -44,6 +44,11 @@ type conversationStore struct {
 	entries map[string]conversation
 }
 
+type chatResult struct {
+	text string
+	err  error
+}
+
 func main() {
 	cfg := config{
 		ListenAddr:       value("VOICE_GATEWAY_LISTEN_ADDR", ":8090"),
@@ -114,12 +119,13 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	var responseText strings.Builder
 	llmStarted := time.Now()
 	llmFirstResponse := true
-	for sentence, err := range cfg.chat(request.Context(), transcript, sessionID, llmStarted) {
-		if err != nil {
-			slog.Warn("chat stream ended", "error", err)
+	for result := range cfg.streamClauses(request.Context(), transcript, sessionID, llmStarted) {
+		if result.err != nil {
+			slog.Warn("chat stream ended", "error", result.err)
 			writeStreamError(stream, "chat_unavailable")
 			break
 		}
+		sentence := result.text
 		spoken := speechText(sentence)
 		if spoken == "" {
 			continue
@@ -154,6 +160,21 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	}
 	slog.Info("voice provider timing", "provider", "llm", "phase", "complete_response", "duration", time.Since(llmStarted))
 	cfg.Conversations.addAssistant(sessionID, responseText.String())
+}
+
+func (cfg config) streamClauses(ctx context.Context, transcript, sessionID string, started time.Time) <-chan chatResult {
+	results := make(chan chatResult, 2)
+	go func() {
+		defer close(results)
+		for text, err := range cfg.chat(ctx, transcript, sessionID, started) {
+			select {
+			case results <- chatResult{text: text, err: err}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return results
 }
 
 func writeStreamError(stream *multipart.Writer, code string) {
@@ -207,11 +228,13 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 		assistantMessageID := turnID + "-assistant"
 		messages := cfg.Conversations.messages(sessionID, transcript)
 		slog.Info("voice conversation", "session_id", sessionID, "history_messages", len(messages)-2)
+		chatCreateStarted := time.Now()
 		chatID, err := cfg.createVoiceChat(ctx, messages, userMessageID, assistantMessageID)
 		if err != nil {
 			yield("", err)
 			return
 		}
+		slog.Info("voice provider timing", "provider", "llm", "phase", "chat_create", "duration", time.Since(chatCreateStarted))
 		payload := map[string]any{
 			"model":                cfg.OpenWebUIModel,
 			"stream":               true,
@@ -247,12 +270,14 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 		if cfg.OpenWebUIAPIKey != "" {
 			request.Header.Set("Authorization", "Bearer "+cfg.OpenWebUIAPIKey)
 		}
+		chatConnectionStarted := time.Now()
 		response, err := http.DefaultClient.Do(request)
 		if err != nil {
 			yield("", err)
 			return
 		}
 		defer response.Body.Close()
+		slog.Info("voice provider timing", "provider", "llm", "phase", "chat_connection", "duration", time.Since(chatConnectionStarted), "content_type", response.Header.Get("Content-Type"))
 		if response.StatusCode != http.StatusOK {
 			yield("", fmt.Errorf("Open WebUI returned %s", response.Status))
 			return
@@ -288,37 +313,28 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 		delivered := ""
 		sentText := false
 		firstTextDelta := true
+		firstSSEFrame := true
 		scanner := bufio.NewScanner(response.Body)
 		scanner.Buffer(make([]byte, 4096), 1<<20)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
+			if !strings.HasPrefix(line, "data:") {
 				continue
 			}
-			data := strings.TrimPrefix(line, "data: ")
+			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 			if data == "[DONE]" {
 				break
 			}
-			var event struct {
-				Type    string `json:"type"`
-				Delta   string `json:"delta"`
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-				} `json:"choices"`
+			if firstSSEFrame {
+				slog.Info("voice provider timing", "provider", "llm", "phase", "first_sse_frame", "duration", time.Since(started))
+				firstSSEFrame = false
 			}
-			if json.Unmarshal([]byte(data), &event) != nil {
+			delta, eventType, ok := streamDelta([]byte(data))
+			if !ok {
 				continue
 			}
-			if cfg.LogContent && event.Type != "" {
-				slog.Info("Open WebUI stream event", "type", event.Type)
-			}
-			delta := ""
-			if event.Type == "response.output_text.delta" {
-				delta = event.Delta
-			} else if len(event.Choices) > 0 {
-				delta = event.Choices[0].Delta.Content
+			if cfg.LogContent && eventType != "" {
+				slog.Info("Open WebUI stream event", "type", eventType)
 			}
 			if delta == "" {
 				continue
@@ -329,7 +345,7 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 			}
 			buffer += delta
 			for {
-				sentence, rest := nextSentence(buffer)
+				sentence, rest := nextClause(buffer)
 				if sentence == "" {
 					break
 				}
@@ -620,13 +636,72 @@ func copyAndFlush(destination io.Writer, source io.Reader, responseWriter http.R
 	}
 }
 
-func nextSentence(text string) (string, string) {
+func nextClause(text string) (string, string) {
 	for index, runeValue := range text {
-		if strings.ContainsRune(".!?", runeValue) {
+		if strings.ContainsRune(".!?", runeValue) || (strings.ContainsRune(",;:", runeValue) && len(strings.TrimSpace(text[:index+1])) >= 24) {
 			return strings.TrimSpace(text[:index+1]), strings.TrimSpace(text[index+1:])
 		}
 	}
 	return "", text
+}
+
+func streamDelta(data []byte) (string, string, bool) {
+	var event struct {
+		Type    string          `json:"type"`
+		Delta   json.RawMessage `json:"delta"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		Data    json.RawMessage `json:"data"`
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		return "", "", false
+	}
+	if len(event.Choices) > 0 && event.Choices[0].Delta.Content != "" {
+		return event.Choices[0].Delta.Content, event.Type, true
+	}
+	if text := jsonText(event.Delta); text != "" {
+		return text, event.Type, true
+	}
+	if event.Message.Content != "" {
+		return event.Message.Content, event.Type, true
+	}
+	if text := jsonText(event.Data); text != "" {
+		return text, event.Type, true
+	}
+	return "", event.Type, false
+}
+
+func jsonText(data json.RawMessage) string {
+	if len(data) == 0 || string(data) == "null" {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(data, &text) == nil {
+		return text
+	}
+	var value struct {
+		Content string `json:"content"`
+		Text    string `json:"text"`
+		Delta   string `json:"delta"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(data, &value) != nil {
+		return ""
+	}
+	for _, text := range []string{value.Content, value.Text, value.Delta, value.Message.Content} {
+		if text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func speechText(text string) string {

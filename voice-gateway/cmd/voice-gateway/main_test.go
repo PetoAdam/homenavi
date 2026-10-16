@@ -105,3 +105,39 @@ func TestCopyAndFlushStreamsAllAudio(t *testing.T) {
 		t.Fatalf("unexpected streamed payload: written=%d payload=%q", written, destination.Bytes())
 	}
 }
+
+func TestNextClauseSplitsLongCommaClause(t *testing.T) {
+	clause, rest := nextClause("The kitchen lights are now on, and the hallway remains off.")
+
+	if clause != "The kitchen lights are now on," || rest != "and the hallway remains off." {
+		t.Fatalf("unexpected clause split: clause=%q rest=%q", clause, rest)
+	}
+}
+
+func TestNextClauseWaitsForShortPhraseCompletion(t *testing.T) {
+	clause, rest := nextClause("Yes, I can help.")
+
+	if clause != "Yes, I can help." || rest != "" {
+		t.Fatalf("unexpected short clause split: clause=%q rest=%q", clause, rest)
+	}
+}
+
+func TestStreamDeltaSupportsOpenAIAndOpenWebUIEnvelopes(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "OpenAI", data: `{"choices":[{"delta":{"content":"Hello"}}]}`, want: "Hello"},
+		{name: "Responses API", data: `{"type":"response.output_text.delta","delta":"Hello"}`, want: "Hello"},
+		{name: "Open WebUI data", data: `{"type":"chat:completion","data":{"content":"Hello"}}`, want: "Hello"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			delta, _, ok := streamDelta([]byte(test.data))
+			if !ok || delta != test.want {
+				t.Fatalf("streamDelta(%s) = %q, %t", test.data, delta, ok)
+			}
+		})
+	}
+}
