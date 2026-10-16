@@ -34,7 +34,7 @@ type config struct {
 }
 
 type conversation struct {
-	lastUser  string
+	messages  []map[string]string
 	expiresAt time.Time
 }
 
@@ -108,6 +108,7 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	stream := multipart.NewWriter(writer)
 	_ = stream.SetBoundary(boundary)
 	sessionID := strings.TrimSpace(request.Header.Get("X-Orion-Session-ID"))
+	var responseText strings.Builder
 	for sentence, err := range cfg.chat(request.Context(), transcript, sessionID) {
 		if err != nil {
 			slog.Warn("chat stream ended", "error", err)
@@ -126,6 +127,8 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		if cfg.LogContent {
 			slog.Info("voice response sentence", "text", spoken)
 		}
+		responseText.WriteString(spoken)
+		responseText.WriteByte(' ')
 		part, err := stream.CreatePart(textprotoHeader("audio/wav", spoken))
 		if err != nil {
 			return
@@ -138,6 +141,7 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		}
 	}
 	_ = stream.Close()
+	cfg.Conversations.addAssistant(sessionID, responseText.String())
 }
 
 func writeStreamError(stream *multipart.Writer, code string) {
@@ -354,12 +358,37 @@ func (store *conversationStore) messages(sessionID, transcript string) []map[str
 	if sessionID == "" {
 		return append(messages, map[string]string{"role": "user", "content": transcript})
 	}
-	if prior, ok := store.entries[sessionID]; ok && time.Now().Before(prior.expiresAt) {
-		messages = append(messages, map[string]string{"role": "user", "content": prior.lastUser})
+	now := time.Now()
+	for id, entry := range store.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(store.entries, id)
+		}
 	}
-	messages = append(messages, map[string]string{"role": "user", "content": transcript})
-	store.entries[sessionID] = conversation{lastUser: transcript, expiresAt: time.Now().Add(store.ttl)}
+	history := []map[string]string{}
+	if prior, ok := store.entries[sessionID]; ok {
+		history = append(history, prior.messages...)
+	}
+	user := map[string]string{"role": "user", "content": transcript}
+	messages = append(messages, history...)
+	messages = append(messages, user)
+	store.entries[sessionID] = conversation{messages: append(history, user), expiresAt: now.Add(store.ttl)}
 	return messages
+}
+
+func (store *conversationStore) addAssistant(sessionID, text string) {
+	if sessionID == "" || strings.TrimSpace(text) == "" {
+		return
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	entry, ok := store.entries[sessionID]
+	if !ok || !time.Now().Before(entry.expiresAt) {
+		delete(store.entries, sessionID)
+		return
+	}
+	entry.messages = append(entry.messages, map[string]string{"role": "assistant", "content": strings.TrimSpace(text)})
+	entry.expiresAt = time.Now().Add(store.ttl)
+	store.entries[sessionID] = entry
 }
 
 func (cfg config) createVoiceChat(ctx context.Context, transcript, userMessageID, assistantMessageID string) (string, error) {
