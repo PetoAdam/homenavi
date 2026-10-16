@@ -60,3 +60,14 @@ func TestVoiceChatHistoryDoesNotRequireSystemMessage(t *testing.T) {
 		t.Fatalf("current user turn was not linked without a system message: %#v", history)
 	}
 }
+
+func TestAssistantMessageContentDoesNotReturnPriorAssistantTurn(t *testing.T) {
+	data := []byte(`{"history":{"messages":{"prior-assistant":{"role":"assistant","content":"Previous response."},"current-assistant":{"role":"assistant","content":""}}}}`)
+
+	if content, ok := assistantMessageContent(data, "current-assistant"); ok || content != "" {
+		t.Fatalf("expected empty current response, got %q", content)
+	}
+	if content, ok := assistantMessageContent(data, "prior-assistant"); !ok || content != "Previous response." {
+		t.Fatalf("expected the requested prior response, got %q", content)
+	}
+}

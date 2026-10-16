@@ -515,11 +515,18 @@ func (cfg config) chatMessageOnce(ctx context.Context, chatID, messageID string)
 	if err != nil {
 		return "", err
 	}
+	if content, ok := assistantMessageContent(data, messageID); ok {
+		return content, nil
+	}
+	return "", fmt.Errorf("Open WebUI chat %s has no assistant message %s", chatID, messageID)
+}
+
+func assistantMessageContent(data []byte, messageID string) (string, bool) {
 	var envelope struct {
 		Chat json.RawMessage `json:"chat"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return "", err
+		return "", false
 	}
 	for _, candidate := range []json.RawMessage{data, envelope.Chat} {
 		if len(candidate) == 0 {
@@ -537,20 +544,14 @@ func (cfg config) chatMessageOnce(ctx context.Context, chatID, messageID string)
 			continue
 		}
 		if message, ok := chat.History.Messages[messageID]; ok {
-			if content := strings.TrimSpace(message.Content); content != "" {
-				return content, nil
-			}
-		}
-		for _, message := range chat.History.Messages {
-			if message.Role != "assistant" {
-				continue
-			}
-			if content := strings.TrimSpace(message.Content); content != "" {
-				return content, nil
+			if message.Role == "assistant" {
+				if content := strings.TrimSpace(message.Content); content != "" {
+					return content, true
+				}
 			}
 		}
 	}
-	return "", fmt.Errorf("Open WebUI chat %s has no assistant message %s", chatID, messageID)
+	return "", false
 }
 
 func (cfg config) openWebUIBaseURL() string {

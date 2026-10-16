@@ -11,8 +11,12 @@ export OPEN_WEBUI_CHAT_URL='https://your-open-webui.example/api/chat/completions
 export OPEN_WEBUI_MODEL=orion
 # Required only when the Open WebUI deployment authenticates its OpenAI-compatible API.
 export OPEN_WEBUI_API_KEY='...'
+# Optional: defaults to the bundled Piper service.
+export TTS_URL='http://your-tts-host:8000/tts'
 docker compose -f voice-poc/docker-compose.yml up --build
 ```
+
+`TTS_URL` selects the HTTP TTS provider used by the gateway. It can be exported as above or set in a `voice-poc/.env` file; leave it unset to use the bundled `piper` service. In Kubernetes, set the same `TTS_URL` environment value in the voice gateway GitOps manifest.
 
 For Orion voice control, `OPEN_WEBUI_TOOL_IDS` defaults to `server:mcp:homenavi-mcp`. This explicitly attaches the Homenavi MCP server to API chat-completion requests; Open WebUI does not attach model tools implicitly for API callers.
 
