@@ -351,7 +351,7 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 				}
 				buffer = rest
 				sentText = true
-				delivered += sentence
+				delivered = appendDeliveredText(delivered, sentence)
 				if !yield(sentence, nil) {
 					return
 				}
@@ -643,6 +643,13 @@ func nextClause(text string) (string, string) {
 		}
 	}
 	return "", text
+}
+
+func appendDeliveredText(delivered, sentence string) string {
+	if delivered == "" {
+		return sentence
+	}
+	return delivered + " " + sentence
 }
 
 func streamDelta(data []byte) (string, string, bool) {

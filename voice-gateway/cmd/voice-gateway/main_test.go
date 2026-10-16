@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -119,6 +120,15 @@ func TestNextClauseWaitsForShortPhraseCompletion(t *testing.T) {
 
 	if clause != "Yes, I can help." || rest != "" {
 		t.Fatalf("unexpected short clause split: clause=%q rest=%q", clause, rest)
+	}
+}
+
+func TestAppendDeliveredTextPreservesCompletionPrefix(t *testing.T) {
+	delivered := appendDeliveredText("Not much.", "I'm here and ready to help.")
+	completed := "Not much. I'm here and ready to help. What's on your mind?"
+
+	if !strings.HasPrefix(completed, delivered) {
+		t.Fatalf("delivered text is not a completion prefix: %q", delivered)
 	}
 }
 
