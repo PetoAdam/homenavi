@@ -109,6 +109,7 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	writer.WriteHeader(http.StatusOK)
 	stream := multipart.NewWriter(writer)
 	_ = stream.SetBoundary(boundary)
+	defer stream.Close()
 	sessionID := strings.TrimSpace(request.Header.Get("X-Orion-Session-ID"))
 	var responseText strings.Builder
 	llmStarted := time.Now()
@@ -152,7 +153,6 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		responseText.WriteByte(' ')
 	}
 	slog.Info("voice provider timing", "provider", "llm", "phase", "complete_response", "duration", time.Since(llmStarted))
-	_ = stream.Close()
 	cfg.Conversations.addAssistant(sessionID, responseText.String())
 }
 
