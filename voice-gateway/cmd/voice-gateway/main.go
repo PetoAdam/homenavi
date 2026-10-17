@@ -363,10 +363,8 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 		}
 		if final := strings.TrimSpace(buffer); final != "" {
 			if !strings.HasSuffix(final, ".") && !strings.HasSuffix(final, "!") && !strings.HasSuffix(final, "?") {
-				if text, err := cfg.chatMessageOnce(ctx, chatID, assistantMessageID); err == nil && strings.HasPrefix(text, delivered) {
-					if remaining := strings.TrimSpace(strings.TrimPrefix(text, delivered)); len(remaining) > len(final) {
-						final = remaining
-					}
+				if recovered := cfg.recoverIncompleteFinal(ctx, chatID, assistantMessageID, delivered, final); recovered != "" {
+					final = recovered
 				}
 			}
 			sentText = true
@@ -517,6 +515,26 @@ func (cfg config) chatMessage(ctx context.Context, chatID, messageID string) (st
 		}
 	}
 	return "", lastErr
+}
+
+func (cfg config) recoverIncompleteFinal(ctx context.Context, chatID, messageID, delivered, final string) string {
+	for attempt := 0; attempt < 5; attempt++ {
+		text, err := cfg.chatMessageOnce(ctx, chatID, messageID)
+		if err == nil && strings.HasPrefix(text, delivered) {
+			if remaining := strings.TrimSpace(strings.TrimPrefix(text, delivered)); len(remaining) > len(final) {
+				return remaining
+			}
+		}
+		if attempt == 4 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return ""
 }
 
 func (cfg config) chatMessageOnce(ctx context.Context, chatID, messageID string) (string, error) {

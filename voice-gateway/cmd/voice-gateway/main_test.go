@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -129,6 +130,29 @@ func TestAppendDeliveredTextPreservesCompletionPrefix(t *testing.T) {
 
 	if !strings.HasPrefix(completed, delivered) {
 		t.Fatalf("delivered text is not a completion prefix: %q", delivered)
+	}
+}
+
+func TestRecoverIncompleteFinalWaitsForPersistedCompletion(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		content := "Could you check the weather"
+		if requests == 2 {
+			content = "Could you check the weather for Budapest tomorrow?"
+		}
+		_, _ = writer.Write([]byte(`{"history":{"messages":{"assistant":{"role":"assistant","content":"` + content + `"}}}}`))
+	}))
+	defer server.Close()
+
+	cfg := config{OpenWebUIURL: server.URL + "/api/chat/completions"}
+	final := cfg.recoverIncompleteFinal(context.Background(), "chat", "assistant", "", "Could you check the weather")
+
+	if final != "Could you check the weather for Budapest tomorrow?" {
+		t.Fatalf("expected persisted completion, got %q", final)
+	}
+	if requests != 2 {
+		t.Fatalf("expected two chat lookups, got %d", requests)
 	}
 }
 
