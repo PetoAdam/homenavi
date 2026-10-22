@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,6 +75,47 @@ func TestAssistantMessageContentDoesNotReturnPriorAssistantTurn(t *testing.T) {
 	}
 	if content, ok := assistantMessageContent(data, "prior-assistant"); !ok || content != "Previous response." {
 		t.Fatalf("expected the requested prior response, got %q", content)
+	}
+}
+
+func TestChatUsesDirectStreamingRequest(t *testing.T) {
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Accept") != "text/event-stream" {
+			t.Fatalf("expected SSE accept header, got %q", request.Header.Get("Accept"))
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"STREAM_OK.\"}\n\n"))
+	}))
+	defer server.Close()
+
+	cfg := config{
+		OpenWebUIURL:   server.URL,
+		OpenWebUIModel: "orion",
+		Conversations:  &conversationStore{ttl: time.Minute, entries: map[string]conversation{}},
+	}
+	var responses []string
+	cfg.chat(context.Background(), "Confirm streaming.", "session", time.Now())(func(text string, err error) bool {
+		if err != nil {
+			t.Fatalf("chat returned an error: %v", err)
+		}
+		responses = append(responses, text)
+		return true
+	})
+
+	if payload["stream"] != true {
+		t.Fatalf("expected stream=true, got %#v", payload["stream"])
+	}
+	for _, field := range []string{"id", "chat_id", "parent_id", "assistant_message_id", "session_id", "user_message"} {
+		if _, ok := payload[field]; ok {
+			t.Fatalf("unexpected Open WebUI persistence field %q in direct streaming request", field)
+		}
+	}
+	if strings.Join(responses, "") != "STREAM_OK." {
+		t.Fatalf("unexpected streamed responses: %#v", responses)
 	}
 }
 

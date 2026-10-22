@@ -224,34 +224,13 @@ func (cfg config) transcribe(ctx context.Context, audio []byte) (string, error) 
 
 func (cfg config) chat(ctx context.Context, transcript, sessionID string, started time.Time) func(func(string, error) bool) {
 	return func(yield func(string, error) bool) {
-		turnID := fmt.Sprintf("voice-%d", time.Now().UnixNano())
-		userMessageID := turnID + "-user"
-		assistantMessageID := turnID + "-assistant"
 		messages := cfg.Conversations.messages(sessionID, transcript)
 		slog.Info("voice conversation", "session_id", sessionID, "history_messages", len(messages)-2)
-		chatCreateStarted := time.Now()
-		chatID, err := cfg.createVoiceChat(ctx, messages, userMessageID, assistantMessageID)
-		if err != nil {
-			yield("", err)
-			return
-		}
-		slog.Info("voice provider timing", "provider", "llm", "phase", "chat_create", "duration", time.Since(chatCreateStarted))
 		payload := map[string]any{
-			"model":                cfg.OpenWebUIModel,
-			"stream":               true,
-			"messages":             messages,
-			"id":                   assistantMessageID,
-			"chat_id":              chatID,
-			"parent_id":            userMessageID,
-			"assistant_message_id": assistantMessageID,
-			"session_id":           turnID,
-			"user_message": map[string]any{
-				"id":        userMessageID,
-				"role":      "user",
-				"content":   transcript,
-				"timestamp": time.Now().Unix(),
-			},
-			"params": map[string]string{"tool_approval_mode": "full"},
+			"model":    cfg.OpenWebUIModel,
+			"stream":   true,
+			"messages": messages,
+			"params":   map[string]string{"tool_approval_mode": "full"},
 		}
 		if len(cfg.OpenWebUIToolIDs) > 0 {
 			payload["tool_ids"] = cfg.OpenWebUIToolIDs
@@ -299,15 +278,7 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 				yield(text, nil)
 				return
 			}
-			text, err = cfg.chatMessage(ctx, chatID, assistantMessageID)
-			if err != nil {
-				slog.Warn("Open WebUI completion unavailable", "error", err)
-				yield("I couldn't complete that request. Please try again.", nil)
-				return
-			}
-			if text != "" {
-				yield(text, nil)
-			}
+			yield("I couldn't complete that request. Please try again.", nil)
 			return
 		}
 		buffer := ""
@@ -363,24 +334,11 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 			return
 		}
 		if final := strings.TrimSpace(buffer); final != "" {
-			if !strings.HasSuffix(final, ".") && !strings.HasSuffix(final, "!") && !strings.HasSuffix(final, "?") {
-				if recovered := cfg.recoverIncompleteFinal(ctx, chatID, assistantMessageID, delivered, final); recovered != "" {
-					final = recovered
-				}
-			}
 			sentText = true
 			yield(final, nil)
 		}
 		if !sentText {
-			text, err := cfg.chatMessage(ctx, chatID, assistantMessageID)
-			if err != nil {
-				slog.Warn("Open WebUI completion unavailable", "error", err)
-				yield("I couldn't complete that request. Please try again.", nil)
-				return
-			}
-			if text != "" {
-				yield(text, nil)
-			}
+			yield("I couldn't complete that request. Please try again.", nil)
 		}
 	}
 }
@@ -739,7 +697,7 @@ func speechText(text string) string {
 
 var (
 	leadingTurnOver = regexp.MustCompile(`(?i)^\s*turn over\b`)
-	lightingTarget = regexp.MustCompile(`(?i)\b(?:light|lights|lamp|lamps)\b`)
+	lightingTarget  = regexp.MustCompile(`(?i)\b(?:light|lights|lamp|lamps)\b`)
 )
 
 func normalizeTranscript(transcript string) string {
