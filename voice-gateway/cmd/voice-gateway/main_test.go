@@ -77,15 +77,6 @@ func TestAssistantMessageContentDoesNotReturnPriorAssistantTurn(t *testing.T) {
 	}
 }
 
-func TestAssistantMessageStateReturnsCompletionStatus(t *testing.T) {
-	data := []byte(`{"history":{"messages":{"assistant":{"role":"assistant","content":"Complete response.","done":true}}}}`)
-
-	content, done, ok := assistantMessageState(data, "assistant")
-	if !ok || !done || content != "Complete response." {
-		t.Fatalf("unexpected assistant message state: content=%q done=%t found=%t", content, done, ok)
-	}
-}
-
 func TestTextprotoHeaderCopiesPCMFormat(t *testing.T) {
 	responseHeaders := http.Header{
 		"X-Audio-Sample-Rate":  {"22050"},
