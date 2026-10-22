@@ -94,6 +94,15 @@ func TestTextprotoHeaderCopiesPCMFormat(t *testing.T) {
 	}
 }
 
+func TestNormalizeTranscriptCorrectsTurnOverCommand(t *testing.T) {
+	if transcript := normalizeTranscript(" Turn over the bedroom wardrobe light. "); transcript != "turn off the bedroom wardrobe light." {
+		t.Fatalf("unexpected normalized transcript: %q", transcript)
+	}
+	if transcript := normalizeTranscript("Turn over the page."); transcript != "Turn over the page." {
+		t.Fatalf("unexpected unchanged transcript: %q", transcript)
+	}
+}
+
 func TestCopyAndFlushStreamsAllAudio(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	var destination bytes.Buffer

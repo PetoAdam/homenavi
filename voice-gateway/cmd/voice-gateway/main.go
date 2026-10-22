@@ -99,6 +99,7 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		serverError(writer, "speech transcription failed", err)
 		return
 	}
+	transcript = normalizeTranscript(transcript)
 	slog.Info("voice provider timing", "provider", "stt", "duration", time.Since(sttStarted), "audio_bytes", len(audio), "transcript_chars", len(transcript))
 	if transcript == "" {
 		http.Error(writer, "speech was not recognized", http.StatusUnprocessableEntity)
@@ -734,6 +735,19 @@ func speechText(text string) string {
 	text = markdownPrefix.ReplaceAllString(text, "")
 	text = strings.NewReplacer("**", "", "__", "", "`", "", "#", "", "\n", " ").Replace(text)
 	return strings.Join(strings.Fields(text), " ")
+}
+
+var (
+	leadingTurnOver = regexp.MustCompile(`(?i)^\s*turn over\b`)
+	lightingTarget = regexp.MustCompile(`(?i)\b(?:light|lights|lamp|lamps)\b`)
+)
+
+func normalizeTranscript(transcript string) string {
+	transcript = strings.TrimSpace(transcript)
+	if leadingTurnOver.MatchString(transcript) && lightingTarget.MatchString(transcript) {
+		return leadingTurnOver.ReplaceAllString(transcript, "turn off")
+	}
+	return transcript
 }
 
 var (
