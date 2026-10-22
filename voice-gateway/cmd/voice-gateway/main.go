@@ -290,10 +290,14 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 				yield("", err)
 				return
 			}
-			text, err := completionText(data)
+			text, err := cfg.chatMessageComplete(ctx, chatID, assistantMessageID)
 			if err != nil {
-				yield("", err)
-				return
+				slog.Warn("Open WebUI completion unavailable", "error", err)
+				text, err = completionText(data)
+				if err != nil {
+					yield("", err)
+					return
+				}
 			}
 			if text != "" {
 				yield(text, nil)
@@ -518,6 +522,34 @@ func (cfg config) chatMessage(ctx context.Context, chatID, messageID string) (st
 	return "", lastErr
 }
 
+func (cfg config) chatMessageComplete(ctx context.Context, chatID, messageID string) (string, error) {
+	var lastText string
+	var lastErr error
+	for attempt := 0; attempt < 60; attempt++ {
+		text, done, err := cfg.chatMessageStateOnce(ctx, chatID, messageID)
+		if err == nil && text != "" {
+			lastText = text
+			if done {
+				return text, nil
+			}
+		} else if err != nil {
+			lastErr = err
+		}
+		if attempt == 59 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if lastText != "" {
+		return lastText, nil
+	}
+	return "", lastErr
+}
+
 func (cfg config) recoverIncompleteFinal(ctx context.Context, chatID, messageID, delivered, final string) string {
 	for attempt := 0; attempt < 5; attempt++ {
 		text, err := cfg.chatMessageOnce(ctx, chatID, messageID)
@@ -539,35 +571,45 @@ func (cfg config) recoverIncompleteFinal(ctx context.Context, chatID, messageID,
 }
 
 func (cfg config) chatMessageOnce(ctx context.Context, chatID, messageID string) (string, error) {
+	content, _, err := cfg.chatMessageStateOnce(ctx, chatID, messageID)
+	return content, err
+}
+
+func (cfg config) chatMessageStateOnce(ctx context.Context, chatID, messageID string) (string, bool, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.openWebUIBaseURL()+"/api/v1/chats/"+chatID, nil)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	cfg.authorize(request)
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Open WebUI chat lookup returned %s", response.Status)
+		return "", false, fmt.Errorf("Open WebUI chat lookup returned %s", response.Status)
 	}
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	if content, ok := assistantMessageContent(data, messageID); ok {
-		return content, nil
+	if content, done, ok := assistantMessageState(data, messageID); ok {
+		return content, done, nil
 	}
-	return "", fmt.Errorf("Open WebUI chat %s has no assistant message %s", chatID, messageID)
+	return "", false, fmt.Errorf("Open WebUI chat %s has no assistant message %s", chatID, messageID)
 }
 
 func assistantMessageContent(data []byte, messageID string) (string, bool) {
+	content, _, ok := assistantMessageState(data, messageID)
+	return content, ok
+}
+
+func assistantMessageState(data []byte, messageID string) (string, bool, bool) {
 	var envelope struct {
 		Chat json.RawMessage `json:"chat"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return "", false
+		return "", false, false
 	}
 	for _, candidate := range []json.RawMessage{data, envelope.Chat} {
 		if len(candidate) == 0 {
@@ -578,6 +620,7 @@ func assistantMessageContent(data []byte, messageID string) (string, bool) {
 				Messages map[string]struct {
 					Role    string `json:"role"`
 					Content string `json:"content"`
+					Done    bool   `json:"done"`
 				} `json:"messages"`
 			} `json:"history"`
 		}
@@ -587,12 +630,12 @@ func assistantMessageContent(data []byte, messageID string) (string, bool) {
 		if message, ok := chat.History.Messages[messageID]; ok {
 			if message.Role == "assistant" {
 				if content := strings.TrimSpace(message.Content); content != "" {
-					return content, true
+					return content, message.Done, true
 				}
 			}
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 func (cfg config) openWebUIBaseURL() string {
