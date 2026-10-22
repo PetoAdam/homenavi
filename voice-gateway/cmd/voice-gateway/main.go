@@ -284,6 +284,7 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 		buffer := ""
 		delivered := ""
 		sentText := false
+		toolCallRequested := false
 		firstTextDelta := true
 		firstSSEFrame := true
 		scanner := bufio.NewScanner(response.Body)
@@ -302,6 +303,9 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 				firstSSEFrame = false
 			}
 			delta, eventType, ok := streamDelta([]byte(data))
+			if strings.HasPrefix(eventType, "response.function_call") {
+				toolCallRequested = true
+			}
 			if !ok {
 				continue
 			}
@@ -338,9 +342,67 @@ func (cfg config) chat(ctx context.Context, transcript, sessionID string, starte
 			yield(final, nil)
 		}
 		if !sentText {
+			if toolCallRequested {
+				text, err := cfg.completeManagedToolTurn(ctx, messages)
+				if err == nil && text != "" {
+					yield(text, nil)
+					return
+				}
+				slog.Warn("Open WebUI managed tool completion unavailable", "error", err)
+			}
 			yield("I couldn't complete that request. Please try again.", nil)
 		}
 	}
+}
+
+func (cfg config) completeManagedToolTurn(ctx context.Context, messages []map[string]string) (string, error) {
+	turnID := fmt.Sprintf("voice-tool-%d", time.Now().UnixNano())
+	userMessageID := turnID + "-user"
+	assistantMessageID := turnID + "-assistant"
+	chatID, err := cfg.createVoiceChat(ctx, messages, userMessageID, assistantMessageID)
+	if err != nil {
+		return "", err
+	}
+	payload := map[string]any{
+		"model":                cfg.OpenWebUIModel,
+		"stream":               true,
+		"messages":             messages,
+		"id":                   assistantMessageID,
+		"chat_id":              chatID,
+		"parent_id":            userMessageID,
+		"assistant_message_id": assistantMessageID,
+		"session_id":           turnID,
+		"user_message": map[string]any{
+			"id":        userMessageID,
+			"role":      "user",
+			"content":   messages[len(messages)-1]["content"],
+			"timestamp": time.Now().Unix(),
+		},
+		"params": map[string]string{"tool_approval_mode": "full"},
+	}
+	if len(cfg.OpenWebUIToolIDs) > 0 {
+		payload["tool_ids"] = cfg.OpenWebUIToolIDs
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.OpenWebUIURL, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	cfg.authorize(request)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Open WebUI managed tool request returned %s", response.Status)
+	}
+	return cfg.chatMessage(ctx, chatID, assistantMessageID)
 }
 
 func (store *conversationStore) messages(sessionID, transcript string) []map[string]string {
@@ -536,6 +598,7 @@ func assistantMessageContent(data []byte, messageID string) (string, bool) {
 				Messages map[string]struct {
 					Role    string `json:"role"`
 					Content string `json:"content"`
+					Done    bool   `json:"done"`
 				} `json:"messages"`
 			} `json:"history"`
 		}
@@ -543,7 +606,7 @@ func assistantMessageContent(data []byte, messageID string) (string, bool) {
 			continue
 		}
 		if message, ok := chat.History.Messages[messageID]; ok {
-			if message.Role == "assistant" {
+			if message.Role == "assistant" && message.Done {
 				if content := strings.TrimSpace(message.Content); content != "" {
 					return content, true
 				}

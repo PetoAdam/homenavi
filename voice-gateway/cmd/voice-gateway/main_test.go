@@ -68,7 +68,7 @@ func TestVoiceChatHistoryDoesNotRequireSystemMessage(t *testing.T) {
 }
 
 func TestAssistantMessageContentDoesNotReturnPriorAssistantTurn(t *testing.T) {
-	data := []byte(`{"history":{"messages":{"prior-assistant":{"role":"assistant","content":"Previous response."},"current-assistant":{"role":"assistant","content":""}}}}`)
+	data := []byte(`{"history":{"messages":{"prior-assistant":{"role":"assistant","content":"Previous response.","done":true},"current-assistant":{"role":"assistant","content":"","done":false}}}}`)
 
 	if content, ok := assistantMessageContent(data, "current-assistant"); ok || content != "" {
 		t.Fatalf("expected empty current response, got %q", content)
@@ -116,6 +116,60 @@ func TestChatUsesDirectStreamingRequest(t *testing.T) {
 	}
 	if strings.Join(responses, "") != "STREAM_OK." {
 		t.Fatalf("unexpected streamed responses: %#v", responses)
+	}
+}
+
+func TestChatCompletesManagedToolTurnAfterFunctionOnlyStream(t *testing.T) {
+	chatRequests := 0
+	assistantMessageID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/chat/completions":
+			chatRequests++
+			if chatRequests == 1 {
+				writer.Header().Set("Content-Type", "text/event-stream")
+				_, _ = writer.Write([]byte("data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{}\"}\n\n"))
+				return
+			}
+			var payload map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode managed tool request: %v", err)
+			}
+			assistantMessageID, _ = payload["assistant_message_id"].(string)
+			if assistantMessageID == "" {
+				t.Fatal("managed tool request has no assistant message ID")
+			}
+			_, _ = writer.Write([]byte(`{"status":true,"task_ids":["task"]}`))
+		case "/api/v1/chats/new":
+			_, _ = writer.Write([]byte(`{"id":"chat-id"}`))
+		case "/api/v1/chats/chat-id":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"history": map[string]any{"messages": map[string]any{assistantMessageID: map[string]any{"role": "assistant", "content": "The lights are off.", "done": true}}}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	cfg := config{
+		OpenWebUIURL:     server.URL + "/api/chat/completions",
+		OpenWebUIModel:   "orion",
+		OpenWebUIToolIDs: []string{"server:mcp:homenavi-mcp"},
+		Conversations:    &conversationStore{ttl: time.Minute, entries: map[string]conversation{}},
+	}
+	var responses []string
+	cfg.chat(context.Background(), "Are the lights on?", "session", time.Now())(func(text string, err error) bool {
+		if err != nil {
+			t.Fatalf("chat returned an error: %v", err)
+		}
+		responses = append(responses, text)
+		return true
+	})
+
+	if chatRequests != 2 {
+		t.Fatalf("expected direct and managed chat requests, got %d", chatRequests)
+	}
+	if strings.Join(responses, "") != "The lights are off." {
+		t.Fatalf("unexpected tool completion response: %#v", responses)
 	}
 }
 
@@ -192,7 +246,7 @@ func TestRecoverIncompleteFinalWaitsForPersistedCompletion(t *testing.T) {
 		if requests == 2 {
 			content = "Could you check the weather for Budapest tomorrow?"
 		}
-		_, _ = writer.Write([]byte(`{"history":{"messages":{"assistant":{"role":"assistant","content":"` + content + `"}}}}`))
+		_, _ = writer.Write([]byte(`{"history":{"messages":{"assistant":{"role":"assistant","content":"` + content + `","done":true}}}}`))
 	}))
 	defer server.Close()
 
