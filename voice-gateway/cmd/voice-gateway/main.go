@@ -646,6 +646,9 @@ func streamDelta(data []byte) (string, string, bool) {
 	if err := json.Unmarshal(data, &event); err != nil {
 		return "", "", false
 	}
+	if strings.HasPrefix(event.Type, "response.") && event.Type != "response.output_text.delta" {
+		return "", event.Type, false
+	}
 	if len(event.Choices) > 0 && event.Choices[0].Delta.Content != "" {
 		return event.Choices[0].Delta.Content, event.Type, true
 	}

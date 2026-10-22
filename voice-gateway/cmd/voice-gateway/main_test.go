@@ -215,12 +215,13 @@ func TestStreamDeltaSupportsOpenAIAndOpenWebUIEnvelopes(t *testing.T) {
 	}{
 		{name: "OpenAI", data: `{"choices":[{"delta":{"content":"Hello"}}]}`, want: "Hello"},
 		{name: "Responses API", data: `{"type":"response.output_text.delta","delta":"Hello"}`, want: "Hello"},
+		{name: "Responses reasoning", data: `{"type":"response.reasoning.delta","delta":"Thinking"}`, want: ""},
 		{name: "Open WebUI data", data: `{"type":"chat:completion","data":{"content":"Hello"}}`, want: "Hello"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			delta, _, ok := streamDelta([]byte(test.data))
-			if !ok || delta != test.want {
+			if (test.want != "" && !ok) || delta != test.want {
 				t.Fatalf("streamDelta(%s) = %q, %t", test.data, delta, ok)
 			}
 		})
