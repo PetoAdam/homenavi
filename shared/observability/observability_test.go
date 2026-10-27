@@ -1,13 +1,23 @@
 package observability
 
 import (
+	"bufio"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"go.opentelemetry.io/otel/sdk/trace"
 )
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, nil
+}
 
 func TestWrapHandlerSetsTraceID(t *testing.T) {
 	tp := trace.NewTracerProvider()
@@ -43,6 +53,24 @@ func TestWrapHandlerSetsTraceIDBeforeBodyWrite(t *testing.T) {
 
 	if rr.Header().Get("Trace-ID") == "" {
 		t.Fatal("expected Trace-ID header to be set before body write")
+	}
+}
+
+func TestWrapHandlerPreservesHijacker(t *testing.T) {
+	tp := trace.NewTracerProvider()
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	h := WrapHandler(tp.Tracer("test"), "test-service", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := w.(http.Hijacker); !ok {
+			t.Fatal("expected wrapped response writer to implement http.Hijacker")
+		}
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	}))
+
+	rr := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/ws", nil))
+	if rr.Code != http.StatusSwitchingProtocols {
+		t.Fatalf("expected status %d, got %d", http.StatusSwitchingProtocols, rr.Code)
 	}
 }
 

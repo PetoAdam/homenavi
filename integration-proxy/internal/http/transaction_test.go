@@ -129,3 +129,71 @@ func TestInstallReloadFailureRollsBackConfig(t *testing.T) {
 		t.Fatalf("expected rollback to empty config, got %d entries", len(after.Integrations))
 	}
 }
+
+func TestHelmInstallationLifecycleSupportsReinstall(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "helm")
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "installed.yaml")
+	if err := config.Save(cfgPath, config.Config{}); err != nil {
+		t.Fatalf("seed empty config: %v", err)
+	}
+
+	helmLog := filepath.Join(tmpDir, "helm.log")
+	helmBin := filepath.Join(tmpDir, "helm")
+	if err := os.WriteFile(helmBin, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HELM_LOG\"\n"), 0o755); err != nil {
+		t.Fatalf("write fake helm: %v", err)
+	}
+	t.Setenv("INTEGRATIONS_HELM_BIN", helmBin)
+	t.Setenv("HELM_LOG", helmLog)
+
+	marketplace := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/integrations/test" {
+			t.Fatalf("unexpected marketplace request path %q", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"id":"test","version":"1.0.0","deployment_artifacts":{"helm":{"chart_ref":"oci://registry.example/test","version":"1.0.0"}}}`)
+	}))
+	defer marketplace.Close()
+	t.Setenv("INTEGRATIONS_MARKETPLACE_API_BASE", marketplace.URL)
+
+	s := New(log.New(io.Discard, "", 0), nil, nil, "", cfgPath)
+	post := func(path, body string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rw := httptest.NewRecorder()
+		s.Routes().ServeHTTP(rw, req)
+		if rw.Code != http.StatusOK {
+			t.Fatalf("%s returned status %d: %s", path, rw.Code, rw.Body.String())
+		}
+	}
+
+	post("/integrations/install", `{"id":"test"}`)
+	post("/integrations/uninstall", `{"id":"test"}`)
+	post("/integrations/install", `{"id":"test"}`)
+
+	stored, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load final config: %v", err)
+	}
+	if len(stored.Integrations) != 1 || stored.Integrations[0].ID != "test" {
+		t.Fatalf("expected reinstalled integration, got %#v", stored.Integrations)
+	}
+
+	commands, err := os.ReadFile(helmLog)
+	if err != nil {
+		t.Fatalf("read helm log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(commands)), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected install, uninstall, reinstall commands, got %q", lines)
+	}
+	if !strings.HasPrefix(lines[0], "upgrade --install homenavi-int-test oci://registry.example/test") {
+		t.Fatalf("unexpected first helm command %q", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "uninstall homenavi-int-test") {
+		t.Fatalf("unexpected uninstall helm command %q", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "upgrade --install homenavi-int-test oci://registry.example/test") {
+		t.Fatalf("unexpected reinstall helm command %q", lines[2])
+	}
+}

@@ -1,0 +1,28 @@
+name: Integration Lifecycle Regression
+
+on:
+  pull_request:
+    paths:
+      - integration-proxy/**
+      - .github/workflows/integration_lifecycle.yaml
+  push:
+    branches:
+      - main
+    paths:
+      - integration-proxy/**
+      - .github/workflows/integration_lifecycle.yaml
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: integration-proxy/go.mod
+          cache-dependency-path: integration-proxy/go.sum
+      - name: Verify install, uninstall, and reinstall lifecycle
+        working-directory: integration-proxy
+        run: go test ./internal/http -run '^TestHelmInstallationLifecycleSupportsReinstall$' -count=1
