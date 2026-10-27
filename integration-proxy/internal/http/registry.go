@@ -37,6 +37,10 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reg := Registry{GeneratedAt: time.Now().UTC(), Integrations: make([]RegistryIntegration, 0)}
+	updateStates := make(map[string]integrationUpdateStatus)
+	for _, state := range s.copyUpdateStates() {
+		updateStates[state.ID] = state
+	}
 	for _, id := range ids {
 		s.mu.RLock()
 		m, ok := s.manifests[id]
@@ -47,9 +51,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 				s.logger.Printf("manifest unavailable id=%s err=%s", id, errMsg)
 			}
 			entry := cfgByID[id]
-			s.mu.RLock()
-			updateState := s.updates[id]
-			s.mu.RUnlock()
+			updateState := updateStates[id]
 			reg.Integrations = append(reg.Integrations, RegistryIntegration{
 				ID:               id,
 				DisplayName:      id,
@@ -105,9 +107,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 				regInt.InstalledVersion = strings.TrimSpace(entry.Version)
 			}
 		}
-		s.mu.RLock()
-		updateState, hasUpdateState := s.updates[id]
-		s.mu.RUnlock()
+		updateState, hasUpdateState := updateStates[id]
 		if hasUpdateState {
 			if updateState.InstalledVersion != "" {
 				regInt.InstalledVersion = updateState.InstalledVersion

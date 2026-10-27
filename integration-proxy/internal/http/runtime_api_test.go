@@ -126,3 +126,28 @@ func TestUpdatesResponseIncludesManagementMode(t *testing.T) {
 		t.Fatalf("expected management_mode gitops, got %v", got)
 	}
 }
+
+func TestRegistryIncludesUpdateAvailability(t *testing.T) {
+	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
+	s.proxies["emodul"] = nil
+	s.setUpdateState("emodul", func(state *integrationUpdateStatus) {
+		state.InstalledVersion = "v0.2.2"
+		state.LatestVersion = "v0.2.4"
+		state.UpdateAvailable = true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/integrations/registry.json", nil)
+	rw := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rw.Code)
+	}
+	var payload Registry
+	if err := json.NewDecoder(rw.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode registry response: %v", err)
+	}
+	if len(payload.Integrations) != 1 || !payload.Integrations[0].UpdateAvailable {
+		t.Fatalf("expected an integration with an available update, got %#v", payload.Integrations)
+	}
+}
