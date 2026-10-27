@@ -80,6 +80,7 @@ export function integrationsAdminOperationsReducer(state, action) {
           stage: 'queued',
           progress: action.progress ?? 5,
           message: action.message || 'Queued',
+          queuedAt: action.queuedAt,
         }
       );
     case 'queue-restart-all': {

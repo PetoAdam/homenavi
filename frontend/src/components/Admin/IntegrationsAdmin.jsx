@@ -526,6 +526,7 @@ export default function IntegrationsAdmin() {
     installing,
     updating,
     restarting,
+    operationStatus: installStatus,
     getStatus: getIntegrationInstallStatus,
     onStatus: (id, status) => {
       dispatchOperations({ type: 'set-install-status', id, status });
@@ -619,8 +620,9 @@ export default function IntegrationsAdmin() {
     dispatchOperations({
       type: 'queue-update',
       id,
-      progress: installStatus[id]?.progress ?? 5,
-      message: installStatus[id]?.message || 'Queued',
+      progress: 5,
+      message: 'Queued',
+      queuedAt: Date.now(),
     });
     try {
       await updateMutation.mutateAsync({ id });

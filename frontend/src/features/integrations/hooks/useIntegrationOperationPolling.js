@@ -15,10 +15,17 @@ export function collectActiveOperationIds({ installing = {}, updating = {}, rest
   return Array.from(ids);
 }
 
+export function isCurrentOperationStatus(status, queuedAt) {
+  if (!queuedAt || !status?.updated_at) return true;
+  const updatedAt = Date.parse(status.updated_at);
+  return !Number.isFinite(updatedAt) || updatedAt >= queuedAt;
+}
+
 export function useIntegrationOperationPolling({
   installing,
   updating,
   restarting,
+  operationStatus,
   pollIntervalMs = 1500,
   getStatus = getIntegrationInstallStatus,
   onStatus,
@@ -42,6 +49,12 @@ export function useIntegrationOperationPolling({
         if (!res?.success || cancelled) return;
 
         const status = res.data;
+        if (
+          isTerminalOperationStatus(status)
+          && !isCurrentOperationStatus(status, operationStatus?.[id]?.queuedAt)
+        ) {
+          return;
+        }
         if (typeof onStatus === 'function') {
           onStatus(id, status);
         }
@@ -74,6 +87,7 @@ export function useIntegrationOperationPolling({
     onRestartTerminal,
     onStatus,
     onUpdateTerminal,
+    operationStatus,
     installing,
     isTerminalOperationStatus,
     pollIntervalMs,
