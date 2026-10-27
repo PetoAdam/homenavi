@@ -79,6 +79,19 @@ func TestHelmSpecForUsesMarketplaceArtifactForInstalledIntegrationUpdate(t *test
 	}
 }
 
+func TestEffectiveInstalledVersionUsesHelmChartWhenStoredVersionDrifts(t *testing.T) {
+	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
+	entry := config.IntegrationConfig{
+		ID:               "example",
+		Version:          "v1.2.4",
+		HelmChartVersion: "1.2.3",
+	}
+
+	if got := s.effectiveInstalledVersion("example", entry); got != "1.2.3" {
+		t.Fatalf("expected Helm chart version %q, got %q", "1.2.3", got)
+	}
+}
+
 func TestHelmSpecForUsesGeneratedArtifactFallback(t *testing.T) {
 	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
 	ic := config.IntegrationConfig{ID: "example"}

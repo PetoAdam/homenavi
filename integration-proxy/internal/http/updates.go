@@ -321,8 +321,13 @@ func isVersionNewer(installedVersion, latestVersion string) bool {
 	return semver.Compare(latest, installed) > 0
 }
 
-func (s *Server) effectiveInstalledVersion(id string, cfgVersion string) string {
-	ver := strings.TrimSpace(cfgVersion)
+func (s *Server) effectiveInstalledVersion(id string, entry config.IntegrationConfig) string {
+	configuredVersion := strings.TrimSpace(entry.Version)
+	chartVersion := strings.TrimSpace(entry.HelmChartVersion)
+	if chartVersion != "" && normalizeSemver(chartVersion) != normalizeSemver(configuredVersion) {
+		return chartVersion
+	}
+	ver := configuredVersion
 	if ver != "" {
 		return ver
 	}
@@ -391,7 +396,7 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 		return err
 	}
 	entry := cfg.Integrations[index]
-	installedVersion := s.effectiveInstalledVersion(id, entry.Version)
+	installedVersion := s.effectiveInstalledVersion(id, entry)
 	latestVersion := strings.TrimSpace(target.Version)
 	s.logger.Printf("integration update id=%s installed=%q latest=%q", id, installedVersion, latestVersion)
 	if !isVersionNewer(installedVersion, latestVersion) {
@@ -454,7 +459,7 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 		return err
 	}
 	s.refreshManifestFromUpstream(ctx, id)
-	updatedVersion := s.effectiveInstalledVersion(id, latestVersion)
+	updatedVersion := s.effectiveInstalledVersion(id, cfg.Integrations[index])
 	op.done("Updated")
 	s.setUpdateState(id, func(state *integrationUpdateStatus) {
 		state.InstalledVersion = updatedVersion
@@ -487,7 +492,7 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 		if id == "" {
 			continue
 		}
-		installed := s.effectiveInstalledVersion(id, ic.Version)
+		installed := s.effectiveInstalledVersion(id, ic)
 		marketItem, fetchErr := s.targetIntegrationForUpdate(ctx, ic)
 		now := time.Now().UTC()
 		if fetchErr != nil {
