@@ -59,6 +59,26 @@ func TestHelmSpecForPrefersNativeHelmArtifact(t *testing.T) {
 	}
 }
 
+func TestHelmSpecForUsesMarketplaceArtifactForInstalledIntegrationUpdate(t *testing.T) {
+	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
+	ic := config.IntegrationConfig{
+		ID:               "example",
+		HelmChartRef:     "oci://example/chart",
+		HelmChartVersion: "1.2.3",
+	}
+	target := &marketplaceIntegration{Version: "1.2.4"}
+	target.DeploymentArtifacts.Helm.ChartRef = "oci://example/chart"
+	target.DeploymentArtifacts.Helm.Version = "1.2.4"
+
+	spec, err := s.helmSpecFor("example", ic, target)
+	if err != nil {
+		t.Fatalf("helmSpecFor returned error: %v", err)
+	}
+	if spec.ChartVersion != "1.2.4" {
+		t.Fatalf("expected marketplace chart version %q, got %q", "1.2.4", spec.ChartVersion)
+	}
+}
+
 func TestHelmSpecForUsesGeneratedArtifactFallback(t *testing.T) {
 	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
 	ic := config.IntegrationConfig{ID: "example"}

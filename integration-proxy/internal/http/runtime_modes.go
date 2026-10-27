@@ -160,10 +160,10 @@ func (s *Server) helmSpecFor(id string, ic config.IntegrationConfig, target *mar
 	chartVersion := strings.TrimSpace(ic.HelmChartVersion)
 	if target != nil {
 		targetChart, targetVersion := target.preferredHelmArtifact()
-		if chartRef == "" {
+		if strings.TrimSpace(targetChart) != "" {
 			chartRef = strings.TrimSpace(targetChart)
 		}
-		if chartVersion == "" {
+		if strings.TrimSpace(targetVersion) != "" {
 			chartVersion = strings.TrimSpace(targetVersion)
 		}
 	}
