@@ -62,7 +62,7 @@ func (s *Server) handleListState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid to", http.StatusBadRequest)
 		return
 	}
-	limit := 1000
+	limit := dbinfra.DefaultStatePointLimit
 	if v := strings.TrimSpace(q.Get("limit")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			limit = n

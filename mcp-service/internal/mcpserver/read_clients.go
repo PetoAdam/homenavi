@@ -179,12 +179,21 @@ func (c *readClients) ListRooms(ctx context.Context, delegatedToken string) (any
 	return c.getAuthorizedAny(ctx, c.gatewayURL, "/api/mcp/ers/rooms", delegatedToken)
 }
 
+const (
+	maxHistoryQueryLimit   = 10000
+	maxHistoryResponseSize = 16 << 20
+)
+
 func (c *readClients) QueryStateHistory(ctx context.Context, input historyInput, delegatedToken string) (any, error) {
 	if strings.TrimSpace(input.DeviceID) == "" {
 		return nil, fmt.Errorf("device_id is required")
 	}
-	if input.Limit < 0 || input.Limit > 100 {
-		return nil, fmt.Errorf("limit must be between 0 and 100")
+	if input.Limit < 0 || input.Limit > maxHistoryQueryLimit {
+		return nil, fmt.Errorf("limit must be between 0 and %d", maxHistoryQueryLimit)
+	}
+	limit := maxHistoryQueryLimit
+	if input.Limit > 0 {
+		limit = input.Limit
 	}
 	query := url.Values{"device_id": {strings.TrimSpace(input.DeviceID)}}
 	if input.From != "" {
@@ -193,15 +202,16 @@ func (c *readClients) QueryStateHistory(ctx context.Context, input historyInput,
 	if input.To != "" {
 		query.Set("to", input.To)
 	}
-	if input.Limit > 0 {
-		query.Set("limit", fmt.Sprint(input.Limit))
-	}
+	query.Set("limit", fmt.Sprint(limit))
 	if input.Order == "asc" || input.Order == "desc" {
 		query.Set("order", input.Order)
 	} else if input.Order != "" {
 		return nil, fmt.Errorf("order must be asc or desc")
 	}
-	return c.getAuthorizedAnyWithQuery(ctx, c.gatewayURL, "/api/mcp/history/state", delegatedToken, query)
+	if cursor := strings.TrimSpace(input.Cursor); cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	return c.getAuthorizedHistoryWithQuery(ctx, c.gatewayURL, "/api/mcp/history/state", delegatedToken, query)
 }
 
 func (c *readClients) getAny(ctx context.Context, baseURL, endpoint string, query url.Values) (any, error) {
@@ -222,6 +232,32 @@ func (c *readClients) getAuthorizedAnyWithQuery(ctx context.Context, baseURL, en
 		return nil, err
 	}
 	return redact(result), nil
+}
+
+func (c *readClients) getAuthorizedHistoryWithQuery(ctx context.Context, baseURL, endpoint, bearer string, query url.Values) (any, error) {
+	requestURL, err := url.Parse(strings.TrimRight(baseURL, "/") + endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("build read request: %w", err)
+	}
+	requestURL.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build read request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+bearer)
+	response, err := c.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("perform read request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("read service returned %d", response.StatusCode)
+	}
+	var result any
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxHistoryResponseSize)).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode read response: %w", err)
+	}
+	return redactHistory(result), nil
 }
 
 func (c *readClients) get(ctx context.Context, baseURL, endpoint string, query url.Values, output any) error {
@@ -331,6 +367,29 @@ func redact(value any) any {
 		result := make([]any, len(typed))
 		for index, item := range typed {
 			result[index] = redact(item)
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+func redactHistory(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			lower := strings.ToLower(key)
+			if strings.Contains(lower, "secret") || strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "authorization") {
+				continue
+			}
+			result[key] = redactHistory(item)
+		}
+		return result
+	case []any:
+		result := make([]any, len(typed))
+		for index, item := range typed {
+			result[index] = redactHistory(item)
 		}
 		return result
 	default:

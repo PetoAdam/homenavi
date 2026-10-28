@@ -5,10 +5,6 @@
   cursor: pointer;
 }
 
-.map-widget:not(.widget-shell--edit-mode):hover {
-  transform: translateY(-1px);
-}
-
 .map-widget__content {
   display: flex;
   flex-direction: column;
@@ -32,10 +28,6 @@
   border-radius: 12px;
   overflow: hidden;
   transition: border-color 0.2s;
-}
-
-.map-widget:not(.widget-shell--edit-mode):hover .map-widget__preview {
-  border-color: var(--color-glass-border-light);
 }
 
 .map-widget__svg {

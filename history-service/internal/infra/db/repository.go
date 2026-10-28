@@ -63,12 +63,17 @@ type Page struct {
 	NextCursor string             `json:"next_cursor,omitempty"`
 }
 
+const (
+	DefaultStatePointLimit = 10000
+	MaxStatePointLimit     = 10000
+)
+
 func (r *Repository) ListStatePoints(ctx context.Context, deviceID string, from, to time.Time, limit int, cursor *Cursor, desc bool) (Page, error) {
 	if limit <= 0 {
-		limit = 1000
+		limit = DefaultStatePointLimit
 	}
-	if limit > 10000 {
-		limit = 10000
+	if limit > MaxStatePointLimit {
+		limit = MaxStatePointLimit
 	}
 	exprs := []clause.Expression{clause.Eq{Column: clause.Column{Name: "device_id"}, Value: deviceID}}
 	if !from.IsZero() {

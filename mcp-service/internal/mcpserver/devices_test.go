@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -113,7 +114,19 @@ func TestReadClientsUseGatewayForHistoryAndGroupCreation(t *testing.T) {
 			if r.Method != http.MethodGet || r.URL.Query().Get("device_id") != "zigbee/1" {
 				t.Fatalf("history request = %s %s", r.Method, r.URL.String())
 			}
-			_, _ = w.Write([]byte(`[{"state":{"on":true}}]`))
+			if r.URL.Query().Get("limit") != "10000" {
+				t.Fatalf("history limit = %q", r.URL.Query().Get("limit"))
+			}
+			if r.URL.Query().Get("cursor") != "cursor-1" {
+				t.Fatalf("history cursor = %q", r.URL.Query().Get("cursor"))
+			}
+			points := make([]map[string]any, 101)
+			for index := range points {
+				points[index] = map[string]any{"state": map[string]any{"on": true}}
+			}
+			if err := json.NewEncoder(w).Encode(map[string]any{"points": points, "next_cursor": "cursor-2"}); err != nil {
+				t.Fatalf("encode history response: %v", err)
+			}
 		case "/api/mcp/ers/group-creates":
 			if r.Method != http.MethodPost || r.Header.Get("Idempotency-Key") != "group-1" {
 				t.Fatalf("group create request = %s idempotency=%q", r.Method, r.Header.Get("Idempotency-Key"))
@@ -126,11 +139,27 @@ func TestReadClientsUseGatewayForHistoryAndGroupCreation(t *testing.T) {
 	defer upstream.Close()
 
 	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
-	if _, err := client.QueryStateHistory(context.Background(), historyInput{DeviceID: "zigbee/1"}, "delegated-token"); err != nil {
+	history, err := client.QueryStateHistory(context.Background(), historyInput{DeviceID: "zigbee/1", Cursor: "cursor-1"}, "delegated-token")
+	if err != nil {
 		t.Fatalf("query history: %v", err)
+	}
+	points := history.(map[string]any)["points"].([]any)
+	if len(points) != 101 {
+		t.Fatalf("expected all history points, got %d", len(points))
 	}
 	if _, err := client.CreateGroup(context.Background(), groupCreateInput{Name: "Kitchen"}, "group-1", "delegated-token"); err != nil {
 		t.Fatalf("create group: %v", err)
+	}
+}
+
+func TestQueryStateHistoryRejectsLimitAboveMaximum(t *testing.T) {
+	client := &readClients{}
+	_, err := client.QueryStateHistory(context.Background(), historyInput{
+		DeviceID: "zigbee/1",
+		Limit:    maxHistoryQueryLimit + 1,
+	}, "delegated-token")
+	if err == nil || !strings.Contains(err.Error(), "10000") {
+		t.Fatalf("expected maximum limit error, got %v", err)
 	}
 }
 

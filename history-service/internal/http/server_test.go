@@ -71,3 +71,31 @@ func TestListStateReturnsPoints(t *testing.T) {
 		t.Fatalf("expected 1 point, got %d", len(resp.Points))
 	}
 }
+
+func TestListStateUsesTenThousandPointDefaultLimit(t *testing.T) {
+	s := newTestServer(t)
+	const pointCount = 1001
+	for index := 0; index < pointCount; index++ {
+		point := &dbinfra.DeviceStatePoint{
+			DeviceID: "zigbee/0x1",
+			TS:       time.Date(2025, 1, 1, 0, 0, index, 0, time.UTC),
+			Payload:  []byte(`{"x":1}`),
+		}
+		if err := s.repo.InsertStatePoint(context.Background(), point); err != nil {
+			t.Fatalf("insert state point %d: %v", index, err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/history/state?device_id=zigbee/0x1", nil)
+	rw := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rw, req)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rw.Code, rw.Body.String())
+	}
+	var resp listStateResponse
+	if err := json.Unmarshal(rw.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Points) != pointCount {
+		t.Fatalf("expected %d points from the default limit, got %d", pointCount, len(resp.Points))
+	}
+}

@@ -77,8 +77,9 @@ type historyInput struct {
 	DeviceID string `json:"device_id" jsonschema:"the canonical Homenavi device identifier"`
 	From     string `json:"from,omitempty" jsonschema:"an optional RFC3339 start timestamp"`
 	To       string `json:"to,omitempty" jsonschema:"an optional RFC3339 end timestamp"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"maximum state points to return, from 1 to 100"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"maximum state points to return, from 1 to 10000; defaults to 10000"`
 	Order    string `json:"order,omitempty" jsonschema:"asc or desc"`
+	Cursor   string `json:"cursor,omitempty" jsonschema:"optional next_cursor from a previous response; use it to retrieve the next page when next_cursor is present"`
 }
 
 type workflowInput struct {
@@ -500,7 +501,7 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 		})
 	}
 	if principal.hasScope("home.history.read") && s.toolEnabled("query_state_history") {
-		mcp.AddTool(mcpServer, &mcp.Tool{Name: "query_state_history", Description: "Query a bounded history of device state observations."}, func(ctx context.Context, _ *mcp.CallToolRequest, input historyInput) (*mcp.CallToolResult, dataOutput, error) {
+		mcp.AddTool(mcpServer, &mcp.Tool{Name: "query_state_history", Description: "Query up to 10000 device state observations. Use from and to for a specific time range, and continue with next_cursor when the response is paginated."}, func(ctx context.Context, _ *mcp.CallToolRequest, input historyInput) (*mcp.CallToolResult, dataOutput, error) {
 			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.history.read")
 			if err != nil {
 				return nil, dataOutput{}, err
