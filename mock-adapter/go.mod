@@ -6,7 +6,6 @@ toolchain go1.26.1
 
 require (
 	github.com/PetoAdam/homenavi/shared v0.0.0
-	github.com/eclipse/paho.mqtt.golang v1.5.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )
@@ -15,7 +14,8 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/go-chi/chi/v5 v5.1.0 // indirect
+	github.com/eclipse/paho.golang v0.23.0 // indirect
+	github.com/go-chi/chi/v5 v5.2.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -35,7 +35,6 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect

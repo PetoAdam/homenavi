@@ -5,10 +5,10 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
-	github.com/eclipse/paho.mqtt.golang v1.5.0
-	github.com/go-chi/chi/v5 v5.1.0
+	github.com/eclipse/paho.golang v0.23.0
+	github.com/go-chi/chi/v5 v5.2.3
 	github.com/prometheus/client_golang v1.22.0
-	github.com/redis/go-redis/v9 v9.11.0
+	github.com/redis/go-redis/v9 v9.17.2
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.59.0
@@ -36,7 +36,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect

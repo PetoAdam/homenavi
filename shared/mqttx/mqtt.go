@@ -22,13 +22,15 @@ type Handler func(Message)
 type BrokerKind string
 
 const (
-	BrokerKindEMQX    BrokerKind = "emqx"
-	BrokerKindGeneric BrokerKind = "generic"
+	BrokerKindEMQX      BrokerKind = "emqx"
+	BrokerKindMosquitto BrokerKind = "mosquitto"
+	BrokerKindVerneMQ   BrokerKind = "vernemq"
+	BrokerKindGeneric   BrokerKind = "generic"
 )
 
 func (k BrokerKind) IsValid() bool {
 	switch normalizeBrokerKind(k) {
-	case BrokerKindEMQX, BrokerKindGeneric:
+	case BrokerKindEMQX, BrokerKindMosquitto, BrokerKindVerneMQ, BrokerKindGeneric:
 		return true
 	default:
 		return false
@@ -68,6 +70,19 @@ func (emqxTopicStrategy) ResolveSubscribeTopic(opts SubscriptionOptions) (string
 }
 
 func (emqxTopicStrategy) Capabilities() Capabilities {
+	return Capabilities{SharedSubscriptions: true}
+}
+
+type sharedSubscriptionTopicStrategy struct{}
+
+func (sharedSubscriptionTopicStrategy) ResolveSubscribeTopic(opts SubscriptionOptions) (string, error) {
+	if opts.Mode == SubscriptionModeShared {
+		return SharedTopic(opts.Group, opts.Topic), nil
+	}
+	return opts.Topic, nil
+}
+
+func (sharedSubscriptionTopicStrategy) Capabilities() Capabilities {
 	return Capabilities{SharedSubscriptions: true}
 }
 
@@ -175,8 +190,14 @@ func normalizeBrokerURL(raw string) (string, error) {
 
 func normalizeBrokerKind(kind BrokerKind) BrokerKind {
 	switch strings.ToLower(strings.TrimSpace(string(kind))) {
-	case "", string(BrokerKindEMQX):
+	case "":
+		return BrokerKindMosquitto
+	case string(BrokerKindEMQX):
 		return BrokerKindEMQX
+	case string(BrokerKindMosquitto):
+		return BrokerKindMosquitto
+	case string(BrokerKindVerneMQ):
+		return BrokerKindVerneMQ
 	case string(BrokerKindGeneric):
 		return BrokerKindGeneric
 	default:
@@ -203,6 +224,8 @@ func topicStrategyFor(kind BrokerKind) (TopicStrategy, error) {
 	switch normalizeBrokerKind(kind) {
 	case BrokerKindEMQX:
 		return emqxTopicStrategy{}, nil
+	case BrokerKindMosquitto, BrokerKindVerneMQ:
+		return sharedSubscriptionTopicStrategy{}, nil
 	case BrokerKindGeneric:
 		return genericTopicStrategy{}, nil
 	default:
@@ -244,7 +267,7 @@ func resolveSubscription(kind BrokerKind, opts SubscriptionOptions) (Subscriptio
 func Connect(opts Options) (*Client, error) {
 	brokerURL := strings.TrimSpace(opts.BrokerURL)
 	if brokerURL == "" {
-		brokerURL = "mqtt://emqx:1883"
+		brokerURL = "mqtt://mosquitto:1883"
 	}
 	brokerKind := normalizeBrokerKind(opts.BrokerKind)
 	if !brokerKind.IsValid() {

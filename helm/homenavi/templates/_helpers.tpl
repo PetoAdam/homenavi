@@ -83,7 +83,7 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
 {{- define "homenavi.mqttProvider" -}}
-{{- default "emqx" .Values.dependencies.mqtt.provider -}}
+{{- default "mosquitto" .Values.dependencies.mqtt.provider -}}
 {{- end -}}
 
 {{- define "homenavi.objectStorageProvider" -}}
@@ -186,7 +186,8 @@ http://seaweedfs:8333
 {{- end -}}
 
 {{- define "homenavi.redisProvider" -}}
-{{- default "bundled" .Values.dependencies.redis.provider -}}
+{{- $provider := default "valkey" .Values.dependencies.redis.provider -}}
+{{- if eq $provider "bundled" -}}valkey{{- else -}}{{ $provider }}{{- end -}}
 {{- end -}}
 
 {{- define "homenavi.postgresMode" -}}
@@ -328,7 +329,7 @@ postgres
 {{- end -}}
 
 {{- define "homenavi.redisDependencyHost" -}}
-{{- if and (eq (include "homenavi.redisProvider" .) "bundled") (eq (include "homenavi.redisMode" .) "sentinel") -}}
+{{- if and (eq (include "homenavi.redisProvider" .) "valkey") (eq (include "homenavi.redisMode" .) "sentinel") -}}
 {{ include "homenavi.redisSentinelServiceName" . }}
 {{- else -}}
 redis
@@ -336,7 +337,7 @@ redis
 {{- end -}}
 
 {{- define "homenavi.redisDependencyPort" -}}
-{{- if and (eq (include "homenavi.redisProvider" .) "bundled") (eq (include "homenavi.redisMode" .) "sentinel") -}}
+{{- if and (eq (include "homenavi.redisProvider" .) "valkey") (eq (include "homenavi.redisMode" .) "sentinel") -}}
 {{ include "homenavi.redisSentinelPort" . }}
 {{- else -}}
 {{ include "homenavi.redisStandalonePort" . }}
@@ -355,12 +356,16 @@ redis
 {{- $redisMode := include "homenavi.redisMode" .root -}}
 {{- if eq $name "emqx" -}}
 {{- and $enabled (eq $mqttProvider "emqx") -}}
+{{- else if eq $name "mosquitto" -}}
+{{- and $enabled (eq $mqttProvider "mosquitto") -}}
+{{- else if eq $name "vernemq" -}}
+false
 {{- else if eq $name "seaweedfs" -}}
 {{- and $enabled (eq $storageProvider "seaweedfs") -}}
 {{- else if eq $name "postgres" -}}
 {{- and $enabled (eq $postgresProvider "bundled") (eq $postgresMode "standalone") -}}
 {{- else if eq $name "redis" -}}
-{{- and $enabled (eq $redisProvider "bundled") (eq $redisMode "standalone") -}}
+{{- and $enabled (eq $redisProvider "valkey") (eq $redisMode "standalone") -}}
 {{- else -}}
 {{- $enabled -}}
 {{- end -}}
@@ -371,12 +376,18 @@ redis
 {{- if ne $override "" -}}
 {{- $override -}}
 {{- else -}}
+{{- if eq (include "homenavi.mqttProvider" .) "mosquitto" -}}
+mqtt://mosquitto:1883
+{{- else if eq (include "homenavi.mqttProvider" .) "vernemq" -}}
+mqtt://vernemq:1883
+{{- else -}}
 mqtt://emqx:1883
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "homenavi.mqttBrokerKind" -}}
-{{- default "emqx" .Values.mqtt.brokerKind -}}
+{{- default (include "homenavi.mqttProvider" .) .Values.mqtt.brokerKind -}}
 {{- end -}}
 
 {{- define "homenavi.mqttWebsocketUpstreamURL" -}}
@@ -384,7 +395,13 @@ mqtt://emqx:1883
 {{- if ne $override "" -}}
 {{- $override -}}
 {{- else -}}
+{{- if eq (include "homenavi.mqttProvider" .) "mosquitto" -}}
+ws://mosquitto:9001
+{{- else if eq (include "homenavi.mqttProvider" .) "vernemq" -}}
+ws://vernemq:8080/mqtt
+{{- else -}}
 ws://emqx:8083/mqtt
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
@@ -394,6 +411,10 @@ ws://emqx:8083/mqtt
 {{- $override -}}
 {{- else if eq (include "homenavi.mqttProvider" .) "emqx" -}}
 emqx
+{{- else if eq (include "homenavi.mqttProvider" .) "mosquitto" -}}
+mosquitto
+{{- else if eq (include "homenavi.mqttProvider" .) "vernemq" -}}
+vernemq
 {{- end -}}
 {{- end -}}
 

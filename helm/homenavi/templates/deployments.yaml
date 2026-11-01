@@ -88,7 +88,7 @@ spec:
       {{- $serviceDependencies = append $serviceDependencies (dict "host" $mqttDepHost "port" $mqttDepPort) }}
       {{- end }}
       {{- end }}
-      {{- if and (eq (include "homenavi.redisProvider" $) "bundled") $usesRedis }}
+      {{- if and (eq (include "homenavi.redisProvider" $) "valkey") $usesRedis }}
       {{- $serviceDependencies = append $serviceDependencies (dict "host" (include "homenavi.redisDependencyHost" $) "port" (include "homenavi.redisDependencyPort" $)) }}
       {{- end }}
       {{- if and (eq (len $serviceDependencies) 0) (ne $name "postgres") (hasKey $svcEnv "POSTGRES_HOST") }}

@@ -7,7 +7,7 @@ This repo is easiest to understand as eight planes:
 - **Edge / device plane**: protocol adapters and edge bridges
 - **Integration runtime plane**: integration-proxy + installed integration containers
 - **Marketplace plane**: marketplace API + marketplace web
-- **Messaging plane**: EMQX as shared MQTT event backbone across core and edge
+- **Messaging plane**: Mosquitto as the default MQTT event backbone, with VerneMQ for Helm HA
 - **Object storage plane**: SeaweedFS + profile picture bucket
 - **External / interop plane**: OpenWeather, SMTP, external MQTT ecosystems
 - **Observability plane**: Prometheus + Jaeger
@@ -44,12 +44,12 @@ flowchart LR
     ProfilePic["Profile Picture Service"]
 
     Postgres[("PostgreSQL")]
-    Redis[("Redis")]
+    Redis[("Valkey\n(Redis protocol)")]
   end
 
   %% Messaging backbone plane
   subgraph Messaging["Messaging plane (shared)"]
-    EMQX["EMQX MQTT broker"]
+    MQTT["MQTT broker\n(Mosquitto default)"]
   end
 
   %% Edge and protocol bridge plane
@@ -115,7 +115,7 @@ flowchart LR
   Gateway -->|REST automation routes| Automation
   Gateway -->|REST weather routes| Weather
   Gateway -->|WS echo proxy| Echo
-  Gateway -->|MQTT-over-WS proxy| EMQX
+  Gateway -->|MQTT-over-WS proxy| MQTT
 
   %% Service-to-service HTTP dependencies
   Auth -->|HTTP user profile and admin lookups| User
@@ -133,20 +133,20 @@ flowchart LR
   IntegrationProxy -->|HTTP listing and artifact metadata| MarketplaceAPI
 
   %% MQTT event backbone (HDP and bridge topics)
-  DeviceHub <-->|MQTT HDP state and commands| EMQX
-  ERS <-->|MQTT HDP metadata and event auto-import| EMQX
-  History <-->|MQTT HDP state ingest| EMQX
-  Automation <-->|MQTT trigger subscribe and command publish| EMQX
-  Zigbee <-->|MQTT HDP topics| EMQX
-  Zigbee <-->|MQTT zigbee2mqtt bridge topics| EMQX
-  Mock <-->|MQTT HDP topics| EMQX
-  InstalledIntegrations <-->|MQTT HDP topics for integration device extensions| EMQX
-  ExternalBroker <-->|MQTT bridge| EMQX
+  DeviceHub <-->|MQTT HDP state and commands| MQTT
+  ERS <-->|MQTT HDP metadata and event auto-import| MQTT
+  History <-->|MQTT HDP state ingest| MQTT
+  Automation <-->|MQTT trigger subscribe and command publish| MQTT
+  Zigbee <-->|MQTT HDP topics| MQTT
+  Zigbee <-->|MQTT zigbee2mqtt bridge topics| MQTT
+  Mock <-->|MQTT HDP topics| MQTT
+  InstalledIntegrations <-->|MQTT HDP topics for integration device extensions| MQTT
+  ExternalBroker <-->|MQTT bridge| MQTT
   HomeAssistant <-->|MQTT| ExternalBroker
 
   %% Edge device transport chain
   PhysicalDevices <-->|Zigbee RF| Zigbee2MQTT
-  Zigbee2MQTT <-->|MQTT bridge topics| EMQX
+  Zigbee2MQTT <-->|MQTT bridge topics| MQTT
 
   %% Persistence and caches
   Auth -->|SQL| Postgres
@@ -156,11 +156,11 @@ flowchart LR
   ERS -->|SQL| Postgres
   History -->|SQL| Postgres
   Automation -->|SQL| Postgres
-  Gateway -->|Redis rate limits and sessions| Redis
-  Auth -->|Redis lockouts and one-time codes| Redis
-  Dashboard -->|Redis cache optional| Redis
-  ERS -->|Redis cache optional| Redis
-  Automation -->|Redis cache optional| Redis
+  Gateway -->|Valkey rate limits and sessions| Redis
+  Auth -->|Valkey lockouts and one-time codes| Redis
+  Dashboard -->|Valkey cache optional| Redis
+  ERS -->|Valkey cache optional| Redis
+  Automation -->|Valkey cache optional| Redis
 
   %% Object storage flow
   ProfilePic -->|S3 API| SeaweedFS

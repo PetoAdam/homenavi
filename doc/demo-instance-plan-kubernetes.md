@@ -373,7 +373,7 @@ The website should answer three visitor questions quickly:
 3. How do I try it right now?
 
 Recommended positioning:
-- Open smart-home platform
+- Open source smart-home platform
 - Integration-first architecture
 - Realtime dashboard, automation, and device inventory in one system
 - Self-hostable, but approachable

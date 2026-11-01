@@ -1,0 +1,12 @@
+.env
+keys/
+postgres-data/
+zigbee2mqtt-data/
+node_modules/
+.git/
+.venv/
+frontend/dist/
+frontend/node_modules/
+integrations/secrets/
+integrations/config/installed.yaml
+**/__pycache__/

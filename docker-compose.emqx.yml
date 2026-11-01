@@ -1,0 +1,52 @@
+# Optional EMQX compatibility profile. Use with:
+# docker compose -f docker-compose.yml -f docker-compose.emqx.yml up -d
+# EMQX is restricted to a single node unless its production license has been
+# reviewed for the intended use.
+services:
+  mosquitto:
+    image: emqx/emqx:6.1.1
+    entrypoint: ["/bin/sh", "/opt/emqx/etc/docker-entrypoint.sh"]
+    environment:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: manual
+      EMQX_CLUSTER__STATIC__SEEDS: ""
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USERNAME:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+      EMQX_LISTENERS__WS__DEFAULT__BIND: 0.0.0.0:8083
+    volumes: !reset
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./emqx/bridge.d:/opt/emqx/etc/homenavi-bridge.d:ro
+      - ./emqx/docker-entrypoint.sh:/opt/emqx/etc/docker-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "emqx ping | grep -q '^pong$'"]
+      interval: 5s
+      timeout: 10s
+      retries: 36
+      start_period: 30s
+    ports: !reset
+      - "${MQTT_HOST_PORT}:${MQTT_PORT}"
+      - "${MQTT_WS_HOST_PORT}:8083"
+
+  api-gateway:
+    environment:
+      MQTT_WEBSOCKET_UPSTREAM_URL: ws://mosquitto:8083/mqtt
+
+  device-hub:
+    environment:
+      MQTT_BROKER_KIND: emqx
+
+  entity-registry-service:
+    environment:
+      MQTT_BROKER_KIND: emqx
+
+  history-service:
+    environment:
+      MQTT_BROKER_KIND: emqx
+
+  automation-service:
+    environment:
+      MQTT_BROKER_KIND: emqx
+
+  mock-adapter:
+    environment:
+      MQTT_BROKER_KIND: emqx

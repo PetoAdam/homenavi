@@ -1,4 +1,4 @@
-{{- if and (eq (include "homenavi.redisProvider" .) "bundled") (eq (include "homenavi.redisMode" .) "sentinel") }}
+{{- if and (eq (include "homenavi.redisProvider" .) "valkey") (eq (include "homenavi.redisMode" .) "sentinel") }}
 {{- $redisHeadlessServiceName := include "homenavi.redisHeadlessServiceName" . }}
 {{- $redisStatefulSetName := include "homenavi.redisStatefulSetName" . }}
 {{- $redisSentinelPort := include "homenavi.redisSentinelPort" . }}
@@ -114,8 +114,8 @@ spec:
       {{- end }}
       terminationGracePeriodSeconds: {{ default 30 .Values.redis.sentinel.terminationGracePeriodSeconds }}
       containers:
-        - name: redis
-          image: {{ printf "%s:%s" (default "redis" (index (index .Values.services "redis").image "repository")) (default "7.2-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
+        - name: valkey
+          image: {{ printf "%s:%s" (default "valkey/valkey" (index (index .Values.services "redis").image "repository")) (default "8.0-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
           imagePullPolicy: {{ default .Values.global.imagePullPolicy (index (index .Values.services "redis").image "pullPolicy") }}
           command:
             - /bin/sh
@@ -144,7 +144,7 @@ spec:
                   if [ -z "$host" ] || [ -z "$port" ]; then
                     continue
                   fi
-                  if redis-cli -h "$host" -p "$port" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
+                  if valkey-cli -h "$host" -p "$port" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
                     MASTER_HOST="$(sed -n '1p' /tmp/master.addr | tr -d '\r')"
                     MASTER_PORT="$(sed -n '2p' /tmp/master.addr | tr -d '\r')"
                     if [ -n "$MASTER_HOST" ]; then
@@ -176,7 +176,7 @@ spec:
                   IS_SELF_MASTER="true"
                   ;;
               esac
-              set -- redis-server --appendonly yes --protected-mode no --port 6379 --dir /data --replica-announce-ip "$SELF_HOST" --replica-announce-port 6379
+              set -- valkey-server --appendonly yes --protected-mode no --port 6379 --dir /data --replica-announce-ip "$SELF_HOST" --replica-announce-port 6379
               if [ -n "${REDIS_PASSWORD:-}" ]; then
                 set -- "$@" --requirepass "$REDIS_PASSWORD"
                 if [ "$IS_SELF_MASTER" != "true" ]; then
@@ -229,7 +229,7 @@ spec:
             - name: redis-data
               mountPath: /data
         - name: sentinel
-          image: {{ printf "%s:%s" (default "redis" (index (index .Values.services "redis").image "repository")) (default "7.2-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
+          image: {{ printf "%s:%s" (default "valkey/valkey" (index (index .Values.services "redis").image "repository")) (default "8.0-alpine" (index (index .Values.services "redis").image "tag")) | quote }}
           imagePullPolicy: {{ default .Values.global.imagePullPolicy (index (index .Values.services "redis").image "pullPolicy") }}
           command:
             - /bin/sh
@@ -263,7 +263,7 @@ spec:
                   if [ -z "$host" ] || [ -z "$port" ]; then
                     continue
                   fi
-                  if redis-cli -h "$host" -p "$port" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
+                  if valkey-cli -h "$host" -p "$port" sentinel get-master-addr-by-name "$MASTER_NAME" >/tmp/master.addr 2>/dev/null; then
                     CURRENT_MASTER="$(sed -n '1p' /tmp/master.addr | tr -d '\r')"
                     CURRENT_PORT="$(sed -n '2p' /tmp/master.addr | tr -d '\r')"
                     if [ -n "$CURRENT_MASTER" ]; then
@@ -291,7 +291,7 @@ spec:
               if [ -n "${REDIS_PASSWORD:-}" ]; then
                 printf 'sentinel auth-pass %s %s\n' "$MASTER_NAME" "$REDIS_PASSWORD" >>"$SENTINEL_STATE_FILE"
               fi
-              exec redis-sentinel "$SENTINEL_STATE_FILE"
+              exec valkey-sentinel "$SENTINEL_STATE_FILE"
           env:
             - name: REDIS_PASSWORD
               {{- if ne (trim (include "homenavi.redisAuthSecretName" .)) "" }}

@@ -4,7 +4,7 @@
 
 <h1 align="center">Homenavi</h1>
 
-<p align="center"><strong>Open smart-home platform with a microservice core, MQTT/HDP realtime plane, and integration-first extensibility.</strong></p>
+<p align="center"><strong>Open source smart-home platform with a microservice core, MQTT/HDP realtime plane, and integration-first extensibility.</strong></p>
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> •
@@ -72,7 +72,7 @@ Homenavi runs as a layered system:
 - MCP service for OAuth-discovered Streamable HTTP tools, scoped access, rate limits, audited AI-client requests, and delegated gateway operations.
 - Domain services (auth, user, dashboard, device-hub, ERS, history, automation, weather).
 - Integration runtime via integration-proxy and installed integrations.
-- Shared messaging via EMQX (HDP topics).
+- Shared messaging via MQTT 5 core clients, Mosquitto by default, EMQX single-node compatibility, and VerneMQ HA profiles (HDP topics).
 
 Primary references:
 - Architecture + flow diagrams: [doc/architecture_diagram.md](doc/architecture_diagram.md)
@@ -100,7 +100,8 @@ docker compose up -d
 Notes:
 - This starts the prebuilt Homenavi release images from GitHub Container Registry (GHCR). Set `HN_VERSION=vX.Y.Z` in `.env` to pin a release; use `docker compose up --build` only when developing from source.
 - Open `http://localhost` after `docker compose ps` reports the edge services running.
-- The stack defaults to EMQX for MQTT.
+- The stack defaults to Mosquitto for MQTT and Valkey for Redis-protocol cache/session storage.
+- Configure Mosquitto and Zigbee2MQTT through `.env`; the default Compose path does not require broker or Zigbee2MQTT configuration files. Zigbee2MQTT data persists in a named volume; set `MOSQUITTO_PERSISTENCE=true` to retain Mosquitto broker state across restarts.
 - Mock adapter is opt-in via profile.
 - Zigbee2MQTT is opt-in through the `hardware` profile so a local evaluation never attempts to claim a USB coordinator.
 
@@ -136,7 +137,7 @@ Operational runbooks:
 | Automation and UI model | automation-service, dashboard-service | Workflow engine, run stream, widget and dashboard persistence |
 | Integrations runtime | integration-proxy, installed integrations | Registry, UI/API proxying, install/update orchestration, integration action execution |
 | Supporting services | weather-service, email-service, profile-picture-service, echo-service | Weather facade, outbound email, avatar storage, websocket diagnostics |
-| Messaging and data infra | EMQX, PostgreSQL, Redis, SeaweedFS | MQTT backbone, relational storage, cache/rate-limit state, object storage |
+| Messaging and data infra | Mosquitto, Valkey, PostgreSQL, SeaweedFS | MQTT backbone, Redis-protocol cache/rate-limit state, relational storage, object storage |
 
 ## 7. Current capabilities
 

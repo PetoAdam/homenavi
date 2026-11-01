@@ -1,5 +1,5 @@
 # Keeps the HA smoke test within GitHub-hosted runner capacity while exercising
-# Sentinel, EMQX, three-instance PostgreSQL, and the three-replica stateless
+# Valkey Sentinel, VerneMQ, three-instance PostgreSQL, and the three-replica stateless
 # service paths covered by the HA checks and runtime smoke tests.
 services:
   frontend:
@@ -67,7 +67,13 @@ services:
     enabled: false
 
 mqtt:
-  brokerKind: emqx
+  brokerKind: vernemq
+
+dependencies:
+  mqtt:
+    provider: vernemq
+  redis:
+    provider: valkey
 
 redis:
   mode: sentinel

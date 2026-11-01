@@ -12,6 +12,7 @@ on:
       - "frontend/**"
       - "nginx/**"
       - "emqx/**"
+      - "mosquitto/**"
       - "scripts/**"
       - "test/smoke/**"
       - "api-gateway/test/**"
@@ -37,6 +38,7 @@ on:
       - "frontend/**"
       - "nginx/**"
       - "emqx/**"
+      - "mosquitto/**"
       - "scripts/**"
       - "test/smoke/**"
       - "api-gateway/test/**"
@@ -62,6 +64,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: shared/go.mod
 
       - name: Render Compose deployment
         run: |
@@ -92,7 +99,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest requests paho-mqtt
-          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_PORT=11883 pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py
+          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_PORT=11883 pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_mqtt_shared_subscriptions.py
+
+      - name: Run MQTT 5 Go transport smoke
+        run: |
+          cd shared
+          MQTTX_LIVE_BROKER_URL=mqtt://127.0.0.1:11883 go test ./mqttx -run TestMQTT5LivePublishSubscribe -v
 
       - name: Collect diagnostics on failure
         if: failure()

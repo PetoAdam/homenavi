@@ -51,8 +51,8 @@ func LoadConfig() (Config, error) {
 	if err := cfg.MQTT.Validate(); err != nil {
 		return Config{}, err
 	}
-	if cfg.MQTTSharedGroup != "" && cfg.MQTT.BrokerKind != mqttx.BrokerKindEMQX {
-		return Config{}, fmt.Errorf("AUTOMATION_SERVICE_MQTT_SHARED_GROUP requires MQTT_BROKER_KIND=emqx")
+	if cfg.MQTTSharedGroup != "" && cfg.MQTT.BrokerKind == mqttx.BrokerKindGeneric {
+		return Config{}, fmt.Errorf("AUTOMATION_SERVICE_MQTT_SHARED_GROUP requires a broker with shared subscription support")
 	}
 	if strings.TrimSpace(cfg.JWTPublicKeyPath) == "" {
 		return Config{}, fmt.Errorf("JWT_PUBLIC_KEY_PATH is required")

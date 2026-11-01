@@ -1,6 +1,8 @@
 package mqttx
 
 import (
+	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -61,6 +63,42 @@ func TestNormalizeBrokerURLRejectsUnsupportedScheme(t *testing.T) {
 	}
 }
 
+func TestTransportBrokerURL(t *testing.T) {
+	cases := map[string]string{
+		"mqtt://broker:1883": "mqtt://broker:1883",
+		"tcp://broker:1883":  "mqtt://broker:1883",
+		"ssl://broker:8883":  "tls://broker:8883",
+		"wss://broker/ws":    "wss://broker/ws",
+	}
+	for input, want := range cases {
+		got, err := transportBrokerURL(input)
+		if err != nil {
+			t.Fatalf("transportBrokerURL(%q) error: %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("transportBrokerURL(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestMatchesMQTTTopic(t *testing.T) {
+	cases := []struct {
+		filter string
+		topic  string
+		want   bool
+	}{
+		{filter: "homenavi/hdp/state/#", topic: "homenavi/hdp/state/kitchen", want: true},
+		{filter: "homenavi/hdp/+/kitchen", topic: "homenavi/hdp/state/kitchen", want: true},
+		{filter: "$share/history/homenavi/hdp/state/#", topic: "homenavi/hdp/state/kitchen", want: true},
+		{filter: "homenavi/hdp/state/+/extra", topic: "homenavi/hdp/state/kitchen", want: false},
+	}
+	for _, testCase := range cases {
+		if got := matchesMQTTTopic(testCase.filter, testCase.topic); got != testCase.want {
+			t.Fatalf("matchesMQTTTopic(%q, %q) = %t, want %t", testCase.filter, testCase.topic, got, testCase.want)
+		}
+	}
+}
+
 func TestSessionOptionsDefaultsToPahoBehavior(t *testing.T) {
 	cleanSession, setCleanSession, resumeSubs := sessionOptions(Options{})
 	if setCleanSession {
@@ -103,9 +141,9 @@ func TestResolvedWriteTimeoutDefaultsToFiveSeconds(t *testing.T) {
 	}
 }
 
-func TestNormalizeBrokerKindDefaultsToEMQX(t *testing.T) {
-	if got := normalizeBrokerKind(""); got != BrokerKindEMQX {
-		t.Fatalf("expected default broker kind %q, got %q", BrokerKindEMQX, got)
+func TestNormalizeBrokerKindDefaultsToMosquitto(t *testing.T) {
+	if got := normalizeBrokerKind(""); got != BrokerKindMosquitto {
+		t.Fatalf("expected default broker kind %q, got %q", BrokerKindMosquitto, got)
 	}
 }
 
@@ -141,6 +179,20 @@ func TestResolveSubscriptionSharedEMQX(t *testing.T) {
 	}
 }
 
+func TestResolveSubscriptionSharedSupportedBrokers(t *testing.T) {
+	for _, brokerKind := range []BrokerKind{BrokerKindMosquitto, BrokerKindVerneMQ} {
+		t.Run(string(brokerKind), func(t *testing.T) {
+			_, resolved, err := resolveSubscription(brokerKind, SubscriptionOptions{Topic: "homenavi/hdp/state/#", QoS: 1, Mode: SubscriptionModeShared, Group: "history-ingest"})
+			if err != nil {
+				t.Fatalf("resolveSubscription() error = %v", err)
+			}
+			if resolved != "$share/history-ingest/homenavi/hdp/state/#" {
+				t.Fatalf("unexpected resolved topic %q", resolved)
+			}
+		})
+	}
+}
+
 func TestResolveSubscriptionSharedRequiresGroup(t *testing.T) {
 	_, _, err := resolveSubscription(BrokerKindEMQX, SubscriptionOptions{Topic: "homenavi/hdp/state/#", Mode: SubscriptionModeShared})
 	if err == nil {
@@ -162,6 +214,15 @@ func TestTopicStrategiesExposeExpectedCapabilities(t *testing.T) {
 	}
 	if !emqx.Capabilities().SharedSubscriptions {
 		t.Fatal("expected EMQX shared-subscription capability")
+	}
+	for _, brokerKind := range []BrokerKind{BrokerKindMosquitto, BrokerKindVerneMQ} {
+		strategy, err := topicStrategyFor(brokerKind)
+		if err != nil {
+			t.Fatalf("topicStrategyFor(%s) error = %v", brokerKind, err)
+		}
+		if !strategy.Capabilities().SharedSubscriptions {
+			t.Fatalf("expected %s shared-subscription capability", brokerKind)
+		}
 	}
 
 	generic, err := topicStrategyFor(BrokerKindGeneric)
@@ -263,5 +324,43 @@ func TestClientDelegatesPublishAndUnsubscribeToTransport(t *testing.T) {
 	}
 	if len(transport.unsubscribed) != 1 || transport.unsubscribed[0] != "$share/history-ingest/homenavi/hdp/state/#" {
 		t.Fatalf("unexpected unsubscribe records: %#v", transport.unsubscribed)
+	}
+}
+
+func TestMQTT5LivePublishSubscribe(t *testing.T) {
+	brokerURL := os.Getenv("MQTTX_LIVE_BROKER_URL")
+	if brokerURL == "" {
+		t.Skip("set MQTTX_LIVE_BROKER_URL to run the live MQTT 5 transport test")
+	}
+
+	topic := fmt.Sprintf("homenavi/test/mqttx/%d", time.Now().UnixNano())
+	received := make(chan []byte, 1)
+	subscriber, err := Connect(Options{BrokerURL: brokerURL, BrokerKind: BrokerKindMosquitto, ClientID: "mqttx-live-subscriber"})
+	if err != nil {
+		t.Fatalf("connect subscriber: %v", err)
+	}
+	defer subscriber.Close()
+	if err := subscriber.SubscribeWithQoS(topic, 1, func(message Message) {
+		received <- message.Payload()
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	publisher, err := Connect(Options{BrokerURL: brokerURL, BrokerKind: BrokerKindMosquitto, ClientID: "mqttx-live-publisher"})
+	if err != nil {
+		t.Fatalf("connect publisher: %v", err)
+	}
+	defer publisher.Close()
+	if err := publisher.PublishWithOptions(topic, []byte("mqtt5-live"), 1, false); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	select {
+	case payload := <-received:
+		if string(payload) != "mqtt5-live" {
+			t.Fatalf("received payload %q", payload)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for MQTT 5 delivery")
 	}
 }

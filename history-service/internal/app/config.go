@@ -34,8 +34,8 @@ func LoadConfig() (Config, error) {
 	if err := cfg.MQTT.Validate(); err != nil {
 		return Config{}, err
 	}
-	if cfg.MQTTSharedGroup != "" && cfg.MQTT.BrokerKind != mqttx.BrokerKindEMQX {
-		return Config{}, fmt.Errorf("HISTORY_SERVICE_MQTT_SHARED_GROUP requires MQTT_BROKER_KIND=emqx")
+	if cfg.MQTTSharedGroup != "" && cfg.MQTT.BrokerKind == mqttx.BrokerKindGeneric {
+		return Config{}, fmt.Errorf("HISTORY_SERVICE_MQTT_SHARED_GROUP requires a broker with shared subscription support")
 	}
 	if err := cfg.DB.Validate(); err != nil {
 		return Config{}, err

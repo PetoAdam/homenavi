@@ -4,7 +4,7 @@ Homenavi supports a local Docker Compose evaluation, Docker Compose on a single 
 
 ## Local evaluation
 
-This is the recommended first run. It uses bundled PostgreSQL, Redis, EMQX, SeaweedFS, Jaeger, and development-only credentials. It does not need a domain name, TLS certificate, cloud account, or physical controller.
+This is the recommended first run. It uses bundled PostgreSQL, Valkey, Mosquitto, SeaweedFS, Jaeger, and development-only credentials. It does not need a domain name, TLS certificate, cloud account, or physical controller.
 
 1. Install Docker Engine with Docker Compose v2, then run:
 
@@ -29,7 +29,7 @@ This is the recommended first run. It uses bundled PostgreSQL, Redis, EMQX, Seaw
 
 Released Homenavi service images are published to GitHub Container Registry as `ghcr.io/petoadam/homenavi-<service>:<tag>`. Compose uses these images by default. Set `HN_VERSION=vX.Y.Z` before `docker compose pull` to evaluate a specific release; `latest` follows the current release. Use `docker compose up --build` only when testing local source changes.
 
-Zigbee2MQTT is deliberately excluded from a local evaluation. To use a real coordinator, configure its USB device mapping in `docker-compose.yml` for the deployment host and start the hardware profile with `docker compose --profile hardware up -d`.
+Zigbee2MQTT is deliberately excluded from a local evaluation. To use a real coordinator, set `ZIGBEE2MQTT_DEVICE_MAPPING`, `ZIGBEE2MQTT_CONFIG_SERIAL_PORT`, and the other `ZIGBEE2MQTT_CONFIG_*` settings in `.env`, then start the hardware profile with `docker compose --profile hardware up -d`.
 
 ## Choose a mode
 
@@ -71,6 +71,10 @@ Use Helm for Kubernetes or GitOps. It uses Kubernetes Services, persistent volum
 
 Compose uses `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` as a single shared collector setting. The default points to bundled Jaeger. OAuth and MCP derive their public URLs from the host and scheme sent through the edge proxy, so a normal deployment has no public-URL setting. Use the individual endpoint variables only for a split-domain deployment.
 
+Mosquitto is the default MQTT 5 broker and Valkey provides Redis-protocol cache/session storage. To use the explicit, single-node EMQX compatibility profile, run `docker compose -f docker-compose.yml -f docker-compose.emqx.yml up -d`; do not use that profile for clustered production without a separate EMQX license review.
+
+Mosquitto generates its runtime configuration from the `MOSQUITTO_*` values in `.env`. Broker-state persistence is disabled by default for a simpler local setup; set `MOSQUITTO_PERSISTENCE=true` to retain broker state in the `mosquitto_data` named volume. Use `MOSQUITTO_EXTRA_CONFIG` only for newline-separated native directives not represented by the documented settings. Zigbee2MQTT accepts the documented `ZIGBEE2MQTT_CONFIG_*` variables directly, including `ZIGBEE2MQTT_DEVICE_MAPPING` and `ZIGBEE2MQTT_CONFIG_SERIAL_PORT` for a USB coordinator, and persists its working data in `zigbee2mqtt-data`; no default broker or Zigbee2MQTT configuration file is required.
+
 ## Helm and GitOps
 
 1. Create Kubernetes secrets for non-public settings. Do not put passwords, OAuth credentials, or private keys in Helm values or Git:
@@ -87,7 +91,7 @@ global: { otelExporterOtlpTracesEndpoint: http://jaeger.monitoring.svc.cluster.l
 ingress: { enabled: true, className: nginx, hosts: [{ host: home.example.com, paths: [{ path: /, pathType: Prefix, service: edge-proxy, port: 80 }] }] }
 ```
 
-   The primary `ingress.hosts[].host` is the only public-host setting. The edge proxy forwards the public host and scheme, which OAuth and MCP use to derive absolute protocol URLs. Per-service environment values are still supported when an endpoint must differ. `global.otelExporterOtlpTracesEndpoint` is injected into all OTEL-capable core services.
+   The primary `ingress.hosts[].host` is the only public-host setting. The edge proxy forwards the public host and scheme, which OAuth and MCP use to derive absolute protocol URLs. Per-service environment values are still supported when an endpoint must differ. `global.otelExporterOtlpTracesEndpoint` is injected into all OTEL-capable core services. The same env file can provide `MOSQUITTO_*` and `ZIGBEE2MQTT_CONFIG_*`: the Mosquitto command reads those values to generate its runtime configuration, and Zigbee2MQTT reads its supported environment overrides directly. Set `MOSQUITTO_PERSISTENCE=true` when the Helm claim should retain broker state.
 
 3. Validate before applying:
 
@@ -107,7 +111,7 @@ The boundary is deliberate: local evaluation uses public development credentials
 
 ## Operations checklist
 
-- Back up PostgreSQL, persistent Zigbee2MQTT data, integration configuration, and object storage before upgrades.
+- Back up PostgreSQL, persistent Zigbee2MQTT data, integration configuration, object storage, and Mosquitto data when `MOSQUITTO_PERSISTENCE=true`.
 - Pin releases with `HN_VERSION` in Compose or matching chart/image versions in Helm; avoid an unreviewed `latest` deployment.
 - Use a real TLS certificate and redirect HTTP to HTTPS.
 - Ensure the public edge proxy forwards `Host` and `X-Forwarded-Proto`; OAuth and MCP metadata depend on the public origin.

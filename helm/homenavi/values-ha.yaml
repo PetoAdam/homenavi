@@ -1,0 +1,45 @@
+# Production-oriented HA profile. Requires a cluster with at least three worker
+# nodes and a StorageClass that provisions ReadWriteOnce claims.
+dependencies:
+  mqtt:
+    provider: vernemq
+  redis:
+    provider: valkey
+
+mqtt:
+  brokerKind: vernemq
+
+redis:
+  mode: sentinel
+
+services:
+  edge-proxy:
+    enabled: true
+    replicas: 3
+  frontend:
+    enabled: true
+    replicas: 2
+  api-gateway:
+    enabled: true
+    replicas: 3
+  auth-service:
+    enabled: true
+    replicas: 3
+  user-service:
+    enabled: true
+    replicas: 3
+  device-hub:
+    enabled: true
+    replicas: 3
+  entity-registry-service:
+    enabled: true
+    replicas: 3
+  history-service:
+    enabled: true
+    replicas: 3
+  automation-service:
+    enabled: true
+    replicas: 3
+  vernemq:
+    enabled: true
+    replicas: 3

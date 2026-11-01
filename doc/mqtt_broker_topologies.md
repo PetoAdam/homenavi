@@ -1,6 +1,6 @@
 # MQTT broker defaults and bridge topologies
 
-Homenavi now treats **EMQX** as the primary and recommended MQTT broker in both Docker Compose and Helm.
+Homenavi defaults to **Mosquitto** for Docker Compose and single-node Helm deployments. The Helm HA profile uses **VerneMQ**. **EMQX** is an explicit single-node compatibility profile for installations that need its bridge configuration; review its BSL 1.1 terms before using it outside that profile.
 
 For the core client-layer design, HDP topic families, shared-consumer behavior, and Mosquitto compatibility, see [doc/mqtt_architecture.md](mqtt_architecture.md).
 
@@ -8,17 +8,19 @@ For the core client-layer design, HDP topic families, shared-consumer behavior, 
 
 Use this mental model:
 
-- **EMQX** = main Homenavi broker
-- **direct broker-to-EMQX bridge** = preferred interop path
+- **Mosquitto** = default Homenavi broker
+- **VerneMQ** = clustered Homenavi HA broker
+- **EMQX** = optional single-node bridge compatibility profile
+- **direct broker-to-broker bridge** = preferred interop path
 
 That keeps the Homenavi runtime simple while still allowing bridge-based migrations.
 
-## 2. Preferred topology: direct bridge into EMQX
+## 2. Preferred topology: direct broker bridge
 
 When the external broker can be configured, prefer this:
 
 ```text
-external broker  <---- MQTT bridge ---->  Homenavi EMQX
+external broker  <---- MQTT bridge ---->  Homenavi MQTT broker
 ```
 
 Why this is preferred:
@@ -32,20 +34,21 @@ This usually means **configuring the external broker**, not Homenavi itself.
 
 Examples:
 
-- a remote broker bridges directly to Homenavi EMQX
-- another EMQX instance bridges directly to Homenavi EMQX
-- a vendor-specific broker forwards selected topics directly into Homenavi EMQX
+- a remote broker bridges directly to Homenavi Mosquitto or VerneMQ
+- another EMQX instance bridges directly to the selected Homenavi broker
+- a vendor-specific broker forwards selected topics directly into Homenavi
 
 For Homenavi, the stable listener to target is plain MQTT/TCP on port `1883`.
 
 Important: broker bridging uses normal MQTT/TCP. It does **not** use the frontend WebSocket endpoint.
 
-## 3. Bridge snippets managed by Homenavi
+## 3. Optional EMQX bridge snippets managed by Homenavi
 
-When Homenavi itself should own the bridge configuration, store bridge snippets as `.hocon` files.
+When the explicit EMQX compatibility profile should own bridge configuration, store bridge snippets as `.hocon` files. Mosquitto and VerneMQ bridge configuration remains operator-managed because the default Homenavi deployment does not ship a vendor-specific bridge template for them.
 
 ### Docker Compose
 
+- Start the profile with `docker compose -f docker-compose.yml -f docker-compose.emqx.yml up -d`
 - Local snippets live in `emqx/bridge.d/*.hocon`
 - That directory is gitignored except for `.gitkeep` and `*.example.hocon`
 - The startup wrapper concatenates every snippet into `/opt/emqx/etc/homenavi-bridge.hocon`
@@ -56,7 +59,7 @@ Starter file:
 
 ### Helm
 
-Provide snippets through `services.emqx.bridgeConfigFiles`.
+Set `dependencies.mqtt.provider: emqx`, then provide snippets through `services.emqx.bridgeConfigFiles`.
 
 Example:
 
@@ -102,7 +105,7 @@ Avoid broad bidirectional rules like `topic zigbee2mqtt/# both 1` unless you are
 
 ## 5. Practical migration notes
 
-If an external Raspberry Pi or another host already runs its own broker, configure the bridge on that external broker directly and target the Homenavi EMQX listener on port `1883`.
+If an external Raspberry Pi or another host already runs its own broker, configure the bridge on that external broker directly and target the selected Homenavi broker listener on port `1883`.
 
 For migration safety:
 
@@ -121,7 +124,7 @@ For migration safety:
 
 Recommended order:
 
-1. keep EMQX as the default Homenavi broker
-2. prefer a direct bridge from the external broker into EMQX
-3. keep bridge snippets in `emqx/bridge.d/` for Compose or `services.emqx.bridgeConfigFiles` for Helm
+1. keep Mosquitto as the default Homenavi broker and select VerneMQ for Helm HA
+2. prefer a direct bridge from the external broker into the selected Homenavi broker
+3. use `emqx/bridge.d/` or `services.emqx.bridgeConfigFiles` only with the explicit EMQX compatibility profile
 4. during migration, fan out telemetry to both stacks but let only one stack own commands

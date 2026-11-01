@@ -14,8 +14,8 @@ use (
 	./history-service
 	./integration-proxy
 	./mcp-service
-	./shared
 	./mock-adapter
+	./shared
 	./user-service
 	./weather-service
 	./zigbee-adapter

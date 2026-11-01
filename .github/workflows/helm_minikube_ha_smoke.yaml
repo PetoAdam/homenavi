@@ -60,6 +60,7 @@ jobs:
           driver: docker
           cpus: 4
           memory: 6000mb
+          extra-config: kubelet.max-pods=110
 
       - name: Build commit-scoped service images
         run: |
@@ -161,11 +162,13 @@ jobs:
             kubectl -n "$NAMESPACE" get deployment "$RELEASE-$service" -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 1
           done
 
-      - name: Verify Redis Sentinel and MQTT shared groups
+      - name: Verify Valkey Sentinel, VerneMQ, and MQTT shared groups
         run: |
           set -euo pipefail
-          kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c redis -- redis-cli -p 26379 SENTINEL get-master-addr-by-name homenavi-redis | grep -qx "$RELEASE-redis-0.$RELEASE-redis-headless"
-          kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c redis -- redis-cli -p 26379 SENTINEL masters | grep -qx homenavi-redis
+          kubectl -n "$NAMESPACE" rollout status statefulset/vernemq --timeout=4m
+          kubectl -n "$NAMESPACE" get statefulset vernemq -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 3
+          kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c valkey -- valkey-cli -p 26379 SENTINEL get-master-addr-by-name homenavi-redis | grep -qx "$RELEASE-redis-0.$RELEASE-redis-headless"
+          kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c valkey -- valkey-cli -p 26379 SENTINEL masters | grep -qx homenavi-redis
           check_env() {
             deployment="$1"
             expected="$2"
@@ -201,7 +204,7 @@ jobs:
           set -euo pipefail
           kubectl -n "$NAMESPACE" port-forward svc/api-gateway 18080:8080 >/tmp/homenavi-ha-gateway.log 2>&1 &
           gateway_pid=$!
-          kubectl -n "$NAMESPACE" port-forward svc/emqx 11883:1883 >/tmp/homenavi-ha-emqx.log 2>&1 &
+          kubectl -n "$NAMESPACE" port-forward svc/vernemq 11883:1883 >/tmp/homenavi-ha-vernemq.log 2>&1 &
           mqtt_pid=$!
           cleanup() {
             kill "$gateway_pid" "$mqtt_pid" >/dev/null 2>&1 || true
@@ -266,7 +269,7 @@ jobs:
           done
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest requests paho-mqtt
-          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_HOST=127.0.0.1 HOMENAVI_MQTT_PORT=11883 HOMENAVI_ADMIN_EMAIL="$admin_email" HOMENAVI_ADMIN_PASSWORD="$admin_password" pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_ha_runtime_services.py
+          HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_HOST=127.0.0.1 HOMENAVI_MQTT_PORT=11883 HOMENAVI_ADMIN_EMAIL="$admin_email" HOMENAVI_ADMIN_PASSWORD="$admin_password" pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_mqtt_shared_subscriptions.py test/smoke/test_ha_runtime_services.py
 
       - name: Collect diagnostics on failure
         if: failure()
@@ -278,7 +281,7 @@ jobs:
             kubectl -n "$NAMESPACE" logs --all-containers --prefix --previous --tail=100 "$pod" || true
           done
           test -f /tmp/homenavi-ha-gateway.log && cat /tmp/homenavi-ha-gateway.log || true
-          test -f /tmp/homenavi-ha-emqx.log && cat /tmp/homenavi-ha-emqx.log || true
+          test -f /tmp/homenavi-ha-vernemq.log && cat /tmp/homenavi-ha-vernemq.log || true
 
       - name: Remove HA smoke deployment
         if: always()

@@ -1,0 +1,207 @@
+{{- if eq (include "homenavi.mqttProvider" .) "vernemq" }}
+{{- $svc := index .Values.services "vernemq" }}
+{{- $replicas := int (default 3 $svc.replicas) }}
+{{- $headlessServiceName := "vernemq-headless" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $headlessServiceName }}
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "vernemq") | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "homenavi.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: vernemq
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+    - name: websocket
+      port: 8080
+      targetPort: websocket
+    - name: clustering
+      port: 44053
+      targetPort: clustering
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vernemq
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "vernemq") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "homenavi.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: vernemq
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+    - name: websocket
+      port: 8080
+      targetPort: websocket
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "homenavi.fullname" . }}-vernemq-discovery
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "vernemq") | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "homenavi.fullname" . }}-vernemq-discovery
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "vernemq") | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "homenavi.serviceAccountName" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "homenavi.fullname" . }}-vernemq-discovery
+---
+{{- if and (default true $svc.podDisruptionBudget.enabled) (gt $replicas 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vernemq
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "vernemq") | nindent 4 }}
+spec:
+  minAvailable: {{ default 2 $svc.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "homenavi.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vernemq
+---
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vernemq
+  labels:
+    {{- include "homenavi.componentLabels" (dict "root" . "component" "vernemq") | nindent 4 }}
+spec:
+  serviceName: {{ $headlessServiceName }}
+  replicas: {{ $replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "homenavi.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vernemq
+  template:
+    metadata:
+      labels:
+        {{- include "homenavi.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vernemq
+        app: vernemq
+    spec:
+      serviceAccountName: {{ include "homenavi.serviceAccountName" . }}
+      {{- with $svc.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $svc.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $svc.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "homenavi.selectorLabels" . | nindent 20 }}
+                    app.kubernetes.io/component: vernemq
+      {{- end }}
+      {{- with $svc.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vernemq
+          image: {{- if $svc.image.digest }} {{ printf "%s@%s" $svc.image.repository $svc.image.digest | quote }} {{- else }} {{ printf "%s:%s" $svc.image.repository $svc.image.tag | quote }} {{- end }}
+          imagePullPolicy: {{ default .Values.global.imagePullPolicy $svc.image.pullPolicy }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_NAME
+              value: "$(POD_NAME)"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DOCKER_VERNEMQ_ALLOW_ANONYMOUS
+              value: "on"
+            - name: DOCKER_VERNEMQ_DISCOVERY_KUBERNETES
+              value: "1"
+            - name: DOCKER_VERNEMQ_KUBERNETES_LABEL_SELECTOR
+              value: "app=vernemq"
+            - name: DOCKER_VERNEMQ_LISTENER__TCP__DEFAULT
+              value: "0.0.0.0:1883"
+            - name: DOCKER_VERNEMQ_LISTENER__WS__DEFAULT
+              value: "0.0.0.0:8080"
+          ports:
+            - name: mqtt
+              containerPort: 1883
+            - name: websocket
+              containerPort: 8080
+            - name: clustering
+              containerPort: 44053
+          startupProbe:
+            tcpSocket:
+              port: mqtt
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket:
+              port: mqtt
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: mqtt
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+          volumeMounts:
+            - name: vernemq-data
+              mountPath: /vernemq/data
+  volumeClaimTemplates:
+    - metadata:
+        name: vernemq-data
+        labels:
+          {{- include "homenavi.componentStableLabels" (dict "root" . "component" "vernemq") | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ default "2Gi" $svc.storage.size }}
+        {{- with $svc.storage.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+{{- end }}

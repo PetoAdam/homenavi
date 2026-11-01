@@ -1,0 +1,64 @@
+name: License and attribution inventory
+
+on:
+  pull_request:
+    paths:
+      - "**/go.mod"
+      - "**/go.sum"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/vite.config.js"
+      - "NOTICE.md"
+      - "scripts/generate-go-license-inventory.sh"
+      - ".github/workflows/license_scan.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "**/go.mod"
+      - "**/go.sum"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/vite.config.js"
+      - "NOTICE.md"
+      - "scripts/generate-go-license-inventory.sh"
+      - ".github/workflows/license_scan.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Go license scanner
+        run: go install github.com/google/go-licenses@v1.6.0
+      - name: Generate Go dependency inventories
+        run: ./scripts/generate-go-license-inventory.sh artifacts/licenses/go
+      - name: Generate frontend notices
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Reject unresolved Go license entries
+        run: |
+          if grep -R -Ei '(^|,)(unknown|none)(,|$)' artifacts/licenses/go; then
+            echo 'Go dependency inventory contains unresolved license metadata.' >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: third-party-license-inventory
+          path: |
+            artifacts/licenses/go
+            frontend/dist/third-party-notices.txt

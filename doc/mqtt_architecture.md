@@ -2,15 +2,15 @@
 
 ## Purpose
 
-This document describes the MQTT runtime used by Homenavi: the active broker, clients, HDP topic families, shared-consumer behavior, and the supported compatibility path for Mosquitto.
+This document describes the MQTT runtime used by Homenavi: the active broker, clients, HDP topic families, shared-consumer behavior, and supported broker profiles.
 
-EMQX is the default broker for Docker Compose and Helm. Core services use `shared/mqttx`, which keeps service handlers independent from the Paho client library and isolates Paho in `shared/mqttx/paho_transport.go`.
+Mosquitto is the default broker for Docker Compose and Helm. The Helm HA profile uses VerneMQ; EMQX remains an explicit single-node compatibility profile. Core services use `shared/mqttx`, which keeps service handlers independent from the Paho client library and isolates the MQTT 5 Paho transport in `shared/mqttx/paho_transport.go`.
 
 ## Core Topology
 
 ```mermaid
 flowchart LR
-    Z2M[zigbee2mqtt] -->|zigbee2mqtt/#| B[(EMQX broker)]
+    Z2M[zigbee2mqtt] -->|zigbee2mqtt/#| B[(MQTT broker)]
     ZA[zigbee-adapter] <-->|zigbee2mqtt/# and HDP topics| B
     MA[mock-adapter] <-->|HDP topics| B
     INT[Installed integration] <-->|HDP and integration topics| B
@@ -37,16 +37,16 @@ flowchart TB
     CLIENT --> TRANSPORT[Paho transport adapter]
     TRANSPORT --> BROKER[(MQTT broker)]
 
-    STRATEGY --> EMQX[EMQX strategy]
+    STRATEGY --> SHARED_CAPABLE[Shared-capable strategy]
     STRATEGY --> GENERIC[Generic MQTT strategy]
-    EMQX -->|shared mode| SHARE[$share/group/topic]
+    SHARED_CAPABLE -->|Mosquitto, EMQX, VerneMQ| SHARE[$share/group/topic]
     GENERIC -->|shared mode| REJECT[Explicit unsupported-capability error]
 ```
 
 Responsibilities:
 - Service-local wrappers define the narrow message and handler contracts required by the service.
 - `shared/mqttx` owns connection lifecycle, subscription intent, broker capability checks, and replay after reconnect.
-- The transport adapter owns Paho-specific APIs, TLS setup, credentials in the broker URL, and token waiting.
+- The transport adapter owns MQTT 5 Paho-specific APIs, TLS setup, credentials in the broker URL, reconnect handling, and subscription replay.
 - Broker strategies resolve typed subscription intent into broker-specific topic syntax.
 
 ## HDP Topic Families
@@ -79,7 +79,7 @@ sequenceDiagram
     B->>A: Deliver topic
     B->>C: Deliver topic
 
-    Note over A,C: EMQX shared subscription: one group member receives each message
+    Note over A,C: Shared subscription: one group member receives each message
     P->>B: Publish topic
     B->>A: Deliver $share/history-ingest/topic
     Note over C: No delivery for this message
@@ -96,11 +96,11 @@ Current decisions:
 
 ```mermaid
 flowchart LR
-        MQTT[(EMQX shared group)] --> AUTO1[automation replica A]
+        MQTT[(MQTT shared group)] --> AUTO1[automation replica A]
         MQTT --> AUTO2[automation replica B]
         AUTO1 --> PG[(Postgres)]
         AUTO2 --> PG
-        AUTO1 --> REDIS[(Redis)]
+        AUTO1 --> REDIS[(Valkey)]
         AUTO2 --> REDIS
         REDIS --> WS1[WebSocket client on replica A]
         REDIS --> WS2[WebSocket client on replica B]
@@ -118,17 +118,17 @@ flowchart LR
         end
 ```
 
-Automation shared mode is enabled only when `AUTOMATION_SERVICE_MQTT_SHARED_GROUP` is configured with an EMQX broker. Postgres provides durable claims and recovery state; Redis provides a bounded replay list that WebSocket replicas poll for cross-replica event delivery.
+Automation shared mode is enabled when `AUTOMATION_SERVICE_MQTT_SHARED_GROUP` is configured with Mosquitto, EMQX, or VerneMQ. Postgres provides durable claims and recovery state; Valkey provides a bounded replay list that WebSocket replicas poll for cross-replica event delivery.
 
-Device-hub can use the same shared-consumer model when `DEVICE_HUB_MQTT_SHARED_GROUP` is configured with EMQX. Postgres owns pairing transitions and lifecycle history; Redis provides adapter availability and active command coordination. See [doc/mqtt-ha-shared-subscriptions-plan.md](mqtt-ha-shared-subscriptions-plan.md).
+Device-hub can use the same shared-consumer model when `DEVICE_HUB_MQTT_SHARED_GROUP` is configured with Mosquitto, EMQX, or VerneMQ. Postgres owns pairing transitions and lifecycle history; Valkey provides adapter availability and active command coordination. See [doc/mqtt-ha-shared-subscriptions-plan.md](mqtt-ha-shared-subscriptions-plan.md).
 
 ## Docker Compose
 
-Compose starts EMQX and injects these settings into core MQTT consumers:
+Compose starts Mosquitto and injects these settings into core MQTT consumers:
 
 ```dotenv
-MQTT_BROKER_URL=mqtt://emqx:1883
-MQTT_BROKER_KIND=emqx
+MQTT_BROKER_URL=mqtt://mosquitto:1883
+MQTT_BROKER_KIND=mosquitto
 HISTORY_SERVICE_MQTT_SHARED_GROUP=
 ENTITY_REGISTRY_MQTT_SHARED_GROUP=
 AUTOMATION_SERVICE_MQTT_SHARED_GROUP=
@@ -139,16 +139,16 @@ To point the core services at another standard MQTT broker, set both values cons
 
 ## Helm
 
-Helm defaults to bundled EMQX and injects `MQTT_BROKER_URL` and `MQTT_BROKER_KIND` into services marked `usesMQTT`.
+Helm defaults to bundled Mosquitto and injects `MQTT_BROKER_URL` and `MQTT_BROKER_KIND` into services marked `usesMQTT`. The HA smoke profile selects VerneMQ.
 
 ```yaml
 dependencies:
   mqtt:
-    provider: emqx
+    provider: mosquitto
 
 mqtt:
   brokerUrl: ""
-  brokerKind: emqx
+    brokerKind: mosquitto
 
 services:
     automation-service:
@@ -156,16 +156,16 @@ services:
             AUTOMATION_SERVICE_MQTT_SHARED_GROUP: ""
 ```
 
-For an externally managed standard broker, disable the bundled EMQX service through the existing dependency/provider configuration, set `mqtt.brokerUrl` to the reachable endpoint, set `mqtt.dependencyHost` and `mqtt.dependencyPort` for startup checks, and set `mqtt.brokerKind: generic`.
+For an externally managed broker, set `mqtt.brokerUrl` to the reachable endpoint, set `mqtt.dependencyHost` and `mqtt.dependencyPort` for startup checks, and choose `mqtt.brokerKind: mosquitto`, `emqx`, `vernemq`, or `generic` according to the broker's shared-subscription support.
 
 Integration-proxy Helm installs pass both `MQTT_BROKER_URL` and `MQTT_BROKER_KIND` to integration charts. Integration charts that use MQTT should accept and document both values; the integration template provides typed topic-resolution helpers in `src/backend/mqttsupport`.
 
 ## Enabling Shared Consumers
 
-Shared mode is opt-in. Set a non-empty group only when using EMQX and when the service is deployed with Redis/Postgres dependencies available.
+Shared mode is opt-in. Set a non-empty group only when using Mosquitto, EMQX, or VerneMQ and when the service is deployed with Valkey/Postgres dependencies available.
 
 ```dotenv
-MQTT_BROKER_KIND=emqx
+MQTT_BROKER_KIND=mosquitto
 HISTORY_SERVICE_MQTT_SHARED_GROUP=history-ingest
 ENTITY_REGISTRY_MQTT_SHARED_GROUP=entity-registry-autoimport
 AUTOMATION_SERVICE_MQTT_SHARED_GROUP=automation-events
@@ -174,22 +174,22 @@ DEVICE_HUB_MQTT_SHARED_GROUP=device-hub-ingest
 
 Do not set these group variables with `MQTT_BROKER_KIND=generic`. Startup validation rejects that incompatible combination.
 
-## Mosquitto Compatibility
+## Broker profiles
 
-Mosquitto is compatible with Homenavi for normal MQTT publish/subscribe traffic.
+Core Homenavi services negotiate MQTT 5 through `shared/mqttx`. Mosquitto is the default single-node MQTT 5 profile and supports the standard `$share/<group>/<topic>` form used by Homenavi. VerneMQ uses the same topic form for the clustered Helm HA profile. EMQX is available through the explicit Compose overlay or Helm provider, but its BSL 1.1 terms require separate review for use outside the single-node compatibility profile. Integrations that maintain their own direct MQTT client are independently versioned and must be migrated separately.
 
 ```mermaid
 flowchart LR
     CORE[Homenavi core MQTT clients] -->|MQTT/TCP| M[(Mosquitto)]
     INT[MQTT-capable integration] -->|MQTT/TCP| M
     M -->|standard topic delivery| CORE
-    M -.->|No EMQX shared-topic strategy| SHARED[Shared consumer groups disabled]
+    M -->|$share/group/topic| SHARED[Shared consumer groups]
 ```
 
-Use the generic broker configuration:
+Use the generic broker configuration only when the target broker does not support shared subscriptions:
 
 ```dotenv
-MQTT_BROKER_URL=mqtt://mosquitto:1883
+MQTT_BROKER_URL=mqtt://external-broker:1883
 MQTT_BROKER_KIND=generic
 ```
 
@@ -197,13 +197,13 @@ With `MQTT_BROKER_KIND=generic`:
 - all exclusive subscriptions continue to work
 - `history-service` and `entity-registry-service` must leave their shared-group variables unset
 - their startup configuration rejects a non-empty shared-group value with `MQTT_BROKER_KIND=generic`
-- attempts to request `SubscriptionModeShared` fail explicitly instead of publishing an EMQX-specific `$share/...` topic to Mosquitto
+- attempts to request `SubscriptionModeShared` fail explicitly instead of publishing an unsupported `$share/...` topic
 
-Mosquitto can be used as an external broker or bridged into EMQX. For bridge direction and command-ownership rules, see [doc/mqtt_broker_topologies.md](mqtt_broker_topologies.md).
+For bridge direction and command-ownership rules, see [doc/mqtt_broker_topologies.md](mqtt_broker_topologies.md).
 
 ## Browser WebSockets
 
-EMQX provides MQTT-over-WebSocket on port `8083` in Compose. The frontend does not use that listener directly; API Gateway handles browser-facing websocket routing.
+Mosquitto provides MQTT-over-WebSocket on port `9001` in Compose. The frontend does not use that listener directly; API Gateway handles browser-facing websocket routing.
 
 When using Mosquitto, enable a WebSocket listener only if another component explicitly requires native MQTT-over-WebSocket. It is not a replacement for the API Gateway WebSocket API.
 
@@ -213,7 +213,7 @@ Integrations should:
 - use `MQTT_BROKER_URL` supplied by the runtime
 - accept `MQTT_BROKER_KIND` when they expose shared-consumer options
 - keep normal subscriptions exclusive by default
-- use shared mode only for replay-safe worker workloads and only when broker kind is `emqx`
+- use shared mode only for replay-safe worker workloads and broker kinds `mosquitto`, `emqx`, or `vernemq`
 - publish HDP messages under the documented topic families
 
 The integration template's `mqttsupport.ResolveSubscriptionTopic` demonstrates the same exclusive/shared resolution model without forcing a specific MQTT client library.

@@ -23,7 +23,7 @@ func LoadConfig(defaultBrokerURL string, clientIDEnvKeys ...string) Config {
 	}
 	return Config{
 		BrokerURL:  envx.String("MQTT_BROKER_URL", defaultBrokerURL),
-		BrokerKind: normalizeBrokerKind(BrokerKind(envx.String("MQTT_BROKER_KIND", string(BrokerKindEMQX)))),
+		BrokerKind: normalizeBrokerKind(BrokerKind(envx.String("MQTT_BROKER_KIND", string(BrokerKindMosquitto)))),
 		ClientID:   clientID,
 	}
 }

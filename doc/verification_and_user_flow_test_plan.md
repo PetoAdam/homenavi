@@ -7,16 +7,16 @@ Status: In progress
 - Docker Compose defaults to successfully released `latest` images; setting `HN_VERSION` still pins every Homenavi image to a specific release.
 - The reusable release workflow publishes every immutable release tag. Only stable semantic version tags (`v<major>.<minor>.<patch>`) also publish `latest`; the workflow inspects every published GHCR manifest so a missing tag fails the release.
 - `.env.ci`, `docker-compose.ci.yml`, and `compose_smoke.yaml` now create an isolated, branch-built Compose stack and gate on public gateway health, strict authentication, and a unique non-retained MQTT state event persisted through history-service and queried through the gateway.
-- The CI override keeps hardware-only `zigbee2mqtt` out of the smoke deployment and replaces the developer PostgreSQL bind mount with a project-scoped named volume. Authentication is now a strict smoke gate; authorization, integration, command-lifecycle, and automation flows remain for the next slices. Redis remains standalone in Compose by design.
-- The Minikube HA workflow now installs CNPG `1.25.1` and waits for its controller by the stable CloudNativePG label before Helm, validates live three-replica workloads, Redis Sentinel master discovery, complete Sentinel service configuration, and the four shared MQTT groups. It also rejects persistent-volume mounts on stateless core replicas and force-replaces one replica from each shared-MQTT tier before requiring recovery to `3/3`; the workflow always removes its isolated namespace.
+- The CI override keeps hardware-only `zigbee2mqtt` out of the smoke deployment and replaces the developer PostgreSQL bind mount with a project-scoped named volume. Authentication is now a strict smoke gate; authorization, integration, command-lifecycle, and automation flows remain for the next slices. Valkey remains standalone in Compose by design.
+- The Minikube HA workflow installs CNPG `1.25.1`, validates live three-replica workloads, Valkey Sentinel master discovery, three-node VerneMQ discovery, and the four shared MQTT groups. It also rejects persistent-volume mounts on stateless core replicas and force-replaces one replica from each shared-MQTT tier before requiring recovery to `3/3`; the workflow always removes its isolated namespace.
 - Integration-proxy is explicitly excluded from the stateless pod assertion until its mutable `installed.yaml` configuration is migrated from the `integration-proxy-config` PVC to PostgreSQL or another Kubernetes-native durable control plane. Its operation/update state is already PostgreSQL-backed, but its installation registry is not yet.
 
 ## Purpose
 
 Homenavi needs two complementary deployment checks:
 
-- Docker Compose verifies the complete single-node product path using PostgreSQL, EMQX, and standalone Redis.
-- Minikube verifies Kubernetes-specific high-availability behavior: three replicas, Redis Sentinel, CloudNativePG, and EMQX shared subscriptions.
+- Docker Compose verifies the complete single-node product path using PostgreSQL, Mosquitto, and standalone Valkey.
+- Minikube verifies Kubernetes-specific high-availability behavior: three replicas, Valkey Sentinel, CloudNativePG, and VerneMQ shared subscriptions.
 
 Neither check replaces service unit tests. Both run only against images built from the checked-out commit and use isolated data and deployment names.
 
@@ -55,7 +55,7 @@ pytest -q test/smoke api-gateway/test
 docker compose --env-file .env.ci -p "$PROJECT" -f docker-compose.yml -f docker-compose.ci.yml down --volumes --remove-orphans
 ```
 
-The cleanup step runs with `always()`. On failure, collect `docker compose ps`, `docker compose logs --no-color`, and inspect the PostgreSQL, Redis, and EMQX containers before cleanup.
+The cleanup step runs with `always()`. On failure, collect `docker compose ps`, `docker compose logs --no-color`, and inspect the PostgreSQL, Valkey, and Mosquitto containers before cleanup.
 
 ### Readiness checks
 
@@ -73,7 +73,7 @@ Compose currently health-checks only selected infrastructure services. The CI ov
 
 The test runner should use a bounded retry helper and fail with the last response body. A started container, or a `docker compose up` exit code, is not sufficient proof of readiness.
 
-Compose must remain `REDIS_MODE=standalone`. That is the supported simple-deployment topology, not an HA downgrade. Its smoke test verifies application behavior against standalone Redis; Sentinel is asserted by the Minikube job below.
+Compose must remain `REDIS_MODE=standalone`. That is the supported simple-deployment topology, not an HA downgrade. Its smoke test verifies application behavior against standalone Valkey; Sentinel is asserted by the Minikube job below.
 
 ## Minikube HA Verification
 
@@ -83,8 +83,8 @@ Retain `.github/workflows/helm_minikube_ha_smoke.yaml`, but make its contract ex
 2. Install a pinned CloudNativePG operator release and wait for the controller and `clusters.postgresql.cnpg.io` CRD before Helm install.
 3. Lint and render `values-ci-ha-smoke.yaml`; assert that the rendered workloads include `REDIS_MODE=sentinel`, master name, and all Sentinel addresses.
 4. Install into an isolated namespace using a unique Helm release name.
-5. Wait for EMQX, Redis StatefulSet, CNPG `Cluster`, and each selected three-replica Deployment.
-6. Query Redis Sentinel from a Redis pod using `SENTINEL get-master-addr-by-name homenavi-redis`; require a result and three monitored Sentinels.
+5. Wait for VerneMQ, the Valkey StatefulSet, CNPG `Cluster`, and each selected three-replica Deployment.
+6. Query Valkey Sentinel from a Valkey pod using `SENTINEL get-master-addr-by-name homenavi-redis`; require a result and three monitored Sentinels.
 7. Read each live Deployment spec and require the configured groups:
    - `DEVICE_HUB_MQTT_SHARED_GROUP=device-hub-ingest`
    - `ENTITY_REGISTRY_MQTT_SHARED_GROUP=entity-registry-autoimport`

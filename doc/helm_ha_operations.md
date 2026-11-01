@@ -2,6 +2,30 @@
 
 This document covers the HA-oriented operational pieces for the Homenavi Helm chart.
 
+## 0. Install the supported HA profile
+
+Use `helm/homenavi/values-ha.yaml` as the supported starting manifest. It selects
+VerneMQ, Valkey Sentinel, three CNPG instances, and the replicated stateless core
+services. The cluster needs at least three worker nodes and a default StorageClass
+that provisions `ReadWriteOnce` claims.
+
+```bash
+kubectl -n homenavi create secret generic homenavi-runtime-env \
+  --from-env-file=./.env \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+helm upgrade --install homenavi ./helm/homenavi -n homenavi --create-namespace \
+  -f ./helm/homenavi/values-ha.yaml \
+  --set global.envFromSecrets[0]=homenavi-runtime-env
+```
+
+Validate the rendered configuration before an upgrade:
+
+```bash
+helm lint ./helm/homenavi -f ./helm/homenavi/values-ha.yaml
+helm template homenavi ./helm/homenavi -f ./helm/homenavi/values-ha.yaml > /tmp/homenavi-ha.yaml
+```
+
 ## 1. Existing secret references for external or bundled dependencies
 
 The chart supports Kubernetes `Secret` references for the most common dependency credentials instead of forcing them into plain Helm values.
@@ -36,9 +60,9 @@ postgres:
 
 Application pods and the schema bootstrap job will read `POSTGRES_USER` and `POSTGRES_PASSWORD` from that secret.
 
-### Redis
+### Valkey (Redis protocol)
 
-Use `redis.auth.existingSecretName` for standalone or Sentinel deployments when Redis requires a password.
+Use `redis.auth.existingSecretName` for standalone or Sentinel deployments when Valkey requires a password. The stable `REDIS_*` environment names are retained because clients use the Redis protocol.
 
 Example:
 
@@ -139,7 +163,7 @@ kubectl -n homenavi describe cluster <cluster-name>
 kubectl -n homenavi get pods
 ```
 
-## 3. Redis Sentinel failover checks
+## 3. Valkey Sentinel failover checks
 
 Basic checks:
 
@@ -151,13 +175,13 @@ kubectl -n homenavi get svc | grep redis
 Inspect the active master from a Sentinel pod:
 
 ```bash
-kubectl -n homenavi exec -it <redis-pod> -c sentinel -- redis-cli -p 26379 sentinel master homenavi-redis
+kubectl -n homenavi exec -it <redis-pod> -c sentinel -- valkey-cli -p 26379 sentinel master homenavi-redis
 ```
 
 Inspect replica state from a Redis pod:
 
 ```bash
-kubectl -n homenavi exec -it <redis-pod> -c redis -- redis-cli info replication
+kubectl -n homenavi exec -it <redis-pod> -c valkey -- valkey-cli info replication
 ```
 
 For non-production testing, a simple failover exercise is:

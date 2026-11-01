@@ -31,17 +31,17 @@ storage:
 
 dependencies:
   mqtt:
-    provider: emqx
+    provider: mosquitto
   objectStorage:
     provider: seaweedfs
   postgres:
     provider: bundled
   redis:
-    provider: bundled
+    provider: valkey
 
 mqtt:
   brokerUrl: ""
-  brokerKind: emqx
+  brokerKind: mosquitto
   websocketUpstreamUrl: ""
   dependencyHost: ""
   dependencyPort: ""
@@ -152,6 +152,12 @@ persistentVolumeClaims:
     accessModes:
       - ReadWriteOnce
     size: 2Gi
+  mosquitto-data:
+    enabled: true
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
   integration-proxy-config:
     enabled: true
     storageClassName: ""
@@ -541,8 +547,8 @@ services:
     enabled: true
     replicas: 1
     image:
-      repository: redis
-      tag: 7.2-alpine
+      repository: valkey/valkey
+      tag: 8.0-alpine
     containerPort: 6379
     service:
       enabled: true
@@ -587,7 +593,7 @@ services:
     resources: {}
 
   emqx:
-    enabled: true
+    enabled: false
     replicas: 1
     image:
       repository: emqx/emqx
@@ -694,6 +700,99 @@ services:
       - name: emqx-config
         type: configMap
         configMapNameTemplate: homenavi.emqxConfigMapName
+
+  mosquitto:
+    enabled: true
+    replicas: 1
+    image:
+      repository: eclipse-mosquitto
+      tag: 2.0.20
+    containerPort: 1883
+    extraContainerPorts:
+      - name: websocket
+        containerPort: 9001
+        protocol: TCP
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 1883
+      targetPort: 1883
+      extraPorts:
+        - name: websocket
+          port: 9001
+          targetPort: 9001
+          protocol: TCP
+    # The command below uses these values, or matching keys from global.envFromSecrets.
+    # This allows a single .env file to configure Compose and Helm without a config map.
+    env: {}
+    envFromSecrets: []
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        cat > /tmp/homenavi-mosquitto.conf <<EOF
+        persistence ${MOSQUITTO_PERSISTENCE:-false}
+        persistence_location /mosquitto/data/
+        autosave_interval ${MOSQUITTO_AUTOSAVE_INTERVAL:-1800}
+        allow_anonymous ${MOSQUITTO_ALLOW_ANONYMOUS:-true}
+        log_dest ${MOSQUITTO_LOG_DESTINATION:-stdout}
+
+        listener ${MQTT_PORT:-1883} 0.0.0.0
+        protocol mqtt
+
+        listener ${MQTT_WS_PORT:-9001} 0.0.0.0
+        protocol websockets
+        EOF
+        if [ -n "${MOSQUITTO_EXTRA_CONFIG:-}" ]; then
+          printf '\n%s\n' "$MOSQUITTO_EXTRA_CONFIG" >> /tmp/homenavi-mosquitto.conf
+        fi
+        exec mosquitto -c /tmp/homenavi-mosquitto.conf
+    startupProbe:
+      tcpSocket:
+        port: 1883
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 24
+    readinessProbe:
+      tcpSocket:
+        port: 1883
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 6
+    livenessProbe:
+      tcpSocket:
+        port: 1883
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 6
+    resources: {}
+    volumeMounts:
+      - name: mosquitto-data
+        mountPath: /mosquitto/data
+    volumes:
+      - name: mosquitto-data
+        type: generatedPVC
+        claimKey: mosquitto-data
+
+  vernemq:
+    enabled: false
+    replicas: 3
+    image:
+      repository: ghcr.io/micw/vernemq-docker
+      tag: v2.1.1
+      digest: sha256:8fb3b4e2bef3b2700a965477ab67b8122ccb36d06aa6a9920d2f23c7293028a7
+      pullPolicy: IfNotPresent
+    storage:
+      size: 2Gi
+      storageClassName: ""
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+    affinity: {}
+    topologySpreadConstraints: []
+    nodeSelector: {}
+    tolerations: []
+    resources: {}
 
   seaweedfs:
     enabled: true

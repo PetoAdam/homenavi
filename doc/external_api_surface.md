@@ -20,7 +20,7 @@ In the default `docker-compose.yml` config, clients primarily talk to **nginx** 
 Notes:
 - The SPA is built from `Frontend/` (capital F). (Case matters on Linux/CI.)
 - The API Gateway itself is also published on the host at `http://<host>:8080/` via `docker-compose.yml` (useful for debugging), but nginx is the intended public edge.
-- The default Compose broker is EMQX, publishing MQTT on `1883` and MQTT-over-WebSocket on the configured host WebSocket port. The Frontend still uses `/ws/hdp` through nginx → gateway → broker.
+- The default Compose broker is Mosquitto, publishing MQTT on `1883` and MQTT-over-WebSocket on `9001`. The Frontend still uses `/ws/hdp` through nginx → gateway → broker.
 - Profile pictures default to S3-compatible object storage via bundled SeaweedFS and are served through `/api/profile-pictures/users/{user_id}`.
 
 ## API Gateway meta endpoints
@@ -152,12 +152,12 @@ Base: `/api/automation` (access: resident)
 ### Generic WS (`echo-service`)
 - `GET /ws/echo` (access: auth)
 
-### MQTT-over-WS (EMQX default)
-- `GET /ws/hdp` (access: auth) → `ws://emqx:8083/mqtt`
+### MQTT-over-WS (Mosquitto default)
+- `GET /ws/hdp` (access: auth) → `ws://mosquitto:9001`
 
 Notes:
 - The gateway treats `type: websocket-mqtt` the same as `type: websocket` reverse proxy.
-- The upstream is provider-driven and defaults to EMQX for both Compose and Helm deployments.
+- The upstream is provider-driven and defaults to Mosquitto; the Helm HA profile uses VerneMQ.
 - The Frontend uses Paho MQTT over websockets at `/ws/hdp`.
 
 ### Automation run stream (`automation-service`)

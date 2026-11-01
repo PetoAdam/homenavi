@@ -4,6 +4,7 @@ import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import license from 'vite-plugin-license'
 import { VitePWA } from 'vite-plugin-pwa';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +47,18 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    license({
+      thirdParty: {
+        output: {
+          file: path.join(__dirname, 'dist', 'third-party-notices.txt'),
+          template(dependencies) {
+            return dependencies
+              .map((dependency) => `${dependency.name}@${dependency.version}\nLicense: ${dependency.license || 'UNKNOWN'}\nSource: ${dependency.repository || 'UNKNOWN'}\n`)
+              .join('\n');
+          },
+        },
+      },
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {

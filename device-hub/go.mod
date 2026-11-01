@@ -5,28 +5,30 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/PetoAdam/homenavi/shared v0.0.0
-	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/google/uuid v1.6.0
-	gorm.io/datatypes v1.2.0
+	github.com/redis/go-redis/v9 v9.17.2
+	gorm.io/datatypes v1.2.5
 	gorm.io/driver/postgres v1.5.9
-	gorm.io/gorm v1.25.11
+	gorm.io/gorm v1.25.12
 )
 
 require (
-	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/go-chi/chi/v5 v5.1.0 // indirect
+	github.com/eclipse/paho.golang v0.23.0 // indirect
+	github.com/go-chi/chi/v5 v5.2.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-sql-driver/mysql v1.7.0 // indirect
+	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
 	github.com/jackc/pgx/v5 v5.5.5 // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -36,7 +38,6 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/redis/go-redis/v9 v9.11.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect
@@ -56,7 +57,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gorm.io/driver/mysql v1.4.7 // indirect
+	gorm.io/driver/mysql v1.5.6 // indirect
+	gorm.io/driver/sqlite v1.5.7 // indirect
 )
 
 replace github.com/PetoAdam/homenavi/shared => ../shared
