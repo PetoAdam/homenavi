@@ -44,10 +44,7 @@ jobs:
           go install github.com/google/go-licenses@v1.6.0
           export PATH="$(go env GOPATH)/bin:$PATH"
           ./scripts/generate-go-license-inventory.sh artifacts/licenses/go
-          if grep -R -Ei '(^|,)(unknown|none)(,|$)' artifacts/licenses/go; then
-            echo 'Go dependency inventory contains unresolved license metadata.' >&2
-            exit 1
-          fi
+          ./scripts/check-go-license-inventory.sh artifacts/licenses/go
 
       - name: Compute registry owner
         id: owner

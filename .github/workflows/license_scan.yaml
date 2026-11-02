@@ -10,6 +10,7 @@ on:
       - "frontend/vite.config.js"
       - "NOTICE.md"
       - "scripts/generate-go-license-inventory.sh"
+      - "scripts/check-go-license-inventory.sh"
       - ".github/workflows/license_scan.yaml"
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - "frontend/vite.config.js"
       - "NOTICE.md"
       - "scripts/generate-go-license-inventory.sh"
+      - "scripts/check-go-license-inventory.sh"
       - ".github/workflows/license_scan.yaml"
   workflow_dispatch:
 
@@ -35,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: shared/go.mod
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -51,11 +53,7 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
       - name: Reject unresolved Go license entries
-        run: |
-          if grep -R -Ei '(^|,)(unknown|none)(,|$)' artifacts/licenses/go; then
-            echo 'Go dependency inventory contains unresolved license metadata.' >&2
-            exit 1
-          fi
+        run: ./scripts/check-go-license-inventory.sh artifacts/licenses/go
       - uses: actions/upload-artifact@v4
         with:
           name: third-party-license-inventory
