@@ -205,10 +205,32 @@ jobs:
           kubectl -n "$NAMESPACE" port-forward svc/api-gateway 18080:8080 >/tmp/homenavi-ha-gateway.log 2>&1 &
           gateway_pid=$!
           mqtt_pid=""
+          start_mqtt_port_forward() {
+            (
+              forward_pid=""
+              stop_forward() {
+                if [ -n "$forward_pid" ]; then
+                  kill "$forward_pid" >/dev/null 2>&1 || true
+                fi
+              }
+              trap 'stop_forward; exit 0' INT TERM
+              trap stop_forward EXIT
+              while true; do
+                kubectl -n "$NAMESPACE" port-forward pod/vernemq-0 11883:1883 >>/tmp/homenavi-ha-vernemq.log 2>&1 &
+                forward_pid=$!
+                wait "$forward_pid" || true
+                forward_pid=""
+                echo 'VerneMQ port-forward exited; restarting.' >>/tmp/homenavi-ha-vernemq.log
+                sleep 1
+              done
+            ) &
+            mqtt_pid=$!
+          }
           cleanup() {
             kill "$gateway_pid" >/dev/null 2>&1 || true
             if [ -n "$mqtt_pid" ]; then
               kill "$mqtt_pid" >/dev/null 2>&1 || true
+              wait "$mqtt_pid" 2>/dev/null || true
             fi
           }
           trap cleanup EXIT
@@ -271,8 +293,7 @@ jobs:
           done
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest requests paho-mqtt
-          kubectl -n "$NAMESPACE" port-forward pod/vernemq-0 11883:1883 >/tmp/homenavi-ha-vernemq.log 2>&1 &
-          mqtt_pid=$!
+          start_mqtt_port_forward
           for attempt in $(seq 1 60); do
             if ! kill -0 "$mqtt_pid" 2>/dev/null; then
               cat /tmp/homenavi-ha-vernemq.log >&2 || true
