@@ -210,6 +210,21 @@ jobs:
             kill "$gateway_pid" "$mqtt_pid" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$mqtt_pid" 2>/dev/null; then
+              cat /tmp/homenavi-ha-vernemq.log >&2 || true
+              exit 1
+            fi
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/11883' 2>/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              cat /tmp/homenavi-ha-vernemq.log >&2 || true
+              echo 'Timed out waiting for the VerneMQ port-forward.' >&2
+              exit 1
+            fi
+            sleep 2
+          done
           for path in /health /api/gateway/health; do
             for attempt in $(seq 1 60); do
               if ! kill -0 "$gateway_pid" 2>/dev/null; then
