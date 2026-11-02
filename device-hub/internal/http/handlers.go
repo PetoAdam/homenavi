@@ -224,10 +224,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	s.startCommandExpiryReaper()
 	s.startPairingExpiryReaper()
 	adapterSubscription := mqttx.SubscriptionOptions{Topic: hdpAdapterHelloTopic, Mode: mqttx.SubscriptionModeExclusive}
-	if s.mqttSharedGroup != "" {
-		adapterSubscription.Mode = mqttx.SubscriptionModeShared
-		adapterSubscription.Group = s.mqttSharedGroup
-	}
 	if err := s.mqtt.SubscribeWithOptions(adapterSubscription, s.handleHDPAdapterHello); err != nil {
 		slog.Error("hdp adapter hello subscribe failed", "error", err)
 	}

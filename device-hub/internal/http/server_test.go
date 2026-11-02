@@ -28,23 +28,28 @@ func (c *subscriptionTestMQTTClient) Publish(_ string, _ []byte) error { return 
 
 func (c *subscriptionTestMQTTClient) PublishWith(_ string, _ []byte, _ bool) error { return nil }
 
-func TestRegisterSharesAllDurableSubscriptions(t *testing.T) {
+func TestRegisterSharesDurableSubscriptionsButNotAdapterDiscovery(t *testing.T) {
 	mqtt := &subscriptionTestMQTTClient{}
 	srv := NewServer(nil, mqtt, WithMQTTSharedGroup("device-hub-ingest"))
 	srv.Register(http.NewServeMux())
 
-	sharedTopics := map[string]bool{}
+	subscriptions := map[string]mqttx.SubscriptionOptions{}
 	for _, subscription := range mqtt.subscriptions {
+		subscriptions[subscription.Topic] = subscription
 		if subscription.Mode == mqttx.SubscriptionModeShared {
 			if subscription.Group != "device-hub-ingest" {
 				t.Fatalf("unexpected shared subscription group %q", subscription.Group)
 			}
-			sharedTopics[subscription.Topic] = true
 		}
 	}
-	for _, topic := range []string{hdpAdapterHelloTopic, hdpAdapterStatusPrefix + "#", hdpMetadataPrefix + "#", hdpStatePrefix + "#", hdpEventPrefix + "#", hdpCommandResultPrefix + "#", hdpPairingProgressPrefix + "#"} {
-		if !sharedTopics[topic] {
-			t.Fatalf("expected %q to use the shared group, got %#v", topic, sharedTopics)
+	for _, topic := range []string{hdpAdapterHelloTopic, hdpAdapterStatusPrefix + "#"} {
+		if subscription := subscriptions[topic]; subscription.Mode != mqttx.SubscriptionModeExclusive {
+			t.Fatalf("expected %q to use an exclusive subscription, got %#v", topic, subscription)
+		}
+	}
+	for _, topic := range []string{hdpMetadataPrefix + "#", hdpStatePrefix + "#", hdpEventPrefix + "#", hdpCommandResultPrefix + "#", hdpPairingProgressPrefix + "#"} {
+		if subscription := subscriptions[topic]; subscription.Mode != mqttx.SubscriptionModeShared {
+			t.Fatalf("expected %q to use the shared group, got %#v", topic, subscription)
 		}
 	}
 }

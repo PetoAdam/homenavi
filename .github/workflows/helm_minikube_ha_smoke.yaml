@@ -271,7 +271,7 @@ jobs:
           done
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest requests paho-mqtt
-          kubectl -n "$NAMESPACE" port-forward svc/vernemq 11883:1883 >/tmp/homenavi-ha-vernemq.log 2>&1 &
+          kubectl -n "$NAMESPACE" port-forward pod/vernemq-0 11883:1883 >/tmp/homenavi-ha-vernemq.log 2>&1 &
           mqtt_pid=$!
           for attempt in $(seq 1 60); do
             if ! kill -0 "$mqtt_pid" 2>/dev/null; then

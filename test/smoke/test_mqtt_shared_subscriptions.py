@@ -14,6 +14,19 @@ MQTT_HOST = os.getenv("HOMENAVI_MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.getenv("HOMENAVI_MQTT_PORT", "1883"))
 
 
+def connect_with_retry(client: mqtt.Client) -> None:
+    deadline = time.monotonic() + 30
+    last_error: OSError | None = None
+    while time.monotonic() < deadline:
+        try:
+            client.connect(MQTT_HOST, MQTT_PORT, keepalive=20)
+            return
+        except OSError as error:
+            last_error = error
+            time.sleep(0.25)
+    raise AssertionError(f"MQTT broker did not accept connections at {MQTT_HOST}:{MQTT_PORT}") from last_error
+
+
 def subscription_succeeded(reason_code: object) -> bool:
     value = getattr(reason_code, "value", reason_code)
     return int(value) < 128
@@ -45,14 +58,14 @@ def test_shared_subscriptions_distribute_each_message_once() -> None:
         client.on_connect = on_connect
         client.on_subscribe = on_subscribe
         client.on_message = on_message
-        client.connect(MQTT_HOST, MQTT_PORT, keepalive=20)
+        connect_with_retry(client)
         client.loop_start()
         clients.append(client)
 
     publisher = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"homenavi-publisher-{uuid.uuid4().hex}", protocol=mqtt.MQTTv5)
     publisher_connected = threading.Event()
     publisher.on_connect = lambda _client, _userdata, _connect_flags, reason_code, _properties=None: publisher_connected.set() if reason_code == 0 else None
-    publisher.connect(MQTT_HOST, MQTT_PORT, keepalive=20)
+    connect_with_retry(publisher)
     publisher.loop_start()
 
     try:
