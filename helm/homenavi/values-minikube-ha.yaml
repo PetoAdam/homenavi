@@ -29,5 +29,9 @@ services:
   integration-proxy:
     replicas: 3
 
+dependencies:
+  mqtt:
+    provider: vernemq
+
 mqtt:
-  brokerKind: emqx
+  brokerKind: vernemq
