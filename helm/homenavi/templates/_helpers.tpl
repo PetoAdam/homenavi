@@ -376,13 +376,7 @@ false
 {{- if ne $override "" -}}
 {{- $override -}}
 {{- else -}}
-{{- if eq (include "homenavi.mqttProvider" .) "mosquitto" -}}
-mqtt://mosquitto:1883
-{{- else if eq (include "homenavi.mqttProvider" .) "vernemq" -}}
-mqtt://vernemq:1883
-{{- else -}}
-mqtt://emqx:1883
-{{- end -}}
+mqtt://mqtt-broker:1883
 {{- end -}}
 {{- end -}}
 
@@ -409,12 +403,8 @@ ws://emqx:8083/mqtt
 {{- $override := trim (default "" .Values.mqtt.dependencyHost) -}}
 {{- if ne $override "" -}}
 {{- $override -}}
-{{- else if eq (include "homenavi.mqttProvider" .) "emqx" -}}
-emqx
-{{- else if eq (include "homenavi.mqttProvider" .) "mosquitto" -}}
-mosquitto
-{{- else if eq (include "homenavi.mqttProvider" .) "vernemq" -}}
-vernemq
+{{- else -}}
+mqtt-broker
 {{- end -}}
 {{- end -}}
 

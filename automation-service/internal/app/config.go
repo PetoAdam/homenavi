@@ -36,7 +36,7 @@ func LoadConfig() (Config, error) {
 	cfg := Config{
 		Port:                envx.String("AUTOMATION_SERVICE_PORT", "8094"),
 		LogLevel:            envx.String("LOG_LEVEL", "info"),
-		MQTT:                mqttx.LoadConfig("mqtt://emqx:1883", "AUTOMATION_SERVICE_MQTT_CLIENT_ID"),
+		MQTT:                mqttx.LoadConfig("mqtt://mqtt-broker:1883", "AUTOMATION_SERVICE_MQTT_CLIENT_ID"),
 		MQTTSharedGroup:     envx.String("AUTOMATION_SERVICE_MQTT_SHARED_GROUP", ""),
 		JWTPublicKeyPath:    envx.String("JWT_PUBLIC_KEY_PATH", ""),
 		UserServiceURL:      envx.String("USER_SERVICE_URL", "http://user-service:8001"),

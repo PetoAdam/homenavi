@@ -69,6 +69,7 @@ environment overrides. VerneMQ is persistent by default in this profile.
 
 - Default values are intentionally conservative and intended as a baseline scaffold.
 - The default bundled MQTT provider is Mosquitto. Use `dependencies.mqtt.provider: emqx` only for an explicitly reviewed single-node compatibility deployment; use `vernemq` for the supported clustered HA profile.
+- Core services use `mqtt-broker:1883`; the chart maps that stable Service to the selected bundled provider. Helm-installed marketplace integrations receive the same endpoint without broker-kind configuration.
 - The default bundled PostgreSQL provider is CloudNativePG.
 - CloudNativePG storage is persistent by default via `postgres.cnpg.storage`.
 - Bundled standalone PostgreSQL uses the `persistentVolumeClaims.postgres-data` claim, which is enabled by default; disabling it now fails chart rendering instead of silently falling back to `emptyDir`.

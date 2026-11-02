@@ -30,7 +30,7 @@ func LoadConfig() (Config, error) {
 	}
 	cfg := Config{
 		Port:            envx.String("DEVICE_HUB_PORT", "8090"),
-		MQTT:            mqttx.LoadConfig("mqtt://emqx:1883"),
+		MQTT:            mqttx.LoadConfig("mqtt://mqtt-broker:1883"),
 		LogLevel:        envx.String("LOG_LEVEL", "info"),
 		DB:              dbx.LoadPostgresConfig(dbx.PostgresConfig{User: "postgres", DBName: "homenavi", Host: "postgres", Port: "5432", SSLMode: "disable"}),
 		Redis:           redisConfig,

@@ -30,7 +30,7 @@ func LoadConfig() (Config, error) {
 	}
 	cfg := Config{
 		Port:            envx.String("ENTITY_REGISTRY_PORT", "8095"),
-		MQTT:            mqttx.LoadConfig("mqtt://emqx:1883"),
+		MQTT:            mqttx.LoadConfig("mqtt://mqtt-broker:1883"),
 		MQTTSharedGroup: envx.String("ENTITY_REGISTRY_MQTT_SHARED_GROUP", ""),
 		DeviceHubURL:    envx.String("DEVICE_HUB_URL", "http://device-hub:8090"),
 		AutoImport:      envx.Bool("ENTITY_REGISTRY_AUTO_IMPORT", true),

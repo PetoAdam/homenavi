@@ -208,7 +208,6 @@ func (s *Server) helmCommonEnvArgs() []string {
 	if brokerURL := strings.TrimSpace(s.defaultHelmMQTTBrokerURL()); brokerURL != "" {
 		args = append(args, "--set-string", fmt.Sprintf("env.MQTT_BROKER_URL=%s", brokerURL))
 	}
-	args = append(args, "--set-string", fmt.Sprintf("env.MQTT_BROKER_KIND=%s", s.defaultHelmMQTTBrokerKind()))
 	return args
 }
 
@@ -232,14 +231,7 @@ func (s *Server) defaultHelmMQTTBrokerURL() string {
 	if coreNamespace == "" {
 		coreNamespace = "homenavi"
 	}
-	return fmt.Sprintf("mqtt://emqx.%s.svc.cluster.local:1883", coreNamespace)
-}
-
-func (s *Server) defaultHelmMQTTBrokerKind() string {
-	if value := strings.TrimSpace(envx.String("INTEGRATIONS_HELM_MQTT_BROKER_KIND", "")); value != "" {
-		return value
-	}
-	return "emqx"
+	return fmt.Sprintf("mqtt://mqtt-broker.%s.svc.cluster.local:1883", coreNamespace)
 }
 
 func (s *Server) helmUninstall(ctx context.Context, releaseName, namespace string) error {

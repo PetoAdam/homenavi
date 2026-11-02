@@ -127,7 +127,7 @@ Device-hub can use the same shared-consumer model when `DEVICE_HUB_MQTT_SHARED_G
 Compose starts Mosquitto and injects these settings into core MQTT consumers:
 
 ```dotenv
-MQTT_BROKER_URL=mqtt://mosquitto:1883
+MQTT_BROKER_URL=mqtt://mqtt-broker:1883
 MQTT_BROKER_KIND=mosquitto
 HISTORY_SERVICE_MQTT_SHARED_GROUP=
 ENTITY_REGISTRY_MQTT_SHARED_GROUP=
@@ -139,7 +139,7 @@ To point the core services at another standard MQTT broker, set both values cons
 
 ## Helm
 
-Helm defaults to bundled Mosquitto and injects `MQTT_BROKER_URL` and `MQTT_BROKER_KIND` into services marked `usesMQTT`. The HA smoke profile selects VerneMQ.
+Helm exposes the selected bundled provider through the stable `mqtt-broker` Service. It injects `MQTT_BROKER_URL` and `MQTT_BROKER_KIND` into core services marked `usesMQTT`; the HA profile selects VerneMQ behind the same endpoint.
 
 ```yaml
 dependencies:
@@ -158,7 +158,7 @@ services:
 
 For an externally managed broker, set `mqtt.brokerUrl` to the reachable endpoint, set `mqtt.dependencyHost` and `mqtt.dependencyPort` for startup checks, and choose `mqtt.brokerKind: mosquitto`, `emqx`, `vernemq`, or `generic` according to the broker's shared-subscription support.
 
-Integration-proxy Helm installs pass both `MQTT_BROKER_URL` and `MQTT_BROKER_KIND` to integration charts. Integration charts that use MQTT should accept and document both values; the integration template provides typed topic-resolution helpers in `src/backend/mqttsupport`.
+Integration-proxy Helm installs pass `MQTT_BROKER_URL` to integration charts as `mqtt://mqtt-broker.<namespace>.svc.cluster.local:1883`. Marketplace integrations use exclusive subscriptions and do not receive broker kind; the integration template retains typed topic-resolution helpers for integrations that deliberately implement shared consumers.
 
 ## Enabling Shared Consumers
 
@@ -211,9 +211,8 @@ When using Mosquitto, enable a WebSocket listener only if another component expl
 
 Integrations should:
 - use `MQTT_BROKER_URL` supplied by the runtime
-- accept `MQTT_BROKER_KIND` when they expose shared-consumer options
-- keep normal subscriptions exclusive by default
-- use shared mode only for replay-safe worker workloads and broker kinds `mosquitto`, `emqx`, or `vernemq`
+- keep subscriptions exclusive
+- avoid broker-specific hostnames and broker-kind configuration
 - publish HDP messages under the documented topic families
 
 The integration template's `mqttsupport.ResolveSubscriptionTopic` demonstrates the same exclusive/shared resolution model without forcing a specific MQTT client library.

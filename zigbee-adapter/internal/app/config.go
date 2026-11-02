@@ -18,7 +18,7 @@ type Config struct {
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		Port:  envx.String("ZIGBEE_ADAPTER_PORT", envx.String("DEVICE_HUB_ZIGBEE_PORT", "8091")),
-		MQTT:  mqttx.LoadConfig("mqtt://emqx:1883"),
+		MQTT:  mqttx.LoadConfig("mqtt://mqtt-broker:1883"),
 		DB:    dbx.LoadPostgresConfig(dbx.PostgresConfig{User: "postgres", DBName: "homenavi", Host: "postgres", Port: "5432", SSLMode: "disable"}),
 		Redis: redisx.Config{},
 	}

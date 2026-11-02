@@ -108,16 +108,15 @@ func TestHelmSpecForUsesGeneratedArtifactFallback(t *testing.T) {
 	}
 }
 
-func TestHelmCommonEnvArgsIncludesBrokerKind(t *testing.T) {
+func TestHelmCommonEnvArgsIncludesBrokerURLOnly(t *testing.T) {
 	t.Setenv("INTEGRATIONS_HELM_MQTT_BROKER_URL", "mqtt://broker:1883")
-	t.Setenv("INTEGRATIONS_HELM_MQTT_BROKER_KIND", "generic")
 
 	s := New(log.New(io.Discard, "", 0), nil, nil, "", "")
 	args := strings.Join(s.helmCommonEnvArgs(), " ")
 	if !strings.Contains(args, "env.MQTT_BROKER_URL=mqtt://broker:1883") {
 		t.Fatalf("expected broker URL Helm argument, got %q", args)
 	}
-	if !strings.Contains(args, "env.MQTT_BROKER_KIND=generic") {
-		t.Fatalf("expected broker kind Helm argument, got %q", args)
+	if strings.Contains(args, "MQTT_BROKER_KIND") {
+		t.Fatalf("marketplace integrations must not receive broker kind, got %q", args)
 	}
 }

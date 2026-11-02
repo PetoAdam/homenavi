@@ -16,7 +16,7 @@ type Config struct {
 func LoadConfig() Config {
 	return Config{
 		Port:      envx.String("MOCK_ADAPTER_PORT", "8092"),
-		MQTT:      mqttx.LoadConfig("mqtt://emqx:1883"),
+		MQTT:      mqttx.LoadConfig("mqtt://mqtt-broker:1883"),
 		AdapterID: envx.String("MOCK_ADAPTER_ID", "mock-adapter-1"),
 		Version:   envx.String("MOCK_ADAPTER_VERSION", "dev"),
 	}
