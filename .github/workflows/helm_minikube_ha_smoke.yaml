@@ -204,27 +204,14 @@ jobs:
           set -euo pipefail
           kubectl -n "$NAMESPACE" port-forward svc/api-gateway 18080:8080 >/tmp/homenavi-ha-gateway.log 2>&1 &
           gateway_pid=$!
-          kubectl -n "$NAMESPACE" port-forward svc/vernemq 11883:1883 >/tmp/homenavi-ha-vernemq.log 2>&1 &
-          mqtt_pid=$!
+          mqtt_pid=""
           cleanup() {
-            kill "$gateway_pid" "$mqtt_pid" >/dev/null 2>&1 || true
+            kill "$gateway_pid" >/dev/null 2>&1 || true
+            if [ -n "$mqtt_pid" ]; then
+              kill "$mqtt_pid" >/dev/null 2>&1 || true
+            fi
           }
           trap cleanup EXIT
-          for attempt in $(seq 1 60); do
-            if ! kill -0 "$mqtt_pid" 2>/dev/null; then
-              cat /tmp/homenavi-ha-vernemq.log >&2 || true
-              exit 1
-            fi
-            if timeout 1 bash -c '</dev/tcp/127.0.0.1/11883' 2>/dev/null; then
-              break
-            fi
-            if [ "$attempt" -eq 60 ]; then
-              cat /tmp/homenavi-ha-vernemq.log >&2 || true
-              echo 'Timed out waiting for the VerneMQ port-forward.' >&2
-              exit 1
-            fi
-            sleep 2
-          done
           for path in /health /api/gateway/health; do
             for attempt in $(seq 1 60); do
               if ! kill -0 "$gateway_pid" 2>/dev/null; then
@@ -284,6 +271,23 @@ jobs:
           done
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest requests paho-mqtt
+          kubectl -n "$NAMESPACE" port-forward svc/vernemq 11883:1883 >/tmp/homenavi-ha-vernemq.log 2>&1 &
+          mqtt_pid=$!
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$mqtt_pid" 2>/dev/null; then
+              cat /tmp/homenavi-ha-vernemq.log >&2 || true
+              exit 1
+            fi
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/11883' 2>/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              cat /tmp/homenavi-ha-vernemq.log >&2 || true
+              echo 'Timed out waiting for the VerneMQ port-forward.' >&2
+              exit 1
+            fi
+            sleep 2
+          done
           HOMENAVI_GATEWAY_URL=http://127.0.0.1:18080 HOMENAVI_MQTT_HOST=127.0.0.1 HOMENAVI_MQTT_PORT=11883 HOMENAVI_ADMIN_EMAIL="$admin_email" HOMENAVI_ADMIN_PASSWORD="$admin_password" pytest -q api-gateway/test/test_api_gateway_auth.py test/smoke/test_mqtt_history.py test/smoke/test_mqtt_shared_subscriptions.py test/smoke/test_ha_runtime_services.py
 
       - name: Collect diagnostics on failure

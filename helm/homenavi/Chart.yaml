@@ -3,4 +3,4 @@ name: homenavi
 description: Helm chart for deploying the Homenavi core platform
 type: application
 version: 0.4.29
-appVersion: "v0.5.53"
+appVersion: "v0.5.54"
