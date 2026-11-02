@@ -96,7 +96,7 @@ metadata:
 spec:
   serviceName: {{ $headlessServiceName }}
   replicas: {{ $replicas }}
-  podManagementPolicy: Parallel
+  podManagementPolicy: OrderedReady
   selector:
     matchLabels:
       {{- include "homenavi.selectorLabels" . | nindent 6 }}

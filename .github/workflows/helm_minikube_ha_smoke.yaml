@@ -167,6 +167,9 @@ jobs:
           set -euo pipefail
           kubectl -n "$NAMESPACE" rollout status statefulset/vernemq --timeout=4m
           kubectl -n "$NAMESPACE" get statefulset vernemq -o jsonpath='{.status.readyReplicas}{"\n"}' | grep -x 3
+          for pod in vernemq-0 vernemq-1 vernemq-2; do
+            kubectl -n "$NAMESPACE" exec "$pod" -- vmq-admin cluster show | grep -c 'VerneMQ@' | grep -x 3
+          done
           kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c valkey -- valkey-cli -p 26379 SENTINEL get-master-addr-by-name homenavi-redis | grep -qx "$RELEASE-redis-0.$RELEASE-redis-headless"
           kubectl -n "$NAMESPACE" exec "$RELEASE-redis-0" -c valkey -- valkey-cli -p 26379 SENTINEL masters | grep -qx homenavi-redis
           check_env() {

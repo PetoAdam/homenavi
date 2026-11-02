@@ -251,8 +251,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPCommandResultEvent); err != nil {
 		slog.Error("hdp command result subscribe failed", "error", err)
 	}
-	durableSubscription.Topic = hdpPairingProgressPrefix + "#"
-	if err := s.mqtt.SubscribeWithOptions(durableSubscription, s.handleHDPPairingProgressEvent); err != nil {
+	pairingSubscription := mqttx.SubscriptionOptions{Topic: hdpPairingProgressPrefix + "#", Mode: mqttx.SubscriptionModeExclusive}
+	if err := s.mqtt.SubscribeWithOptions(pairingSubscription, s.handleHDPPairingProgressEvent); err != nil {
 		slog.Error("hdp pairing progress subscribe failed", "error", err)
 	}
 }

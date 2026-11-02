@@ -42,12 +42,12 @@ func TestRegisterSharesDurableSubscriptionsButNotAdapterDiscovery(t *testing.T) 
 			}
 		}
 	}
-	for _, topic := range []string{hdpAdapterHelloTopic, hdpAdapterStatusPrefix + "#"} {
+	for _, topic := range []string{hdpAdapterHelloTopic, hdpAdapterStatusPrefix + "#", hdpPairingProgressPrefix + "#"} {
 		if subscription := subscriptions[topic]; subscription.Mode != mqttx.SubscriptionModeExclusive {
 			t.Fatalf("expected %q to use an exclusive subscription, got %#v", topic, subscription)
 		}
 	}
-	for _, topic := range []string{hdpMetadataPrefix + "#", hdpStatePrefix + "#", hdpEventPrefix + "#", hdpCommandResultPrefix + "#", hdpPairingProgressPrefix + "#"} {
+	for _, topic := range []string{hdpMetadataPrefix + "#", hdpStatePrefix + "#", hdpEventPrefix + "#", hdpCommandResultPrefix + "#"} {
 		if subscription := subscriptions[topic]; subscription.Mode != mqttx.SubscriptionModeShared {
 			t.Fatalf("expected %q to use the shared group, got %#v", topic, subscription)
 		}
