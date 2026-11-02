@@ -36,7 +36,7 @@ jobs:
         if: inputs.service != 'frontend'
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: shared/go.mod
 
       - name: Scan Go dependency licenses
         if: inputs.service != 'frontend'
