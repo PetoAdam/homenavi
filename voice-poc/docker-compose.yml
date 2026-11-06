@@ -8,6 +8,7 @@ services:
       TTS_URL: ${TTS_URL:-http://piper:8000/tts}
       OPEN_WEBUI_CHAT_URL: ${OPEN_WEBUI_CHAT_URL:?set Open WebUI's OpenAI-compatible chat-completions endpoint}
       OPEN_WEBUI_API_KEY: ${OPEN_WEBUI_API_KEY:-}
+      OPEN_WEBUI_SOCKET_TOKEN: ${OPEN_WEBUI_SOCKET_TOKEN:-}
       OPEN_WEBUI_MODEL: ${OPEN_WEBUI_MODEL:-orion}
       OPEN_WEBUI_TOOL_IDS: ${OPEN_WEBUI_TOOL_IDS:-server:mcp:homenavi-mcp}
       VOICE_GATEWAY_LOG_CONTENT: ${VOICE_GATEWAY_LOG_CONTENT:-false}
