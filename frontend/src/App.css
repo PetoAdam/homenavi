@@ -10,6 +10,25 @@ html {
   box-sizing: inherit;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 0.4rem;
+  height: 0.4rem;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 #root {
   height: 100%;
   max-width: none;

@@ -1058,6 +1058,7 @@ function Automation() {
                   </div>
                   <div className="automation-overview-preview-actions">
                     <Button
+                      variant="secondary"
                       onClick={() => setViewMode('edit')}
                       className="automation-overview-edit"
                     >
@@ -1066,7 +1067,6 @@ function Automation() {
                     </Button>
                     {canWorkflowRunNow(selectedWorkflow) && (
                       <Button
-                        variant="secondary"
                         onClick={runNow}
                         disabled={saving}
                       >

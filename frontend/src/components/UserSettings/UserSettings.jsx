@@ -677,7 +677,6 @@ export default function UserSettings({ onClose }) {
               <FontAwesomeIcon icon={showConnectedApps ? faChevronUp : faChevronDown} />
             </button>
             {showConnectedApps && <>
-            <p className="settings-supporting-text">Applications authorized to access Homenavi on your behalf.</p>
             {oauthLoading && <p className="settings-supporting-text">Loading connected applications...</p>}
             {!oauthLoading && oauthError && (
               <div className="card-status error" role="alert">
@@ -685,7 +684,7 @@ export default function UserSettings({ onClose }) {
                 <button type="button" className="secondary" onClick={() => void loadOAuthConsents()}>Try again</button>
               </div>
             )}
-            {!oauthLoading && !oauthError && oauthConsents.length === 0 && <p className="settings-supporting-text">No connected applications. Authorize an MCP client to manage it here.</p>}
+            {!oauthLoading && !oauthError && oauthConsents.length === 0 && <p className="settings-supporting-text">No connected applications.</p>}
             {oauthConsents.map((consent) => (
               <div className="connected-app-row" key={`${consent.client_id}-${consent.resource}`}>
                 <div className="connected-app-details">

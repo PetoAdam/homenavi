@@ -16,6 +16,9 @@
   --color-glass-border-strong: rgba(255,255,255,0.38);
   --color-glass-border-light: rgba(255,255,255,0.22);
   --color-glass-border-xlight: rgba(255,255,255,0.12);
+  --glass-card-surface: rgba(28, 34, 44, 0.72);
+  --glass-card-border: rgba(60, 70, 90, 0.32);
+  --glass-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   --color-shadow: #e5e4e3;
   --color-shadow-dark: #040913;
   --color-shadow-spotify: #1db95444;
@@ -64,7 +67,8 @@
   --color-profile-btn-hover: #1d4ed8;
 
   /* Gradients and overlays */
-  --gradient-bg: linear-gradient(120deg, var(--color-bg) 0%, var(--color-bg-secondary) 100%);
+  --gradient-bg: radial-gradient(ellipse at 82% 0%, rgba(57, 170, 121, 0.07), transparent 55%),
+    linear-gradient(120deg, var(--color-bg) 0%, var(--color-bg-secondary) 100%);
   --gradient-map-card: linear-gradient(0deg, rgba(44,54,67,0.18) 80%, transparent 100%);
   --gradient-weather-cc-checked: linear-gradient(90deg, #4cd964 60%, var(--color-primary-light) 100%);
   --gradient-card-emerald: radial-gradient(circle at top left, rgba(var(--color-success-rgb), 0.18), var(--color-surface-card-strong));

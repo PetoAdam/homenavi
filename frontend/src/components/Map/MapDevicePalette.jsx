@@ -36,7 +36,7 @@ export default function MapDevicePalette({
                       // On mobile, use click-to-place.
                       setSelectedDeviceId(prev => (prev === id ? '' : id));
                     }}
-                    title="Drag to a room (desktop) or tap then tap a room (mobile)"
+                    title={`${label} - Drag to a room (desktop) or tap then tap a room (mobile)`}
                   >
                     <div className="label">
                       <span>{label}</span>

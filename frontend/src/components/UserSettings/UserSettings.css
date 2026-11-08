@@ -456,12 +456,19 @@
   padding: 0;
 }
 
+.connected-apps-card:hover {
+  border-color: rgba(60, 70, 90, 0.38);
+  transform: none;
+  filter: none;
+  box-shadow: 0 8px 32px 0 rgba(0,0,0,0.18);
+}
+
 .user-settings button.connected-apps-toggle:not(.auth-modal-close) {
   background: transparent;
   box-shadow: none;
   color: var(--color-white);
   margin: 0;
-  padding: clamp(1.2rem, 4vw, 2.2rem) clamp(1rem, 3vw, 2rem);
+  padding: 1.1rem 1.25rem;
   text-align: left;
   width: 100%;
 }
@@ -475,15 +482,40 @@
   flex: 1;
 }
 
+.connected-apps-toggle .user-settings-card-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.6rem;
+  background: rgba(57, 170, 121, 0.12);
+  color: var(--color-primary);
+  font-size: 1.1rem;
+}
+
+.connected-apps-toggle > svg {
+  color: var(--color-secondary-light);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
 .connected-apps-toggle-copy strong {
-  font-size: 1.25rem;
+  font-size: 1rem;
 }
 
 .connected-apps-card > .settings-supporting-text,
 .connected-apps-card > .card-status,
 .connected-apps-card > .connected-app-row {
-  margin-left: clamp(1rem, 3vw, 2rem);
-  margin-right: clamp(1rem, 3vw, 2rem);
+  margin-left: 1.25rem;
+  margin-right: 1.25rem;
+}
+
+.connected-apps-card > .settings-supporting-text {
+  margin-top: 0;
+}
+
+.connected-apps-card > :last-child:not(.connected-apps-toggle) {
+  margin-bottom: 1.1rem;
 }
 
 .security-action-row span,
@@ -511,7 +543,8 @@
 }
 
 .connected-app-row {
-  padding: 1rem 0;
+  margin-top: 0;
+  padding: 0.9rem 0;
   border-top: 1px solid rgba(60, 70, 90, 0.38);
 }
 
@@ -536,6 +569,21 @@
   flex: 0 0 auto;
 }
 
+.user-settings .connected-app-row > button.danger:not(.auth-modal-close) {
+  background: rgba(229, 62, 62, 0.1);
+  border: 1px solid rgba(229, 62, 62, 0.35);
+  border-radius: 0.6rem;
+  box-shadow: none;
+  color: #ffaaaa;
+  font-size: 0.85rem;
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+}
+
+.user-settings .connected-app-row > button.danger:not(.auth-modal-close):hover:not(:disabled) {
+  background: rgba(229, 62, 62, 0.2);
+}
+
 .connected-app-scopes {
   display: flex;
   flex-wrap: wrap;
@@ -543,8 +591,8 @@
 }
 
 .connected-app-scopes span {
-  background: rgba(57, 170, 121, 0.12);
-  border: 1px solid rgba(57, 170, 121, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.4rem;
   color: var(--color-secondary-light);
   font-size: 0.78rem;

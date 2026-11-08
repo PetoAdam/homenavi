@@ -3,8 +3,15 @@
 .multi-device-widget__content {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 0.75rem;
   min-height: 0;
+  padding: 4px;
+  scroll-padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .multi-device-widget__error {
@@ -28,7 +35,7 @@
   flex-direction: column;
   gap: 0.6rem;
   width: 100%;
-  padding: 0.7rem 0.8rem;
+  padding: 0.4rem 0.65rem;
   border-radius: 0.9rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
@@ -67,14 +74,24 @@
 
 .multi-device-widget__tile-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.25rem;
   min-width: 0;
+  text-align: center;
+}
+
+.multi-device-widget__tile-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  max-width: 100%;
 }
 
 .multi-device-widget__tile-icon {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 0.7rem;
   display: inline-flex;
   align-items: center;
@@ -84,25 +101,24 @@
   flex-shrink: 0;
 }
 
-.multi-device-widget__tile-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
 .multi-device-widget__tile-name {
+  width: 100%;
+  min-width: 0;
   font-weight: 600;
   font-size: 0.95rem;
-  white-space: nowrap;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .multi-device-widget__tile-status {
   font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  white-space: nowrap;
   color: rgba(255, 255, 255, 0.7);
 }
 
@@ -130,30 +146,21 @@
   }
 
   .multi-device-widget__tile {
-    padding: 0.6rem 0.55rem;
+    padding: 0.4rem 0.55rem;
   }
 
   .multi-device-widget__tile-header {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0.4rem;
+    gap: 0.2rem;
   }
 
   .multi-device-widget__tile-icon {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     border-radius: 0.6rem;
   }
 
   .multi-device-widget__tile-name {
     font-size: 0.82rem;
-    white-space: normal;
-    line-height: 1.15;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
   }
 
   .multi-device-widget__tile-status {

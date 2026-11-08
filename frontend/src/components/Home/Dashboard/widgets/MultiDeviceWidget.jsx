@@ -402,14 +402,14 @@ export default function MultiDeviceWidget({ settings = {}, editMode, onSettings,
                   title={item.annotation || undefined}
                 >
                   <div className="multi-device-widget__tile-header">
-                    <div className="multi-device-widget__tile-icon">
-                      <FontAwesomeIcon icon={faLayerGroup} />
-                    </div>
-                    <div className="multi-device-widget__tile-info">
-                      <div className="multi-device-widget__tile-name">
-                        {item.group?.name || item.group?.slug || item.id || 'Group'}
+                    <div className="multi-device-widget__tile-indicator">
+                      <div className="multi-device-widget__tile-icon">
+                        <FontAwesomeIcon icon={faLayerGroup} />
                       </div>
                       <div className="multi-device-widget__tile-status">{status}</div>
+                    </div>
+                    <div className="multi-device-widget__tile-name" title={item.group?.name || item.group?.slug || item.id || 'Group'}>
+                      {item.group?.name || item.group?.slug || item.id || 'Group'}
                     </div>
                   </div>
                 </button>
@@ -436,16 +436,16 @@ export default function MultiDeviceWidget({ settings = {}, editMode, onSettings,
                 disabled={pending || !canToggle || !commandsReady}
               >
                 <div className="multi-device-widget__tile-header">
-                  <div className="multi-device-widget__tile-icon">
-                    <FontAwesomeIcon icon={icon} />
-                  </div>
-                  <div className="multi-device-widget__tile-info">
-                    <div className="multi-device-widget__tile-name">
-                      {getDeviceDisplayName(displayDevice)}
+                  <div className="multi-device-widget__tile-indicator">
+                    <div className="multi-device-widget__tile-icon">
+                      <FontAwesomeIcon icon={icon} />
                     </div>
                     <div className="multi-device-widget__tile-status">
                       {isOn ? 'On' : 'Off'}
                     </div>
+                  </div>
+                  <div className="multi-device-widget__tile-name" title={getDeviceDisplayName(displayDevice)}>
+                    {getDeviceDisplayName(displayDevice)}
                   </div>
                 </div>
               </button>

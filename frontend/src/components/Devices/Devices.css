@@ -22,6 +22,10 @@
   gap: 1rem;
 }
 
+.devices-summary-card.glass-card {
+  padding: 1.25rem 1.5rem;
+}
+
 .devices-summary-card .devices-summary-content {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -375,33 +379,27 @@
   margin: 0;
 }
 
-.device-add-card .card-content {
-  height: 100%;
-  padding: 1.25rem;
-  display: flex;
-  align-items: stretch;
-}
-
-.device-add-card-btn {
-  border: 1.5px dashed rgba(255, 255, 255, 0.25);
-  border-radius: 1rem;
-  background: rgba(15, 21, 32, 0.65);
+.device-add-card.glass-card {
+  border: 1px dashed rgba(57, 170, 121, 0.45);
+  background: linear-gradient(rgba(57, 170, 121, 0.05), rgba(57, 170, 121, 0.05)), var(--glass-card-surface);
   color: rgba(255, 255, 255, 0.88);
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   gap: 0.6rem;
-  padding: 1.1rem;
+  padding: 1.5rem;
   text-align: left;
   width: 100%;
+  box-sizing: border-box;
   cursor: pointer;
-  transition: border 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease;
   font-family: inherit;
 }
 
-.device-add-card-btn:hover {
-  border-color: rgba(34, 197, 94, 0.6);
-  background: rgba(34, 197, 94, 0.1);
-  transform: translateY(-2px);
+.device-add-card.glass-card:hover {
+  border-color: rgba(57, 170, 121, 0.65);
+  background: linear-gradient(rgba(57, 170, 121, 0.1), rgba(57, 170, 121, 0.1)), var(--glass-card-surface);
 }
 
 .device-add-card-icon {
@@ -515,7 +513,41 @@
   }
 
   .devices-summary-card .devices-summary-content {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.2rem 0.75rem;
+  }
+
+  .devices-summary-card.glass-card {
+    padding: 0.85rem;
+  }
+
+  .devices-summary-card .glass-metric {
+    gap: 0.25rem;
+  }
+
+  .devices-summary-card .glass-metric-label {
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .devices-summary-card .glass-metric-label span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .devices-summary-card .glass-metric-value {
+    flex-shrink: 0;
+  }
+
+  .devices-summary-card .glass-metric-icon {
+    font-size: 0.75rem;
+  }
+
+  .devices-summary-card .devices-integrations-row {
+    margin-top: 0.5rem;
+    gap: 0.4rem;
   }
 
   .devices-grid {
@@ -534,7 +566,4 @@
     display: none;
   }
 
-  .device-add-card .card-content {
-    padding: 1rem;
-  }
 }

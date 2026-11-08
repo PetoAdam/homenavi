@@ -948,7 +948,6 @@ function GroupTile({ group, onOpen, onEdit, onDelete, accessToken, canControl, b
   return (
     <GlassCard
       className="group-tile-card device-tile-card device-tile-clickable"
-      interactive={false}
       role="button"
       tabIndex={0}
       onClick={handleClick}
@@ -1317,16 +1316,14 @@ export default function Groups() {
           />
         ))}
 
-        <GlassCard className="device-add-card" interactive={false}>
-          <button type="button" className="device-add-card-btn" onClick={openCreate}>
-            <span className="device-add-card-icon">
-              <FontAwesomeIcon icon={faPlus} />
-            </span>
-            <span className="device-add-card-title">Create group</span>
-            <span className="device-add-card-subtitle">Combine devices with shared controls into one reusable ERS group.</span>
-            <span className="device-add-card-cta">Open form</span>
-          </button>
-        </GlassCard>
+        <button type="button" className="glass-card device-add-card device-add-card-btn" onClick={openCreate}>
+          <span className="device-add-card-icon">
+            <FontAwesomeIcon icon={faPlus} />
+          </span>
+          <span className="device-add-card-title">Create group</span>
+          <span className="device-add-card-subtitle">Combine devices with shared controls into one reusable ERS group.</span>
+          <span className="device-add-card-cta">Open form</span>
+        </button>
 
         {!loading && filteredGroups.length === 0 && normalizedGroups.length > 0 ? (
           <GlassCard className="device-filter-empty-card groups-filter-empty-card" interactive={false}>

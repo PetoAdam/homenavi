@@ -804,16 +804,14 @@ export default function Devices() {
             </div>
           </GlassCard>
         ) : null}
-        <GlassCard className="device-add-card">
-          <button type="button" className="device-add-card-btn" onClick={openAddModal}>
-            <span className="device-add-card-icon">
-              <FontAwesomeIcon icon={faPlus} />
-            </span>
-            <span className="device-add-card-title">Add device</span>
-            <span className="device-add-card-subtitle">Register hardware manually or start the pairing flow.</span>
-            <span className="device-add-card-cta">Open form</span>
-          </button>
-        </GlassCard>
+        <button type="button" className="glass-card device-add-card device-add-card-btn" onClick={openAddModal}>
+          <span className="device-add-card-icon">
+            <FontAwesomeIcon icon={faPlus} />
+          </span>
+          <span className="device-add-card-title">Add device</span>
+          <span className="device-add-card-subtitle">Register hardware manually or start the pairing flow.</span>
+          <span className="device-add-card-cta">Open form</span>
+        </button>
       </section>
 
       <button
