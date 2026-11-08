@@ -11,7 +11,7 @@ function asQueryData(response, fallbackMessage) {
   throw new Error(response?.error || fallbackMessage);
 }
 
-export function integrationRegistryQueryOptions(params = {}, { enabled = true } = {}) {
+export function integrationRegistryQueryOptions(params = {}, { enabled = true, forceFresh = false } = {}) {
   const normalized = normalizeRegistryParams(params);
   return {
     queryKey: queryKeys.integrations.registry(normalized),
@@ -20,6 +20,8 @@ export function integrationRegistryQueryOptions(params = {}, { enabled = true } 
       'Failed to load integrations'
     ),
     enabled,
+    refetchInterval: 60 * 1000,
+    ...(forceFresh ? { staleTime: 0 } : {}),
   };
 }
 

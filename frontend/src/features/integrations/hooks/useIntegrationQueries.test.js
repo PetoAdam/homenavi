@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { describe, expect, it, vi } from 'vitest';
+import { getIntegrationRegistry } from '../../../services/integrationService';
 import {
   integrationMarketplaceQueryOptions,
   integrationRegistryQueryOptions,
   integrationUpdatesQueryOptions,
 } from './useIntegrationQueries';
 import { queryKeys } from '../../../state/queryKeys';
+
+vi.mock('../../../services/integrationService', () => ({
+  getIntegrationMarketplace: vi.fn(),
+  getIntegrationRegistry: vi.fn(),
+  getIntegrationUpdates: vi.fn(),
+}));
 
 describe('integrationRegistryQueryOptions', () => {
   it('produces normalized query keys and honors enabled flags', () => {
@@ -17,6 +25,22 @@ describe('integrationRegistryQueryOptions', () => {
       queryKeys.integrations.registry({ q: 'test', page: 2, pageSize: 25 })
     );
     expect(options.enabled).toBe(false);
+    expect(options.refetchInterval).toBe(60000);
+  });
+
+  it('fetches updated registry data even when cached data is fresh', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 5000 } } });
+    const params = { page: 1, pageSize: 10 };
+    const oldData = { integrations: [{ id: 'emodul', update_available: false }] };
+    const newData = { integrations: [{ id: 'emodul', update_available: true }] };
+    client.setQueryData(queryKeys.integrations.registry(params), oldData);
+    getIntegrationRegistry.mockResolvedValueOnce({ success: true, data: newData });
+
+    const result = await client.fetchQuery(integrationRegistryQueryOptions(params, { forceFresh: true }));
+
+    expect(result).toEqual(newData);
+    expect(client.getQueryData(queryKeys.integrations.registry(params))).toEqual(newData);
+    client.clear();
   });
 });
 

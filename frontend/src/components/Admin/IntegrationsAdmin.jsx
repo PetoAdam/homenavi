@@ -35,7 +35,7 @@ import {
   useIntegrationMarketplaceQuery,
   useIntegrationRegistryQuery,
 } from '../../features/integrations/hooks/useIntegrationQueries';
-import { useIntegrationMutations } from '../../features/integrations/hooks/useIntegrationMutations';
+import { unwrapIntegrationResponse, useIntegrationMutations } from '../../features/integrations/hooks/useIntegrationMutations';
 import { useIntegrationOperationPolling } from '../../features/integrations/hooks/useIntegrationOperationPolling';
 import {
   integrationsAdminUiInitialState,
@@ -361,7 +361,7 @@ export default function IntegrationsAdmin() {
         const refreshed = await queryClient.fetchQuery(
           integrationRegistryQueryOptions(
             { q: debouncedQuery, page, pageSize },
-            { enabled: true }
+            { enabled: true, forceFresh: true }
           )
         );
         if (refreshed) {
@@ -389,12 +389,16 @@ export default function IntegrationsAdmin() {
       dispatchOperations({ type: 'set-reloading', value: false });
       return;
     }
-    setError('');
-    await getIntegrationUpdates(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    await refreshRegistryWithRetry();
-    notifyIntegrationsUpdated();
-    dispatchOperations({ type: 'set-reloading', value: false });
+    try {
+      unwrapIntegrationResponse(await getIntegrationUpdates(true), 'Failed to check integration updates');
+      if (!await refreshRegistryWithRetry()) throw new Error('Failed to refresh integrations registry');
+      setError('');
+      notifyIntegrationsUpdated();
+    } catch (err) {
+      setError(err?.message || 'Failed to check integration updates');
+    } finally {
+      dispatchOperations({ type: 'set-reloading', value: false });
+    }
   };
 
   const handleRestartAll = async () => {
