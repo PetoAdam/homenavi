@@ -26,13 +26,16 @@
 
 .multi-device-widget__grid {
   display: grid;
+  flex: 1 0 auto;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(76px, 1fr);
   gap: 0.7rem;
 }
 
 .multi-device-widget__tile {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 0.6rem;
   width: 100%;
   padding: 0.4rem 0.65rem;

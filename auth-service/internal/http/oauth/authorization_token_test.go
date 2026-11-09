@@ -13,6 +13,7 @@ import (
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/shared/authx"
+	"github.com/go-chi/chi/v5"
 )
 
 type fakeOAuthAuthorizer struct {
@@ -25,6 +26,7 @@ type fakeOAuthAuthorizer struct {
 	registeredRedirectURIs []string
 	registration           authdomain.DynamicOAuthClientRegistration
 	granted                bool
+	grantedScope           string
 	revoked                string
 	consents               []authdomain.OAuthConsent
 	transaction            authdomain.OAuthAuthorizationTransaction
@@ -49,6 +51,7 @@ func (f *fakeOAuthAuthorizer) AuthorizeOAuthForSession(_ context.Context, reques
 func (f *fakeOAuthAuthorizer) GrantOAuthConsent(_ context.Context, request authdomain.OAuthAuthorizationRequest, _, _ string) error {
 	f.request = request
 	f.granted = true
+	f.grantedScope = request.Scope
 	return f.err
 }
 
@@ -259,10 +262,11 @@ func TestAuthorizationHandlerGrantsAndRevokesConsent(t *testing.T) {
 	}
 
 	revoke := httptest.NewRequest(http.MethodDelete, "/api/auth/oauth/consents/mcp-cli", nil)
-	revoke.SetPathValue("clientID", "mcp-cli")
 	revoke.Header.Set("Authorization", "Bearer browser-token")
 	revokeResponse := httptest.NewRecorder()
-	handler.HandleRevokeConsent(revokeResponse, revoke)
+	router := chi.NewRouter()
+	router.Delete("/api/auth/oauth/consents/{clientID}", handler.HandleRevokeConsent)
+	router.ServeHTTP(revokeResponse, revoke)
 	if revokeResponse.Code != http.StatusNoContent || authorizer.revoked != "mcp-cli" {
 		t.Fatalf("unexpected revoke response: status=%d client=%q", revokeResponse.Code, authorizer.revoked)
 	}
@@ -282,6 +286,21 @@ func TestAuthorizationHandlerListsAuthenticatedUserConsents(t *testing.T) {
 	}
 }
 
+func TestAuthorizationHandlerRevokesEncodedClientID(t *testing.T) {
+	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1"}
+	router := chi.NewRouter()
+	router.Delete("/api/auth/oauth/consents/{clientID}", NewAuthorizationHandler(authorizer).HandleRevokeConsent)
+	for _, clientID := range []string{"https://client.example/app%1", "client%2Fname", "client+name"} {
+		request := httptest.NewRequest(http.MethodDelete, "/api/auth/oauth/consents/"+url.PathEscape(clientID), nil)
+		request.Header.Set("Authorization", "Bearer browser-token")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusNoContent || authorizer.revoked != clientID {
+			t.Fatalf("client=%q status=%d revoked=%q body=%s", clientID, response.Code, authorizer.revoked, response.Body.String())
+		}
+	}
+}
+
 func TestAuthorizationTransactionApprovalReturnsRedirect(t *testing.T) {
 	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1", transaction: authdomain.OAuthAuthorizationTransaction{
 		ID:      "transaction-1",
@@ -297,6 +316,37 @@ func TestAuthorizationTransactionApprovalReturnsRedirect(t *testing.T) {
 
 	if response.Code != http.StatusOK || !authorizer.granted || !strings.Contains(response.Body.String(), "authorization-code") || !strings.Contains(response.Body.String(), "opaque-state") {
 		t.Fatalf("unexpected approval response: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAuthorizationTransactionApprovalScopeSelection(t *testing.T) {
+	for _, test := range []struct {
+		name, body, wantScope string
+		wantStatus            int
+	}{
+		{"subset", `{"scopes":["home.devices.read"]}`, "home.devices.read", http.StatusOK},
+		{"legacy", `{}`, "home.devices.read home.devices.write", http.StatusOK},
+		{"empty", `{"scopes":[]}`, "", http.StatusBadRequest},
+		{"null", `{"scopes":null}`, "", http.StatusBadRequest},
+		{"unrequested", `{"scopes":["home.automation.execute"]}`, "", http.StatusBadRequest},
+		{"combined", `{"scopes":["home.devices.read home.devices.write"]}`, "", http.StatusBadRequest},
+		{"duplicate", `{"scopes":["home.devices.read","home.devices.read"]}`, "", http.StatusBadRequest},
+		{"malformed", `{"scopes":`, "", http.StatusBadRequest},
+		{"trailing", `{} {}`, "", http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			authorizer := &fakeOAuthAuthorizer{transaction: authdomain.OAuthAuthorizationTransaction{
+				ID: "transaction-1", Subject: "user-1", SessionID: "session-1",
+				Request: authdomain.OAuthAuthorizationRequest{Scope: "home.devices.read home.devices.write", RedirectURI: "https://client.example/callback"},
+			}}
+			request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/transaction/approve", strings.NewReader(test.body))
+			request.AddCookie(&http.Cookie{Name: browserTransactionCookie, Value: "transaction-1"})
+			response := httptest.NewRecorder()
+			NewAuthorizationHandler(authorizer).HandleAuthorizationApproval(response, request)
+			if response.Code != test.wantStatus || authorizer.grantedScope != test.wantScope || authorizer.request.Scope != test.wantScope {
+				t.Fatalf("status=%d granted=%q authorized=%q body=%s", response.Code, authorizer.grantedScope, authorizer.request.Scope, response.Body.String())
+			}
+		})
 	}
 }
 

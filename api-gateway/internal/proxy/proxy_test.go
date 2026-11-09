@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
@@ -65,5 +66,39 @@ func TestMakeRestProxyHandlerPreservesPublicResourceHeaders(t *testing.T) {
 	}
 	if gotHost != "home.example.test" || gotProto != "https" {
 		t.Fatalf("public resource headers = host %q proto %q", gotHost, gotProto)
+	}
+}
+
+func TestMakeRestProxyHandlerPreservesEncodedRouteParameters(t *testing.T) {
+	var gotClientID string
+	upstreamRouter := chi.NewRouter()
+	upstreamRouter.Delete("/api/auth/oauth/consents/{clientID}", func(w http.ResponseWriter, r *http.Request) {
+		gotClientID = chi.URLParam(r, "clientID")
+		if r.URL.RawPath != "" {
+			var err error
+			gotClientID, err = url.PathUnescape(gotClientID)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	upstream := httptest.NewServer(upstreamRouter)
+	defer upstream.Close()
+
+	route := gateway.RouteConfig{Path: "/api/auth/oauth/consents/{clientID}", Upstream: upstream.URL + "/api/auth/oauth/consents/{clientID}"}
+	router := chi.NewRouter()
+	router.Delete(route.Path, MakeRestProxyHandler(route))
+	for _, clientID := range []string{"https://client.example/app%1", "client%2Fname", "client+name", "simple-client"} {
+		t.Run(clientID, func(t *testing.T) {
+			gotClientID = ""
+			request := httptest.NewRequest(http.MethodDelete, "/api/auth/oauth/consents/"+url.PathEscape(clientID), nil)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusNoContent || gotClientID != clientID {
+				t.Fatalf("status = %d, client ID = %q, want %q", response.Code, gotClientID, clientID)
+			}
+		})
 	}
 }

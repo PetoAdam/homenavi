@@ -33,6 +33,7 @@ func MakeRestProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 			origDirector(req)
 			ctx := chi.RouteContext(r.Context())
 			path := upstreamURL.Path
+			rawPath := ""
 			// If the route uses a wildcard (/*), preserve the suffix after the route prefix.
 			// This allows proxying IDs that contain slashes (e.g. zigbee/0x...) without URL-encoding.
 			if strings.HasSuffix(route.Path, "/*") && strings.HasSuffix(upstreamURL.Path, "/*") {
@@ -42,12 +43,20 @@ func MakeRestProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 				}
 				path = upstreamPrefix + suffix
 			} else if ctx != nil {
+				rawPath = upstreamURL.EscapedPath()
 				for i, key := range ctx.URLParams.Keys {
 					val := ctx.URLParams.Values[i]
+					if r.URL.RawPath != "" {
+						if decoded, err := url.PathUnescape(val); err == nil {
+							val = decoded
+						}
+					}
 					path = strings.ReplaceAll(path, "{"+key+"}", val)
+					rawPath = strings.ReplaceAll(rawPath, url.PathEscape("{"+key+"}"), url.PathEscape(val))
 				}
 			}
 			req.URL.Path = path
+			req.URL.RawPath = rawPath
 			req.URL.RawQuery = r.URL.RawQuery
 		}
 		proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {

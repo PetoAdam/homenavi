@@ -54,19 +54,30 @@ describe('UserSettings connected applications', () => {
   it('shows permissions and allows retrying a failed disconnect', async () => {
     listOAuthConsents.mockResolvedValue({
       success: true,
-      data: { consents: [{ client_id: 'client-1', client_name: 'Example app', resource: 'devices', scopes: ['devices:read'] }] },
+      data: { consents: [{ client_id: 'client-1', client_name: 'Example app', resource: 'devices', scopes: ['home.devices.read'] }] },
     });
     revokeOAuthConsent.mockResolvedValueOnce({ success: false, error: 'Please retry.' })
       .mockResolvedValueOnce({ success: true });
     await renderSettings();
 
     expect(document.querySelector('.connected-app-row').textContent).toContain('Example app');
-    expect(document.querySelector('.connected-app-scopes').textContent).toContain('devices:read');
+    expect(document.querySelector('.connected-app-scopes').textContent).toContain('View devices and their current status');
     await act(async () => document.querySelector('.connected-app-row > button').click());
     expect(document.querySelector('.connected-app-action-error').textContent).toContain('Please retry.');
     await act(async () => document.querySelector('.connected-app-action-error button').click());
     expect(revokeOAuthConsent).toHaveBeenLastCalledWith('client-1', 'test-token');
     expect(document.querySelector('.connected-app-row')).toBeNull();
     expect(document.querySelector('.connected-apps-card').textContent).toContain('Connected application disconnected.');
+  });
+
+  it('allows retrying after an unexpected disconnect error', async () => {
+    listOAuthConsents.mockResolvedValue({ success: true, data: { consents: [{ client_id: 'client-1', scopes: [] }] } });
+    revokeOAuthConsent.mockRejectedValueOnce(new Error('Network unavailable')).mockResolvedValueOnce({ success: true });
+    await renderSettings();
+    await act(async () => document.querySelector('.connected-app-row > button').click());
+    expect(document.querySelector('.connected-app-action-error').textContent).toContain('Network unavailable');
+    expect(document.querySelector('.connected-app-row > button').disabled).toBe(false);
+    await act(async () => document.querySelector('.connected-app-action-error button').click());
+    expect(document.querySelector('.connected-app-row')).toBeNull();
   });
 });

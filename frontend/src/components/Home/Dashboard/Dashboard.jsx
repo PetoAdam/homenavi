@@ -28,7 +28,7 @@ import {
   DASHBOARD_COLUMN_MODES,
   getColumnCount,
   getDashboardColumnMode,
-  resolveNearestSourceMode,
+  normalizeLayoutHeightsByMode,
 } from './dashboardLayoutModel';
 import { getWidgetDefaultHeight, getWidgetPreferredWidth } from './widgetRegistry';
 import AddWidgetModal from './AddWidgetModal';
@@ -43,30 +43,6 @@ const DashboardGridLayout = WidthProvider(GridLayout);
 const ROW_HEIGHT = 56; // Fixed row height for consistent snapping
 const MARGIN = [16, 16];
 const DASHBOARD_TUTORIAL_DISMISSED_KEY = 'homenavi:dashboard:tutorial-dismissed:v1';
-
-function parseAspectRatio(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed === 'auto') return null;
-  if (trimmed.includes('/')) {
-    const [aRaw, bRaw] = trimmed.split('/');
-    const a = Number.parseFloat(String(aRaw).trim());
-    const b = Number.parseFloat(String(bRaw).trim());
-    if (Number.isFinite(a) && Number.isFinite(b) && a > 0 && b > 0) return a / b;
-    return null;
-  }
-  const n = Number.parseFloat(trimmed);
-  if (Number.isFinite(n) && n > 0) return n;
-  return null;
-}
-
-function pxToRows(px) {
-  // Convert pixel height to grid rows, rounding up.
-  // Formula: totalPx = rows * ROW_HEIGHT + (rows - 1) * margin
-  // Solving for rows: rows = (totalPx + margin) / (ROW_HEIGHT + margin)
-  const marginY = MARGIN[1];
-  return Math.max(1, Math.ceil((px + marginY) / (ROW_HEIGHT + marginY)));
-}
 
 export default function Dashboard() {
   const { user, accessToken, bootstrapping } = useAuth();
@@ -90,7 +66,6 @@ export default function Dashboard() {
     selectedWidgetId,
     dragOverTrash,
     currentBreakpoint,
-    desiredRowsByInstanceId,
   } = uiState;
 
   const draggingWidgetRef = useRef(null);
@@ -243,22 +218,6 @@ export default function Dashboard() {
     setTutorialOpen(false);
   }, []);
 
-  // Listen for widget auto-height requests
-  useEffect(() => {
-    const handler = (ev) => {
-      const detail = ev?.detail;
-      const instanceId = detail?.instanceId;
-      const heightPx = Number(detail?.heightPx);
-      if (!instanceId || !Number.isFinite(heightPx) || heightPx <= 0) return;
-
-      const rows = pxToRows(heightPx);
-      dispatchUi({ type: 'set-desired-row-height', instanceId, value: rows });
-    };
-
-    window.addEventListener('homenavi:widgetDesiredHeight', handler);
-    return () => window.removeEventListener('homenavi:widgetDesiredHeight', handler);
-  }, []);
-
   // Handle entering edit mode
   const enterEditMode = useCallback(() => {
     syncEditorToServerDoc(doc);
@@ -343,7 +302,7 @@ export default function Dashboard() {
       };
     });
     dispatchUi({ type: 'set-add-modal-open', value: false });
-  }, [applyDashboardDocUpdate, buildWidgetMaps, catalog, currentBreakpoint]);
+  }, [applyDashboardDocUpdate, buildWidgetMaps, catalog]);
 
   // Handle drag start for trash zone detection
   const handleDragStart = useCallback((...args) => {
@@ -381,13 +340,13 @@ export default function Dashboard() {
 
   // Convert dashboard layouts to react-grid-layout format
   const layoutsByCols = useMemo(() => {
-    const ensured = ensureLayoutsByCols({
+    const ensured = normalizeLayoutHeightsByMode(ensureLayoutsByCols({
       layoutsByCols: workingDoc.layoutsByCols,
       items: workingDoc.items || [],
       widgetTypeByInstanceId,
       preferredWidthForType: (widgetType, cols) => getWidgetPreferredWidth(widgetType, catalog, String(cols)),
       defaultHeightByInstanceId,
-    });
+    }), { preferredMode: '4' });
 
     const result = {};
     Object.entries(ensured).forEach(([columnMode, items]) => {
@@ -396,29 +355,14 @@ export default function Dashboard() {
         x: item.x || 0,
         y: item.y || 0,
         w: item.w || 1,
-        h: (() => {
-          const raw = item.h || 4;
-          const widgetType = widgetTypeByInstanceId.get(item.i);
-          const defaultH = getWidgetDefaultHeight(widgetType, catalog);
-
-          const isIntegrationWidget = typeof widgetType === 'string' && widgetType.includes('.integration.');
-          if (widgetType === 'homenavi.map' || widgetType === 'homenavi.device' || isIntegrationWidget) {
-            // Auto-height only while the widget is still at its default height.
-            // If the user resizes vertically, raw changes and we preserve it.
-            const desired = desiredRowsByInstanceId[item.i];
-            if (raw === defaultH && Number.isFinite(desired) && desired > 0) {
-              return Math.max(2, desired);
-            }
-          }
-          return raw;
-        })(),
+        h: item.h || 4,
         minW: 1,
         minH: 2,
       }));
     });
 
     return result;
-  }, [activeColumnMode, catalog, defaultHeightByInstanceId, desiredRowsByInstanceId, widgetTypeByInstanceId, workingDoc.items, workingDoc.layoutsByCols]);
+  }, [catalog, defaultHeightByInstanceId, widgetTypeByInstanceId, workingDoc.items, workingDoc.layoutsByCols]);
 
   const activeLayout = useMemo(() => layoutsByCols[currentBreakpoint] || [], [currentBreakpoint, layoutsByCols]);
 
@@ -429,49 +373,28 @@ export default function Dashboard() {
     [selectedWidgetId, widgetItems],
   );
 
-  const handleResizeStop = useCallback((layout, oldItem, newItem, placeholder, e, element) => {
+  const handleResizeStop = useCallback((layout, oldItem, newItem) => {
     if (!editMode) return;
     const instanceId = newItem?.i;
-    if (!instanceId) return;
-
-    const widgetType = widgetTypeByInstanceId.get(instanceId);
-    if (widgetType !== 'homenavi.map') return;
-    // If the user is adjusting height manually, don't force recalculation.
-    // We only auto-adjust map height when width changes while height is still at default.
-    const defaultH = getWidgetDefaultHeight(widgetType, catalog);
-    const didWidthChange = oldItem?.w !== newItem?.w;
-    const isStillDefaultHeight = (newItem?.h || 0) === defaultH;
-    if (!didWidthChange || !isStillDefaultHeight) return;
-    if (!element || typeof element.querySelector !== 'function') return;
-
-    const previewEl = element.querySelector('.map-widget__preview');
-    if (!previewEl) return;
-
-    const mapContentEl = element.querySelector('.map-widget__content');
-    if (!mapContentEl) return;
-
-    const previewRect = previewEl.getBoundingClientRect();
-    // Use natural content height rather than stretched grid item height.
-    const overheadPx = Math.max(0, mapContentEl.scrollHeight - previewRect.height);
-
-    const computed = window.getComputedStyle(previewEl);
-    const ratio = parseAspectRatio(computed.aspectRatio) || parseAspectRatio(previewEl.style.aspectRatio) || (16 / 10);
-    const previewWidth = previewRect.width;
-    if (!Number.isFinite(previewWidth) || previewWidth <= 0) return;
-    if (!Number.isFinite(ratio) || ratio <= 0) return;
-
-    const desiredPreviewHeight = previewWidth / ratio;
-    const desiredTotalHeight = overheadPx + desiredPreviewHeight;
-    const desiredRows = Math.max(newItem?.minH || 2, pxToRows(desiredTotalHeight));
-
-    const bp = currentBreakpoint;
-    const existing = Array.isArray(workingDoc.layoutsByCols?.[bp]) ? workingDoc.layoutsByCols[bp] : [];
-    const nextBp = existing.map((it) => (it.i === instanceId ? { ...it, h: desiredRows } : it));
-    applyDashboardDocUpdate((prev) => ({
-      ...prev,
-      layoutsByCols: { ...prev.layoutsByCols, [bp]: nextBp },
-    }));
-  }, [applyDashboardDocUpdate, catalog, currentBreakpoint, editMode, widgetTypeByInstanceId, workingDoc.layoutsByCols]);
+    if (!instanceId || !Number.isFinite(newItem.h) || oldItem?.h === newItem.h) return;
+    applyDashboardDocUpdate((prev) => {
+      const maps = buildWidgetMaps(prev.items);
+      const layouts = ensureLayoutsByCols({
+        layoutsByCols: prev.layoutsByCols,
+        items: prev.items || [],
+        widgetTypeByInstanceId: maps.widgetTypeMap,
+        preferredWidthForType: (widgetType, cols) => getWidgetPreferredWidth(widgetType, catalog, String(cols)),
+        defaultHeightByInstanceId: maps.defaultHeightMap,
+      });
+      return {
+        ...prev,
+        layoutsByCols: Object.fromEntries(Object.entries({ ...layouts, [currentBreakpoint]: layout }).map(([mode, items]) => [
+          mode,
+          (items || []).map((item) => item.i === instanceId ? { ...item, h: newItem.h } : item),
+        ])),
+      };
+    });
+  }, [applyDashboardDocUpdate, buildWidgetMaps, catalog, currentBreakpoint, editMode]);
 
   const importIntoCurrent = useCallback(() => {
     applyDashboardDocUpdate((prev) => {
@@ -499,12 +422,19 @@ export default function Dashboard() {
   const autoLayoutCurrent = useCallback(() => {
     applyDashboardDocUpdate((prev) => {
       const maps = buildWidgetMaps(prev.items);
+      const layouts = normalizeLayoutHeightsByMode(ensureLayoutsByCols({
+        layoutsByCols: prev.layoutsByCols,
+        items: prev.items || [],
+        widgetTypeByInstanceId: maps.widgetTypeMap,
+        preferredWidthForType: (widgetType, cols) => getWidgetPreferredWidth(widgetType, catalog, String(cols)),
+        defaultHeightByInstanceId: maps.defaultHeightMap,
+      }), { preferredMode: '4' });
       return {
         ...prev,
-        layoutsByCols: {
-          ...prev.layoutsByCols,
+        layoutsByCols: normalizeLayoutHeightsByMode({
+          ...layouts,
           [currentBreakpoint]: buildDenseLayout({
-            sourceLayout: prev.layoutsByCols?.[currentBreakpoint] || [],
+            sourceLayout: layouts[currentBreakpoint] || [],
             instanceIds: (prev.items || []).map((item) => item?.instance_id).filter(Boolean),
             columnMode: currentBreakpoint,
             widgetTypeByInstanceId: maps.widgetTypeMap,
@@ -518,7 +448,7 @@ export default function Dashboard() {
             shrinkHeights: autoLayoutOptions.shrinkHeights,
             reorganize: autoLayoutOptions.reorganize,
           }),
-        },
+        }, { preferredMode: currentBreakpoint }),
       };
     });
     setToolsOpen(false);

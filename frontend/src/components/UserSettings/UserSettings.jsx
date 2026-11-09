@@ -22,6 +22,7 @@ import './UserSettings.css';
 import UserAvatar from '../common/UserAvatar/UserAvatar';
 import BaseModal from '../common/BaseModal/BaseModal';
 import { userSettingsInitialState, userSettingsReducer } from './userSettingsReducer';
+import { scopeLabels } from '../Auth/OAuthAuthorize/scopeLabels';
 
 export default function UserSettings({ onClose }) {
   const { user, accessToken, handleLogout, refreshUser } = useAuth();
@@ -201,15 +202,17 @@ export default function UserSettings({ onClose }) {
     setStateField('oauthActionError', '');
     setStateField('oauthActionErrorClientID', '');
     setStateField('oauthActionSuccess', '');
-    const response = await revokeOAuthConsent(clientID, accessToken);
-    if (response.success) {
+    try {
+      const response = await revokeOAuthConsent(clientID, accessToken);
+      if (!response.success) throw new Error(response.error || 'Could not disconnect this application.');
       setStateField('oauthConsents', oauthConsents.filter((consent) => consent.client_id !== clientID));
       setStateField('oauthActionSuccess', 'Connected application disconnected.');
-    } else {
+    } catch (error) {
       setStateField('oauthActionErrorClientID', clientID);
-      setStateField('oauthActionError', response.error || 'Could not disconnect this application.');
+      setStateField('oauthActionError', error?.message || 'Could not disconnect this application.');
+    } finally {
+      setStateField('disconnectClientID', '');
     }
-    setStateField('disconnectClientID', '');
   };
 
   const handleProfileSave = async () => {
@@ -692,7 +695,7 @@ export default function UserSettings({ onClose }) {
                   {consent.client_name && <small className="connected-app-client-id">{consent.client_id}</small>}
                   <div className="connected-app-scopes" aria-label="Granted permissions">
                     {Array.isArray(consent.scopes) && consent.scopes.length > 0
-                      ? consent.scopes.map((scope) => <span key={scope}>{scope}</span>)
+                      ? consent.scopes.map((scope) => <span key={scope}>{scopeLabels[scope] || scope}</span>)
                       : <span>No scopes</span>}
                   </div>
                   {oauthActionErrorClientID === consent.client_id && (

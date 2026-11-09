@@ -3,18 +3,9 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowRight, faCheck, faLock, faPlug, faServer, faShieldHalved, faUserCircle } from '@fortawesome/free-solid-svg-icons';
 import '../AuthModal/AuthModal.css';
 import './OAuthAuthorize.css';
+import { scopeLabels } from './scopeLabels';
 
 const transactionURL = '/api/auth/oauth/transaction';
-
-const scopeLabels = {
-  'home.devices.read': 'View devices and their current status',
-  'home.devices.write': 'Control devices',
-  'home.inventory.read': 'View rooms and device groups',
-  'home.inventory.write': 'Create device groups',
-  'home.history.read': 'View device history',
-  'home.automation.read': 'View automations',
-  'home.automation.execute': 'Run automations',
-};
 
 async function transactionRequest(path = '', options = {}) {
   const response = await fetch(`${transactionURL}${path}`, {
@@ -36,10 +27,13 @@ export default function OAuthAuthorize() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
+  const [selectedScopes, setSelectedScopes] = useState([]);
 
   const loadTransaction = async () => {
     try {
-      setTransaction(await transactionRequest());
+      const next = await transactionRequest();
+      setTransaction(next);
+      setSelectedScopes(next.scopes || []);
       setError('');
     } catch (requestError) {
       setError(requestError.message);
@@ -81,7 +75,7 @@ export default function OAuthAuthorize() {
   const finish = async (action) => {
     setPending(true);
     try {
-      const response = await transactionRequest(`/${action}`, { method: 'POST', body: '{}' });
+      const response = await transactionRequest(`/${action}`, { method: 'POST', body: JSON.stringify(action === 'approve' ? { scopes: selectedScopes } : {}) });
       window.location.assign(response.redirect_uri);
     } catch (requestError) {
       setError(requestError.message);
@@ -89,9 +83,9 @@ export default function OAuthAuthorize() {
     }
   };
 
-  const clientName = transaction?.client_id || 'this application';
+  const clientName = transaction?.client_name || transaction?.client_id || 'this application';
   const scopes = transaction?.scopes || [];
-  const canControlHome = scopes.some((scope) => scope.endsWith('.write') || scope.endsWith('.execute'));
+  const canControlHome = selectedScopes.some((scope) => scope.endsWith('.write') || scope.endsWith('.execute'));
   return (
     <div className="oauth-authorize-page">
       <main className="oauth-authorize-panel" aria-live="polite">
@@ -153,10 +147,10 @@ export default function OAuthAuthorize() {
             </div>
             <div className="oauth-authorize-permissions">
               <div className="oauth-authorize-permissions-title"><FontAwesomeIcon icon={faCheck} /> Requested permissions</div>
-              <ul>{scopes.map((scope) => <li key={scope}>{scopeLabels[scope] || scope}</li>)}</ul>
+              <ul>{scopes.map((scope) => <li key={scope}><label><input type="checkbox" checked={selectedScopes.includes(scope)} onChange={(event) => setSelectedScopes((current) => event.target.checked ? [...current, scope] : current.filter((value) => value !== scope))} />{scopeLabels[scope] || scope}</label></li>)}</ul>
             </div>
-            <div className="oauth-authorize-security"><FontAwesomeIcon icon={faShieldHalved} /> You are authenticating access for the Homenavi MCP. Homenavi will only grant the permissions listed above.</div>
-            <button className="auth-modal-btn" onClick={() => finish('approve')} disabled={pending}>{pending ? 'Connecting...' : 'Authorize MCP access'}</button>
+            <div className="oauth-authorize-security"><FontAwesomeIcon icon={faShieldHalved} /> You are authenticating access for the Homenavi MCP. Homenavi will only grant the selected permissions.</div>
+            <button className="auth-modal-btn" onClick={() => finish('approve')} disabled={pending || selectedScopes.length === 0}>{pending ? 'Connecting...' : 'Authorize MCP access'}</button>
             <button className="auth-modal-btn secondary" onClick={() => finish('deny')} disabled={pending}>Deny</button>
           </section>
             )}

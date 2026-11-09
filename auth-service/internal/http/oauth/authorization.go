@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	"github.com/go-chi/chi/v5"
 )
 
 type oauthAuthorizer interface {
@@ -155,7 +157,7 @@ func (h *AuthorizationHandler) HandleAuthorizationTransaction(w http.ResponseWri
 	if !ok {
 		return
 	}
-	writeOAuthJSON(w, http.StatusOK, map[string]any{"client_id": transaction.Request.ClientID, "scopes": strings.Fields(transaction.Request.Scope), "authenticated": transaction.Subject != "", "two_fa_required": transaction.PendingUserID != ""})
+	writeOAuthJSON(w, http.StatusOK, map[string]any{"client_id": transaction.Request.ClientID, "client_name": transaction.ClientName, "scopes": strings.Fields(transaction.Request.Scope), "authenticated": transaction.Subject != "", "two_fa_required": transaction.PendingUserID != ""})
 }
 
 func (h *AuthorizationHandler) HandleAuthorizationLogin(w http.ResponseWriter, r *http.Request) {
@@ -221,11 +223,43 @@ func (h *AuthorizationHandler) HandleAuthorizationApproval(w http.ResponseWriter
 		}
 		return
 	}
-	if err := h.authorizer.GrantOAuthConsent(r.Context(), transaction.Request, transaction.Subject, transaction.SessionID); err != nil {
+	var body struct {
+		Scopes json.RawMessage `json:"scopes"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err := decoder.Decode(&body); err != nil && err != io.EOF {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid scope selection")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid scope selection")
+		return
+	}
+	approvedRequest := transaction.Request
+	if body.Scopes != nil {
+		var selected []string
+		if err := json.Unmarshal(body.Scopes, &selected); err != nil || len(selected) == 0 {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_scope", "select at least one requested permission")
+			return
+		}
+		requested := make(map[string]bool)
+		for _, scope := range strings.Fields(transaction.Request.Scope) {
+			requested[scope] = true
+		}
+		for _, scope := range selected {
+			if !requested[scope] {
+				writeOAuthError(w, http.StatusBadRequest, "invalid_scope", "invalid scope selection")
+				return
+			}
+			delete(requested, scope)
+		}
+		approvedRequest.Scope = strings.Join(selected, " ")
+	}
+	if err := h.authorizer.GrantOAuthConsent(r.Context(), approvedRequest, transaction.Subject, transaction.SessionID); err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "consent request was rejected")
 		return
 	}
-	code, err := h.authorizer.AuthorizeOAuthForSession(r.Context(), transaction.Request, transaction.Subject, transaction.SessionID)
+	code, err := h.authorizer.AuthorizeOAuthForSession(r.Context(), approvedRequest, transaction.Subject, transaction.SessionID)
 	if err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "authorization request was rejected")
 		return
@@ -481,9 +515,22 @@ func (h *AuthorizationHandler) HandleGrantConsent(w http.ResponseWriter, r *http
 }
 
 func (h *AuthorizationHandler) HandleRevokeConsent(w http.ResponseWriter, r *http.Request) {
-	clientID := strings.TrimSpace(r.PathValue("clientID"))
+	clientID := chi.URLParam(r, "clientID")
+	if r.URL.RawPath != "" {
+		decoded, err := url.PathUnescape(clientID)
+		if err != nil {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid client ID")
+			return
+		}
+		clientID = decoded
+	}
+	clientID = strings.TrimSpace(clientID)
 	session, ok := h.sessionFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if clientID == "" {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client ID is required")
 		return
 	}
 	if err := h.authorizer.RevokeOAuthConsent(r.Context(), session.Subject, clientID); err != nil {

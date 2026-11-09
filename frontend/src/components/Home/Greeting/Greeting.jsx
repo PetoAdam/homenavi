@@ -10,7 +10,7 @@ export default function Greeting({ children, showProfileTextButton }) {
     <div
       className={`dashboard-greeting${showProfileTextButton ? ' dashboard-greeting--with-profile-btn' : ''}`}
     >
-      {children ? children : `Welcome back${name ? `, ${name}` : ''}!👋`}
+      <span className="dashboard-greeting__text">{children ? children : `Welcome back${name ? `, ${name}` : ''}!👋`}</span>
     </div>
   );
 }

@@ -35,7 +35,7 @@ Widgets always **snap to these columns** (no free-form X positioning).
 
 - Default widget width is **1 column**.
 - In Edit mode, a widget’s width can be changed to span multiple columns via **horizontal resize handles**.
-- Widget height is **automatic** (content-driven). Users do not resize height directly. Like the height of a device widget depends on how many fields it has. The height of a map widget depends on the width of the widget to preserve aspect ratio.
+- Widget height uses fixed grid rows and remains consistent across screen sizes. In Edit mode, vertical resizing updates the widget height in each column layout. Content scrolls where necessary.
 
 ### 3.3 Non-overlap guarantee
 
@@ -64,7 +64,7 @@ The persisted “doc” contains:
 
 ### 4.4 When changes are saved
 
-- Dragging a widget, resizing its width, adding/removing widgets, or updating widget settings results in the dashboard doc being saved.
+- Dragging a widget, resizing it, adding/removing widgets, or updating widget settings results in the dashboard doc being saved.
 - Saving is **debounced** during rapid interactions and flushed when the user presses **Done**.
 
 ## 5) Interaction design
@@ -76,7 +76,7 @@ The persisted “doc” contains:
 - Layout changes are disabled.
 
 ### Edit mode
-- Widgets can be rearranged and resized (width only - only be able to set how many columns the width is).
+- Widgets can be rearranged and resized horizontally or vertically.
 - Widgets’ internal UI is visually de-emphasized and interaction-disabled (to make dragging easier).
 - An edit overlay appears on each widget (not above it - to preserve the sizes and dashboard layout between view and edit mode), and a bottom **trash drop zone** becomes available.
 

@@ -51,6 +51,7 @@ const dashboardHookState = {
 };
 
 const originalCrypto = globalThis.crypto;
+const gridProps = vi.hoisted(() => ({ current: null }));
 
 vi.mock('../../../context/AuthContext', () => ({
   useAuth: () => authState,
@@ -61,7 +62,10 @@ vi.mock('../../../hooks/useDashboard', () => ({
 }));
 
 vi.mock('react-grid-layout', () => {
-  const MockGridLayout = ({ children }) => <div data-testid="grid-layout">{children}</div>;
+  const MockGridLayout = (props) => {
+    gridProps.current = props;
+    return <div data-testid="grid-layout">{props.children}</div>;
+  };
   return {
     default: MockGridLayout,
     WidthProvider: (Component) => Component,
@@ -231,5 +235,70 @@ describe('Dashboard component', () => {
     expect(latestDoc.layoutsByCols['3'][2]).toMatchObject({ i: 'new-widget-1', x: 0, y: 5, w: 1, h: 4 });
 
     view.unmount();
+  });
+
+  it('uses the same widget height on mobile and saves a resize to every mode', async () => {
+    const originalMobile = dashboardHookState.doc.layoutsByCols['1'];
+    dashboardHookState.doc.layoutsByCols['1'] = originalMobile.map((item) => item.i === 'device-1' ? { ...item, h: 2 } : item);
+    Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true, writable: true });
+    const view = renderIntoDom(<Dashboard />);
+    expect(gridProps.current.layout.find((item) => item.i === 'device-1').h).toBe(4);
+    act(() => document.querySelector('button[title="Edit dashboard"]').click());
+    const previous = gridProps.current.layout.find((item) => item.i === 'device-1');
+    const resized = { ...previous, h: 6 };
+    act(() => gridProps.current.onResizeStop(gridProps.current.layout.map((item) => item.i === resized.i ? resized : item), previous, resized));
+    await flushEffects();
+    const saved = dashboardHookState.saveParsedDoc.mock.calls.at(-1)[0];
+    for (const mode of ['1', '2', '3', '4']) {
+      expect(saved.layoutsByCols[mode].find((item) => item.i === 'device-1').h).toBe(6);
+    }
+    view.unmount();
+    dashboardHookState.doc.layoutsByCols['1'] = originalMobile;
+  });
+
+  it('applies mobile auto-layout height changes to every mode', async () => {
+    const originalDesktop = dashboardHookState.doc.layoutsByCols['4'];
+    const originalDevice = originalDesktop.find((item) => item.i === 'device-1');
+    dashboardHookState.doc.layoutsByCols['4'] = originalDesktop.map((item) => item.i === 'device-1' ? { ...item, h: 8 } : item);
+    Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true, writable: true });
+    window.localStorage.setItem('homenavi:dashboard:tutorial-dismissed:v1', '1');
+    const view = renderIntoDom(<Dashboard />);
+
+    expect(gridProps.current.layout.find((item) => item.i === 'device-1').h).toBe(8);
+    act(() => document.querySelector('button[title="Edit dashboard"]').click());
+    act(() => document.querySelector('button[title="Layout tools"]').click());
+    const shrinkLabel = Array.from(document.querySelectorAll('label')).find((label) => label.textContent.includes('Make widgets shorter'));
+    act(() => shrinkLabel.querySelector('input').click());
+    act(() => Array.from(document.querySelectorAll('button')).find((button) => button.textContent.includes('Auto-layout current')).click());
+    await flushEffects();
+
+    expect(gridProps.current.layout.find((item) => item.i === 'device-1').h).toBe(4);
+    const saved = dashboardHookState.saveParsedDoc.mock.calls.at(-1)[0];
+    for (const mode of ['1', '2', '3', '4']) {
+      expect(saved.layoutsByCols[mode].find((item) => item.i === 'device-1').h).toBe(4);
+    }
+    expect(saved.layoutsByCols['4'].find((item) => item.i === 'device-1')).toMatchObject({ x: originalDevice.x, y: originalDevice.y, w: originalDevice.w });
+    view.unmount();
+    dashboardHookState.doc.layoutsByCols['4'] = originalDesktop;
+  });
+
+  it('preserves a mobile resize when another layout has not been saved', async () => {
+    const originalDesktop = dashboardHookState.doc.layoutsByCols['4'];
+    dashboardHookState.doc.layoutsByCols['4'] = [];
+    Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true, writable: true });
+    const view = renderIntoDom(<Dashboard />);
+    act(() => document.querySelector('button[title="Edit dashboard"]').click());
+    const previous = gridProps.current.layout.find((item) => item.i === 'device-1');
+    const resized = { ...previous, h: 6 };
+    act(() => gridProps.current.onResizeStop(gridProps.current.layout.map((item) => item.i === resized.i ? resized : item), previous, resized));
+    await flushEffects();
+
+    expect(gridProps.current.layout.find((item) => item.i === 'device-1').h).toBe(6);
+    const saved = dashboardHookState.saveParsedDoc.mock.calls.at(-1)[0];
+    for (const mode of ['1', '2', '3', '4']) {
+      expect(saved.layoutsByCols[mode].find((item) => item.i === 'device-1').h).toBe(6);
+    }
+    view.unmount();
+    dashboardHookState.doc.layoutsByCols['4'] = originalDesktop;
   });
 });

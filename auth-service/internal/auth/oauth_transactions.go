@@ -17,6 +17,7 @@ const (
 type OAuthAuthorizationTransaction struct {
 	ID            string                    `json:"-"`
 	Request       OAuthAuthorizationRequest `json:"request"`
+	ClientName    string                    `json:"client_name,omitempty"`
 	Subject       string                    `json:"subject,omitempty"`
 	SessionID     string                    `json:"session_id,omitempty"`
 	PendingUserID string                    `json:"pending_user_id,omitempty"`
@@ -27,14 +28,15 @@ func (s *Service) BeginOAuthAuthorization(ctx context.Context, request OAuthAuth
 		return OAuthAuthorizationTransaction{}, fmt.Errorf("authorization transactions are unavailable")
 	}
 	request = s.normalizeOAuthAuthorizationRequest(request)
-	if _, err := s.validateOAuthRequest(ctx, request); err != nil {
+	client, err := s.validateOAuthRequest(ctx, request)
+	if err != nil {
 		return OAuthAuthorizationTransaction{}, err
 	}
 	id, err := newTokenID()
 	if err != nil {
 		return OAuthAuthorizationTransaction{}, fmt.Errorf("generate authorization transaction ID: %w", err)
 	}
-	transaction := OAuthAuthorizationTransaction{ID: id, Request: request}
+	transaction := OAuthAuthorizationTransaction{ID: id, Request: request, ClientName: client.DisplayName}
 	if err := s.saveOAuthAuthorizationTransaction(ctx, transaction, oauthAuthorizationTransactionTTL); err != nil {
 		return OAuthAuthorizationTransaction{}, err
 	}
