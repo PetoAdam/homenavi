@@ -5,6 +5,7 @@ export default function IntegrationIFrameWidget({
   instanceId,
   widgetType,
   meta,
+  settings,
   editMode,
   onSettings,
   onRemove,
@@ -16,9 +17,12 @@ export default function IntegrationIFrameWidget({
 
   const src = useMemo(() => {
     const u = meta?.entry_url || meta?.entry?.url;
-    if (typeof u === 'string' && u.startsWith('/')) return u;
-    return null;
-  }, [meta]);
+    if (typeof u !== 'string' || !u.startsWith('/') || u.startsWith('//')) return null;
+    if (!['integration.connector.device', 'integration.lg_thinq.device'].includes(widgetType) || !settings?.device_id) return u;
+    const url = new URL(u, window.location.origin);
+    url.searchParams.set('device_id', String(settings.device_id));
+    return `${url.pathname}${url.search}${url.hash}`;
+  }, [meta, settings?.device_id, widgetType]);
 
   const onFrameLoad = useCallback((e) => {
     try {

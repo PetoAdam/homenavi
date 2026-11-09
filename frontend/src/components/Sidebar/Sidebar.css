@@ -38,8 +38,8 @@
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   /* Optional: ensure sidebar doesn't exceed viewport width */
-  height: calc(100vh - 10rem); /* Increased gap at the bottom */
-  min-height: calc(100vh - 10rem);
+  height: calc(100vh - 5rem);
+  min-height: calc(100vh - 5rem);
   /* Optional: prevent horizontal scroll */
   overflow-y: auto;
   /* Prevents sidebar from scrolling with content */

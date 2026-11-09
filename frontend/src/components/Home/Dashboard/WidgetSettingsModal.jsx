@@ -30,6 +30,7 @@ import { useAuth } from '../../../context/AuthContext';
 import useDeviceHubDevices from '../../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../../hooks/useErsInventory';
 import { listWorkflows } from '../../../services/automationService';
+import http from '../../../services/httpClient';
 import { searchLocations, reverseGeocode } from '../../../services/dashboardService';
 import './WidgetSettingsModal.css';
 import GlassSelect from '../../common/GlassSelect/GlassSelect';
@@ -316,6 +317,9 @@ export default function WidgetSettingsModal({
         return <MapSettings settings={settings} updateSetting={updateSetting} />;
       case 'homenavi.automation.manual_trigger':
         return <AutomationSettings settings={settings} updateSetting={updateSetting} accessToken={accessToken} />;
+      case 'integration.connector.device':
+      case 'integration.lg_thinq.device':
+        return <IntegrationDeviceSettings widgetType={widgetType} settings={settings} updateSetting={updateSetting} accessToken={accessToken} />;
       default:
         return (
           <div className="widget-settings__no-settings">
@@ -395,6 +399,52 @@ export default function WidgetSettingsModal({
         </button>
       </div>
     </BaseModal>
+  );
+}
+
+function IntegrationDeviceSettings({ widgetType, settings, updateSetting, accessToken }) {
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const integration = widgetType === 'integration.connector.device' ? 'connector' : 'lg-thinq';
+    setLoading(true);
+    setError('');
+    http.get(`/integrations/${integration}/api/realtime/snapshot`, { token: accessToken }).then((result) => {
+      if (!active) return;
+      if (!result.success) {
+        setError(result.error || 'Unable to load devices.');
+        setDevices([]);
+      } else {
+        const snapshotDevices = result.data?.devices;
+        const entries = Array.isArray(snapshotDevices)
+          ? snapshotDevices.map((device) => [device?.id, device])
+          : Object.entries(snapshotDevices || {});
+        setDevices(entries.filter(([id, device]) => id && device && typeof device === 'object').map(([id, device]) => ({
+          value: String(id), label: String(device.name || id),
+        })));
+      }
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [accessToken, widgetType]);
+
+  const selected = String(settings.device_id || '');
+  const options = selected && !devices.some((device) => device.value === selected)
+    ? [{ value: selected, label: selected }, ...devices] : devices;
+
+  return (
+    <div className="widget-settings__section">
+      <h3 className="widget-settings__section-title"><FontAwesomeIcon icon={faMicrochip} /> Device</h3>
+      {loading ? <div className="widget-settings__loading"><FontAwesomeIcon icon={faSpinner} spin /> Loading devices</div> : null}
+      {error ? <div className="widget-settings__hint" role="alert">{error}</div> : null}
+      {!loading && !error ? (
+        <GlassSelect value={selected} options={options} placeholder="Select a device" ariaLabel="Select a device" onChange={(value) => updateSetting('device_id', value)} />
+      ) : null}
+      {!loading && !error && !devices.length ? <div className="widget-settings__hint">No devices available.</div> : null}
+    </div>
   );
 }
 

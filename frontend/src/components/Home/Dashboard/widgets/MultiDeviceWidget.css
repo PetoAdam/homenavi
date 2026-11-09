@@ -26,9 +26,9 @@
 
 .multi-device-widget__grid {
   display: grid;
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(76px, 1fr);
+  grid-auto-rows: minmax(70px, auto);
   gap: 0.7rem;
 }
 
@@ -107,7 +107,7 @@
 .multi-device-widget__tile-name {
   width: 100%;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.95rem;
   line-height: 1.15;
   overflow-wrap: anywhere;
