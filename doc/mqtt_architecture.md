@@ -28,6 +28,8 @@ The broker carries device-plane messages. Browser clients do not connect to the 
 
 When a Zigbee device announces itself, the Zigbee adapter requests its current `state` after a short debounce if the device exposes a readable state. Zigbee2MQTT publishes the response normally, updating its own state and the adapter's HDP state. This requires the device to announce and respond to a state read; power loss itself cannot be reported by an unpowered device.
 
+For supported mains-powered Zigbee endpoints with an on/off input cluster, the adapter also requests a coordinator binding and configures native `onOff` reporting with a 60-second maximum interval. Setup is serialized, preserves other bindings, and retries failures from the bridge inventory. Battery-powered devices are not configured. Devices that reject reporting, lose the configuration, or are unpowered may still have stale state.
+
 ## Client-Layer Design
 
 ```mermaid

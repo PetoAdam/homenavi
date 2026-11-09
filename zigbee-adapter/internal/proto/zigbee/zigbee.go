@@ -44,6 +44,10 @@ type ZigbeeAdapter struct {
 	pendingState   map[string]pendingZigbeeState
 	announceMu     sync.Mutex
 	announceTimers map[string]*time.Timer
+	reportingMu    sync.Mutex
+	reportingQueue chan reportingTarget
+	reportingLast  map[string]time.Time
+	reportingWait  map[string]chan reportingResponse
 	devicesReqMu   sync.Mutex
 	lastDevicesReq time.Time
 	correlationMu  sync.Mutex
@@ -101,6 +105,9 @@ func New(client *mqttinfra.Client, repo *dbinfra.Repository, cache *redisinfra.S
 		friendlyTopic:  map[string]string{},
 		pendingState:   map[string]pendingZigbeeState{},
 		announceTimers: map[string]*time.Timer{},
+		reportingQueue: make(chan reportingTarget, 512),
+		reportingLast:  map[string]time.Time{},
+		reportingWait:  map[string]chan reportingResponse{},
 		correlationMap: map[string]pendingCorrelation{},
 		reinterviews:   map[string]pendingReconfigure{},
 	}
@@ -136,6 +143,7 @@ func (z *ZigbeeAdapter) Start(ctx context.Context) error {
 	}
 	slog.Info("zigbee adapter subscribed", "patterns", []string{"zigbee2mqtt/#", "hdp commands", "hdp pairing"})
 
+	go z.runReportingSetup()
 	go z.primeFromDB(context.Background())
 	_ = z.client.Publish("zigbee2mqtt/bridge/request/devices", []byte(`{}`))
 	_ = z.publishStatus("online", "healthy")
@@ -214,6 +222,10 @@ func (z *ZigbeeAdapter) handle(m mqttinfra.Message) {
 	}
 	if topic == "zigbee2mqtt/bridge/response/device" {
 		z.handleBridgeDeviceResponse(m)
+		return
+	}
+	if topic == "zigbee2mqtt/bridge/response/device/bind" || topic == "zigbee2mqtt/bridge/response/device/reporting/configure" {
+		z.handleReportingResponse(m)
 		return
 	}
 	if strings.HasPrefix(topic, "zigbee2mqtt/bridge/event") {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,6 +117,7 @@ func (z *ZigbeeAdapter) handleBridgeEvent(m mqttinfra.Message) {
 			stage := interviewStageFromStatus(status)
 			z.publishPairingProgress(stage, status, external, friendly)
 			if stage == "interview_complete" {
+				z.requestBridgeDevicesThrottled("reporting-after-interview")
 				// If pairing was started via HDP permit_join, stop the timer now.
 				// Otherwise a later permit_join timeout would overwrite a successful pairing.
 				z.pairingMu.Lock()
@@ -214,6 +217,46 @@ func shouldRefreshAnnouncedState(eventType string, rawCapabilities []byte) bool 
 	return false
 }
 
+func nativeOnOffEndpoints(raw map[string]any) []int {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(adapterutil.StringField(raw, "power_source"))), "mains") {
+		return nil
+	}
+	if supported, ok := raw["supported"].(bool); ok && !supported {
+		return nil
+	}
+	endpoints, ok := raw["endpoints"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var result []int
+	for endpointID, value := range endpoints {
+		endpoint, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		clusters, ok := endpoint["clusters"].(map[string]any)
+		if !ok {
+			continue
+		}
+		inputs, ok := clusters["input"].([]any)
+		if !ok {
+			continue
+		}
+		id, err := strconv.Atoi(endpointID)
+		if err != nil || id < 1 || id > 240 {
+			continue
+		}
+		for _, input := range inputs {
+			if cluster, ok := input.(string); ok && strings.EqualFold(cluster, "genOnOff") {
+				result = append(result, id)
+				break
+			}
+		}
+	}
+	sort.Ints(result)
+	return result
+}
+
 func (z *ZigbeeAdapter) scheduleAnnouncedStateRefresh(external string, refresh func()) {
 	z.announceMu.Lock()
 	defer z.announceMu.Unlock()
@@ -282,6 +325,13 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m mqttinfra.Message) {
 	discovered := 0
 	metadataUpdates := 0
 	seen := make(map[string]string, len(list))
+	coordinator := ""
+	for _, device := range list {
+		if strings.EqualFold(adapterutil.StringField(device, "type"), "coordinator") {
+			coordinator = canonicalExternalID(device)
+			break
+		}
+	}
 	for _, d := range list {
 		if strings.EqualFold(adapterutil.StringField(d, "type"), "coordinator") {
 			continue
@@ -293,6 +343,13 @@ func (z *ZigbeeAdapter) handleBridgeDevices(m mqttinfra.Message) {
 		external := canonicalExternalID(d)
 		if external == "" {
 			continue
+		}
+		if coordinator != "" {
+			for _, endpoint := range nativeOnOffEndpoints(d) {
+				if target, needed := nativeReportingTarget(d, external, coordinator, endpoint); needed {
+					z.enqueueReportingSetup(target)
+				}
+			}
 		}
 		if friendly != "" {
 			z.setFriendlyMapping(friendly, external)

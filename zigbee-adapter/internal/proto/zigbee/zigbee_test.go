@@ -1,7 +1,9 @@
 package zigbee
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"reflect"
 	"testing"
@@ -67,6 +69,175 @@ func TestShouldRefreshAnnouncedState(t *testing.T) {
 				t.Fatalf("got %t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNativeOnOffEndpoints(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want []int
+	}{
+		{"mains light", `{"power_source":"Mains (single phase)","supported":true,"endpoints":{"1":{"clusters":{"input":["genOnOff"]}}}}`, []int{1}},
+		{"multiple endpoints", `{"power_source":"Mains","endpoints":{"2":{"clusters":{"input":["genOnOff"]}},"1":{"clusters":{"input":["genOnOff"]}}}}`, []int{1, 2}},
+		{"battery switch", `{"power_source":"Battery","endpoints":{"1":{"clusters":{"input":["genOnOff"]}}}}`, nil},
+		{"unsupported", `{"power_source":"Mains","supported":false,"endpoints":{"1":{"clusters":{"input":["genOnOff"]}}}}`, nil},
+		{"no input cluster", `{"power_source":"Mains","endpoints":{"1":{"clusters":{"output":["genOnOff"]}}}}`, nil},
+		{"invalid endpoint", `{"power_source":"Mains","endpoints":{"242":{"clusters":{"input":["genOnOff"]}}}}`, nil},
+		{"missing metadata", `{}`, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw map[string]any
+			if err := json.Unmarshal([]byte(tc.raw), &raw); err != nil {
+				t.Fatal(err)
+			}
+			if got := nativeOnOffEndpoints(raw); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNativeReportingTarget(t *testing.T) {
+	cases := []struct {
+		name      string
+		endpoint  string
+		wantBound bool
+		wantSetup bool
+	}{
+		{"missing configuration", `{}`, false, true},
+		{"bound only", `{"bindings":[{"cluster":"genOnOff","target":{"ieee_address":"0x1234"}}]}`, true, true},
+		{"other destination", `{"bindings":[{"cluster":"genOnOff","target":{"ieee_address":"0x5678"}}]}`, false, true},
+		{"already configured", `{"bindings":[{"cluster":"genOnOff","target":{"ieee_address":"0x1234"}}],"configured_reportings":[{"cluster":"genOnOff","attribute":"onOff","maximum_report_interval":60}]}`, true, false},
+		{"long interval", `{"bindings":[{"cluster":"genOnOff","target":{"ieee_address":"0x1234"}}],"configured_reportings":[{"cluster":"genOnOff","attribute":"onOff","maximum_report_interval":65000}]}`, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var endpoint map[string]any
+			if err := json.Unmarshal([]byte(tc.endpoint), &endpoint); err != nil {
+				t.Fatal(err)
+			}
+			raw := map[string]any{"endpoints": map[string]any{"1": endpoint}}
+			target, needed := nativeReportingTarget(raw, "lamp", "0x1234", 1)
+			if target.bound != tc.wantBound || needed != tc.wantSetup {
+				t.Fatalf("got bound=%t needed=%t", target.bound, needed)
+			}
+		})
+	}
+}
+
+func TestConfigureNativeReporting(t *testing.T) {
+	cases := []struct {
+		name       string
+		bound      bool
+		failAction string
+		want       []string
+		wantError  bool
+	}{
+		{"bind then configure", false, "", []string{"bind", "reporting/configure"}, false},
+		{"existing bind", true, "", []string{"reporting/configure"}, false},
+		{"binding fails", false, "bind", []string{"bind"}, true},
+		{"reporting fails", false, "reporting/configure", []string{"bind", "reporting/configure"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			err := configureNativeReporting(reportingTarget{device: "lamp", endpoint: 2, bound: tc.bound}, func(action string, payload map[string]any) (reportingResponse, error) {
+				calls = append(calls, action)
+				if action == "reporting/configure" && (payload["id"] != "lamp" || payload["endpoint"] != 2 || payload["maximum_report_interval"] != 60) {
+					t.Fatalf("unexpected reporting payload: %v", payload)
+				}
+				if action == tc.failAction {
+					return reportingResponse{}, errors.New("failed")
+				}
+				return reportingResponse{}, nil
+			})
+			if (err != nil) != tc.wantError || !reflect.DeepEqual(calls, tc.want) {
+				t.Fatalf("got calls=%v err=%v", calls, err)
+			}
+		})
+	}
+}
+
+func TestReportingQueueDeduplicatesAndRetries(t *testing.T) {
+	z := &ZigbeeAdapter{reportingQueue: make(chan reportingTarget, 2), reportingLast: map[string]time.Time{}}
+	target := reportingTarget{device: "lamp", endpoint: 1}
+	z.enqueueReportingSetup(target)
+	z.enqueueReportingSetup(target)
+	if got := len(z.reportingQueue); got != 1 {
+		t.Fatalf("got %d queued requests, want 1", got)
+	}
+	<-z.reportingQueue
+	z.reportingLast["lamp/1"] = time.Now()
+	z.enqueueReportingSetup(target)
+	if len(z.reportingQueue) != 0 {
+		t.Fatal("retried before cooldown")
+	}
+	z.reportingLast["lamp/1"] = time.Now().Add(-16 * time.Minute)
+	z.enqueueReportingSetup(target)
+	if len(z.reportingQueue) != 1 {
+		t.Fatal("did not retry after cooldown")
+	}
+}
+
+type reportingTestMessage []byte
+
+func (message reportingTestMessage) Topic() string   { return "zigbee2mqtt/bridge/response/device/bind" }
+func (message reportingTestMessage) Payload() []byte { return message }
+func (message reportingTestMessage) Qos() byte       { return 0 }
+func (message reportingTestMessage) Retained() bool  { return false }
+func (message reportingTestMessage) Duplicate() bool { return false }
+
+func TestReportingRequestResponses(t *testing.T) {
+	cases := []struct {
+		name      string
+		response  string
+		wantError bool
+	}{
+		{"success", `{"status":"ok","data":{"failed":[]}}`, false},
+		{"failed bind", `{"status":"ok","data":{"failed":["genOnOff"]}}`, true},
+		{"error response", `{"status":"error","error":"not supported"}`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			z := &ZigbeeAdapter{reportingWait: map[string]chan reportingResponse{}}
+			_, err := z.sendReportingRequest(context.Background(), "bind", map[string]any{"from": "lamp"}, func(topic string, payload []byte) error {
+				if topic != "zigbee2mqtt/bridge/request/device/bind" {
+					t.Fatalf("unexpected topic %s", topic)
+				}
+				var request, response map[string]any
+				if err := json.Unmarshal(payload, &request); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal([]byte(tc.response), &response); err != nil {
+					t.Fatal(err)
+				}
+				response["transaction"] = request["transaction"]
+				encoded, err := json.Marshal(response)
+				if err != nil {
+					t.Fatal(err)
+				}
+				z.handleReportingResponse(reportingTestMessage(encoded))
+				return nil
+			})
+			if (err != nil) != tc.wantError || len(z.reportingWait) != 0 {
+				t.Fatalf("got err=%v and %d pending responses", err, len(z.reportingWait))
+			}
+		})
+	}
+}
+
+func TestReportingRequestCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	z := &ZigbeeAdapter{reportingWait: map[string]chan reportingResponse{}}
+	_, err := z.sendReportingRequest(ctx, "bind", map[string]any{}, func(string, []byte) error {
+		t.Fatal("published after cancellation")
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || len(z.reportingWait) != 0 {
+		t.Fatalf("got err=%v and %d pending responses", err, len(z.reportingWait))
 	}
 }
 

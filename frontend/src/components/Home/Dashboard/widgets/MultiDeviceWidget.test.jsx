@@ -90,6 +90,10 @@ describe('MultiDeviceWidget', () => {
       );
       expect(gridRule?.style.getPropertyValue('grid-auto-rows')).toBe('minmax(64px, auto)');
       expect(gridRule?.style.getPropertyValue('gap')).toBe('0.6rem');
+      const nameRule = Array.from(style.sheet.cssRules).find(
+        (cssRule) => cssRule.selectorText === '.multi-device-widget__tile-name',
+      );
+      expect(nameRule?.style.getPropertyValue('font-weight')).toBe('600');
     } finally {
       style.remove();
     }
