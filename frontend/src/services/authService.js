@@ -117,7 +117,7 @@ export async function listOAuthConsents(accessToken) {
 }
 
 export async function revokeOAuthConsent(clientId, accessToken) {
-  return await http.delete(`${AUTH_BASE}/oauth/consents/${encodeURIComponent(clientId)}`, { token: accessToken });
+  return await http.del(`${AUTH_BASE}/oauth/consents/${encodeURIComponent(clientId)}`, { token: accessToken });
 }
 
 // Profile picture

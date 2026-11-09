@@ -42,6 +42,8 @@ type ZigbeeAdapter struct {
 	friendlyTopic  map[string]string
 	pendingMu      sync.Mutex
 	pendingState   map[string]pendingZigbeeState
+	announceMu     sync.Mutex
+	announceTimers map[string]*time.Timer
 	devicesReqMu   sync.Mutex
 	lastDevicesReq time.Time
 	correlationMu  sync.Mutex
@@ -98,6 +100,7 @@ func New(client *mqttinfra.Client, repo *dbinfra.Repository, cache *redisinfra.S
 		friendlyIndex:  map[string]string{},
 		friendlyTopic:  map[string]string{},
 		pendingState:   map[string]pendingZigbeeState{},
+		announceTimers: map[string]*time.Timer{},
 		correlationMap: map[string]pendingCorrelation{},
 		reinterviews:   map[string]pendingReconfigure{},
 	}
@@ -180,6 +183,12 @@ func (z *ZigbeeAdapter) Stop() {
 	if z.cancel != nil {
 		z.cancel()
 	}
+	z.announceMu.Lock()
+	for key, timer := range z.announceTimers {
+		timer.Stop()
+		delete(z.announceTimers, key)
+	}
+	z.announceMu.Unlock()
 	// Best-effort unsubscribe to avoid lingering retained subs.
 	for _, topic := range z.subscriptions {
 		if err := z.client.Unsubscribe(topic); err != nil {

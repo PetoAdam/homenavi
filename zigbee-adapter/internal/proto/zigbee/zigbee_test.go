@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestCanonicalExternalID(t *testing.T) {
@@ -42,6 +43,55 @@ func TestBridgeLifecycleStage(t *testing.T) {
 	}
 	if got := bridgeLifecycleStage("other"); got != "" {
 		t.Fatalf("expected empty stage, got %q", got)
+	}
+}
+
+func TestShouldRefreshAnnouncedState(t *testing.T) {
+	cases := []struct {
+		name         string
+		eventType    string
+		capabilities string
+		want         bool
+	}{
+		{"readable lamp", "device_announce", `[{"property":"state","access":{"read":true}}]`, true},
+		{"case insensitive", "device_announce", `[{"property":" STATE ","access":{"read":true}}]`, true},
+		{"write only", "device_announce", `[{"property":"state","access":{"write":true}}]`, false},
+		{"sensor", "device_announce", `[{"property":"temperature","access":{"read":true}}]`, false},
+		{"join", "device_joined", `[{"property":"state","access":{"read":true}}]`, false},
+		{"missing capabilities", "device_announce", "", false},
+		{"invalid capabilities", "device_announce", "{", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldRefreshAnnouncedState(tc.eventType, []byte(tc.capabilities)); got != tc.want {
+				t.Fatalf("got %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAnnouncedStateRefreshDebouncesByDevice(t *testing.T) {
+	z := &ZigbeeAdapter{}
+	refreshed := make(chan string, 3)
+	z.scheduleAnnouncedStateRefresh("lamp-1", func() { refreshed <- "old" })
+	z.scheduleAnnouncedStateRefresh("lamp-1", func() { refreshed <- "lamp-1" })
+	z.scheduleAnnouncedStateRefresh("lamp-2", func() { refreshed <- "lamp-2" })
+	expected := map[string]bool{"lamp-1": true, "lamp-2": true}
+	for range 2 {
+		select {
+		case device := <-refreshed:
+			if !expected[device] {
+				t.Fatalf("unexpected refresh for %s", device)
+			}
+			delete(expected, device)
+		case <-time.After(8 * time.Second):
+			t.Fatal("timed out waiting for refresh")
+		}
+	}
+	select {
+	case device := <-refreshed:
+		t.Fatalf("unexpected extra refresh for %s", device)
+	default:
 	}
 }
 

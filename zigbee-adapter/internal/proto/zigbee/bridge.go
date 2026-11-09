@@ -75,6 +75,13 @@ func (z *ZigbeeAdapter) handleBridgeEvent(m mqttinfra.Message) {
 		z.reconcileFriendlyDevice(ctx, friendly, external)
 		if dev := z.ensureBridgeDevice(ctx, friendly, external, evt.Data); dev != nil {
 			z.publishPairingProgress(bridgeLifecycleStage(evt.Type), "", external, friendly)
+			if shouldRefreshAnnouncedState(evt.Type, dev.Capabilities) {
+				z.scheduleAnnouncedStateRefresh(external, func() {
+					if z.ctx == nil || z.ctx.Err() == nil {
+						z.requestStateSnapshotForDevice(friendly, []string{"state"})
+					}
+				})
+			}
 		}
 	case "device_interview":
 		friendly, _ := evt.Data["friendly_name"].(string)
@@ -189,6 +196,45 @@ func (z *ZigbeeAdapter) handleBridgeEvent(m mqttinfra.Message) {
 		}
 		slog.Info("zigbee device renamed", "from", from, "to", to)
 	}
+}
+
+func shouldRefreshAnnouncedState(eventType string, rawCapabilities []byte) bool {
+	if eventType != "device_announce" || len(rawCapabilities) == 0 {
+		return false
+	}
+	var capabilities []model.Capability
+	if err := json.Unmarshal(rawCapabilities, &capabilities); err != nil {
+		return false
+	}
+	for _, capability := range capabilities {
+		if strings.EqualFold(strings.TrimSpace(capability.Property), "state") && capability.Access.Read {
+			return true
+		}
+	}
+	return false
+}
+
+func (z *ZigbeeAdapter) scheduleAnnouncedStateRefresh(external string, refresh func()) {
+	z.announceMu.Lock()
+	defer z.announceMu.Unlock()
+	if z.announceTimers == nil {
+		z.announceTimers = make(map[string]*time.Timer)
+	}
+	if existing := z.announceTimers[external]; existing != nil {
+		existing.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(5*time.Second, func() {
+		z.announceMu.Lock()
+		if z.announceTimers[external] != timer {
+			z.announceMu.Unlock()
+			return
+		}
+		delete(z.announceTimers, external)
+		z.announceMu.Unlock()
+		refresh()
+	})
+	z.announceTimers[external] = timer
 }
 
 func (z *ZigbeeAdapter) ensureBridgeDevice(ctx context.Context, friendly, external string, data map[string]any) *model.Device {

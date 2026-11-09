@@ -26,6 +26,8 @@ flowchart LR
 
 The broker carries device-plane messages. Browser clients do not connect to the broker directly; the API gateway exposes the browser-facing WebSocket path and services translate MQTT state into APIs, persistence, and realtime UI updates.
 
+When a Zigbee device announces itself, the Zigbee adapter requests its current `state` after a short debounce if the device exposes a readable state. Zigbee2MQTT publishes the response normally, updating its own state and the adapter's HDP state. This requires the device to announce and respond to a state read; power loss itself cannot be reported by an unpowered device.
+
 ## Client-Layer Design
 
 ```mermaid
