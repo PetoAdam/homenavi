@@ -85,6 +85,11 @@ describe('MultiDeviceWidget', () => {
       expect(rule?.style.getPropertyValue('overflow-y')).toBe('auto');
       expect(Number.parseFloat(rule?.style.getPropertyValue('min-height'))).toBe(0);
       expect(rule?.style.getPropertyValue('scroll-padding')).toBe('4px');
+      const gridRule = Array.from(style.sheet.cssRules).find(
+        (cssRule) => cssRule.selectorText === '.multi-device-widget__grid',
+      );
+      expect(gridRule?.style.getPropertyValue('grid-auto-rows')).toBe('minmax(64px, auto)');
+      expect(gridRule?.style.getPropertyValue('gap')).toBe('0.6rem');
     } finally {
       style.remove();
     }
