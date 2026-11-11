@@ -197,6 +197,9 @@ func TestAuthorizationHandlerStartsBrowserTransactionWithoutBearer(t *testing.T)
 	if response.Code != http.StatusFound || response.Header().Get("Location") != "http://localhost:5173/oauth/authorize" || !strings.Contains(response.Header().Get("Set-Cookie"), "homenavi_oauth_transaction=transaction-1") {
 		t.Fatalf("unexpected browser transaction response: status=%d headers=%#v", response.Code, response.Header())
 	}
+	if cookies := response.Result().Cookies(); len(cookies) != 1 || cookies[0].Secure {
+		t.Fatalf("expected an insecure transaction cookie for HTTP: %#v", cookies)
+	}
 }
 
 func TestAuthorizationHandlerDerivesBrowserRedirectFromForwardedRequest(t *testing.T) {
@@ -210,6 +213,9 @@ func TestAuthorizationHandlerDerivesBrowserRedirectFromForwardedRequest(t *testi
 
 	if response.Code != http.StatusFound || response.Header().Get("Location") != "https://home.example.test/oauth/authorize" {
 		t.Fatalf("unexpected browser transaction response: status=%d headers=%#v", response.Code, response.Header())
+	}
+	if cookies := response.Result().Cookies(); len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("expected a secure transaction cookie for HTTPS: %#v", cookies)
 	}
 }
 

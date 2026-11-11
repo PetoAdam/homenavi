@@ -49,6 +49,30 @@ if [ "$(grep -Fc 'proxy_set_header X-Forwarded-Host $host;' "$rendered")" -ne 6 
   exit 1
 fi
 
+if ! grep -Fq 'map "$scheme:$http_x_forwarded_proto" $homenavi_forwarded_proto' "$rendered" ||
+  ! grep -Fq 'default $scheme;' "$rendered" ||
+  ! grep -Fq '"http:https" https;' "$rendered" ||
+  [ "$(grep -Fc 'proxy_set_header X-Forwarded-Proto $homenavi_forwarded_proto;' "$rendered")" -ne 6 ]; then
+  echo "every edge upstream route must preserve the ingress HTTPS scheme" >&2
+  exit 1
+fi
+
+helm template homenavi "$chart_dir" --set ingress.publicScheme=https >"$rendered"
+if ! grep -Fq 'default https;' "$rendered" || grep -Fq '"http:https" https;' "$rendered"; then
+  echo "configured public scheme must override the ingress scheme" >&2
+  exit 1
+fi
+helm template homenavi "$chart_dir" --set ingress.publicScheme=http >"$rendered"
+if ! grep -Fq 'default http;' "$rendered" || grep -Fq '"http:https" https;' "$rendered"; then
+  echo "configured HTTP scheme must override the ingress scheme" >&2
+  exit 1
+fi
+if helm template homenavi "$chart_dir" --set ingress.publicScheme=invalid >/dev/null 2>&1; then
+  echo "invalid public scheme must be rejected" >&2
+  exit 1
+fi
+
+helm template homenavi "$chart_dir" --set ingress.enabled=true >"$rendered"
 for direct_path in /api /ws /mcp /.well-known /integrations; do
   if grep -Fq "path: $direct_path" "$rendered"; then
     echo "ingress must not route $direct_path directly" >&2

@@ -83,6 +83,7 @@ environment overrides. VerneMQ is persistent by default in this profile.
 - `integration-proxy` defaults to `INTEGRATIONS_RUNTIME_MODE=helm` in this chart.
 - Released charts default service image tags to the chart `appVersion`, so tag-based releases stay aligned with GHCR images by default.
 - The ingress host is the public hostname source of truth. OAuth and MCP derive their absolute URLs from the host and scheme forwarded through the edge proxy; explicit per-service endpoint values remain available for split-domain deployments.
+- The edge proxy trusts the ingress `X-Forwarded-Proto` header. Restrict direct access to trusted proxies and ensure they overwrite untrusted forwarded headers. If TLS terminates before an HTTP-only ingress that discards the original scheme, set `ingress.publicScheme: https` only when all public traffic to this deployment uses HTTPS.
 - Set `global.otelExporterOtlpTracesEndpoint` once to inject the collector endpoint into all OTEL-capable services. An explicit per-service endpoint remains an override.
 
 ## Runtime secrets from env file (Kubernetes-native)

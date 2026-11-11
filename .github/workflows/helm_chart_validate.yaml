@@ -27,3 +27,6 @@ jobs:
 
       - name: Helm template
         run: helm template homenavi ./helm/homenavi > /tmp/homenavi-rendered.yaml
+
+      - name: Test ingress routes
+        run: sh helm/homenavi/tests/test_ingress_routes.sh

@@ -6,6 +6,18 @@ metadata:
     {{- include "homenavi.labels" . | nindent 4 }}
 data:
   default.conf: |
+    {{- $publicScheme := .Values.ingress.publicScheme | default "" }}
+    {{- if and $publicScheme (not (or (eq $publicScheme "http") (eq $publicScheme "https"))) }}
+    {{- fail "ingress.publicScheme must be empty, http, or https" }}
+    {{- end }}
+    map "$scheme:$http_x_forwarded_proto" $homenavi_forwarded_proto {
+      {{- if $publicScheme }}
+      default {{ $publicScheme }};
+      {{- else }}
+      default $scheme;
+      "http:https" https;
+      {{- end }}
+    }
     server {
       listen 80;
       server_name _;

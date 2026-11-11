@@ -124,6 +124,7 @@ ingress:
   enabled: false
   className: ""
   annotations: {}
+  publicScheme: ""
   hosts:
     - host: homenavi.local
       paths:

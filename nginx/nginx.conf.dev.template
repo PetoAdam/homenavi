@@ -6,6 +6,11 @@ http {
     sendfile        on;
     keepalive_timeout 65;
 
+    map "$scheme:$http_x_forwarded_proto" $homenavi_forwarded_proto {
+        default $scheme;
+        "http:https" https;
+    }
+
     server {
         listen 80;
         server_name _;
