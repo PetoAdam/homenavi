@@ -35,6 +35,9 @@ func New(database *gorm.DB) (*Repository, error) {
 
 func ensureSchema(database *gorm.DB) error {
 	m := database.Migrator()
+	if err := database.AutoMigrate(&DiscoveryDevice{}, &DiscoveryCapability{}, &DiscoveryStatus{}); err != nil {
+		return fmt.Errorf("migrate discovery projection: %w", err)
+	}
 	if !m.HasTable(&Room{}) {
 		if err := m.CreateTable(&Room{}); err != nil {
 			return fmt.Errorf("create ers_rooms: %w", err)
@@ -107,6 +110,9 @@ func ensureSchema(database *gorm.DB) error {
 		if err := m.AddColumn(&DeviceBinding{}, "HDPDeviceID"); err != nil {
 			return fmt.Errorf("add ers_device_bindings.hdp_device_id: %w", err)
 		}
+	}
+	if err := ensureDiscoveryGeneration(database); err != nil {
+		return fmt.Errorf("install discovery generation tracking: %w", err)
 	}
 	if m.HasTable(&hdpDeviceRecord{}) && !m.HasConstraint(&DeviceBinding{}, "HDPDevice") {
 		_ = m.CreateConstraint(&DeviceBinding{}, "HDPDevice")

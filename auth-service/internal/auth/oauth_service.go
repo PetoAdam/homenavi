@@ -224,14 +224,27 @@ func (s *Service) ExchangeMCPAccessToken(ctx context.Context, tokenString, resou
 		return "", fmt.Errorf("validate MCP subject token: %w", err)
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
-	switch requestedScope {
-	case "home.automation.read", "home.automation.execute", "home.devices.read", "home.devices.write", "home.history.read", "home.inventory.read", "home.inventory.write":
-	default:
+	requested := strings.Fields(requestedScope)
+	if len(requested) == 0 || len(requested) > 2 || len(requested) != len(authx.ParseScopes(requestedScope)) {
 		return "", fmt.Errorf("unsupported delegated scope")
 	}
-	if !ok || claims[authx.ClaimTokenType] != authx.TokenTypeMCP || !authx.HasScope(fmt.Sprint(claims[authx.ClaimScope]), requestedScope) {
+	for _, scope := range requested {
+		switch scope {
+		case "home.automation.read", "home.automation.execute", "home.devices.read", "home.devices.write", "home.history.read", "home.inventory.read", "home.inventory.write":
+		default:
+			return "", fmt.Errorf("unsupported delegated scope")
+		}
+		if !ok || !authx.HasScope(fmt.Sprint(claims[authx.ClaimScope]), scope) {
+			return "", fmt.Errorf("MCP token is not authorized for the requested delegated scope")
+		}
+	}
+	if len(requested) == 2 && (!authx.HasScope(requestedScope, "home.devices.read") || !authx.HasScope(requestedScope, "home.inventory.read")) {
+		return "", fmt.Errorf("unsupported delegated scope combination")
+	}
+	if claims[authx.ClaimTokenType] != authx.TokenTypeMCP {
 		return "", fmt.Errorf("MCP token is not authorized for the requested delegated scope")
 	}
+	requestedScope = strings.Join(requested, " ")
 	subject, _ := claims.GetSubject()
 	sessionID, _ := claims[authx.ClaimSessionID].(string)
 	role, _ := claims["role"].(string)

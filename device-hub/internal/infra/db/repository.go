@@ -26,6 +26,10 @@ type Repository struct {
 	db *gorm.DB
 }
 
+func New(database *gorm.DB) *Repository {
+	return &Repository{db: database}
+}
+
 type DeviceState struct {
 	DeviceID  string          `gorm:"primaryKey;type:uuid"`
 	State     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'"`
@@ -33,6 +37,38 @@ type DeviceState struct {
 }
 
 func (DeviceState) TableName() string { return "hdp_device_states" }
+
+type DeviceStateKey struct {
+	Protocol   string
+	ExternalID string
+}
+
+type DeviceStateView struct {
+	Protocol       string
+	ExternalID     string
+	Online         bool
+	LastSeen       time.Time
+	State          json.RawMessage
+	StateUpdatedAt *time.Time
+}
+
+func (r *Repository) GetDeviceStates(ctx context.Context, keys []DeviceStateKey) ([]DeviceStateView, error) {
+	if len(keys) == 0 {
+		return []DeviceStateView{}, nil
+	}
+	query := r.db.WithContext(ctx).Table("hdp_devices AS devices").
+		Select("devices.protocol, devices.external_id, devices.online, devices.last_seen, states.state, states.updated_at AS state_updated_at").
+		Joins("LEFT JOIN hdp_device_states AS states ON states.device_id = devices.id")
+	conditions := r.db.Where("1 = 0")
+	for _, key := range keys {
+		conditions = conditions.Or("(devices.protocol = ? AND devices.external_id = ?)", key.Protocol, key.ExternalID)
+	}
+	var result []DeviceStateView
+	if err := query.Where(conditions).Scan(&result).Error; err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
 type CommandLifecycle struct {
 	CorrelationID string          `gorm:"primaryKey;size:128"`
@@ -91,11 +127,14 @@ func Open(cfg Config) (*Repository, error) {
 	if err := ensureSchema(db); err != nil {
 		return nil, err
 	}
-	return &Repository{db: db}, nil
+	return New(db), nil
 }
 
 func ensureSchema(database *gorm.DB) error {
 	if err := database.AutoMigrate(&model.Device{}, &DeviceState{}, &CommandLifecycle{}, &PairingLifecycle{}, &LifecycleOutbox{}); err != nil {
+		return err
+	}
+	if err := EnsureMetadataRevision(database); err != nil {
 		return err
 	}
 	if err := database.Model(&model.Device{}).Where("capabilities IS NULL").Update("capabilities", datatypes.JSON([]byte("[]"))).Error; err != nil {
@@ -108,6 +147,46 @@ func ensureSchema(database *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+func EnsureMetadataRevision(database *gorm.DB) error {
+	if err := database.Exec("CREATE TABLE IF NOT EXISTS hdp_metadata_revision (id integer PRIMARY KEY, revision bigint NOT NULL)").Error; err != nil {
+		return err
+	}
+	if err := database.Exec("INSERT INTO hdp_metadata_revision (id, revision) VALUES (1, 0) ON CONFLICT (id) DO NOTHING").Error; err != nil {
+		return err
+	}
+	switch database.Dialector.Name() {
+	case "sqlite":
+		for _, operation := range []string{"INSERT", "DELETE"} {
+			statement := "CREATE TRIGGER IF NOT EXISTS hdp_metadata_revision_" + strings.ToLower(operation) + " AFTER " + operation + " ON hdp_devices BEGIN UPDATE hdp_metadata_revision SET revision = revision + 1 WHERE id = 1; END"
+			if err := database.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		if err := database.Exec(`CREATE TRIGGER IF NOT EXISTS hdp_metadata_revision_update AFTER UPDATE ON hdp_devices WHEN OLD.protocol IS NOT NEW.protocol OR OLD.external_id IS NOT NEW.external_id OR OLD.type IS NOT NEW.type OR OLD.capabilities IS NOT NEW.capabilities BEGIN UPDATE hdp_metadata_revision SET revision = revision + 1 WHERE id = 1; END`).Error; err != nil {
+			return err
+		}
+	case "postgres":
+		if err := database.Exec(`CREATE OR REPLACE FUNCTION hdp_bump_metadata_revision() RETURNS trigger AS $$ BEGIN UPDATE hdp_metadata_revision SET revision = revision + 1 WHERE id = 1; RETURN NULL; END; $$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		if err := database.Exec(`DO $$ BEGIN CREATE TRIGGER hdp_metadata_revision_change AFTER INSERT OR DELETE ON hdp_devices FOR EACH STATEMENT EXECUTE FUNCTION hdp_bump_metadata_revision(); EXCEPTION WHEN duplicate_object THEN NULL; END $$`).Error; err != nil {
+			return err
+		}
+		if err := database.Exec(`DO $$ BEGIN CREATE TRIGGER hdp_metadata_revision_update AFTER UPDATE ON hdp_devices FOR EACH ROW WHEN (OLD.protocol IS DISTINCT FROM NEW.protocol OR OLD.external_id IS DISTINCT FROM NEW.external_id OR OLD.type IS DISTINCT FROM NEW.type OR OLD.capabilities IS DISTINCT FROM NEW.capabilities) EXECUTE FUNCTION hdp_bump_metadata_revision(); EXCEPTION WHEN duplicate_object THEN NULL; END $$`).Error; err != nil {
+			return err
+		}
+	default:
+		return errors.New("unsupported metadata revision database")
+	}
+	return nil
+}
+
+func (r *Repository) MetadataRevision(ctx context.Context) (int64, error) {
+	var revision int64
+	err := r.db.WithContext(ctx).Raw("SELECT revision FROM hdp_metadata_revision WHERE id = 1").Row().Scan(&revision)
+	return revision, err
 }
 
 func (r *Repository) UpsertDevice(ctx context.Context, d *model.Device) error {
@@ -132,6 +211,21 @@ func (r *Repository) GetByExternal(ctx context.Context, protocol, externalID str
 func (r *Repository) List(ctx context.Context) ([]model.Device, error) {
 	var devices []model.Device
 	if err := r.db.WithContext(ctx).Order("created_at desc").Find(&devices).Error; err != nil {
+		return nil, err
+	}
+	return devices, nil
+}
+
+func (r *Repository) ListMetadataPage(ctx context.Context, after uuid.UUID, limit int) ([]model.Device, error) {
+	if limit < 1 || limit > 101 {
+		return nil, errors.New("invalid metadata page limit")
+	}
+	query := r.db.WithContext(ctx).Select("id", "protocol", "external_id", "type", "capabilities", "updated_at").Order("id ASC").Limit(limit)
+	if after != uuid.Nil {
+		query = query.Where("id > ?", after)
+	}
+	var devices []model.Device
+	if err := query.Find(&devices).Error; err != nil {
 		return nil, err
 	}
 	return devices, nil

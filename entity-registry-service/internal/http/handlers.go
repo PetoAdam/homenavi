@@ -86,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/ws/ers", s.hub.ServeHTTP)
 	}
 	r.Get("/health", s.handleHealth)
+	r.Post("/internal/discovery/search", s.handleDiscoverySearch)
 	r.Get("/api/ers/home", s.handleHome)
 	r.Route("/api/ers/rooms", func(r chi.Router) {
 		r.Get("/", s.handleRoomsList)

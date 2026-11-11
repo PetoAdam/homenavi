@@ -30,6 +30,161 @@ func TestHTTPDeviceClientListsBoundedSafeFields(t *testing.T) {
 	}
 }
 
+func TestDeviceStatesInputValidation(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input deviceStatesInput
+		valid bool
+	}{
+		{"valid", deviceStatesInput{DeviceIDs: []string{"thread/one"}, Fields: []string{"state"}}, true},
+		{"empty", deviceStatesInput{}, false},
+		{"duplicate ID", deviceStatesInput{DeviceIDs: []string{"thread/one", "thread/one"}}, false},
+		{"unknown field", deviceStatesInput{DeviceIDs: []string{"thread/one"}, Fields: []string{"secret"}}, false},
+		{"duplicate field", deviceStatesInput{DeviceIDs: []string{"thread/one"}, Fields: []string{"state", "state"}}, false},
+		{"too many", deviceStatesInput{DeviceIDs: make([]string, 101)}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if valid := validateDeviceStatesInput(test.input) == nil; valid != test.valid {
+				t.Fatalf("valid=%v, want %v", valid, test.valid)
+			}
+		})
+	}
+}
+
+func TestDiscoveryInputValidation(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		input        discoveryInput
+		roomRequired bool
+		valid        bool
+	}{
+		{"empty search", discoveryInput{}, false, true},
+		{"missing room", discoveryInput{}, true, false},
+		{"room state", discoveryInput{Room: "Bedroom"}, true, true},
+		{"conflicting rooms", discoveryInput{Room: "Bedroom", RoomID: "id"}, false, false},
+		{"unknown field", discoveryInput{Fields: []string{"password"}}, false, false},
+		{"duplicate field", discoveryInput{Fields: []string{"name", "name"}}, false, false},
+		{"conflicting detail", discoveryInput{Detail: "verbose", Fields: []string{"name"}}, false, false},
+		{"invalid limit", discoveryInput{Limit: 101}, false, false},
+		{"properties without state", discoveryInput{Fields: []string{"online"}, StateProperties: []string{"on"}}, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := validateDiscoveryInput(test.input, test.roomRequired) == nil; got != test.valid {
+				t.Fatalf("valid=%v, want %v", got, test.valid)
+			}
+		})
+	}
+}
+
+func TestDiscoverDevicesRoomStateBatchesAndProjects(t *testing.T) {
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Header.Get("Authorization") != "Bearer delegated-token" {
+			t.Fatal("missing delegated token")
+		}
+		switch request.URL.Path {
+		case "/api/mcp/ers/discovery:room-state":
+			_, _ = writer.Write([]byte(`{"room":{"id":"room-id","name":"Bedroom"},"devices":[{"device_id":"thread/one","name":"Thermostat","type":"thermostat","room":"Bedroom"},{"device_id":"thread/missing","name":"Offline","type":"sensor"}],"next_cursor":"next"}`))
+		case "/api/mcp/hdp/device-states:batch":
+			_, _ = writer.Write([]byte(`{"read_at":"now","results":[{"device_id":"thread/one","status":"ok","online":true,"state":{"temperature":0,"on":false,"password":"secret"},"state_updated_at":"then"},{"device_id":"thread/missing","status":"not_found"}]}`))
+		default:
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.DiscoverDevices(context.Background(), discoveryInput{Room: "Bedroom", StateProperties: []string{"temperature", "on"}}, true, "delegated-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := result.(map[string]any)
+	devices := page["devices"].([]map[string]any)
+	state := devices[0]["state"].(map[string]any)
+	if requests != 2 || page["next_cursor"] != "next" || page["read_at"] != "now" || state["temperature"] != float64(0) || state["on"] != false || len(state) != 2 || devices[1]["status"] != "not_found" {
+		t.Fatalf("unexpected response: %#v", page)
+	}
+}
+
+func TestDiscoverDevicesRetriesOversizedBatch(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/mcp/ers/discovery:room-state":
+			var input struct {
+				Limit int `json:"limit"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Fatal(err)
+			}
+			if input.Limit == 1 {
+				_, _ = writer.Write([]byte(`{"devices":[{"device_id":"thread/one"}],"next_cursor":"next"}`))
+			} else {
+				_, _ = writer.Write([]byte(`{"devices":[{"device_id":"thread/one"},{"device_id":"thread/two"}]}`))
+			}
+		case "/api/mcp/hdp/device-states:batch":
+			var input struct {
+				DeviceIDs []string `json:"device_ids"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Fatal(err)
+			}
+			if len(input.DeviceIDs) > 1 {
+				writer.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			_, _ = writer.Write([]byte(`{"results":[{"device_id":"thread/one","status":"ok","state":{"on":false}}]}`))
+		default:
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.DiscoverDevices(context.Background(), discoveryInput{Room: "Bedroom"}, true, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := result.(map[string]any)
+	if len(page["devices"].([]map[string]any)) != 1 || page["next_cursor"] != "next" {
+		t.Fatalf("unexpected page: %#v", page)
+	}
+}
+
+func TestGetDeviceStatesProjectsFields(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/mcp/hdp/device-states:batch" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer delegated-token" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"read_at":"2026-11-10T00:00:00Z","results":[{"device_id":"thread/one","status":"ok","online":true,"state":{"on":false},"last_seen":"old","secret":"hidden"}]}`))
+	}))
+	defer upstream.Close()
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.GetDeviceStates(context.Background(), deviceStatesInput{DeviceIDs: []string{"thread/one"}, Fields: []string{"state"}}, "delegated-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := result.(map[string]any)["results"].([]any)[0].(map[string]any)
+	if len(row) != 3 || row["device_id"] != "thread/one" || row["status"] != "ok" || row["state"].(map[string]any)["on"] != false {
+		t.Fatalf("unexpected projected result: %#v", row)
+	}
+}
+
+func TestGetDeviceStatesDoesNotTruncateStateArrays(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"device_id": "thread/one", "status": "ok", "state": map[string]any{"values": make([]int, 101)}}}})
+	}))
+	defer upstream.Close()
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.GetDeviceStates(context.Background(), deviceStatesInput{DeviceIDs: []string{"thread/one"}}, "delegated-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := result.(map[string]any)["results"].([]any)[0].(map[string]any)
+	values := row["state"].(map[string]any)["values"].([]any)
+	if len(values) != 101 {
+		t.Fatalf("state array length = %d, want 101", len(values))
+	}
+}
+
 func TestReadClientsLoadInventoryMetadataAndEnrichDevices(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer inventory-token" {

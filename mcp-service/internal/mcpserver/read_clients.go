@@ -3,12 +3,15 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 )
+
+var errDeviceStateBatchTooLarge = errors.New("batch state response exceeds size limit")
 
 type readClients struct {
 	devices        *httpDeviceClient
@@ -159,6 +162,84 @@ func (c *readClients) GetDevice(ctx context.Context, deviceID, delegatedToken st
 	var result device
 	err := c.getAuthorized(ctx, c.devices.readBaseURL, "/devices/"+url.PathEscape(strings.TrimSpace(deviceID)), delegatedToken, &result)
 	return result, err
+}
+
+func validateDeviceStatesInput(input deviceStatesInput) error {
+	if len(input.DeviceIDs) == 0 || len(input.DeviceIDs) > 100 {
+		return fmt.Errorf("device_ids must contain between 1 and 100 IDs")
+	}
+	seen := make(map[string]bool, len(input.DeviceIDs))
+	for _, id := range input.DeviceIDs {
+		if strings.TrimSpace(id) != id || len(id) > 512 || !strings.Contains(id, "/") || seen[id] {
+			return fmt.Errorf("device_ids must contain unique canonical IDs")
+		}
+		seen[id] = true
+	}
+	allowed := map[string]bool{"online": true, "last_seen": true, "state": true, "state_updated_at": true}
+	seenFields := make(map[string]bool, len(input.Fields))
+	for _, field := range input.Fields {
+		if !allowed[field] || seenFields[field] {
+			return fmt.Errorf("invalid or duplicate field %q", field)
+		}
+		seenFields[field] = true
+	}
+	return nil
+}
+
+func (c *readClients) GetDeviceStates(ctx context.Context, input deviceStatesInput, delegatedToken string) (any, error) {
+	body, err := json.Marshal(map[string]any{"device_ids": input.DeviceIDs})
+	if err != nil {
+		return nil, fmt.Errorf("encode batch request: %w", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.gatewayURL, "/")+"/api/mcp/hdp/device-states:batch", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("build batch request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+delegatedToken)
+	upstream, err := c.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("perform batch request: %w", err)
+	}
+	defer upstream.Body.Close()
+	if upstream.StatusCode == http.StatusRequestEntityTooLarge {
+		return nil, errDeviceStateBatchTooLarge
+	}
+	if upstream.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("batch service returned %d", upstream.StatusCode)
+	}
+	var result any
+	if err := json.NewDecoder(io.LimitReader(upstream.Body, 256<<10)).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode batch response: %w", err)
+	}
+	result = redactHistory(result)
+	if len(input.Fields) == 0 {
+		input.Fields = []string{"online", "state", "state_updated_at"}
+	}
+	allowed := map[string]bool{"device_id": true, "status": true}
+	for _, field := range input.Fields {
+		allowed[field] = true
+	}
+	response, ok := result.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid batch response")
+	}
+	items, ok := response["results"].([]any)
+	if !ok || len(items) != len(input.DeviceIDs) {
+		return nil, fmt.Errorf("invalid batch response")
+	}
+	for index, item := range items {
+		fields, ok := item.(map[string]any)
+		if !ok || fields["device_id"] != input.DeviceIDs[index] {
+			return nil, fmt.Errorf("invalid batch result")
+		}
+		for field := range fields {
+			if !allowed[field] {
+				delete(fields, field)
+			}
+		}
+	}
+	return response, nil
 }
 
 func (c *readClients) GetCommandTarget(ctx context.Context, deviceID, delegatedToken string) (device, error) {

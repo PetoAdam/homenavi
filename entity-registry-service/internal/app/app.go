@@ -10,6 +10,7 @@ import (
 
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/autoimport"
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/backfill"
+	"github.com/PetoAdam/homenavi/entity-registry-service/internal/discovery"
 	httptransport "github.com/PetoAdam/homenavi/entity-registry-service/internal/http"
 	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
@@ -69,7 +70,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 }
 
 func (a *App) Run(ctx context.Context) error {
+	discoveryCtx, stopDiscovery := context.WithCancel(ctx)
 	defer func() {
+		stopDiscovery()
 		if a.db != nil {
 			_ = a.db.Close()
 		}
@@ -81,6 +84,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 
+	discovery.Start(discoveryCtx, a.repo, a.cfg.DeviceHubURL, &http.Client{Timeout: 10 * time.Second}, a.cfg.MQTT, a.cfg.MQTTSharedGroup)
 	if a.cfg.AutoImport {
 		backfill.Start(ctx, a.repo, a.cfg.DeviceHubURL, &http.Client{Timeout: 10 * time.Second})
 		autoimport.Start(ctx, a.repo, a.cfg.MQTT, a.cfg.MQTTSharedGroup, a.hub)

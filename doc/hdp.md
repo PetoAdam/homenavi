@@ -94,6 +94,7 @@ Topic: `homenavi/hdp/device/metadata/<device_id>` (retained)
   "type": "metadata",
   "device_id": "zigbee/0x0017880104abcd",
   "protocol": "zigbee",
+  "device_type": "light",
   "manufacturer": "Philips",
   "model": "LWB010",
   "description": "optional",
@@ -107,6 +108,9 @@ Topic: `homenavi/hdp/device/metadata/<device_id>` (retained)
 Notes:
 
 - HDP does not carry user-facing device names. Device names live in ERS (Entity Registry) and are merged into the UI there.
+- Device-hub may publish an optional `device_type` describing the device. It is distinct from the envelope's `type`, which remains `metadata`; consumers must tolerate its absence.
+
+For internal reconciliation, device-hub also exposes `GET /api/hdp/device-metadata` to ERS. It returns metadata and the source device UUID only, in pages of at most 100 records, with a `revision` and `next_cursor`. Send both `cursor` and the original `revision` on subsequent pages; HTTP 409 means metadata changed and the scan must restart. The endpoint is not a public gateway route. Database revision triggers cover device creation, removal, and type, identity, or capability changes; state-only changes do not invalidate a scan.
 
 ## Discovery + Naming Architecture (ERS canonical)
 

@@ -70,3 +70,24 @@ func TestLoadConfigUsesFileJWTValidationValues(t *testing.T) {
 		t.Fatalf("expected file JWT audience, got %q", cfg.JWTAPIAudience)
 	}
 }
+
+func TestDiscoveryRoutesRequireBothScopes(t *testing.T) {
+	cfg, err := LoadConfig("../../config/gateway.yaml", "../../config/routes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]string{"/api/mcp/ers/discovery:search": "search_devices", "/api/mcp/ers/discovery:room-state": "get_room_state"}
+	for _, route := range cfg.Routes {
+		tool, found := expected[route.Path]
+		if !found {
+			continue
+		}
+		if route.Access != "delegated" || route.Scope != "home.devices.read home.inventory.read" || route.Tool != tool || len(route.Methods) != 1 || route.Methods[0] != "POST" || route.Upstream != "http://entity-registry-service:8095/internal/discovery/search" {
+			t.Fatalf("unsafe discovery route: %+v", route)
+		}
+		delete(expected, route.Path)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing discovery routes: %v", expected)
+	}
+}

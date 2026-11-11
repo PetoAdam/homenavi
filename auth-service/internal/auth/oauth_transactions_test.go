@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
+	"github.com/PetoAdam/homenavi/shared/authx"
 )
 
 type transactionTTLStore struct {
@@ -97,5 +100,20 @@ func TestSelectedScopePersistsThroughAuthorizationAndRefresh(t *testing.T) {
 	renewed, _, err := service.RefreshOAuthAuthorizationGrant(refresh)
 	if err != nil || renewed.Scope != request.Scope {
 		t.Fatalf("renewed=%#v err=%v", renewed, err)
+	}
+	for _, current := range []OAuthAuthorizationGrant{grant, renewed} {
+		token, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, current)
+		if err != nil {
+			t.Fatalf("issue MCP token: %v", err)
+		}
+		if _, err := service.ExchangeMCPAccessToken(ctx, token, request.Resource, "home.devices.read"); err != nil {
+			t.Fatalf("exchange selected scope: %v", err)
+		}
+		if _, err := service.ExchangeMCPAccessToken(ctx, token, request.Resource, "home.devices.write"); err == nil {
+			t.Fatal("exchange unexpectedly granted unselected write scope")
+		}
+		if _, err := service.ExchangeMCPAccessToken(ctx, token, request.Resource, "home.devices.read home.inventory.read"); err == nil {
+			t.Fatal("exchange unexpectedly granted unselected inventory scope")
+		}
 	}
 }

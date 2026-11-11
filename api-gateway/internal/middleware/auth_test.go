@@ -250,6 +250,29 @@ func TestDelegatedTokenRequiresScopeAndResidentRole(t *testing.T) {
 	}
 }
 
+func TestRequireScopeMiddlewareRequiresEveryScope(t *testing.T) {
+	handler := RequireScopeMiddleware("home.devices.read home.inventory.read")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, test := range []struct {
+		scope  string
+		status int
+	}{
+		{"", http.StatusForbidden},
+		{"home.devices.read", http.StatusForbidden},
+		{"home.inventory.read", http.StatusForbidden},
+		{"home.devices.read home.inventory.read", http.StatusNoContent},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request = request.WithContext(context.WithValue(request.Context(), ClaimsKey, &Claims{Scope: test.scope}))
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.status {
+			t.Errorf("scope=%q status=%d want=%d", test.scope, response.Code, test.status)
+		}
+	}
+}
+
 func TestDelegatedTokenRejectsRevokedGrant(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

@@ -73,6 +73,24 @@ type deviceInput struct {
 	DeviceID string `json:"device_id" jsonschema:"the canonical Homenavi device identifier"`
 }
 
+type deviceStatesInput struct {
+	DeviceIDs []string `json:"device_ids" jsonschema:"1 to 100 unique canonical Homenavi device identifiers"`
+	Fields    []string `json:"fields,omitempty" jsonschema:"optional selected fields: online, last_seen, state, state_updated_at"`
+}
+
+type discoveryInput struct {
+	RoomID          string   `json:"room_id,omitempty" jsonschema:"stable room identifier"`
+	Room            string   `json:"room,omitempty" jsonschema:"exact room name"`
+	Name            string   `json:"name,omitempty" jsonschema:"case-insensitive device name substring"`
+	DeviceType      string   `json:"device_type,omitempty" jsonschema:"exact device type"`
+	Capability      string   `json:"capability,omitempty" jsonschema:"exact capability identifier"`
+	Fields          []string `json:"fields,omitempty" jsonschema:"optional selected device fields"`
+	Detail          string   `json:"detail,omitempty" jsonschema:"compact or verbose"`
+	StateProperties []string `json:"state_properties,omitempty" jsonschema:"optional state property names"`
+	Limit           int      `json:"limit,omitempty" jsonschema:"page size from 1 to 100, default 25"`
+	Cursor          string   `json:"cursor,omitempty" jsonschema:"continuation cursor"`
+}
+
 type historyInput struct {
 	DeviceID string `json:"device_id" jsonschema:"the canonical Homenavi device identifier"`
 	From     string `json:"from,omitempty" jsonschema:"an optional RFC3339 start timestamp"`
@@ -261,33 +279,35 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 	mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_write_policy", Description: "Describe requirements for available controlled Homenavi write capabilities."}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, writePolicyOutput, error) {
 		return nil, writePolicyOutput{ApprovalRequired: false, IdempotencyKey: true, CapabilityCheck: true, AuditRequired: true}, nil
 	})
-	if principal.hasScope("home.devices.read") && s.toolEnabled("list_devices") {
-		mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_devices", Description: "List the devices available in the current Homenavi deployment."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listDevicesOutput, error) {
-			token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
-			if err != nil {
-				return nil, listDevicesOutput{}, err
-			}
-			devices, err := s.clients.devices.List(ctx, token)
-			if err != nil {
-				return nil, listDevicesOutput{}, err
-			}
-			if principal.hasScope("home.inventory.read") {
-				inventoryToken, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+	if principal.hasScope("home.devices.read") {
+		if s.toolEnabled("list_devices") {
+			mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_devices", Description: "List the devices available in the current Homenavi deployment."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listDevicesOutput, error) {
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
 				if err != nil {
 					return nil, listDevicesOutput{}, err
 				}
-				entities, err := s.clients.ListInventoryDevices(ctx, inventoryToken)
+				devices, err := s.clients.devices.List(ctx, token)
 				if err != nil {
 					return nil, listDevicesOutput{}, err
 				}
-				rooms, err := s.clients.ListInventoryRooms(ctx, inventoryToken)
-				if err != nil {
-					return nil, listDevicesOutput{}, err
+				if principal.hasScope("home.inventory.read") {
+					inventoryToken, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.inventory.read")
+					if err != nil {
+						return nil, listDevicesOutput{}, err
+					}
+					entities, err := s.clients.ListInventoryDevices(ctx, inventoryToken)
+					if err != nil {
+						return nil, listDevicesOutput{}, err
+					}
+					rooms, err := s.clients.ListInventoryRooms(ctx, inventoryToken)
+					if err != nil {
+						return nil, listDevicesOutput{}, err
+					}
+					enrichDevices(devices, entities, rooms)
 				}
-				enrichDevices(devices, entities, rooms)
-			}
-			return nil, listDevicesOutput{Devices: devices}, nil
-		})
+				return nil, listDevicesOutput{Devices: devices}, nil
+			})
+		}
 		if s.toolEnabled("get_device") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device", Description: "Get one device by its canonical Homenavi device identifier."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceInput) (*mcp.CallToolResult, device, error) {
 				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
@@ -306,6 +326,19 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 				}
 				device, err := s.clients.GetDevice(ctx, input.DeviceID, token)
 				return nil, device, err
+			})
+		}
+		if s.toolEnabled("get_device_states") {
+			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device_states", Description: "Read the latest persisted states of up to 100 devices in one request."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceStatesInput) (*mcp.CallToolResult, dataOutput, error) {
+				if err := validateDeviceStatesInput(input); err != nil {
+					return nil, dataOutput{}, err
+				}
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				result, err := s.clients.GetDeviceStates(ctx, input, token)
+				return nil, dataOutput{Data: result}, err
 			})
 		}
 		if s.toolEnabled("list_device_integrations") {
@@ -338,6 +371,25 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 			result, err := s.clients.ListRooms(ctx, token)
 			return nil, dataOutput{Data: result}, err
 		})
+	}
+	if principal.hasScope("home.devices.read") && principal.hasScope("home.inventory.read") {
+		for _, name := range []string{"search_devices", "get_room_state"} {
+			if !s.toolEnabled(name) {
+				continue
+			}
+			toolName := name
+			mcp.AddTool(mcpServer, &mcp.Tool{Name: toolName, Description: "Search devices or read a room's latest persisted device states with bounded pagination."}, func(ctx context.Context, _ *mcp.CallToolRequest, input discoveryInput) (*mcp.CallToolResult, dataOutput, error) {
+				if err := validateDiscoveryInput(input, toolName == "get_room_state"); err != nil {
+					return nil, dataOutput{}, err
+				}
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read home.inventory.read")
+				if err != nil {
+					return nil, dataOutput{}, err
+				}
+				result, err := s.clients.DiscoverDevices(ctx, input, toolName == "get_room_state", token)
+				return nil, dataOutput{Data: result}, err
+			})
+		}
 	}
 	if principal.hasScope("home.inventory.read") {
 		if s.toolEnabled("list_device_groups") {
@@ -523,6 +575,7 @@ func (s *server) availableReadTools(principal *mcpPrincipal) []string {
 	add("home.devices.read", "list_devices")
 	add("home.devices.read", "get_device")
 	add("home.devices.read", "get_device_state")
+	add("home.devices.read", "get_device_states")
 	add("home.devices.read", "list_device_integrations")
 	add("home.devices.read", "list_pairings")
 	add("home.inventory.read", "list_rooms")
@@ -530,6 +583,13 @@ func (s *server) availableReadTools(principal *mcpPrincipal) []string {
 	add("home.inventory.read", "get_device_group")
 	if principal.hasScope("home.inventory.read") && principal.hasScope("home.devices.read") && s.toolEnabled("get_device_group_state") {
 		tools = append(tools, "get_device_group_state")
+	}
+	if principal.hasScope("home.inventory.read") && principal.hasScope("home.devices.read") {
+		for _, name := range []string{"search_devices", "get_room_state"} {
+			if s.toolEnabled(name) {
+				tools = append(tools, name)
+			}
+		}
 	}
 	add("home.automation.read", "list_automation_workflows")
 	add("home.automation.read", "get_automation_workflow")

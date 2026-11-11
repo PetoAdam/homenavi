@@ -63,6 +63,9 @@ func (s *Server) publishHDPMeta(dev *model.Device) {
 		"icon":         dev.Icon,
 		"ts":           time.Now().UnixMilli(),
 	}
+	if dev.Type != "" {
+		envelope["device_type"] = dev.Type
+	}
 	if len(dev.Capabilities) > 0 {
 		var caps any
 		if err := json.Unmarshal(dev.Capabilities, &caps); err == nil {

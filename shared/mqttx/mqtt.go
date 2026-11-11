@@ -289,7 +289,9 @@ func Connect(opts Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	client.mu.Lock()
 	client.transport = transport
+	client.mu.Unlock()
 	return client, nil
 }
 
@@ -415,22 +417,26 @@ func (c *Client) forgetSubscription(topic string) {
 }
 
 func (c *Client) resubscribeAll() {
-	if c == nil || c.transport == nil {
+	if c == nil {
 		return
 	}
 
 	c.mu.RLock()
+	transport := c.transport
 	subs := make(map[string]subscription, len(c.subs))
 	for topic, sub := range c.subs {
 		subs[topic] = sub
 	}
 	c.mu.RUnlock()
+	if transport == nil {
+		return
+	}
 
 	for topic, sub := range subs {
 		if strings.TrimSpace(topic) == "" || sub.cb == nil {
 			continue
 		}
-		if err := c.transport.Subscribe(topic, sub.opts.QoS, sub.cb); err != nil {
+		if err := transport.Subscribe(topic, sub.opts.QoS, sub.cb); err != nil {
 			slog.Warn("mqtt resubscribe failed", "topic", topic, "error", err)
 		} else {
 			slog.Info("mqtt resubscribed", "topic", topic, "qos", sub.opts.QoS, "mode", sub.opts.Mode, "group", sub.opts.Group)

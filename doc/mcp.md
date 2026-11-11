@@ -24,7 +24,7 @@ sequenceDiagram
 
 	C->>G: Discover resource metadata and call /mcp
 	G->>M: Proxy MCP request
-	M->>A: Exchange MCP token for one delegated scope
+	M->>A: Exchange MCP token for delegated scope or supported scope pair
 	A-->>M: Two-minute delegated API token
 	M->>G: Call /api/mcp/* with delegated token
 	G->>D: Authorize, audit, and proxy internal request
@@ -39,16 +39,24 @@ Tools are advertised only when their OAuth scope is granted and the optional `MC
 
 | Scope | Tools |
 | --- | --- |
-| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: device inventory also includes entity names, descriptions, rooms, and tags, plus `get_device_group_state` |
+| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `get_device_states`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: device inventory also includes entity names, descriptions, rooms, and tags, plus `get_device_group_state` |
 | `home.devices.write` | `send_device_command`; with `home.inventory.read`: `send_device_group_command` |
-| `home.inventory.read` | `list_rooms`, `list_device_groups`, `get_device_group`; with `home.devices.read`: `get_device_group_state`; with `home.devices.write`: `send_device_group_command` |
+| `home.inventory.read` | `list_rooms`, `list_device_groups`, `get_device_group`; with `home.devices.read`: `search_devices`, `get_room_state`, `get_device_group_state`; with `home.devices.write`: `send_device_group_command` |
 | `home.inventory.write` | `create_device_group` |
 | `home.history.read` | `query_state_history` |
 | `home.automation.read` | `list_automation_workflows`, `get_automation_workflow` |
 | `home.automation.execute` | `run_automation_workflow` |
 | Any authenticated MCP session | `describe_homenavi_api`, `list_event_channels`, `get_write_policy` |
 
-Write tools are deliberately narrow. Each requires an `idempotency_key` of at least eight characters and is available only to resident or admin MCP tokens. Device commands additionally require an online device and reuse device-hub's persisted correlation lifecycle and capability validation. Group creation and workflow runs persist their idempotency keys and replay the original result on retry. Before invoking a domain tool, mcp-service exchanges the MCP token for a two-minute delegated token with the API-gateway audience and only the required scope. All MCP device, inventory, history, and automation operations pass through dedicated gateway routes; automation-service additionally validates the delegated token it receives. No separate browser confirmation is required after OAuth consent.
+`get_device_states` accepts 1 to 100 unique canonical `device_ids` and optional `fields` (`online`, `last_seen`, `state`, `state_updated_at`). It returns ordered results with `device_id`, `status`, and selected fields. The default includes online status, state, and the persisted state timestamp. `not_found` and `state_unavailable` are reported per device. The result is the latest state stored by device-hub, not a physical device poll; `read_at` is the response time. An oversized response fails instead of being truncated.
+
+`search_devices` accepts optional `room_id` or exact case-insensitive `room`, a case-insensitive literal `name` substring, exact `device_type` and `capability`, plus `limit` and `cursor`. Filters are combined. `get_room_state` takes the same filters but requires a room. Both require `home.devices.read` and `home.inventory.read`; a room name matching multiple rooms returns candidate IDs instead of choosing one. Default pages contain 25 devices, at most 100. Follow `next_cursor` until absent; a changed inventory invalidates a cursor and requires restarting the search. Unbound devices remain searchable by canonical ID. A device with several bindings appears once for each bound HDP ID; conflicting entities bound to the same HDP device produce an error.
+
+The default search fields are `device_id`, `status`, `name`, `room`, and `type`; room state defaults to `device_id`, `status`, `name`, `type`, `online`, `state`, and `state_updated_at`. Optional `fields` selects from those plus `room_id` and `last_seen`; ID and status are always present. `detail` may be `compact` or `verbose` and cannot be combined with `fields`. `state_properties` limits returned state keys and requires state to be selected. State is read from device-hub when requested, not from the discovery index. A page may be shortened to fit the response budget; a single oversized result fails explicitly.
+
+ERS maintains a shared PostgreSQL projection of device type and capability identifiers. Both non-empty capability `id` and `property` values are normalized to lowercase; no capability is inferred from state. Independent MQTT notifications trigger an authoritative refresh, with a periodic refresh every 20 seconds to recover missed events. The metadata feed rejects a scan if source metadata changes between pages. Searches return a retryable error until a scan succeeds and whenever the last successful scan is more than 60 seconds old. Database migrations must be permitted to install the revision and generation tables and triggers. Monitor reconciliation warnings and ensure device-hub is reachable from ERS.
+
+Write tools are deliberately narrow. Each requires an `idempotency_key` of at least eight characters and is available only to resident or admin MCP tokens. Device commands additionally require an online device and reuse device-hub's persisted correlation lifecycle and capability validation. Group creation and workflow runs persist their idempotency keys and replay the original result on retry. Before invoking a domain tool, mcp-service exchanges the MCP token for a two-minute delegated token with the API-gateway audience and only the required scope or supported scope pair. All MCP device, inventory, history, and automation operations pass through dedicated gateway routes; automation-service additionally validates the delegated token it receives. No separate browser confirmation is required after OAuth consent.
 
 Pairing, automation editing, dashboard changes, user changes, and event subscriptions remain unavailable through MCP.
 
@@ -56,11 +64,13 @@ The original MCP bearer token is never forwarded to internal domain services. Au
 
 ## Delegated Gateway Routes
 
-MCP domain operations are not a general external REST API. mcp-service is their only caller and obtains a distinct two-minute token with `typ=homenavi-delegated`, the API-gateway audience, and exactly one requested scope. The gateway rejects raw MCP tokens, browser API tokens, expired or revoked sessions, non-resident roles, and missing scopes. The requested delegated scope must already be present on the MCP token.
+MCP domain operations are not a general external REST API. mcp-service is their only caller and obtains a distinct two-minute token with `typ=homenavi-delegated`, the API-gateway audience, and only the requested scope. The device-read and inventory-read pair is also supported for operations requiring both. The gateway rejects raw MCP tokens, browser API tokens, expired or revoked sessions, non-resident roles, and missing scopes. Every requested delegated scope must already be present on the MCP token.
 
 | MCP capability | Gateway route | Delegated scope |
 | --- | --- | --- |
 | Device, integration, and pairing reads | `GET /api/mcp/hdp/devices*`, `/integrations`, `/pairings` | `home.devices.read` |
+| Batched device states | `POST /api/mcp/hdp/device-states:batch` | `home.devices.read` |
+| Filtered search and room state | `POST /api/mcp/ers/discovery:search`, `/discovery:room-state` | `home.devices.read` and `home.inventory.read` |
 | Rooms and device-group reads | `GET /api/mcp/ers/rooms/`, `/groups/*` | `home.inventory.read` |
 | Device-group state | Device-group read plus device reads | `home.inventory.read` and `home.devices.read` |
 | Historical state | `GET /api/mcp/history/state` | `home.history.read` |

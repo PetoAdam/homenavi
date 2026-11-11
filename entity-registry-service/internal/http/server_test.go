@@ -2,7 +2,9 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +19,32 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestDiscoveryHTTPReadinessAndPagination(t *testing.T) {
+	repo := newTestRepo(t)
+	server := httptest.NewServer(NewRouter(NewServer(repo, nil)))
+	defer server.Close()
+	response, _ := doJSON(t, server.Client(), http.MethodPost, server.URL+"/internal/discovery/search", map[string]any{})
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("unready status=%d", response.StatusCode)
+	}
+	items := []dbinfra.DiscoveryMetadata{{DeviceID: "thread/one", Capabilities: json.RawMessage(`[]`)}, {DeviceID: "thread/two", Capabilities: json.RawMessage(`[]`)}}
+	if err := repo.ApplyDiscoverySnapshot(context.Background(), 1, items); err != nil {
+		t.Fatal(err)
+	}
+	response, payload := doJSON(t, server.Client(), http.MethodPost, server.URL+"/internal/discovery/search", map[string]any{"limit": 1})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d payload=%v", response.StatusCode, payload)
+	}
+	cursor, ok := payload.(map[string]any)["next_cursor"].(string)
+	if !ok || cursor == "" {
+		t.Fatalf("missing cursor: %v", payload)
+	}
+	response, payload = doJSON(t, server.Client(), http.MethodPost, server.URL+"/internal/discovery/search", map[string]any{"limit": 1, "cursor": cursor})
+	if response.StatusCode != http.StatusOK || !strings.Contains(fmt.Sprint(payload), "thread/two") {
+		t.Fatalf("status=%d payload=%v", response.StatusCode, payload)
+	}
+}
 
 func TestWebSocket_EmitsOnRoomCreate(t *testing.T) {
 	repo := newTestRepo(t)

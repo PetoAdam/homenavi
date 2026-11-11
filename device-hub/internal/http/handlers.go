@@ -211,6 +211,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("/api/hdp/devices", s.handleDeviceCollection)
 	mux.HandleFunc("/api/hdp/devices/", s.handleDeviceRequest)
+	mux.HandleFunc("/api/hdp/device-states:batch", s.handleDeviceStatesBatch)
+	mux.HandleFunc("/api/hdp/device-metadata", s.handleDeviceMetadataPage)
 	mux.HandleFunc("/api/hdp/integrations", s.handleIntegrations)
 	mux.HandleFunc("/api/hdp/pairing-config", s.handlePairingConfig)
 	mux.HandleFunc("/api/hdp/pairings", s.handlePairings)

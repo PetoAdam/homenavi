@@ -239,9 +239,16 @@ func RequireScopeMiddleware(requiredScope string) func(http.Handler) http.Handle
 				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
-			if !authx.HasScope(claims.Scope, requiredScope) {
+			required := strings.Fields(requiredScope)
+			if len(required) == 0 {
 				writeJSONError(w, http.StatusForbidden, "insufficient scope")
 				return
+			}
+			for _, scope := range required {
+				if !authx.HasScope(claims.Scope, scope) {
+					writeJSONError(w, http.StatusForbidden, "insufficient scope")
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})

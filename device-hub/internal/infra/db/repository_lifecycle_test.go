@@ -28,6 +28,24 @@ func newLifecycleTestRepository(t *testing.T, now time.Time) (*Repository, sqlmo
 	return &Repository{db: database}, mock, func() { _ = sqlDB.Close() }
 }
 
+func TestGetDeviceStatesUsesOneQuery(t *testing.T) {
+	now := time.Date(2026, time.November, 10, 12, 0, 0, 0, time.UTC)
+	repo, mock, closeDB := newLifecycleTestRepository(t, now)
+	defer closeDB()
+	mock.ExpectQuery(`SELECT .* FROM hdp_devices AS devices LEFT JOIN hdp_device_states AS states`).
+		WithArgs("zigbee", "one", "zigbee", "two").
+		WillReturnRows(sqlmock.NewRows([]string{"protocol", "external_id", "online", "last_seen", "state", "state_updated_at"}).
+			AddRow("zigbee", "one", true, now, []byte(`{"temperature":0}`), now).
+			AddRow("zigbee", "two", false, now, nil, nil))
+	rows, err := repo.GetDeviceStates(context.Background(), []DeviceStateKey{{Protocol: "zigbee", ExternalID: "one"}, {Protocol: "zigbee", ExternalID: "two"}})
+	if err != nil || len(rows) != 2 || string(rows[0].State) != `{"temperature":0}` || rows[1].StateUpdatedAt != nil {
+		t.Fatalf("rows=%#v err=%v", rows, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreatePairingLifecycleRejectsSecondActiveSession(t *testing.T) {
 	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
 	repo, mock, closeDB := newLifecycleTestRepository(t, now)

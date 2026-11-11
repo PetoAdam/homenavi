@@ -47,6 +47,25 @@ type pairingFakeMessage struct {
 	payload []byte
 }
 
+func TestPublishHDPMetaIncludesOptionalDeviceType(t *testing.T) {
+	for _, deviceType := range []string{"thermostat", ""} {
+		mqtt := &pairingTestMQTTClient{}
+		server := NewServer(nil, mqtt)
+		server.publishHDPMeta(&model.Device{Protocol: "thread", ExternalID: "device-1", Type: deviceType})
+		if len(mqtt.published) != 1 || !mqtt.published[0].retain {
+			t.Fatalf("unexpected messages: %#v", mqtt.published)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(mqtt.published[0].payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		value, present := payload["device_type"]
+		if payload["type"] != "metadata" || present != (deviceType != "") || (present && value != deviceType) {
+			t.Fatalf("unexpected metadata: %#v", payload)
+		}
+	}
+}
+
 func (f pairingFakeMessage) Duplicate() bool   { return false }
 func (f pairingFakeMessage) Qos() byte         { return 0 }
 func (f pairingFakeMessage) Retained() bool    { return false }

@@ -30,6 +30,13 @@ routes:
     scope: home.devices.read
     tool: list_device_integrations
     type: rest
+  - path: /api/mcp/hdp/device-states:batch
+    upstream: http://device-hub:8090/api/hdp/device-states:batch
+    methods: [POST]
+    access: delegated
+    scope: home.devices.read
+    tool: get_device_states
+    type: rest
   - path: /api/mcp/hdp/pairings
     upstream: http://device-hub:8090/api/hdp/pairings
     methods: [GET]
@@ -43,6 +50,20 @@ routes:
     access: delegated
     scope: home.inventory.read
     tool: list_rooms
+    type: rest
+  - path: /api/mcp/ers/discovery:search
+    upstream: http://entity-registry-service:8095/internal/discovery/search
+    methods: [POST]
+    access: delegated
+    scope: home.devices.read home.inventory.read
+    tool: search_devices
+    type: rest
+  - path: /api/mcp/ers/discovery:room-state
+    upstream: http://entity-registry-service:8095/internal/discovery/search
+    methods: [POST]
+    access: delegated
+    scope: home.devices.read home.inventory.read
+    tool: get_room_state
     type: rest
   - path: /api/mcp/ers/devices/
     upstream: http://entity-registry-service:8095/api/ers/devices/

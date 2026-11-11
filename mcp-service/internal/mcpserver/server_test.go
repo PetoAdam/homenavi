@@ -219,8 +219,90 @@ func TestMCPToolDiscoveryIsScoped(t *testing.T) {
 	for _, tool := range result.Result.Tools {
 		names[tool.Name] = true
 	}
-	if !names["list_devices"] || names["list_rooms"] || names["query_state_history"] {
+	if !names["list_devices"] || !names["get_device_states"] || names["list_rooms"] || names["query_state_history"] {
 		t.Fatalf("unexpected scoped tools: %#v", names)
+	}
+}
+
+func TestMCPBatchStateUsesDelegatedRead(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/oauth/token":
+			if err := r.ParseForm(); err != nil || r.Form.Get("scope") != "home.devices.read" {
+				t.Fatalf("invalid token exchange: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"access_token":"delegated-token"}`))
+		case "/api/mcp/hdp/device-states:batch":
+			if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer delegated-token" {
+				t.Fatalf("invalid batch request: %s %s", r.Method, r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"read_at":"2026-11-10T00:00:00Z","results":[{"device_id":"thread/one","status":"ok","state":{"temperature":0}}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey, AuthServiceURL: upstream.URL, APIGatewayURL: upstream.URL}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_device_states","arguments":{"device_ids":["thread/one"]}}}`))
+	request.Header.Set("Authorization", "Bearer "+signedTokenWithScopes(t, privateKey, config, "home.devices.read"))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", "2025-03-26")
+	response := httptest.NewRecorder()
+	New(config).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `thread/one`) || strings.Contains(response.Body.String(), `"isError":true`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestMCPDiscoveryRequiresBothScopesAndDelegates(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/auth/oauth/token":
+			if err := request.ParseForm(); err != nil || request.Form.Get("scope") != "home.devices.read home.inventory.read" {
+				t.Fatalf("invalid scope exchange: %v", err)
+			}
+			_, _ = writer.Write([]byte(`{"access_token":"delegated-token"}`))
+		case "/api/mcp/ers/discovery:search":
+			if request.Header.Get("Authorization") != "Bearer delegated-token" {
+				t.Fatal("missing delegated token")
+			}
+			_, _ = writer.Write([]byte(`{"devices":[{"device_id":"thread/one","name":"Sensor","type":"sensor"}]}`))
+		default:
+			t.Fatalf("unexpected upstream path: %s", request.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey, AuthServiceURL: upstream.URL, APIGatewayURL: upstream.URL}
+	for _, scopes := range []string{"home.devices.read", "home.inventory.read", "home.devices.read home.inventory.read"} {
+		principal := &mcpPrincipal{scopes: authx.ParseScopes(scopes)}
+		tools := (&server{config: config}).availableReadTools(principal)
+		found := map[string]bool{}
+		for _, tool := range tools {
+			found[tool] = true
+		}
+		both := scopes == "home.devices.read home.inventory.read"
+		if found["search_devices"] != both || found["get_room_state"] != both {
+			t.Fatalf("scopes=%s tools=%v", scopes, tools)
+		}
+	}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_devices","arguments":{"name":"Sensor"}}}`))
+	request.Header.Set("Authorization", "Bearer "+signedTokenWithScopes(t, privateKey, config, "home.devices.read home.inventory.read"))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", "2025-03-26")
+	response := httptest.NewRecorder()
+	New(config).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "thread/one") || strings.Contains(response.Body.String(), `"isError":true`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -230,6 +312,41 @@ func TestMCPCatalogReadToolsMatchScopesAndPolicy(t *testing.T) {
 	tools := service.availableReadTools(principal)
 	if len(tools) != 2 || tools[0] != "list_devices" || tools[1] != "list_rooms" {
 		t.Fatalf("catalog tools = %#v", tools)
+	}
+}
+
+func TestMCPDeviceToolsAreIndependentlyEnabled(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey, EnabledTools: map[string]struct{}{"get_device": {}, "get_device_state": {}}}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	request.Header.Set("Authorization", "Bearer "+signedTokenWithScopes(t, privateKey, config, "home.devices.read"))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", "2025-03-26")
+	response := httptest.NewRecorder()
+	New(config).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool)
+	for _, tool := range result.Result.Tools {
+		names[tool.Name] = true
+	}
+	if !names["get_device"] || !names["get_device_state"] || names["list_devices"] {
+		t.Fatalf("unexpected enabled tools: %#v", names)
 	}
 }
 

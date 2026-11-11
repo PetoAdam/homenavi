@@ -2,16 +2,216 @@ package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
+	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/mqttx"
+	"github.com/google/uuid"
 	"gorm.io/datatypes"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+func TestDeviceStateBatchValidation(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		ids   []string
+		valid bool
+	}{
+		{"valid", []string{"zigbee/0x0011223344556677", "thread/abc"}, true},
+		{"empty", nil, false},
+		{"duplicate", []string{"zigbee/0x0011223344556677", "zigbee/0x0011223344556677"}, false},
+		{"missing protocol", []string{"abc"}, false},
+		{"noncanonical", []string{" ZIGBEE/0x001 "}, false},
+		{"oversized", make([]string, 101), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, valid := deviceStateKeys(test.ids)
+			if valid != test.valid {
+				t.Fatalf("valid=%v, want %v", valid, test.valid)
+			}
+		})
+	}
+}
+
+func TestDeviceStateBatchResults(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	rows := []dbinfra.DeviceStateView{
+		{Protocol: "zigbee", ExternalID: "one", Online: true, LastSeen: now, State: json.RawMessage(`{"value":0,"on":false}`), StateUpdatedAt: &now},
+		{Protocol: "zigbee", ExternalID: "two", LastSeen: now},
+	}
+	results := batchDeviceStates([]string{"zigbee/two", "zigbee/missing", "zigbee/one"}, rows)
+	if len(results) != 3 || results[0].Status != "state_unavailable" || results[1].Status != "not_found" || results[2].Status != "ok" || string(results[2].State) != `{"value":0,"on":false}` {
+		t.Fatalf("unexpected results: %#v", results)
+	}
+}
+
+func TestDeviceStateBatchRejectsInvalidRequests(t *testing.T) {
+	server := NewServer(nil, nil)
+	for _, body := range []string{`{}`, `{"device_ids":[]}`, `{"device_ids":["zigbee/x"],"extra":true}`, `{"device_ids":["zigbee/x"]} {}`} {
+		response := httptest.NewRecorder()
+		server.handleDeviceStatesBatch(response, httptest.NewRequest(http.MethodPost, "/api/hdp/device-states:batch", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, response.Code)
+		}
+	}
+}
+
+func TestDeviceStateBatchReadsPersistedStates(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&model.Device{}, &dbinfra.DeviceState{}); err != nil {
+		t.Fatal(err)
+	}
+	deviceID := uuid.New()
+	device := model.Device{ID: deviceID, Protocol: "thread", ExternalID: "one", Online: true}
+	if err := database.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	stateTime := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	if err := database.Create(&dbinfra.DeviceState{DeviceID: deviceID.String(), State: json.RawMessage(`{"temperature":0,"on":false}`), UpdatedAt: stateTime}).Error; err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dbinfra.New(database), nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/hdp/device-states:batch", strings.NewReader(`{"device_ids":["thread/missing","thread/one"]}`))
+	response := httptest.NewRecorder()
+	server.handleDeviceStatesBatch(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Results []batchDeviceState `json:"results"`
+		ReadAt  time.Time          `json:"read_at"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Results) != 2 || payload.Results[0].Status != "not_found" || payload.Results[1].Status != "ok" || string(payload.Results[1].State) != `{"temperature":0,"on":false}` || payload.Results[1].StateUpdatedAt == nil || !payload.Results[1].StateUpdatedAt.Equal(stateTime) || payload.ReadAt.IsZero() {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	largeState, err := json.Marshal(map[string]string{"value": strings.Repeat("x", maxDeviceStateResponseBytes)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Model(&dbinfra.DeviceState{}).Where("device_id = ?", deviceID.String()).Update("state", largeState).Error; err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	server.handleDeviceStatesBatch(response, httptest.NewRequest(http.MethodPost, "/api/hdp/device-states:batch", strings.NewReader(`{"device_ids":["thread/one"]}`)))
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized response status=%d", response.Code)
+	}
+}
+
+func TestDeviceMetadataPage(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&model.Device{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbinfra.EnsureMetadataRevision(database); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"} {
+		device := model.Device{ID: uuid.MustParse(id), Protocol: "thread", ExternalID: id, Type: "thermostat", Capabilities: datatypes.JSON(`[{"id":"temperature"}]`)}
+		if err := database.Create(&device).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := NewServer(dbinfra.New(database), nil)
+	for _, test := range []struct {
+		query    string
+		status   int
+		expected string
+	}{
+		{"?limit=1", http.StatusOK, `"next_cursor":"00000000-0000-0000-0000-000000000001"`},
+		{"?limit=1&cursor=00000000-0000-0000-0000-000000000001&revision=2", http.StatusOK, `"next_cursor":""`},
+		{"?cursor=00000000-0000-0000-0000-000000000001", http.StatusBadRequest, "revision"},
+		{"?revision=1", http.StatusConflict, "changed"},
+		{"?limit=101", http.StatusBadRequest, "limit"},
+		{"?cursor=invalid", http.StatusBadRequest, "cursor"},
+	} {
+		response := httptest.NewRecorder()
+		server.handleDeviceMetadataPage(response, httptest.NewRequest(http.MethodGet, "/api/hdp/device-metadata"+test.query, nil))
+		if response.Code != test.status || !strings.Contains(response.Body.String(), test.expected) {
+			t.Fatalf("query=%s status=%d body=%s", test.query, response.Code, response.Body.String())
+		}
+		if test.query == "?limit=1" && (!strings.Contains(response.Body.String(), `"source_id":"00000000-0000-0000-0000-000000000001"`) || strings.Contains(response.Body.String(), `"state"`)) {
+			t.Fatalf("metadata page lacks source ID or includes state: %s", response.Body.String())
+		}
+	}
+	if err := database.Model(&model.Device{}).Where("id = ?", "00000000-0000-0000-0000-000000000001").Update("type", "sensor").Error; err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.handleDeviceMetadataPage(response, httptest.NewRequest(http.MethodGet, "/api/hdp/device-metadata?limit=1&cursor=00000000-0000-0000-0000-000000000001&revision=2", nil))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("changed metadata scan status=%d", response.Code)
+	}
+}
+
+func TestDeviceMetadataPagesMoreThanOneHundredDevices(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&model.Device{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dbinfra.EnsureMetadataRevision(database); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 151; index++ {
+		device := model.Device{Protocol: "thread", ExternalID: fmt.Sprintf("device-%03d", index), Capabilities: datatypes.JSON(`[]`)}
+		if err := database.Create(&device).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := NewServer(dbinfra.New(database), nil)
+	query := "?limit=100"
+	seen := map[string]bool{}
+	for pageIndex := 0; pageIndex < 2; pageIndex++ {
+		response := httptest.NewRecorder()
+		server.handleDeviceMetadataPage(response, httptest.NewRequest(http.MethodGet, "/api/hdp/device-metadata"+query, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		var page struct {
+			Devices []struct {
+				DeviceID string `json:"device_id"`
+			} `json:"devices"`
+			Revision   int64  `json:"revision"`
+			NextCursor string `json:"next_cursor"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		for _, device := range page.Devices {
+			if seen[device.DeviceID] {
+				t.Fatalf("duplicate device %s", device.DeviceID)
+			}
+			seen[device.DeviceID] = true
+		}
+		if pageIndex == 0 && page.NextCursor == "" || pageIndex == 1 && page.NextCursor != "" {
+			t.Fatalf("unexpected page cursor %q", page.NextCursor)
+		}
+		query = fmt.Sprintf("?limit=100&cursor=%s&revision=%d", page.NextCursor, page.Revision)
+	}
+	if len(seen) != 151 {
+		t.Fatalf("got %d devices", len(seen))
+	}
+}
 
 type subscriptionTestMQTTClient struct {
 	subscriptions []mqttx.SubscriptionOptions

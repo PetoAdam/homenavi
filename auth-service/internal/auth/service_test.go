@@ -198,6 +198,47 @@ func TestExchangeMCPAccessTokenAllowsDelegatedReadScopes(t *testing.T) {
 	}
 }
 
+func TestExchangeMCPAccessTokenAllowsOnlyDiscoveryScopePair(t *testing.T) {
+	store := newMemoryRefreshStore()
+	service := newRefreshTestService(t, store)
+	if err := service.activateSession("session-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(context.Background(), authx.MCPGrantStatusKey("grant-1"), authx.SessionStatusActive, 0); err != nil {
+		t.Fatal(err)
+	}
+	resource := "https://home.example/mcp"
+	token, err := service.IssueMCPAccessToken(&clientsinfra.User{ID: "user-1", Role: authx.RoleResident}, OAuthAuthorizationGrant{Subject: "user-1", SessionID: "session-1", ClientID: "client", Scope: "home.devices.read home.inventory.read home.devices.write", Resource: resource, GrantID: "grant-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		scope string
+		valid bool
+	}{
+		{"home.devices.read home.inventory.read", true},
+		{"home.inventory.read home.devices.read", true},
+		{"home.devices.read home.devices.write", false},
+		{"home.devices.read home.devices.read", false},
+		{"home.devices.read unknown", false},
+		{"", false},
+	} {
+		delegated, err := service.ExchangeMCPAccessToken(context.Background(), token, resource, test.scope)
+		if (err == nil) != test.valid {
+			t.Errorf("scope=%q err=%v", test.scope, err)
+		}
+		if err == nil {
+			parsed, err := jwt.Parse(delegated, func(token *jwt.Token) (any, error) {
+				keyID, _ := token.Header["kid"].(string)
+				return service.keyRing.PublicKeyForID(keyID)
+			})
+			if err != nil || parsed.Claims.(jwt.MapClaims)[authx.ClaimScope] != test.scope {
+				t.Fatalf("scope=%q delegated claims invalid: %v", test.scope, err)
+			}
+		}
+	}
+}
+
 func TestExchangeMCPAccessTokenRejectsRevokedGrant(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
