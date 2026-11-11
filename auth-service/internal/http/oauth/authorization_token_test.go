@@ -2,18 +2,28 @@ package oauth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
+	authhttp "github.com/PetoAdam/homenavi/auth-service/internal/http"
+	cacheinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/cache"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/shared/authx"
+	"github.com/PetoAdam/homenavi/shared/redisx"
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/otel"
 )
 
 type fakeOAuthAuthorizer struct {
@@ -223,14 +233,156 @@ func TestAuthorizationHandlerReusesAppBrowserSessionForTransaction(t *testing.T)
 	authorizer := &fakeOAuthAuthorizer{subject: "user-1", sessionID: "session-1"}
 	handler := NewAuthorizationHandler(authorizer)
 	handler.ConfigureBrowserLogin(nil, nil, nil, "http://localhost:5173/oauth/authorize")
-	request := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/authorize?client_id=mcp-cli", nil)
+	router := authhttp.NewRouter(authhttp.Routes{
+		HandleOAuthAuthorize:   handler.HandleAuthorize,
+		HandleOAuthTransaction: handler.HandleAuthorizationTransaction,
+		HandleOAuthApproval:    handler.HandleAuthorizationApproval,
+	}, http.NotFoundHandler(), otel.Tracer("test"))
+	query := url.Values{
+		"client_id": {"mcp-cli"}, "redirect_uri": {"https://client.example/callback"},
+		"response_type": {"code"}, "scope": {"home.devices.read"}, "state": {"opaque-state"},
+		"code_challenge":        {"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"},
+		"code_challenge_method": {"S256"}, "resource": {"https://home.example/mcp"},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/authorize?"+query.Encode(), nil)
 	request.AddCookie(&http.Cookie{Name: appSessionCookie, Value: "app-access-token"})
 	response := httptest.NewRecorder()
 
-	handler.HandleAuthorize(response, request)
+	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusFound || authorizer.transaction.Subject != "user-1" || authorizer.transaction.SessionID != "session-1" {
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "http://localhost:5173/oauth/authorize" || authorizer.transaction.Subject != "user-1" || authorizer.transaction.SessionID != "session-1" || authorizer.granted {
 		t.Fatalf("unexpected browser session reuse: status=%d transaction=%#v", response.Code, authorizer.transaction)
+	}
+	var transactionCookie *http.Cookie
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == browserTransactionCookie {
+			transactionCookie = cookie
+		}
+	}
+	if transactionCookie == nil {
+		t.Fatal("missing transaction cookie")
+	}
+	transaction := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/transaction", nil)
+	transaction.AddCookie(transactionCookie)
+	transactionResponse := httptest.NewRecorder()
+	router.ServeHTTP(transactionResponse, transaction)
+	if transactionResponse.Code != http.StatusOK || !strings.Contains(transactionResponse.Body.String(), `"authenticated":true`) {
+		t.Fatalf("unexpected transaction: status=%d body=%s", transactionResponse.Code, transactionResponse.Body.String())
+	}
+	approval := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/transaction/approve", strings.NewReader(`{}`))
+	approval.AddCookie(transactionCookie)
+	approvalResponse := httptest.NewRecorder()
+	router.ServeHTTP(approvalResponse, approval)
+	if approvalResponse.Code != http.StatusOK || !authorizer.granted || authorizer.request.CodeChallenge != query.Get("code_challenge") || !strings.Contains(approvalResponse.Body.String(), "authorization-code") || !strings.Contains(approvalResponse.Body.String(), "opaque-state") {
+		t.Fatalf("unexpected approval: status=%d body=%s", approvalResponse.Code, approvalResponse.Body.String())
+	}
+}
+
+func TestBrowserAuthorizationPKCEIntegration(t *testing.T) {
+	address := os.Getenv("HOMENAVI_TEST_REDIS_ADDR")
+	if address == "" {
+		t.Skip("HOMENAVI_TEST_REDIS_ADDR is not set")
+	}
+	store, err := cacheinfra.NewRedisStore(redisx.Config{Mode: redisx.ModeStandalone, Addrs: []string{address}})
+	if err != nil {
+		t.Fatalf("connect to test Redis: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate signing key: %v", err)
+	}
+	service := authdomain.NewService(authdomain.Config{
+		JWTPrivateKey: key, JWTIssuer: "http://localhost/api/auth", JWTAPIAudience: "http://localhost/api",
+		AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour, OAuthMCPResource: "http://localhost/mcp",
+	}, store)
+	user := &clientsinfra.User{ID: "oauth-test-user", Role: authx.RoleResident}
+	sessionToken, err := service.IssueAccessToken(user)
+	if err != nil {
+		t.Fatalf("issue browser session: %v", err)
+	}
+	client, err := service.RegisterDynamicOAuthClient(context.Background(), authdomain.DynamicOAuthClientRegistration{
+		Name: "PKCE integration test", RedirectURIs: []string{"http://127.0.0.1:12345/callback"}, ApplicationType: "native", TokenEndpointAuthMethod: "none",
+	})
+	if err != nil {
+		t.Fatalf("register client: %v", err)
+	}
+	authorization := NewAuthorizationHandler(service)
+	token := NewTokenHandler(service, fakeOAuthUserProvider{user: user})
+	router := authhttp.NewRouter(authhttp.Routes{
+		HandleOAuthAuthorize: authorization.HandleAuthorize, HandleOAuthTransaction: authorization.HandleAuthorizationTransaction,
+		HandleOAuthApproval: authorization.HandleAuthorizationApproval, HandleOAuthToken: token.HandleToken,
+	}, http.NotFoundHandler(), otel.Tracer("test"))
+	verifier := strings.Repeat("a", 43)
+	digest := sha256.Sum256([]byte(verifier))
+	query := url.Values{
+		"response_type": {"code"}, "client_id": {client.ClientID}, "redirect_uri": {client.RedirectURIs[0]},
+		"scope": {"home.devices.read"}, "state": {"test-state"}, "resource": {"http://localhost/mcp"},
+		"code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}, "code_challenge_method": {"S256"},
+	}
+	issueCode := func() string {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "http://localhost/api/auth/oauth/authorize?"+query.Encode(), nil)
+		request.AddCookie(&http.Cookie{Name: appSessionCookie, Value: sessionToken})
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusFound || response.Header().Get("Location") != "http://localhost/oauth/authorize" {
+			t.Fatalf("authorize: status=%d location=%q body=%s", response.Code, response.Header().Get("Location"), response.Body.String())
+		}
+		var transactionCookie *http.Cookie
+		for _, cookie := range response.Result().Cookies() {
+			if cookie.Name == browserTransactionCookie {
+				transactionCookie = cookie
+			}
+		}
+		if transactionCookie == nil || transactionCookie.Secure {
+			t.Fatal("expected an HTTP transaction cookie")
+		}
+		transaction := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/transaction", nil)
+		transaction.AddCookie(transactionCookie)
+		transactionResponse := httptest.NewRecorder()
+		router.ServeHTTP(transactionResponse, transaction)
+		if transactionResponse.Code != http.StatusOK || !strings.Contains(transactionResponse.Body.String(), `"authenticated":true`) {
+			t.Fatalf("transaction: status=%d body=%s", transactionResponse.Code, transactionResponse.Body.String())
+		}
+		approval := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/transaction/approve", strings.NewReader(`{}`))
+		approval.AddCookie(transactionCookie)
+		approvalResponse := httptest.NewRecorder()
+		router.ServeHTTP(approvalResponse, approval)
+		if approvalResponse.Code != http.StatusOK {
+			t.Fatalf("approval: status=%d body=%s", approvalResponse.Code, approvalResponse.Body.String())
+		}
+		var payload struct {
+			RedirectURI string `json:"redirect_uri"`
+		}
+		if err := json.NewDecoder(approvalResponse.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode approval: %v", err)
+		}
+		redirect, err := url.Parse(payload.RedirectURI)
+		if err != nil || redirect.Query().Get("state") != "test-state" || redirect.Query().Get("code") == "" {
+			t.Fatalf("invalid approval redirect: %v", err)
+		}
+		return redirect.Query().Get("code")
+	}
+	exchange := func(code, codeVerifier string) *httptest.ResponseRecorder {
+		t.Helper()
+		form := url.Values{"grant_type": {"authorization_code"}, "client_id": {client.ClientID}, "redirect_uri": {client.RedirectURIs[0]}, "code": {code}, "code_verifier": {codeVerifier}, "resource": {"http://localhost/mcp"}}
+		request := httptest.NewRequest(http.MethodPost, "/api/auth/oauth/token", strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+	code := issueCode()
+	response := exchange(code, verifier)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"access_token"`) {
+		t.Fatalf("PKCE exchange failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := exchange(code, verifier); response.Code != http.StatusBadRequest {
+		t.Fatalf("authorization code replay status=%d", response.Code)
+	}
+	if response := exchange(issueCode(), strings.Repeat("b", 43)); response.Code != http.StatusBadRequest {
+		t.Fatalf("wrong PKCE verifier status=%d", response.Code)
 	}
 }
 

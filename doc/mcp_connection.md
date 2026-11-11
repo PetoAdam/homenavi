@@ -6,7 +6,7 @@ Homenavi exposes a remote Streamable HTTP MCP server at:
 https://<homenavi-host>/mcp
 ```
 
-Use the public HTTPS address that users open in a browser. The MCP client must be able to reach this address, including its OAuth metadata endpoints. Do not use an internal container address such as `http://mcp-service:8080` from a remote client.
+Use the public HTTPS address that users open in a browser. The MCP client must be able to reach this address, including its OAuth metadata endpoints. Do not use an internal container address such as `http://mcp-service:8080` from a remote client. The default local Docker proxy uses HTTP; loopback URLs such as `http://localhost:<port>/mcp` are supported for local development. Remote OAuth resources require HTTPS.
 
 ## Client Setup
 

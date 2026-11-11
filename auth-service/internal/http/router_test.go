@@ -70,3 +70,40 @@ func TestRouterJWKS(t *testing.T) {
 		t.Fatalf("unexpected JWKS body %q", rr.Body.String())
 	}
 }
+
+func TestRouterBrowserSessionAuthorization(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		method        string
+		path          string
+		authorization string
+		want          string
+	}{
+		{name: "authorization browser GET", method: http.MethodGet, path: "/api/auth/oauth/authorize"},
+		{name: "authorization browser POST", method: http.MethodPost, path: "/api/auth/oauth/authorize"},
+		{name: "explicit authorization", method: http.MethodGet, path: "/api/auth/oauth/authorize", authorization: "Bearer explicit-token", want: "Bearer explicit-token"},
+		{name: "other authenticated route", method: http.MethodGet, path: "/api/auth/me", want: "Bearer session-token"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var authorization string
+			handler := func(w http.ResponseWriter, r *http.Request) {
+				authorization = r.Header.Get("Authorization")
+				if _, err := r.Cookie("auth_token"); err != nil {
+					t.Errorf("browser session cookie missing: %v", err)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}
+			router := NewRouter(Routes{HandleOAuthAuthorize: handler, HandleMe: handler}, http.NotFoundHandler(), otel.Tracer("test"))
+			req := httptest.NewRequest(test.method, test.path, nil)
+			req.AddCookie(&http.Cookie{Name: "auth_token", Value: "session-token"})
+			if test.authorization != "" {
+				req.Header.Set("Authorization", test.authorization)
+			}
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+			if rr.Code != http.StatusNoContent || authorization != test.want {
+				t.Fatalf("status=%d authorization=%q, want %d and %q", rr.Code, authorization, http.StatusNoContent, test.want)
+			}
+		})
+	}
+}

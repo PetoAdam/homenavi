@@ -123,7 +123,7 @@ func NewRouter(routes Routes, promHandler http.Handler, tracer oteltrace.Tracer)
 
 func browserSessionAuthorization(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") == "" {
+		if r.URL.Path != "/api/auth/oauth/authorize" && r.Header.Get("Authorization") == "" {
 			if cookie, err := r.Cookie(authhandlers.AccessTokenCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
 				r.Header.Set("Authorization", "Bearer "+cookie.Value)
 			}

@@ -22,6 +22,18 @@ jobs:
   test:
     name: ${{ matrix.module }}
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: ${{ matrix.module == 'auth-service' && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      HOMENAVI_TEST_REDIS_ADDR: ${{ matrix.module == 'auth-service' && '127.0.0.1:6379' || '' }}
     strategy:
       fail-fast: false
       matrix:
