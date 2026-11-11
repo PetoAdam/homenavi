@@ -307,6 +307,10 @@ func TestBrowserAuthorizationPKCEIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register client: %v", err)
 	}
+	clientKey := "oauth_dynamic_client:" + client.ClientID
+	if ttl, err := store.TTL(context.Background(), clientKey); err != nil || ttl != -time.Nanosecond {
+		t.Fatalf("new client TTL = %v, error = %v; want no expiry", ttl, err)
+	}
 	authorization := NewAuthorizationHandler(service)
 	token := NewTokenHandler(service, fakeOAuthUserProvider{user: user})
 	router := authhttp.NewRouter(authhttp.Routes{

@@ -7,7 +7,8 @@ import (
 )
 
 func TestRegisterOAuthClientAllowsHTTPSAndLoopbackRedirects(t *testing.T) {
-	service := newRefreshTestService(t, newMemoryRefreshStore())
+	store := newMemoryRefreshStore()
+	service := newRefreshTestService(t, store)
 	redirectURIs := []string{"http://127.0.0.1/", "http://127.0.0.1:33418/", "http://[::1]:33418/callback", "https://openwebui.example/oauth/callback", "https://client.example/callback?connection=homenavi"}
 	client, err := service.RegisterOAuthClient(context.Background(), "MCP client", redirectURIs)
 	if err != nil {
@@ -15,6 +16,9 @@ func TestRegisterOAuthClientAllowsHTTPSAndLoopbackRedirects(t *testing.T) {
 	}
 	if !strings.HasPrefix(client.ClientID, "hn_") || client.Scopes[0] != "home.devices.read" || !contains(client.Scopes, "home.devices.write") || !contains(client.Scopes, "home.automation.execute") {
 		t.Fatalf("unexpected dynamic client: %#v", client)
+	}
+	if ttl := store.ttls[oauthDynamicClientPrefix+client.ClientID]; ttl != 0 {
+		t.Fatalf("dynamic client TTL = %v, want no expiry", ttl)
 	}
 
 	request := OAuthAuthorizationRequest{

@@ -27,7 +27,7 @@ Homenavi supports public MCP clients through OAuth Dynamic Client Registration. 
 
 Homenavi rejects remote HTTP redirects, URI fragments, embedded credentials, and malformed callback URIs. HTTPS redirect URIs must match the URI registered during DCR exactly at authorization time. Native loopback clients may use a different ephemeral port, as permitted for native OAuth clients.
 
-This policy is generic: adding a new AI client does not require a code or deployment change. Dynamic registration entries expire after 30 days. Authorization still requires PKCE S256, a state value, an MCP resource indicator, an authenticated user, and explicit user consent.
+This policy is generic: adding a new AI client does not require a code or deployment change. New dynamic client registrations do not expire. Registrations created before this change retain their original expiry; affected clients must register again after they expire. Authorization still requires PKCE S256, a state value, an MCP resource indicator, an authenticated user, and explicit user consent.
 
 ## Scopes and Access
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const oauthDynamicClientPrefix = "oauth_dynamic_client:"
@@ -65,7 +64,7 @@ func (s *Service) RegisterDynamicOAuthClient(ctx context.Context, registration D
 	if err != nil {
 		return OAuthClient{}, err
 	}
-	if err := s.cacheStore.Set(ctx, oauthDynamicClientPrefix+client.ClientID, string(encoded), 30*24*time.Hour); err != nil {
+	if err := s.cacheStore.Set(ctx, oauthDynamicClientPrefix+client.ClientID, string(encoded), 0); err != nil {
 		return OAuthClient{}, err
 	}
 	return client, nil
