@@ -57,7 +57,7 @@ func (i *Ingestor) HandleMessage(ctx context.Context, msg MQTTMessage, receivedA
 		Trace *hdp.TraceContext `json:"trace"`
 	}
 	if json.Unmarshal(payload, &envelope) == nil && envelope.Trace != nil && envelope.Trace.Traceparent != "" {
-		consumerCtx, span := observability.StartMessageConsumer(ctx, payload, retained, receivedAt)
+		consumerCtx, span := observability.StartMessageConsumer(ctx, payload, retained, receivedAt, topic)
 		ctx = consumerCtx
 		defer span.End()
 	}

@@ -210,7 +210,7 @@ func (r *Runner) consumeMessage(ctx context.Context, msg mqttinfra.Message) {
 		Trace *hdp.TraceContext `json:"trace"`
 	}
 	if json.Unmarshal(payload, &envelope) == nil && envelope.Trace != nil && envelope.Trace.Traceparent != "" {
-		consumerCtx, span := observability.StartMessageConsumer(ctx, payload, msg.Retained(), time.Now())
+		consumerCtx, span := observability.StartMessageConsumer(ctx, payload, msg.Retained(), time.Now(), msg.Topic())
 		defer span.End()
 		ctx = consumerCtx
 	}

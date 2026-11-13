@@ -43,6 +43,16 @@ func TestMetadataAndRemovalEventsPropagateTrace(t *testing.T) {
 	if len(spans) != 5 || spans[0].Parent().SpanID() != root.SpanContext().SpanID() || spans[1].Parent().SpanID() != root.SpanContext().SpanID() || spans[3].Parent().SpanID() != spans[1].SpanContext().SpanID() {
 		t.Fatal("device events did not continue the request trace")
 	}
+	if spans[0].Name() != "mqtt publish HDP metadata" || spans[1].Name() != "mqtt publish HDP event" || spans[3].Name() != "mqtt process HDP event" {
+		t.Fatalf("unexpected HDP span names: %q, %q, %q", spans[0].Name(), spans[1].Name(), spans[3].Name())
+	}
+	attributes := make(map[string]string)
+	for _, value := range spans[1].Attributes() {
+		attributes[string(value.Key)] = value.Value.Emit()
+	}
+	if attributes["messaging.destination.name"] != hdpEventPrefix+"mock/device" || attributes["homenavi.hdp.event"] != "device_removed" || attributes["homenavi.hdp.device_id"] != "mock/device" {
+		t.Fatalf("unexpected HDP event attributes: %v", attributes)
+	}
 	if spans[2].SpanContext().TraceID() == root.SpanContext().TraceID() || len(spans[2].Links()) != 1 || spans[2].Links()[0].SpanContext.SpanID() != spans[0].SpanContext().SpanID() {
 		t.Fatal("retained metadata did not link to the publishing trace")
 	}
@@ -185,6 +195,46 @@ func TestUninstrumentedAdapterResultUsesStoredCorrelation(t *testing.T) {
 	if err := json.Unmarshal(mqtt.published[0].payload, &lifecycle); err != nil || lifecycle["corr"] != "cmd-1" {
 		t.Fatalf("result correlation was not preserved: %v %v", lifecycle, err)
 	}
+}
+
+func TestLegacyAdapterResultIncludesTraceDetails(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(t.Context())
+	})
+	t.Setenv("HOMENAVI_MQTT_TRACE_ENABLED", "true")
+	mqtt := &pairingTestMQTTClient{}
+	server := NewServer(nil, mqtt)
+	ctx, root := provider.Tracer("test").Start(t.Context(), "request")
+	server.beginCommandLifecycleWithTimeout(ctx, "mock/device", "cmd-1", nil, nil, time.Minute)
+	result := map[string]any{"schema": "hdp.v1", "type": "command_result", "device_id": "mock/device", "correlation_id": "cmd-1", "status": "rejected", "success": "false", "ts": time.Now().UnixMilli()}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.handleHDPCommandResultEvent(pairingFakeMessage{topic: hdpCommandResultPrefix + "mock/device", payload: payload})
+	root.End()
+	if len(mqtt.published) != 1 {
+		t.Fatalf("expected one lifecycle result, got %d", len(mqtt.published))
+	}
+	for _, span := range recorder.Ended() {
+		if span.Name() != "mqtt process HDP command result" {
+			continue
+		}
+		attributes := make(map[string]string)
+		for _, value := range span.Attributes() {
+			attributes[string(value.Key)] = value.Value.Emit()
+		}
+		if span.Parent().SpanID() != root.SpanContext().SpanID() || attributes["homenavi.hdp.correlation_id"] != "cmd-1" || attributes["homenavi.hdp.success"] != "false" || attributes["homenavi.hdp.status"] != "rejected" {
+			t.Fatalf("unexpected result span: parent %s, attributes %v", span.Parent().SpanID(), attributes)
+		}
+		return
+	}
+	t.Fatal("legacy result span not found")
 }
 
 func TestPublishHDPCommandTracePropagation(t *testing.T) {

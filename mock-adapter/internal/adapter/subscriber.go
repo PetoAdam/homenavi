@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) handleDeviceCommand(m Message) {
-	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now())
+	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now(), m.Topic())
 	defer span.End()
 	var env map[string]any
 	if err := json.Unmarshal(m.Payload(), &env); err != nil {
@@ -41,7 +41,7 @@ func (s *Service) handleDeviceCommand(m Message) {
 }
 
 func (s *Service) handlePairingCommand(m Message) {
-	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now())
+	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now(), m.Topic())
 	defer span.End()
 	var env map[string]any
 	if err := json.Unmarshal(m.Payload(), &env); err != nil {

@@ -201,6 +201,7 @@ Read the dedicated docs:
 - Compose passes `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_TRACES_HEADERS` to every tracing service. Use secret management for collector credentials and HTTPS for transport. Gateway browser exports also honor the standard OTLP CA and client certificate settings; mount certificate files into the gateway and configure other services' TLS settings and mounts as needed. Trace-specific settings take precedence. Invalid gateway TLS configuration fails closed.
 - Correlation IDs propagated through gateway/service hops.
 - Shared OpenTelemetry bootstrap and request middleware are used across the core service set.
+- HDP MQTT producer and consumer spans identify the message type, topic, retained flag, and available device, correlation, command, event, protocol, pairing, and result fields. Message bodies, state, arguments, pairing inputs, and error text are not recorded. Topics and identifiers can still reveal device information; restrict collector access and retention accordingly.
 
 Validated OTEL-enabled core services:
 - api-gateway

@@ -33,7 +33,7 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	}
 	if st.Trace != nil && st.Trace.Traceparent != "" {
 		var span trace.Span
-		ctx, span = observability.StartMessageConsumer(ctx, payload, m.Retained(), time.Now())
+		ctx, span = observability.StartMessageConsumer(ctx, payload, m.Retained(), time.Now(), m.Topic())
 		defer span.End()
 	}
 	previousState, currentState := e.recordDeviceState(st.DeviceID, st.State)
@@ -386,7 +386,7 @@ func (e *Engine) publishCompletedCommand(ctx context.Context, pending *dbinfra.P
 
 func (e *Engine) startCommandResultConsumer(ctx context.Context, message mqttinfra.Message, result HDPCommandResult) (context.Context, trace.Span) {
 	if result.Trace != nil && result.Trace.Traceparent != "" {
-		return observability.StartMessageConsumer(ctx, message.Payload(), message.Retained(), time.Now())
+		return observability.StartMessageConsumer(ctx, message.Payload(), message.Retained(), time.Now(), message.Topic())
 	}
 	deviceID, err := hdp.DeviceIDFromTopic(hdp.CommandResultPrefix, message.Topic())
 	if err != nil || result.DeviceID == "" || deviceID != result.DeviceID || strings.TrimSpace(result.Corr) == "" || e.traceStore == nil {
@@ -399,7 +399,7 @@ func (e *Engine) startCommandResultConsumer(ctx context.Context, message mqttinf
 	}) || lookupErr != nil || pending.DeviceID != deviceID || pending.Trace == nil {
 		return ctx, nil
 	}
-	return observability.StartCorrelatedMessageConsumer(message.Payload(), message.Retained(), time.Now(), pending.Trace, pending.StartedAt)
+	return observability.StartCorrelatedMessageConsumer(message.Payload(), message.Retained(), time.Now(), pending.Trace, pending.StartedAt, message.Topic())
 }
 
 func matchStateTrigger(t TriggerDeviceState, state map[string]any) bool {

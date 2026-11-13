@@ -150,6 +150,7 @@ func (s *Service) publishCommandResult(ctx context.Context, deviceID, corr strin
 		observability.InjectMessageContext(ctx, payload)
 	}
 	if b, err := json.Marshal(payload); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdp.CommandResultPrefix+id)
 		if err := s.client.Publish(hdp.CommandResultPrefix+id, b); err != nil {
 			span.SetStatus(codes.Error, "MQTT publish failed")
 		}
@@ -185,6 +186,7 @@ func (s *Service) publishPairingProgress(ctx context.Context, stage, status, ext
 		observability.InjectMessageContext(ctx, payload)
 	}
 	if b, err := json.Marshal(payload); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdp.PairingProgressPrefix+"mock")
 		if err := s.client.Publish(hdp.PairingProgressPrefix+"mock", b); err != nil {
 			span.SetStatus(codes.Error, "MQTT publish failed")
 		}

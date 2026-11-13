@@ -533,6 +533,7 @@ func (s *Server) publishPairingCommandWithContext(ctx context.Context, protocol,
 		span.SetStatus(codes.Error, "MQTT message encoding failed")
 		return err
 	}
+	observability.DescribeHDPMessage(span, "publish", b, false, hdpPairingCommandPrefix+protocol)
 	if err := s.mqtt.Publish(hdpPairingCommandPrefix+protocol, b); err != nil {
 		span.SetStatus(codes.Error, "MQTT publish failed")
 		return err
@@ -633,6 +634,7 @@ func (s *Server) publishHDPPairingProgress(ctx context.Context, session pairingS
 		envelope["required_inputs"] = session.RequiredInputs
 	}
 	if b, err := json.Marshal(envelope); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdpPairingProgressPrefix+session.Protocol)
 		if err := s.mqtt.Publish(hdpPairingProgressPrefix+session.Protocol, b); err != nil {
 			span.SetStatus(codes.Error, "MQTT publish failed")
 			slog.Warn("hdp pairing progress publish failed", "protocol", session.Protocol, "error", err)
@@ -657,7 +659,7 @@ func (s *Server) handleHDPPairingProgressEvent(msg mqttinfra.Message) {
 	}
 	ctx := context.Background()
 	if _, ok := evt["trace"]; ok {
-		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now(), msg.Topic())
 		defer span.End()
 		ctx = consumerCtx
 	}

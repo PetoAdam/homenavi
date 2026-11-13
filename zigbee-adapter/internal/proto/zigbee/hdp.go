@@ -190,17 +190,20 @@ func (z *ZigbeeAdapter) publishHDPEvent(deviceID, event string, data map[string]
 
 func (z *ZigbeeAdapter) publishHDPTelemetry(topic string, envelope map[string]any, retained bool) {
 	failed := func(string) {}
+	describe := func([]byte) {}
 	if observability.MessagePropagationEnabled() {
 		ctx, span := observability.StartMessageProducer(context.Background())
 		defer span.End()
 		observability.InjectMessageContext(ctx, envelope)
 		failed = func(message string) { span.SetStatus(codes.Error, message) }
+		describe = func(payload []byte) { observability.DescribeHDPMessage(span, "publish", payload, retained, topic) }
 	}
 	payload, err := json.Marshal(envelope)
 	if err != nil {
 		failed("MQTT message encoding failed")
 		return
 	}
+	describe(payload)
 	if retained {
 		err = z.client.PublishWith(topic, payload, true)
 	} else {
@@ -244,6 +247,7 @@ func (z *ZigbeeAdapter) publishHDPCommandResultWithContext(ctx context.Context, 
 		observability.InjectMessageContext(ctx, envelope)
 	}
 	if b, err := json.Marshal(envelope); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdpCommandResultPrefix+deviceID)
 		if err := z.client.Publish(hdpCommandResultPrefix+deviceID, b); err != nil {
 			span.SetStatus(codes.Error, "MQTT publish failed")
 		}

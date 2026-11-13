@@ -40,7 +40,7 @@ func (s *Server) handleHDPMetadataEvent(msg mqttinfra.Message) {
 	}
 	ctx := context.Background()
 	if _, ok := payload["trace"]; ok {
-		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now(), msg.Topic())
 		defer span.End()
 		ctx = consumerCtx
 	}
@@ -58,7 +58,7 @@ func (s *Server) handleHDPEvent(msg mqttinfra.Message) {
 	}
 	ctx := context.Background()
 	if _, ok := evt["trace"]; ok {
-		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now(), msg.Topic())
 		defer span.End()
 		ctx = consumerCtx
 	}
@@ -165,7 +165,7 @@ func (s *Server) handleHDPStateEvent(msg mqttinfra.Message) {
 	ctx := context.Background()
 	if _, ok := payload["trace"]; ok {
 		var spanCtx context.Context
-		spanCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		spanCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now(), msg.Topic())
 		defer span.End()
 		ctx = spanCtx
 	}

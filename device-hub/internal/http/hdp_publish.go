@@ -85,6 +85,7 @@ func (s *Server) publishHDPMeta(ctx context.Context, dev *model.Device) {
 		observability.InjectMessageContext(ctx, envelope)
 	}
 	if data, err := json.Marshal(envelope); err == nil {
+		observability.DescribeHDPMessage(span, "publish", data, true, hdpMetadataPrefix+hdpID)
 		if err := s.mqtt.PublishWith(hdpMetadataPrefix+hdpID, data, true); err != nil {
 			slog.Warn("hdp metadata publish failed", "device_id", hdpID, "error", err)
 		}
@@ -111,6 +112,7 @@ func (s *Server) publishHDPEvent(ctx context.Context, deviceID, event string, da
 		observability.InjectMessageContext(ctx, envelope)
 	}
 	if b, err := json.Marshal(envelope); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdpEventPrefix+deviceID)
 		if err := s.mqtt.Publish(hdpEventPrefix+deviceID, b); err != nil {
 			slog.Warn("hdp event publish failed", "device_id", deviceID, "event", event, "error", err)
 		}
@@ -139,6 +141,7 @@ func (s *Server) publishHDPCommand(ctx context.Context, deviceID string, cmd map
 		observability.InjectMessageContext(ctx, cmd)
 	}
 	if b, err := json.Marshal(cmd); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdpCommandPrefix+deviceID)
 		if err := s.mqtt.Publish(hdpCommandPrefix+deviceID, b); err != nil {
 			slog.Warn("hdp command publish failed", "device_id", deviceID, "error", err)
 			return err

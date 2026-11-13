@@ -41,6 +41,7 @@ func (z *ZigbeeAdapter) publishInvalidCommandResult(ctx context.Context, deviceI
 		observability.InjectMessageContext(ctx, envelope)
 	}
 	if b, err := json.Marshal(envelope); err == nil {
+		observability.DescribeHDPMessage(span, "publish", b, false, hdpCommandResultPrefix+deviceID)
 		if err := z.client.Publish(hdpCommandResultPrefix+deviceID, b); err != nil {
 			span.SetStatus(codes.Error, "MQTT publish failed")
 		}
@@ -233,7 +234,7 @@ func (z *ZigbeeAdapter) clearPendingReconfigure(external string) {
 }
 
 func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
-	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now())
+	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now(), m.Topic())
 	defer span.End()
 	var envelope map[string]any
 	if err := json.Unmarshal(m.Payload(), &envelope); err != nil {

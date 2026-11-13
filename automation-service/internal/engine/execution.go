@@ -432,6 +432,7 @@ func (e *Engine) dispatchCommand(ctx context.Context, deviceID, correlationID, c
 		span.SetStatus(codes.Error, "MQTT message encoding failed")
 		return fmt.Errorf("marshal command: %w", err)
 	}
+	observability.DescribeHDPMessage(span, "publish", payload, false, hdp.Topic(hdp.CommandPrefix, deviceID))
 	if action.WaitForResult && e.traceStore != nil {
 		if metadata := observability.CaptureTraceContext(ctx); metadata != nil {
 			e.tryTraceStore(ctx, func(traceCtx context.Context) {

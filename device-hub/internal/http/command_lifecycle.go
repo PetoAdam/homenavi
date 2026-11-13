@@ -283,6 +283,7 @@ func (s *Server) publishCommandLifecycleWithContext(ctx context.Context, deviceI
 		observability.InjectMessageContext(ctx, payload)
 	}
 	if data, err := json.Marshal(payload); err == nil {
+		observability.DescribeHDPMessage(span, "publish", data, false, hdpCommandResultPrefix+strings.TrimSpace(deviceID))
 		if err := s.mqtt.Publish(hdpCommandResultPrefix+strings.TrimSpace(deviceID), data); err != nil {
 			span.SetStatus(codes.Error, "MQTT publish failed")
 			slog.Warn("hdp command lifecycle publish failed", "device_id", deviceID, "corr", corr, "status", status, "error", err)
@@ -365,7 +366,7 @@ func (s *Server) handleHDPCommandResultEvent(msg mqttinfra.Message) {
 		metadata = entry.Trace
 		startedAt = time.UnixMilli(entry.StartedAt)
 	}
-	ctx, span := observability.StartCorrelatedMessageConsumer(msg.Payload(), msg.Retained(), time.Now(), metadata, startedAt)
+	ctx, span := observability.StartCorrelatedMessageConsumer(msg.Payload(), msg.Retained(), time.Now(), metadata, startedAt, msg.Topic())
 	defer span.End()
 	status := normalizeLifecycleStatus(asString(payload["status"]), commandBoolish(payload["success"]))
 	errMsg := strings.TrimSpace(asString(payload["error"]))
