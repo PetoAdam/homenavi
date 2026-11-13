@@ -158,7 +158,7 @@ Operational runbooks:
 - Manual, device-state, and schedule triggers.
 - Drag-and-drop workflow authoring in the UI backed by branching, loop, sleep, and device command actions.
 - Integration actions via integration runtime metadata and execute endpoint.
-- Live run stream websocket endpoint.
+- Live run stream websocket endpoint, with persisted run status available when live events are missed.
 
 ### Dashboards and widgets
 - User-scoped dashboards with persisted layout/state and edit-mode customization with simple drag-and-drop placement and resizing.
@@ -195,7 +195,10 @@ Read the dedicated docs:
 
 ### Observability
 - Metrics via Prometheus scrape endpoints.
-- Traces exported to Jaeger for all core services.
+- Core service traces export over OTLP/HTTP by default. Compose uses its bundled Jaeger; Helm expects an external collector at `http://otel-collector:4318/v1/traces` unless `global.otelExporterOtlpTracesEndpoint` is changed. Helm's bundled Jaeger and Grafana are disabled by default. Export is best effort: collector failures can drop traces without preventing normal requests.
+- In Compose, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to an empty value to disable export and browser tracing at runtime. MQTT trace propagation defaults to `auto`, following the endpoint, and can be overridden with `HOMENAVI_MQTT_TRACE_ENABLED=true` or `false`. Browser tracing can also be disabled with `HOMENAVI_BROWSER_OTEL_ENABLED=false` at runtime or `VITE_OTEL_BROWSER_ENABLED=false` when building the frontend image. Browser root spans default to 10% sampling.
+- Public gateway requests are independently sampled and linked to both the original incoming context and the namespaced browser context by default. Both links are untrusted metadata, not authentication. Set `HOMENAVI_TRACE_INGRESS_NEW_ROOT=false` only at a trusted ingress when same-trace parentage is required; callers can then choose trace IDs and sampling.
+- Compose passes `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_TRACES_HEADERS` to every tracing service. Use secret management for collector credentials and HTTPS for transport. Gateway browser exports also honor the standard OTLP CA and client certificate settings; mount certificate files into the gateway and configure other services' TLS settings and mounts as needed. Trace-specific settings take precedence. Invalid gateway TLS configuration fails closed.
 - Correlation IDs propagated through gateway/service hops.
 - Shared OpenTelemetry bootstrap and request middleware are used across the core service set.
 
@@ -206,15 +209,17 @@ Validated OTEL-enabled core services:
 - dashboard-service
 - device-hub
 - email-service
+- profile-picture-service
 - automation-service
 - entity-registry-service
 - history-service
 - integration-proxy
+- mcp-service
 - weather-service
 - mock-adapter
 - zigbee-adapter
 
-The common setup lives in the shared observability package and is wired in each service's app bootstrap, so there are no remaining core services without first-class OTEL support.
+Go services use the shared observability package; the Python profile-picture service configures its own tracing provider. See the [deployment guide](doc/deployment_guide.md) for collector configuration and automation delivery limitations.
 
 ### Security
 - RS256 JWT signing/verification split.

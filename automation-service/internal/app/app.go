@@ -59,7 +59,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		}
 	}
 	var cacheStore *cachex.JSONStore
-	if cfg.ListCacheTTL > 0 {
+	if cfg.ListCacheTTL > 0 || sharedobs.TraceMetadataEnabled() {
 		cacheStore, err = cachex.NewJSONStore(context.Background(), cfg.Redis)
 		if err != nil {
 			logger.Warn("automation-service cache disabled", "error", err)
@@ -69,6 +69,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect session store: %w", err)
 	}
+	var selectorStore *cachex.JSONStore
+	if cfg.ListCacheTTL > 0 {
+		selectorStore = cacheStore
+	}
+	var traceStore *cachex.JSONStore
+	if sharedobs.TraceMetadataEnabled() {
+		traceStore = cacheStore
+	}
 	eng := engine.New(repo, mqttClient, engine.Options{
 		EmailServiceURL:     cfg.EmailServiceURL,
 		ERSServiceURL:       cfg.ERSServiceURL,
@@ -76,7 +84,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		IntegrationProxyURL: cfg.IntegrationProxyURL,
 		MQTTSharedGroup:     cfg.MQTTSharedGroup,
 		RunEvents:           runEvents,
-		SelectorStore:       cacheStore,
+		SelectorStore:       selectorStore,
+		TraceStore:          traceStore,
 	})
 	shutdown, promHandler, tracer, err := sharedobs.SetupObservability("automation-service")
 	if err != nil {

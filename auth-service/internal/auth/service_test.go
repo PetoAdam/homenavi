@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +13,50 @@ import (
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/golang-jwt/jwt/v5"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"golang.org/x/oauth2"
 )
+
+type oauthTestTransport func(*http.Request) (*http.Response, error)
+
+func (transport oauthTestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestGoogleOAuthUsesRequestTraceWithoutExternalPropagation(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	service := &Service{googleOAuthConfig: &oauth2.Config{ClientID: "client", ClientSecret: "secret", Endpoint: oauth2.Endpoint{TokenURL: "https://oauth.example/token", AuthStyle: oauth2.AuthStyleInParams}}}
+	transport := oauthTestTransport(func(request *http.Request) (*http.Response, error) {
+		if request.Header.Get("traceparent") != "" || request.Header.Get("baggage") != "" {
+			t.Error("OAuth request leaked internal tracing headers")
+		}
+		body := `{"id":"google-id","email":"user@example.test"}`
+		if request.URL.Path == "/token" {
+			body = `{"access_token":"secret-token","token_type":"Bearer"}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+	})
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "request")
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: transport})
+	user, err := service.ExchangeGoogleOAuthCode(ctx, "secret-code", "")
+	parent.End()
+	if err != nil || user.ID != "google-id" {
+		t.Fatalf("OAuth exchange failed: %v", err)
+	}
+	spans := recorder.Ended()
+	if len(spans) != 3 || spans[0].Parent().SpanID() != parent.SpanContext().SpanID() || spans[1].Parent().SpanID() != parent.SpanContext().SpanID() {
+		t.Fatal("OAuth HTTP spans did not follow the request")
+	}
+}
 
 func TestIssueAccessTokenIncludesAPIClaims(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)

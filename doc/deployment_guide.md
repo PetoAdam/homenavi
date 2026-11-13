@@ -69,7 +69,15 @@ Use Helm for Kubernetes or GitOps. It uses Kubernetes Services, persistent volum
 
 4. Make the public DNS name resolve to the Docker host. Before internet exposure, use a Compose override or host firewall to restrict the development ports exposed by the base Compose file; only the TLS edge proxy should be publicly reachable. Do not publish internal service, database, broker, or observability ports on the public network.
 
-Compose uses `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` as a single shared collector setting. The default points to bundled Jaeger. OAuth and MCP derive their public URLs from the host and scheme sent through the edge proxy, so a normal deployment has no public-URL setting. Use the individual endpoint variables only for a split-domain deployment.
+Compose uses `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` as a single shared collector setting. When unset, it points to bundled Jaeger; set it to an empty value to disable trace export. MQTT trace propagation defaults to `auto`, following that endpoint; set `HOMENAVI_MQTT_TRACE_ENABLED=true` or `false` to override it. Updated frontend images check the gateway's runtime tracing configuration without delaying rendering, so early requests may not be traced; older prebuilt images must be updated to honor the runtime opt-out. Core services do not depend on Jaeger starting, and collector or exporter failures can drop traces without preventing normal requests. Trace-correlation cache operations are time-bounded and may be skipped when unavailable. These guarantees do not remove the application's other database, broker, authentication, or session-store dependencies.
+
+OAuth and MCP derive their public URLs from the host and scheme sent through the edge proxy, so a normal deployment has no public-URL setting. Use the individual endpoint variables only for a split-domain deployment.
+
+Shared automation live events are queued for best-effort delivery without blocking workflow execution. Events can be dropped when Redis is unavailable, the queue is full, or a pod stops; clients can still retrieve persisted run state.
+
+Command results are not durable across every database outage or process restart: the MQTT client acknowledges messages independently of database persistence, and its default session is not persistent. A command without a recorded result expires with an unknown outcome and may require reconciliation against the device; it is not proof that the command failed.
+
+HTTP request metrics use route templates as the `endpoint` label and `unmatched` for requests without a matched route. Nonstandard methods use the `_OTHER` label; dashboards and alerts using concrete paths should be updated accordingly.
 
 Mosquitto is the default MQTT 5 broker and Valkey provides Redis-protocol cache/session storage. To use the explicit, single-node EMQX compatibility profile, run `docker compose -f docker-compose.yml -f docker-compose.emqx.yml up -d`; do not use that profile for clustered production without a separate EMQX license review.
 
@@ -102,6 +110,8 @@ ingress: { enabled: true, className: nginx, hosts: [{ host: home.example.com, pa
    ```
 
 For Argo CD, use the same values under `spec.source.helm.values` and pin the chart and `global.imageTag` to the same release. Set `services.frontend.image.tag` to that release only when an explicit frontend override is needed.
+
+Helm uses readiness-gated rolling updates for automation-service. During the transition from the older command-result protocol, mixed versions sharing PostgreSQL and MQTT can process each other's in-flight results incorrectly. Drain active workflows and stop old replicas before starting the new version when that risk is unacceptable; interrupted work may require reconciliation.
 
 ## Quick-Start Standard
 

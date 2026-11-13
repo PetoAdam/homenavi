@@ -11,6 +11,9 @@ import (
 	commandstate "github.com/PetoAdam/homenavi/device-hub/internal/infra/commandstate"
 	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const defaultCommandLifecycleTimeout = 45 * time.Second
@@ -33,14 +36,15 @@ type pendingCommand struct {
 	Baseline   map[string]any
 	StartedAt  int64
 	LastStatus string
+	Trace      *hdp.TraceContext
 }
 
 func commandEntry(entry *pendingCommand, timeout time.Duration) commandstate.Entry {
-	return commandstate.Entry{DeviceID: entry.DeviceID, Correlation: entry.Corr, Expected: entry.Expected, Baseline: entry.Baseline, StartedAt: entry.StartedAt, LastStatus: entry.LastStatus, ExpiresAt: time.UnixMilli(entry.StartedAt).Add(timeout).UnixMilli()}
+	return commandstate.Entry{DeviceID: entry.DeviceID, Correlation: entry.Corr, Expected: entry.Expected, Baseline: entry.Baseline, StartedAt: entry.StartedAt, LastStatus: entry.LastStatus, ExpiresAt: time.UnixMilli(entry.StartedAt).Add(timeout).UnixMilli(), Trace: entry.Trace}
 }
 
 func pendingEntry(entry commandstate.Entry) *pendingCommand {
-	return &pendingCommand{DeviceID: entry.DeviceID, Corr: entry.Correlation, Expected: cloneAnyMap(entry.Expected), Baseline: cloneAnyMap(entry.Baseline), StartedAt: entry.StartedAt, LastStatus: entry.LastStatus}
+	return &pendingCommand{DeviceID: entry.DeviceID, Corr: entry.Correlation, Expected: cloneAnyMap(entry.Expected), Baseline: cloneAnyMap(entry.Baseline), StartedAt: entry.StartedAt, LastStatus: entry.LastStatus, Trace: entry.Trace}
 }
 
 func (s *Server) startCommandExpiryReaper() {
@@ -68,7 +72,7 @@ func (s *Server) reapExpiredCommands() {
 	for _, stored := range entries {
 		entry := pendingEntry(stored)
 		s.completeCommandLifecycle(entry, commandStatusTimeout, "command lifecycle timed out")
-		s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusTimeout, "command lifecycle timed out", nil)
+		s.publishCommandTimeout(entry)
 	}
 }
 
@@ -124,10 +128,10 @@ func (s *Server) loadBaselineState(ctx context.Context, deviceUUID string) map[s
 }
 
 func (s *Server) beginCommandLifecycle(deviceID, corr string, expected, baseline map[string]any) {
-	s.beginCommandLifecycleWithTimeout(deviceID, corr, expected, baseline, s.commandTimeout)
+	s.beginCommandLifecycleWithTimeout(context.Background(), deviceID, corr, expected, baseline, s.commandTimeout)
 }
 
-func (s *Server) beginCommandLifecycleWithTimeout(deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) {
+func (s *Server) beginCommandLifecycleWithTimeout(ctx context.Context, deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) {
 	if s == nil || strings.TrimSpace(deviceID) == "" || strings.TrimSpace(corr) == "" {
 		return
 	}
@@ -141,6 +145,9 @@ func (s *Server) beginCommandLifecycleWithTimeout(deviceID, corr string, expecte
 		Baseline:  cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
 	}
+	if observability.TraceMetadataEnabled() {
+		entry.Trace = observability.CaptureTraceContext(ctx)
+	}
 	accepted, err := s.commandStore.Put(context.Background(), commandEntry(entry, timeout), false)
 	if err != nil {
 		slog.Warn("command lifecycle coordination failed", "device_id", entry.DeviceID, "corr", entry.Corr, "error", err)
@@ -151,7 +158,7 @@ func (s *Server) beginCommandLifecycleWithTimeout(deviceID, corr string, expecte
 	}
 }
 
-func (s *Server) beginExclusiveCommandLifecycle(deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) bool {
+func (s *Server) beginExclusiveCommandLifecycle(ctx context.Context, deviceID, corr string, expected, baseline map[string]any, timeout time.Duration) bool {
 	if s == nil || strings.TrimSpace(deviceID) == "" || strings.TrimSpace(corr) == "" {
 		return false
 	}
@@ -164,6 +171,9 @@ func (s *Server) beginExclusiveCommandLifecycle(deviceID, corr string, expected,
 		Expected:  cloneAnyMap(expected),
 		Baseline:  cloneAnyMap(baseline),
 		StartedAt: time.Now().UnixMilli(),
+	}
+	if observability.TraceMetadataEnabled() {
+		entry.Trace = observability.CaptureTraceContext(ctx)
 	}
 	ok, err := s.commandStore.Put(context.Background(), commandEntry(entry, timeout), true)
 	if err != nil {
@@ -182,7 +192,13 @@ func (s *Server) handleCommandTimeout(deviceID, corr string) {
 		return
 	}
 	s.completeCommandLifecycle(entry, commandStatusTimeout, "command lifecycle timed out")
-	s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusTimeout, "command lifecycle timed out", nil)
+	s.publishCommandTimeout(entry)
+}
+
+func (s *Server) publishCommandTimeout(entry *pendingCommand) {
+	ctx, span := observability.StartDeferredSpan(entry.Trace, time.UnixMilli(entry.StartedAt), time.Now(), "command.timeout")
+	defer span.End()
+	s.publishCommandLifecycleWithContext(ctx, entry.DeviceID, entry.Corr, commandStatusTimeout, "command lifecycle timed out", nil)
 }
 
 func (s *Server) removePendingCommand(deviceID, corr string) *pendingCommand {
@@ -230,6 +246,10 @@ func (s *Server) ensurePassivePendingCommand(deviceID, corr string) *pendingComm
 }
 
 func (s *Server) publishCommandLifecycle(deviceID, corr, status, errMsg string, extra map[string]any) {
+	s.publishCommandLifecycleWithContext(context.Background(), deviceID, corr, status, errMsg, extra)
+}
+
+func (s *Server) publishCommandLifecycleWithContext(ctx context.Context, deviceID, corr, status, errMsg string, extra map[string]any) {
 	if s == nil || s.mqtt == nil {
 		return
 	}
@@ -237,6 +257,8 @@ func (s *Server) publishCommandLifecycle(deviceID, corr, status, errMsg string, 
 	if status == "" {
 		return
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	payload := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command_result",
@@ -257,10 +279,16 @@ func (s *Server) publishCommandLifecycle(deviceID, corr, status, errMsg string, 
 		}
 		payload[key] = value
 	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, payload)
+	}
 	if data, err := json.Marshal(payload); err == nil {
 		if err := s.mqtt.Publish(hdpCommandResultPrefix+strings.TrimSpace(deviceID), data); err != nil {
+			span.SetStatus(codes.Error, "MQTT publish failed")
 			slog.Warn("hdp command lifecycle publish failed", "device_id", deviceID, "corr", corr, "status", status, "error", err)
 		}
+	} else {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 	}
 }
 
@@ -331,12 +359,20 @@ func (s *Server) handleHDPCommandResultEvent(msg mqttinfra.Message) {
 	if deviceID == "" || corr == "" {
 		return
 	}
+	var metadata *hdp.TraceContext
+	var startedAt time.Time
+	if entry := s.getPendingCommand(deviceID, corr); entry != nil {
+		metadata = entry.Trace
+		startedAt = time.UnixMilli(entry.StartedAt)
+	}
+	ctx, span := observability.StartCorrelatedMessageConsumer(msg.Payload(), msg.Retained(), time.Now(), metadata, startedAt)
+	defer span.End()
 	status := normalizeLifecycleStatus(asString(payload["status"]), commandBoolish(payload["success"]))
 	errMsg := strings.TrimSpace(asString(payload["error"]))
-	s.processAdapterCommandResult(deviceID, corr, status, errMsg)
+	s.processAdapterCommandResult(ctx, deviceID, corr, status, errMsg)
 }
 
-func (s *Server) processAdapterCommandResult(deviceID, corr, status, errMsg string) {
+func (s *Server) processAdapterCommandResult(ctx context.Context, deviceID, corr, status, errMsg string) {
 	deviceID = strings.TrimSpace(deviceID)
 	corr = strings.TrimSpace(corr)
 	status = normalizeLifecycleStatus(status, errMsg == "")
@@ -356,29 +392,29 @@ func (s *Server) processAdapterCommandResult(deviceID, corr, status, errMsg stri
 		if entry != nil {
 			entry.LastStatus = status
 		}
-		s.publishCommandLifecycle(deviceID, corr, status, errMsg, map[string]any{"source_status": status})
+		s.publishCommandLifecycleWithContext(ctx, deviceID, corr, status, errMsg, map[string]any{"source_status": status})
 	case commandStatusApplied:
 		if entry == nil {
-			s.publishCommandLifecycle(deviceID, corr, commandStatusApplied, errMsg, map[string]any{"source_status": status})
+			s.publishCommandLifecycleWithContext(ctx, deviceID, corr, commandStatusApplied, errMsg, map[string]any{"source_status": status})
 			return
 		}
 		if len(entry.Expected) == 0 && len(entry.Baseline) == 0 {
 			s.removePendingCommand(deviceID, corr)
-			s.publishCommandLifecycle(deviceID, corr, commandStatusApplied, errMsg, map[string]any{"source_status": status})
+			s.publishCommandLifecycleWithContext(ctx, deviceID, corr, commandStatusApplied, errMsg, map[string]any{"source_status": status})
 			return
 		}
 		if entry.LastStatus != commandStatusInProgress {
 			entry.LastStatus = commandStatusInProgress
-			s.publishCommandLifecycle(deviceID, corr, commandStatusInProgress, "", map[string]any{"source_status": status})
+			s.publishCommandLifecycleWithContext(ctx, deviceID, corr, commandStatusInProgress, "", map[string]any{"source_status": status})
 		}
 	case commandStatusRejected, commandStatusFailed, commandStatusTimeout:
 		removed := s.removePendingCommand(deviceID, corr)
 		s.completeCommandLifecycle(removed, status, errMsg)
-		s.publishCommandLifecycle(deviceID, corr, status, errMsg, map[string]any{"source_status": status})
+		s.publishCommandLifecycleWithContext(ctx, deviceID, corr, status, errMsg, map[string]any{"source_status": status})
 	}
 }
 
-func (s *Server) processCommandStateLifecycle(deviceID string, state map[string]any, corr string, stateTs int64) {
+func (s *Server) processCommandStateLifecycle(ctx context.Context, deviceID string, state map[string]any, corr string, stateTs int64) {
 	if s == nil || strings.TrimSpace(deviceID) == "" || len(state) == 0 {
 		return
 	}
@@ -391,7 +427,7 @@ func (s *Server) processCommandStateLifecycle(deviceID string, state map[string]
 	}
 	removed := s.removePendingCommand(entry.DeviceID, entry.Corr)
 	s.completeCommandLifecycle(removed, commandStatusApplied, "")
-	s.publishCommandLifecycle(entry.DeviceID, entry.Corr, commandStatusApplied, "", nil)
+	s.publishCommandLifecycleWithContext(ctx, entry.DeviceID, entry.Corr, commandStatusApplied, "", nil)
 }
 
 func pendingCommandSatisfied(entry *pendingCommand, state map[string]any, corr string, stateTs int64) bool {

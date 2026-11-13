@@ -38,7 +38,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		_ = redisClient.Close()
 		return nil, fmt.Errorf("setup observability: %w", err)
 	}
-	wsRouter := httptransport.NewWebSocketRouter(cfg.Gateway, redisClient, publicKeySet)
+	wsRouter := httptransport.NewWebSocketRouter(cfg.Gateway, redisClient, publicKeySet, tracer)
 	mainRouter := httptransport.NewMainRouter(cfg.Gateway, redisClient, publicKeySet, promHandler, tracer, cfg.CORSAllowOrigins)
 	root := httptransport.NewRootRouter(wsRouter, mainRouter)
 

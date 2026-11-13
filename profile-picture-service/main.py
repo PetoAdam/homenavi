@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from config import ConfigurationError, Settings, load_settings
 from service import ALLOWED_UPLOAD_TYPES, ProfilePictureService
 from storage import ObjectNotFoundError, S3Storage
+from tracing import configure_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ def _build_app() -> FastAPI:
     service = ProfilePictureService(settings, storage)
 
     app = FastAPI(title="Profile Picture Generator", version="2.0.0")
+    configure_tracing(app)
     app.state.settings = settings
     app.state.profile_picture_service = service
 
@@ -137,6 +139,7 @@ except ConfigurationError as exc:
     logger.exception("profile picture service configuration error")
     config_error_message = str(exc)
     error_app = FastAPI(title="Profile Picture Generator", version="2.0.0")
+    configure_tracing(error_app)
 
     @error_app.get("/health")
     async def broken_health() -> JSONResponse:

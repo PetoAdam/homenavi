@@ -1,14 +1,19 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 func (s *Service) handleDeviceCommand(m Message) {
+	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now())
+	defer span.End()
 	var env map[string]any
 	if err := json.Unmarshal(m.Payload(), &env); err != nil {
 		slog.Debug("mock hdp command decode failed", "error", err)
@@ -31,11 +36,13 @@ func (s *Service) handleDeviceCommand(m Message) {
 	if corr == "" {
 		corr = "ack-" + strings.ReplaceAll(external, "/", "-")
 	}
-	s.publishCommandResult(deviceID, corr, false, "rejected", "mock adapter placeholder does not support device commands yet")
+	s.publishCommandResult(ctx, deviceID, corr, false, "rejected", "mock adapter placeholder does not support device commands yet")
 	slog.Info("mock adapter command rejected", "device_id", deviceID, "corr", corr)
 }
 
 func (s *Service) handlePairingCommand(m Message) {
+	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now())
+	defer span.End()
 	var env map[string]any
 	if err := json.Unmarshal(m.Payload(), &env); err != nil {
 		slog.Debug("mock pairing decode failed", "error", err)
@@ -70,7 +77,7 @@ func (s *Service) handlePairingCommand(m Message) {
 				needsInput["message"] = "Onboarding payload is required for qr_code mode"
 				needsInput["error_code"] = "ONBOARDING_PAYLOAD_MISSING"
 				needsInput["required_inputs"] = []string{"onboarding_payload"}
-				s.publishPairingProgress("commissioning", "needs_input", "", needsInput)
+				s.publishPairingProgress(ctx, "commissioning", "needs_input", "", needsInput)
 				return
 			}
 		}
@@ -79,7 +86,7 @@ func (s *Service) handlePairingCommand(m Message) {
 			inProgress[key] = value
 		}
 		inProgress["message"] = "Mock commissioning in progress"
-		s.publishPairingProgress("commissioning", "in_progress", "mock-device-001", inProgress)
+		s.publishPairingProgress(ctx, "commissioning", "in_progress", "mock-device-001", inProgress)
 
 		completed := map[string]any{}
 		for key, value := range extra {
@@ -92,9 +99,9 @@ func (s *Service) handlePairingCommand(m Message) {
 			"model":        "Adapter Device",
 			"icon":         "lightbulb",
 		}
-		s.publishPairingProgress("completed", "completed", "mock-device-001", completed)
+		s.publishPairingProgress(ctx, "completed", "completed", "mock-device-001", completed)
 	case "stop":
-		s.publishPairingProgress("stopped", "stopped", "", extra)
+		s.publishPairingProgress(ctx, "stopped", "stopped", "", extra)
 	}
 }
 

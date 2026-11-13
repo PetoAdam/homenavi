@@ -24,6 +24,13 @@ type oauthUserProvider interface {
 	GetUser(userID string) (*clientsinfra.User, error)
 }
 
+func scopedUserProvider(ctx context.Context, provider oauthUserProvider) oauthUserProvider {
+	if client, ok := provider.(*clientsinfra.UserClient); ok {
+		return client.WithContext(ctx)
+	}
+	return provider
+}
+
 type TokenHandler struct {
 	issuer       oauthTokenIssuer
 	userProvider oauthUserProvider
@@ -73,7 +80,7 @@ func (h *TokenHandler) HandleToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization code exchange was rejected")
 		return
 	}
-	user, err := h.userProvider.GetUser(grant.Subject)
+	user, err := scopedUserProvider(r.Context(), h.userProvider).GetUser(grant.Subject)
 	if err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization subject is unavailable")
 		return
@@ -97,7 +104,7 @@ func (h *TokenHandler) refreshMCPToken(w http.ResponseWriter, r *http.Request, f
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh token is invalid or expired")
 		return
 	}
-	user, err := h.userProvider.GetUser(grant.Subject)
+	user, err := scopedUserProvider(r.Context(), h.userProvider).GetUser(grant.Subject)
 	if err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "authorization subject is unavailable")
 		return

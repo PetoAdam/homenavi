@@ -4,16 +4,19 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/PetoAdam/homenavi/shared/hdp"
 )
 
 type Entry struct {
-	DeviceID    string         `json:"device_id"`
-	Correlation string         `json:"correlation"`
-	Expected    map[string]any `json:"expected,omitempty"`
-	Baseline    map[string]any `json:"baseline,omitempty"`
-	StartedAt   int64          `json:"started_at"`
-	LastStatus  string         `json:"last_status,omitempty"`
-	ExpiresAt   int64          `json:"expires_at"`
+	DeviceID    string            `json:"device_id"`
+	Correlation string            `json:"correlation"`
+	Expected    map[string]any    `json:"expected,omitempty"`
+	Baseline    map[string]any    `json:"baseline,omitempty"`
+	StartedAt   int64             `json:"started_at"`
+	LastStatus  string            `json:"last_status,omitempty"`
+	ExpiresAt   int64             `json:"expires_at"`
+	Trace       *hdp.TraceContext `json:"trace,omitempty"`
 }
 
 type Store interface {

@@ -51,16 +51,19 @@ type WorkflowRunStep struct {
 
 // PendingCorrelation tracks an in-flight command correlation for run completion.
 type PendingCorrelation struct {
-	Corr        string           `gorm:"primaryKey" json:"corr"`
-	RunID       uuid.UUID        `gorm:"type:uuid;index:idx_pending_correlations_run_id;not null" json:"run_id"`
-	Run         *WorkflowRun     `gorm:"foreignKey:RunID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
-	WorkflowID  uuid.UUID        `gorm:"type:uuid;index:idx_pending_correlations_workflow_id;not null" json:"workflow_id"`
-	Workflow    *Workflow        `gorm:"foreignKey:WorkflowID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
-	DeviceID    string           `gorm:"not null" json:"device_id"`
-	HDPDeviceID *uuid.UUID       `gorm:"type:uuid;index" json:"hdp_device_id,omitempty"`
-	HDPDevice   *hdpDeviceRecord `gorm:"foreignKey:HDPDeviceID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
-	CreatedAt   time.Time        `gorm:"not null" json:"created_at"`
-	ExpiresAt   time.Time        `gorm:"index:idx_pending_correlations_expires_at;not null" json:"expires_at"`
+	Corr            string           `gorm:"primaryKey" json:"corr"`
+	RunID           uuid.UUID        `gorm:"type:uuid;index:idx_pending_correlations_run_id;not null" json:"run_id"`
+	Run             *WorkflowRun     `gorm:"foreignKey:RunID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	WorkflowID      uuid.UUID        `gorm:"type:uuid;index:idx_pending_correlations_workflow_id;not null" json:"workflow_id"`
+	Workflow        *Workflow        `gorm:"foreignKey:WorkflowID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	DeviceID        string           `gorm:"not null" json:"device_id"`
+	HDPDeviceID     *uuid.UUID       `gorm:"type:uuid;index" json:"hdp_device_id,omitempty"`
+	HDPDevice       *hdpDeviceRecord `gorm:"foreignKey:HDPDeviceID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	DispatchPending bool             `gorm:"not null;default:false" json:"-"`
+	ResultStatus    *string          `json:"-"`
+	ResultError     string           `gorm:"not null;default:''" json:"-"`
+	CreatedAt       time.Time        `gorm:"not null" json:"created_at"`
+	ExpiresAt       time.Time        `gorm:"index:idx_pending_correlations_expires_at;not null" json:"expires_at"`
 }
 
 // TriggerCooldown serializes state-trigger cooldown claims across automation-service replicas.

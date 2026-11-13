@@ -8,16 +8,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/observability"
 	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
 	mqttinfra "github.com/PetoAdam/homenavi/zigbee-adapter/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/zigbee-adapter/internal/proto/adapterutil"
+	"go.opentelemetry.io/otel/codes"
 )
 
-func (z *ZigbeeAdapter) publishInvalidCommandResult(deviceID, corr, status, errMsg string) {
+func (z *ZigbeeAdapter) publishInvalidCommandResult(ctx context.Context, deviceID, corr, status, errMsg string) {
 	deviceID = strings.Trim(strings.TrimSpace(deviceID), "/")
 	if deviceID == "" || corr == "" {
 		return
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	envelope := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command_result",
@@ -33,8 +37,15 @@ func (z *ZigbeeAdapter) publishInvalidCommandResult(deviceID, corr, status, errM
 	if errMsg != "" {
 		envelope["error"] = errMsg
 	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, envelope)
+	}
 	if b, err := json.Marshal(envelope); err == nil {
-		_ = z.client.Publish(hdpCommandResultPrefix+deviceID, b)
+		if err := z.client.Publish(hdpCommandResultPrefix+deviceID, b); err != nil {
+			span.SetStatus(codes.Error, "MQTT publish failed")
+		}
+	} else {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 	}
 }
 
@@ -222,6 +233,8 @@ func (z *ZigbeeAdapter) clearPendingReconfigure(external string) {
 }
 
 func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
+	ctx, span := observability.StartMessageConsumer(context.Background(), m.Payload(), m.Retained(), time.Now())
+	defer span.End()
 	var envelope map[string]any
 	if err := json.Unmarshal(m.Payload(), &envelope); err != nil {
 		slog.Debug("hdp command decode failed", "topic", m.Topic(), "error", err)
@@ -237,14 +250,14 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 	if proto != "zigbee" {
 		// Strict: only accept explicit zigbee/<id> command targets.
 		if corr != "" {
-			z.publishInvalidCommandResult(deviceID, corr, "rejected", "invalid device_id protocol")
+			z.publishInvalidCommandResult(ctx, deviceID, corr, "rejected", "invalid device_id protocol")
 		}
 		slog.Warn("hdp zigbee command rejected: non-zigbee protocol", "device_id", deviceID, "topic", m.Topic())
 		return
 	}
 	if external == "" {
 		if corr != "" {
-			z.publishInvalidCommandResult(deviceID, corr, "rejected", "missing external id")
+			z.publishInvalidCommandResult(ctx, deviceID, corr, "rejected", "missing external id")
 		}
 		slog.Warn("hdp zigbee command rejected: missing external", "device_id", deviceID, "topic", m.Topic())
 		return
@@ -253,7 +266,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 	if !isCanonicalZigbeeExternal(external) {
 		// Strict: Zigbee devices must be addressed by canonical IEEE external IDs.
 		if corr != "" {
-			z.publishInvalidCommandResult(deviceID, corr, "rejected", "non-canonical zigbee external id (expected 0x[0-9a-f]{16})")
+			z.publishInvalidCommandResult(ctx, deviceID, corr, "rejected", "non-canonical zigbee external id (expected 0x[0-9a-f]{16})")
 		}
 		slog.Error("hdp zigbee command rejected: non-canonical external id", "device_id", deviceID, "external", external, "topic", m.Topic())
 		return
@@ -268,12 +281,11 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 	} else if payload, ok := envelope["state"].(map[string]any); ok {
 		args = payload
 	}
-	ctx := context.Background()
 	dev, _ := z.repo.GetByExternal(ctx, "zigbee", external)
 	if dev == nil {
 		if corr != "" {
 			// Keep the topic/ID stable for callers, but do not attempt any fallback routing.
-			z.publishInvalidCommandResult("zigbee/"+external, corr, "failed", "zigbee device not found")
+			z.publishInvalidCommandResult(ctx, "zigbee/"+external, corr, "failed", "zigbee device not found")
 		}
 		slog.Warn("hdp zigbee command rejected: unknown device", "external", external, "device_id", deviceID, "command", command)
 		return
@@ -300,9 +312,9 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 		ok := z.forwardStateCommand(dev, args, corr)
 		if corr != "" {
 			if ok {
-				z.publishHDPCommandResult(dev, corr, true, "queued", "")
+				z.publishHDPCommandResultWithContext(ctx, dev, corr, true, "queued", "")
 			} else {
-				z.publishHDPCommandResult(dev, corr, false, "failed", "could not route/publish zigbee command")
+				z.publishHDPCommandResultWithContext(ctx, dev, corr, false, "failed", "could not route/publish zigbee command")
 			}
 		}
 	case "remove_device":
@@ -321,7 +333,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 		slog.Info("hdp remove device", "device_id", dev.ID.String(), "external", dev.ExternalID, "corr", corr)
 		z.removeDevice(ctx, dev, "hdp-command")
 		if corr != "" {
-			z.publishHDPCommandResult(dev, corr, true, "applied", "")
+			z.publishHDPCommandResultWithContext(ctx, dev, corr, true, "applied", "")
 		}
 	case "refresh":
 		target := external
@@ -347,7 +359,7 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 			z.requestStateSnapshotForDevice(target, props)
 		}
 		if corr != "" {
-			z.publishHDPCommandResult(dev, corr, true, "queued", "")
+			z.publishHDPCommandResultWithContext(ctx, dev, corr, true, "queued", "")
 		}
 	case "reconfigure":
 		target := external
@@ -360,21 +372,21 @@ func (z *ZigbeeAdapter) handleHDPDeviceCommand(m mqttinfra.Message) {
 		topic, payload, err := zigbeeReconfigureRequest(mode, target)
 		if err != nil {
 			if corr != "" {
-				z.publishHDPCommandResult(dev, corr, false, "rejected", err.Error())
+				z.publishHDPCommandResultWithContext(ctx, dev, corr, false, "rejected", err.Error())
 			}
 			slog.Warn("zigbee reconfigure rejected", "device", dev.ExternalID, "mode", mode, "error", err)
 			return
 		}
 		if err := z.client.Publish(topic, payload); err != nil {
 			if corr != "" {
-				z.publishHDPCommandResult(dev, corr, false, "failed", err.Error())
+				z.publishHDPCommandResultWithContext(ctx, dev, corr, false, "failed", err.Error())
 			}
 			slog.Warn("zigbee reconfigure publish failed", "device", dev.ExternalID, "mode", mode, "error", err)
 			return
 		}
 		z.rememberPendingReconfigure(external, mode, corr)
 		if corr != "" {
-			z.publishHDPCommandResult(dev, corr, true, "queued", "")
+			z.publishHDPCommandResultWithContext(ctx, dev, corr, true, "queued", "")
 		}
 	default:
 		return

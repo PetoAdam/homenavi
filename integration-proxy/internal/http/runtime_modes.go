@@ -11,6 +11,8 @@ import (
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 	"github.com/PetoAdam/homenavi/shared/envx"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type environmentRuntime string
@@ -109,6 +111,8 @@ func helmServiceName(releaseName, chartRef string) string {
 }
 
 func (s *Server) runHelm(ctx context.Context, args ...string) error {
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(ctx, "integration.helm")
+	defer span.End()
 	bin := envx.String("INTEGRATIONS_HELM_BIN", "")
 	if bin == "" {
 		bin = "helm"
@@ -117,6 +121,7 @@ func (s *Server) runHelm(ctx context.Context, args ...string) error {
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		span.SetStatus(codes.Error, "helm command failed")
 		return fmt.Errorf("helm %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil

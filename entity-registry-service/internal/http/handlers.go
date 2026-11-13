@@ -121,12 +121,12 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
-func (s *Server) emit(eventType, entity string, id any) {
+func (s *Server) emit(ctx context.Context, eventType, entity string, id any) {
 	if s.hub == nil {
 		return
 	}
 	strID := strings.TrimSpace(fmt.Sprint(id))
-	s.hub.Broadcast(realtime.Event{Type: eventType, Entity: entity, ID: strID})
+	s.hub.Broadcast(ctx, realtime.Event{Type: eventType, Entity: entity, ID: strID})
 }
 
 type jsonErr struct {

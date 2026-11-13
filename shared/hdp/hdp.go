@@ -1,6 +1,7 @@
 package hdp
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -38,11 +39,30 @@ func DeviceIDFromTopic(prefix, topic string) (string, error) {
 }
 
 type Envelope struct {
-	Schema   string `json:"schema"`
-	Type     string `json:"type"`
-	TS       int64  `json:"ts"`
-	DeviceID string `json:"device_id,omitempty"`
-	Corr     string `json:"corr,omitempty"`
+	Schema   string        `json:"schema"`
+	Type     string        `json:"type"`
+	TS       int64         `json:"ts"`
+	DeviceID string        `json:"device_id,omitempty"`
+	Corr     string        `json:"corr,omitempty"`
+	Trace    *TraceContext `json:"trace,omitempty"`
+}
+
+type TraceContext struct {
+	Traceparent string `json:"traceparent"`
+	Tracestate  string `json:"tracestate,omitempty"`
+}
+
+func (traceContext *TraceContext) UnmarshalJSON(data []byte) error {
+	*traceContext = TraceContext{}
+	if len(data) > 1024 {
+		return nil
+	}
+	type traceFields TraceContext
+	var fields traceFields
+	if err := json.Unmarshal(data, &fields); err == nil {
+		*traceContext = TraceContext(fields)
+	}
+	return nil
 }
 
 type State struct {

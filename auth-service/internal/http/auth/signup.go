@@ -29,7 +29,7 @@ func (h *SignupHandler) HandleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.userService.CreateUser(&req)
+	user, err := h.userService.WithContext(r.Context()).CreateUser(&req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			errors.WriteError(w, appErr)

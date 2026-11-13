@@ -33,7 +33,7 @@ func (h *ResetHandler) HandlePasswordResetRequest(w http.ResponseWriter, r *http
 		return
 	}
 
-	user, err := h.userService.GetUserByEmail(req.Email)
+	user, err := h.userService.WithContext(r.Context()).GetUserByEmail(req.Email)
 	if err != nil {
 		// Don't reveal if user exists or not for security
 		slog.Info("password reset requested for non-existent email", "email", req.Email)
@@ -53,7 +53,7 @@ func (h *ResetHandler) HandlePasswordResetRequest(w http.ResponseWriter, r *http
 	}
 
 	// Send email (mock for now, will use real email service when available)
-	if err := h.emailService.SendPasswordResetCode(user.Email, user.FirstName, code); err != nil {
+	if err := h.emailService.WithContext(r.Context()).SendPasswordResetCode(user.Email, user.FirstName, code); err != nil {
 		slog.Error("failed to send password reset email", "error", err)
 		// Mock email sending
 		slog.Info("mock password reset email sent", "email", user.Email, "code", code)
@@ -74,7 +74,7 @@ func (h *ResetHandler) HandlePasswordResetConfirm(w http.ResponseWriter, r *http
 		return
 	}
 
-	user, err := h.userService.GetUserByEmail(req.Email)
+	user, err := h.userService.WithContext(r.Context()).GetUserByEmail(req.Email)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -85,7 +85,7 @@ func (h *ResetHandler) HandlePasswordResetConfirm(w http.ResponseWriter, r *http
 		return
 	}
 
-	if err := h.userService.UpdatePassword(user.ID, req.NewPassword); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdatePassword(user.ID, req.NewPassword); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update password", err))
 		return
 	}
@@ -131,7 +131,7 @@ func (h *ChangeHandler) HandleChangePassword(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Get user to validate current password
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -144,14 +144,14 @@ func (h *ChangeHandler) HandleChangePassword(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Validate current password by attempting login
-	_, err = h.userService.ValidateCredentials(user.Email, req.CurrentPassword)
+	_, err = h.userService.WithContext(r.Context()).ValidateCredentials(user.Email, req.CurrentPassword)
 	if err != nil {
 		errors.WriteError(w, errors.Unauthorized("current password is incorrect"))
 		return
 	}
 
 	// Update password
-	if err := h.userService.UpdatePassword(userID, req.NewPassword); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdatePassword(userID, req.NewPassword); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update password", err))
 		return
 	}

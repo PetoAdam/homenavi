@@ -9,6 +9,7 @@ import (
 
 	dbinfra "github.com/PetoAdam/homenavi/history-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
 
 	"gorm.io/datatypes"
 )
@@ -51,6 +52,14 @@ func (i *Ingestor) HandleMessage(ctx context.Context, msg MQTTMessage, receivedA
 	if !json.Valid(payload) {
 		slog.Warn("history ingest invalid json", "topic", topic, "device_id", deviceID)
 		return
+	}
+	var envelope struct {
+		Trace *hdp.TraceContext `json:"trace"`
+	}
+	if json.Unmarshal(payload, &envelope) == nil && envelope.Trace != nil && envelope.Trace.Traceparent != "" {
+		consumerCtx, span := observability.StartMessageConsumer(ctx, payload, retained, receivedAt)
+		ctx = consumerCtx
+		defer span.End()
 	}
 
 	p := &dbinfra.DeviceStatePoint{

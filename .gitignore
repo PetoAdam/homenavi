@@ -4,6 +4,9 @@ nginx/certs/
 .env
 keys/
 postgres-data/
+/postgres-data-corrupt-*/
+/postgres-recovery-*/
+/postgres-recovery-*.sql
 emqx/bridge.d/*
 !emqx/bridge.d/.gitkeep
 !emqx/bridge.d/*.example.hocon

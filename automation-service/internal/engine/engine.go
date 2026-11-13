@@ -17,6 +17,7 @@ import (
 	"github.com/PetoAdam/homenavi/shared/cachex"
 	"github.com/PetoAdam/homenavi/shared/hdp"
 	"github.com/PetoAdam/homenavi/shared/mqttx"
+	"github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
@@ -24,7 +25,7 @@ import (
 
 type Engine struct {
 	repo   *dbinfra.Repository
-	mq     *mqttinfra.Client
+	mq     mqttClient
 	events RunEventBus
 
 	httpClient          *http.Client
@@ -33,13 +34,16 @@ type Engine struct {
 	deviceHubURL        string
 	integrationProxyURL string
 
-	selMu         sync.Mutex
-	selectorTTL   time.Duration
-	selectorCache map[string]cachedSelector
-	selectorStore *cachex.JSONStore
-	stateMu       sync.Mutex
-	deviceStates  map[string]map[string]any
-	debounces     map[string]time.Time
+	selMu          sync.Mutex
+	selectorTTL    time.Duration
+	selectorCache  map[string]cachedSelector
+	selectorStore  *cachex.JSONStore
+	traceStore     traceContextStore
+	traceSlots     chan struct{}
+	traceSlotsOnce sync.Once
+	stateMu        sync.Mutex
+	deviceStates   map[string]map[string]any
+	debounces      map[string]time.Time
 
 	mu          sync.RWMutex
 	workflows   map[uuid.UUID]dbinfra.Workflow
@@ -53,9 +57,62 @@ type Engine struct {
 	mqttSharedGroup string
 }
 
+type mqttClient interface {
+	Publish(topic string, payload []byte) error
+	SubscribeWithOptions(opts mqttx.SubscriptionOptions, handler func(mqttinfra.Message)) error
+}
+
+type traceContextStore interface {
+	Get(context.Context, string, any) error
+	Set(context.Context, string, any, time.Duration) error
+	Delete(context.Context, ...string) error
+}
+
+const (
+	maxTraceStoreOperations = 16
+	traceStoreTimeout       = 25 * time.Millisecond
+)
+
+func (e *Engine) tryTraceStore(ctx context.Context, operation func(context.Context)) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	e.traceSlotsOnce.Do(func() { e.traceSlots = make(chan struct{}, maxTraceStoreOperations) })
+	select {
+	case e.traceSlots <- struct{}{}:
+	default:
+		return false
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, traceStoreTimeout)
+	defer cancel()
+	done := make(chan struct{}, 1)
+	go func() {
+		defer func() { <-e.traceSlots }()
+		operation(operationCtx)
+		done <- struct{}{}
+	}()
+	select {
+	case <-done:
+		return true
+	case <-operationCtx.Done():
+		return false
+	}
+}
+
 type cachedSelector struct {
 	FetchedAt time.Time
 	Targets   []resolvedTarget
+}
+
+type pendingCommandTrace struct {
+	DeviceID  string            `json:"device_id"`
+	StartedAt time.Time         `json:"started_at"`
+	Trace     *hdp.TraceContext `json:"trace"`
+}
+
+func commandTraceKey(correlation string) string {
+	digest := sha256.Sum256([]byte(correlation))
+	return fmt.Sprintf("automation-service:command-trace:%x", digest[:])
 }
 
 type resolvedTarget struct {
@@ -72,6 +129,7 @@ type Options struct {
 	MQTTSharedGroup     string
 	RunEvents           RunEventBus
 	SelectorStore       *cachex.JSONStore
+	TraceStore          *cachex.JSONStore
 }
 
 func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
@@ -80,9 +138,11 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
+	client := *hc
+	client.Transport = observability.InstrumentHTTPTransport(client.Transport)
+	hc = &client
 	eng := &Engine{
 		repo:                repo,
-		mq:                  mq,
 		events:              opts.RunEvents,
 		httpClient:          hc,
 		emailServiceURL:     strings.TrimRight(strings.TrimSpace(opts.EmailServiceURL), "/"),
@@ -104,6 +164,12 @@ func New(repo *dbinfra.Repository, mq *mqttinfra.Client, opts Options) *Engine {
 	}
 	if eng.events == nil {
 		eng.events = NewRunEventHub()
+	}
+	if opts.TraceStore != nil {
+		eng.traceStore = opts.TraceStore
+	}
+	if mq != nil {
+		eng.mq = mq
 	}
 	eng.noteMQTTConnected(time.Now())
 	if mq != nil {
@@ -207,8 +273,36 @@ func (e *Engine) pruneLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			_ = e.repo.PruneExpiredPending(ctx)
+			e.expirePendingCommands(ctx, time.Now().UTC())
 			_ = e.repo.PruneScheduledTriggerClaims(ctx, time.Now().UTC().Add(-24*time.Hour))
+		}
+	}
+}
+
+func (e *Engine) expirePendingCommands(ctx context.Context, now time.Time) {
+	for {
+		expired, more, err := e.repo.ExpirePendingCommands(ctx, now)
+		if err != nil {
+			slog.Warn("expire pending commands", "error", err)
+			return
+		}
+		for _, command := range expired {
+			if e.traceStore != nil {
+				e.tryTraceStore(ctx, func(traceCtx context.Context) {
+					_ = e.traceStore.Delete(traceCtx, commandTraceKey(command.Pending.Corr))
+				})
+			}
+			stepStatus, errMsg := "unknown", "command outcome unknown: dispatch or result timed out"
+			if command.Pending.ResultStatus != nil {
+				stepStatus, errMsg = "success", command.Pending.ResultError
+			}
+			for _, step := range command.Steps {
+				e.publishRunEvent(command.Pending.RunID, RunEvent{Type: "node_finished", WorkflowID: command.Pending.WorkflowID.String(), NodeID: step.NodeID, StepID: step.ID.String(), NodeKind: "action.send_command", Status: stepStatus})
+			}
+			e.publishRunEvent(command.Pending.RunID, RunEvent{Type: "run_finished", WorkflowID: command.Pending.WorkflowID.String(), Status: command.Status, Error: errMsg})
+		}
+		if !more {
+			return
 		}
 	}
 }

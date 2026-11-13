@@ -10,18 +10,19 @@ import (
 	"time"
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/google/uuid"
 )
 
-func (s *Server) publishDeviceMetadata(dev *model.Device) {
+func (s *Server) publishDeviceMetadata(ctx context.Context, dev *model.Device) {
 	if dev == nil {
 		return
 	}
 	s.handlePairingCandidate(dev)
-	s.publishHDPMeta(dev)
+	s.publishHDPMeta(ctx, dev)
 }
 
-func (s *Server) publishDeviceRemoval(dev *model.Device, reason string) {
+func (s *Server) publishDeviceRemoval(ctx context.Context, dev *model.Device, reason string) {
 	if dev == nil {
 		return
 	}
@@ -44,10 +45,10 @@ func (s *Server) publishDeviceRemoval(dev *model.Device, reason string) {
 		}
 	}
 	slog.Info("device removal broadcast", "device_id", dev.ID.String(), "protocol", dev.Protocol, "reason", reason)
-	s.publishHDPEvent(hdpID, "device_removed", map[string]any{"reason": reason})
+	s.publishHDPEvent(ctx, hdpID, "device_removed", map[string]any{"reason": reason})
 }
 
-func (s *Server) publishHDPMeta(dev *model.Device) {
+func (s *Server) publishHDPMeta(ctx context.Context, dev *model.Device) {
 	if dev == nil {
 		return
 	}
@@ -78,6 +79,11 @@ func (s *Server) publishHDPMeta(dev *model.Device) {
 			envelope["inputs"] = inputs
 		}
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, envelope)
+	}
 	if data, err := json.Marshal(envelope); err == nil {
 		if err := s.mqtt.PublishWith(hdpMetadataPrefix+hdpID, data, true); err != nil {
 			slog.Warn("hdp metadata publish failed", "device_id", hdpID, "error", err)
@@ -85,7 +91,7 @@ func (s *Server) publishHDPMeta(dev *model.Device) {
 	}
 }
 
-func (s *Server) publishHDPEvent(deviceID, event string, data map[string]any) {
+func (s *Server) publishHDPEvent(ctx context.Context, deviceID, event string, data map[string]any) {
 	if strings.TrimSpace(deviceID) == "" || strings.TrimSpace(event) == "" {
 		return
 	}
@@ -99,6 +105,11 @@ func (s *Server) publishHDPEvent(deviceID, event string, data map[string]any) {
 	if len(data) > 0 {
 		envelope["data"] = data
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, envelope)
+	}
 	if b, err := json.Marshal(envelope); err == nil {
 		if err := s.mqtt.Publish(hdpEventPrefix+deviceID, b); err != nil {
 			slog.Warn("hdp event publish failed", "device_id", deviceID, "event", event, "error", err)
@@ -106,7 +117,7 @@ func (s *Server) publishHDPEvent(deviceID, event string, data map[string]any) {
 	}
 }
 
-func (s *Server) publishHDPCommand(deviceID string, cmd map[string]any) error {
+func (s *Server) publishHDPCommand(ctx context.Context, deviceID string, cmd map[string]any) error {
 	if strings.TrimSpace(deviceID) == "" || cmd == nil {
 		return errors.New("device_id and command are required")
 	}
@@ -121,6 +132,11 @@ func (s *Server) publishHDPCommand(deviceID string, cmd map[string]any) error {
 	}
 	if _, ok := cmd["ts"]; !ok {
 		cmd["ts"] = time.Now().UnixMilli()
+	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, cmd)
 	}
 	if b, err := json.Marshal(cmd); err == nil {
 		if err := s.mqtt.Publish(hdpCommandPrefix+deviceID, b); err != nil {

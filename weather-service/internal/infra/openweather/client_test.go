@@ -5,7 +5,39 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestWeatherLookupTracesWithoutSendingContextExternally(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("traceparent") != "" || request.Header.Get("baggage") != "" {
+			t.Error("trace context sent to weather provider")
+		}
+		_, _ = writer.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	client := newClient("secret-key", server.Client(), server.URL, server.URL)
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "request")
+	if _, err := client.SearchLocations(ctx, "Budapest", 5); err != nil {
+		t.Fatal(err)
+	}
+	parent.End()
+	spans := recorder.Ended()
+	if len(spans) != 2 || spans[0].Parent().SpanID() != parent.SpanContext().SpanID() {
+		t.Fatal("weather request did not produce a child client span")
+	}
+}
 
 func TestSearchLocationsFallsBackToMockOnAuthFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

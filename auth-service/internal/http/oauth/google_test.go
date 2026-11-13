@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +21,7 @@ func (f *fakeGoogleAuthService) ValidateOAuthState(state string) error {
 	return nil
 }
 
-func (f *fakeGoogleAuthService) ExchangeGoogleOAuthCode(code, redirectURI string) (*clientsinfra.GoogleUserInfo, error) {
+func (f *fakeGoogleAuthService) ExchangeGoogleOAuthCode(_ context.Context, code, redirectURI string) (*clientsinfra.GoogleUserInfo, error) {
 	f.exchangeCalled = true
 	return &clientsinfra.GoogleUserInfo{ID: "google-123", Email: "locked@example.com"}, nil
 }

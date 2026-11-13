@@ -32,7 +32,7 @@ func (h *LoginHandler) HandleLoginStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.authService.StartLogin(req.Email, req.Password, h.userService, h.emailService)
+	result, err := h.authService.StartLogin(req.Email, req.Password, h.userService.WithContext(r.Context()), h.emailService.WithContext(r.Context()))
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			errors.WriteError(w, appErr)
@@ -65,9 +65,9 @@ func (h *LoginHandler) HandleLoginFinish(w http.ResponseWriter, r *http.Request)
 	var tokens *authdomain.TokenPair
 	var err error
 	if req.RecoveryCode {
-		tokens, err = h.authService.FinishLoginWithRecoveryCode(req.UserID, req.Code, h.userService, h.userService)
+		tokens, err = h.authService.FinishLoginWithRecoveryCode(req.UserID, req.Code, h.userService.WithContext(r.Context()), h.userService.WithContext(r.Context()))
 	} else {
-		tokens, err = h.authService.FinishLogin(req.UserID, req.Code, h.userService)
+		tokens, err = h.authService.FinishLogin(req.UserID, req.Code, h.userService.WithContext(r.Context()))
 	}
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {

@@ -16,6 +16,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -44,6 +47,25 @@ func TestDiscoveryHTTPReadinessAndPagination(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !strings.Contains(fmt.Sprint(payload), "thread/two") {
 		t.Fatalf("status=%d payload=%v", response.StatusCode, payload)
 	}
+}
+
+func TestEmitPreservesRequestTrace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(t.Context())
+	})
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "request")
+	defer parent.End()
+	NewServer(nil, realtime.NewHub()).emit(ctx, "ers.room.created", "room", "room-1")
+	spans := recorder.Ended()
+	if len(spans) != 1 || spans[0].Parent().SpanID() != parent.SpanContext().SpanID() {
+		t.Fatal("realtime event did not retain the request parent")
+	}
+	NewServer(nil, nil).emit(ctx, "ers.room.created", "room", "room-1")
 }
 
 func TestWebSocket_EmitsOnRoomCreate(t *testing.T) {

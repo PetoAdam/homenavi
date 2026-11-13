@@ -29,7 +29,7 @@ func (h *RefreshHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := h.authService.RefreshSession(refreshToken, h.userService)
+	tokens, err := h.authService.RefreshSession(refreshToken, h.userService.WithContext(r.Context()))
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			errors.WriteError(w, appErr)

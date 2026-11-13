@@ -78,7 +78,7 @@ func (s *Server) handleDevicesCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load device")
 		return
 	}
-	s.emit("ers.device.created", "device", dev.ID)
+	s.emit(r.Context(), "ers.device.created", "device", dev.ID)
 	writeJSON(w, http.StatusCreated, view)
 }
 
@@ -159,7 +159,7 @@ func (s *Server) handleDevicesPatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load device")
 		return
 	}
-	s.emit("ers.device.updated", "device", id)
+	s.emit(r.Context(), "ers.device.updated", "device", id)
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -174,7 +174,7 @@ func (s *Server) handleDevicesDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.device.deleted", "device", id)
+	s.emit(r.Context(), "ers.device.deleted", "device", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
@@ -211,7 +211,7 @@ func (s *Server) handleDevicesSetTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load device")
 		return
 	}
-	s.emit("ers.device.updated", "device", id)
+	s.emit(r.Context(), "ers.device.updated", "device", id)
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -258,6 +258,6 @@ func (s *Server) handleDevicesSetHDPBindings(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "failed to load device")
 		return
 	}
-	s.emit("ers.device.bindings_updated", "device", id)
+	s.emit(r.Context(), "ers.device.bindings_updated", "device", id)
 	writeJSON(w, http.StatusOK, view)
 }

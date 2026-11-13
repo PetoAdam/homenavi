@@ -162,7 +162,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 	startedByCompose := false
 	startedByHelm := false
 	op.set("starting", 45, "Starting integration")
-	opCtx, cancelOp := context.WithTimeout(context.Background(), s.operationTimeout())
+	opCtx, cancelOp := startRuntimeOperation(r.Context(), "integration.install", s.operationTimeout())
 	defer cancelOp()
 	if mode == runtimeCompose && strings.TrimSpace(composeFile) != "" {
 		if err := s.composeInstall(opCtx, composeFile, id); err != nil {
@@ -223,7 +223,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	op.set("reloading", 85, "Reloading integration proxy")
-	if err := s.ReloadFromConfig(); err != nil {
+	if err := s.reloadFromConfig(opCtx); err != nil {
 		if saveErr := config.Save(s.configPath, cfg); saveErr != nil {
 			s.logger.Printf("failed to rollback config after reload error id=%s err=%v", id, saveErr)
 		}
@@ -237,7 +237,7 @@ func (s *Server) handleInstall(w http.ResponseWriter, r *http.Request) {
 				s.logger.Printf("failed to rollback helm install after reload error id=%s err=%v", id, stopErr)
 			}
 		}
-		if reloadErr := s.ReloadFromConfig(); reloadErr != nil {
+		if reloadErr := s.reloadFromConfig(opCtx); reloadErr != nil {
 			s.logger.Printf("failed to reload proxy after rollback id=%s err=%v", id, reloadErr)
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -381,7 +381,7 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 	composeFile = s.expandComposePath(composeFile)
 	releaseName := firstNonEmpty(strings.TrimSpace(removed.HelmReleaseName), s.defaultHelmReleaseName(id))
 	namespace := firstNonEmpty(strings.TrimSpace(removed.HelmNamespace), s.defaultHelmNamespace())
-	opCtx, cancelOp := context.WithTimeout(context.Background(), s.operationTimeout())
+	opCtx, cancelOp := startRuntimeOperation(r.Context(), "integration.uninstall", s.operationTimeout())
 	defer cancelOp()
 	cfg.Integrations = updated
 	if err := config.Save(s.configPath, cfg); err != nil {
@@ -406,7 +406,7 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.ReloadFromConfig(); err != nil {
+	if err := s.reloadFromConfig(opCtx); err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to reload", "code": http.StatusInternalServerError})

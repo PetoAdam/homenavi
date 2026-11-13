@@ -11,10 +11,13 @@ import (
 	"strings"
 	"time"
 
+	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	mqttinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/mqtt"
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const retainedStateSkewAllowance = 5 * time.Second
@@ -27,6 +30,11 @@ func (e *Engine) handleState(ctx context.Context, m mqttinfra.Message) {
 	}
 	if st.Schema != hdp.SchemaV1 || st.Type != "state" {
 		return
+	}
+	if st.Trace != nil && st.Trace.Traceparent != "" {
+		var span trace.Span
+		ctx, span = observability.StartMessageConsumer(ctx, payload, m.Retained(), time.Now())
+		defer span.End()
 	}
 	previousState, currentState := e.recordDeviceState(st.DeviceID, st.State)
 
@@ -336,22 +344,20 @@ func (e *Engine) resolveHDPDeviceID(ctx context.Context, externalRef string) *uu
 }
 
 func (e *Engine) handleCommandResult(ctx context.Context, m mqttinfra.Message) {
-	res, err := decodeJSON[HDPCommandResult](m.Payload())
+	payload := m.Payload()
+	res, err := decodeJSON[HDPCommandResult](payload)
 	if err != nil {
 		return
 	}
 	if res.Schema != hdp.SchemaV1 || res.Type != "command_result" {
 		return
 	}
+	ctx, span := e.startCommandResultConsumer(ctx, m, res)
+	if span != nil {
+		defer span.End()
+	}
 	corr := strings.TrimSpace(res.Corr)
 	if corr == "" {
-		return
-	}
-	p, err := e.repo.ConsumePendingCorr(ctx, corr)
-	if err != nil {
-		return
-	}
-	if p == nil {
 		return
 	}
 	status := "failed"
@@ -360,7 +366,40 @@ func (e *Engine) handleCommandResult(ctx context.Context, m mqttinfra.Message) {
 		status = "success"
 		errMsg = ""
 	}
-	_ = e.repo.FinishRun(ctx, p.RunID, status, errMsg)
+	p, err := e.repo.ResolvePendingCommand(ctx, corr, &status, errMsg)
+	if err != nil {
+		slog.Warn("finish run after command result failed", "error", err)
+		return
+	}
+	e.publishCompletedCommand(ctx, p)
+}
+
+func (e *Engine) publishCompletedCommand(ctx context.Context, pending *dbinfra.PendingCorrelation) {
+	if pending == nil {
+		return
+	}
+	if e.traceStore != nil {
+		e.tryTraceStore(ctx, func(traceCtx context.Context) { _ = e.traceStore.Delete(traceCtx, commandTraceKey(pending.Corr)) })
+	}
+	e.publishRunEvent(pending.RunID, RunEvent{Type: "run_finished", WorkflowID: pending.WorkflowID.String(), Status: *pending.ResultStatus, Error: pending.ResultError})
+}
+
+func (e *Engine) startCommandResultConsumer(ctx context.Context, message mqttinfra.Message, result HDPCommandResult) (context.Context, trace.Span) {
+	if result.Trace != nil && result.Trace.Traceparent != "" {
+		return observability.StartMessageConsumer(ctx, message.Payload(), message.Retained(), time.Now())
+	}
+	deviceID, err := hdp.DeviceIDFromTopic(hdp.CommandResultPrefix, message.Topic())
+	if err != nil || result.DeviceID == "" || deviceID != result.DeviceID || strings.TrimSpace(result.Corr) == "" || e.traceStore == nil {
+		return ctx, nil
+	}
+	var pending pendingCommandTrace
+	var lookupErr error
+	if !e.tryTraceStore(ctx, func(traceCtx context.Context) {
+		lookupErr = e.traceStore.Get(traceCtx, commandTraceKey(strings.TrimSpace(result.Corr)), &pending)
+	}) || lookupErr != nil || pending.DeviceID != deviceID || pending.Trace == nil {
+		return ctx, nil
+	}
+	return observability.StartCorrelatedMessageConsumer(message.Payload(), message.Retained(), time.Now(), pending.Trace, pending.StartedAt)
 }
 
 func matchStateTrigger(t TriggerDeviceState, state map[string]any) bool {

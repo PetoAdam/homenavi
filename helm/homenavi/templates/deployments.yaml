@@ -8,6 +8,13 @@ metadata:
     {{- include "homenavi.componentLabels" (dict "root" $ "component" $name) | nindent 4 }}
 spec:
   replicas: {{ default 1 $svc.replicas }}
+  {{- if eq $name "automation-service" }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  {{- end }}
   selector:
     matchLabels:
       {{- include "homenavi.selectorLabels" $ | nindent 6 }}
@@ -57,8 +64,9 @@ spec:
       {{- $usesMQTT := default false $svc.usesMQTT }}
       {{- $injectMQTTWebsocketUpstream := default false $svc.injectMQTTWebsocketUpstream }}
       {{- $otelTracesEndpoint := trim (default "" $.Values.global.otelExporterOtlpTracesEndpoint) }}
-      {{- $otelCapableServices := list "api-gateway" "auth-service" "user-service" "dashboard-service" "email-service" "device-hub" "zigbee-adapter" "mock-adapter" }}
+      {{- $otelCapableServices := list "api-gateway" "auth-service" "user-service" "dashboard-service" "email-service" "profile-picture-service" "device-hub" "integration-proxy" "zigbee-adapter" "mock-adapter" "automation-service" "entity-registry-service" "history-service" "mcp-service" "weather-service" }}
       {{- $injectOTLPTracesEndpoint := and (has $name $otelCapableServices) (ne $otelTracesEndpoint "") (not (hasKey $svcEnv "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) (not (hasKey $svcEnvValueFrom "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) }}
+      {{- $injectMQTTTracePropagation := and $.Values.global.mqttTracePropagationEnabled (has $name (list "device-hub" "mock-adapter" "zigbee-adapter" "automation-service" "entity-registry-service")) (not (hasKey $svcEnv "HOMENAVI_MQTT_TRACE_ENABLED")) (not (hasKey $svcEnvValueFrom "HOMENAVI_MQTT_TRACE_ENABLED")) }}
       {{- $serviceDependencies := default (list) $svc.dependsOn }}
       {{- $zigbee2mqttBootstrapEnabled := and $zigbee2mqttHasConfigSource (default true $svc.bootstrapConfiguration) }}
       {{- $zigbee2mqttOverwriteOnDeploy := and $zigbee2mqttBootstrapEnabled (default false $svc.overwriteConfigurationOnDeploy) }}
@@ -258,7 +266,7 @@ spec:
           livenessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or $usesMQTT $injectMQTTWebsocketUpstream $injectOTLPTracesEndpoint $svc.env $svc.envValueFrom }}
+          {{- if or $usesMQTT $injectMQTTWebsocketUpstream $injectOTLPTracesEndpoint $injectMQTTTracePropagation $svc.env $svc.envValueFrom }}
           env:
             {{- if $usesMQTT }}
             - name: MQTT_BROKER_URL
@@ -273,6 +281,10 @@ spec:
             {{- if $injectOTLPTracesEndpoint }}
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
               value: {{ $otelTracesEndpoint | quote }}
+            {{- end }}
+            {{- if $injectMQTTTracePropagation }}
+            - name: HOMENAVI_MQTT_TRACE_ENABLED
+              value: "true"
             {{- end }}
             {{- if $injectRedisAddr }}
             - name: REDIS_ADDR

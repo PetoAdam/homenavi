@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +52,7 @@ func TestPublishHDPMetaIncludesOptionalDeviceType(t *testing.T) {
 	for _, deviceType := range []string{"thermostat", ""} {
 		mqtt := &pairingTestMQTTClient{}
 		server := NewServer(nil, mqtt)
-		server.publishHDPMeta(&model.Device{Protocol: "thread", ExternalID: "device-1", Type: deviceType})
+		server.publishHDPMeta(context.Background(), &model.Device{Protocol: "thread", ExternalID: "device-1", Type: deviceType})
 		if len(mqtt.published) != 1 || !mqtt.published[0].retain {
 			t.Fatalf("unexpected messages: %#v", mqtt.published)
 		}

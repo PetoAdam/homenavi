@@ -107,7 +107,7 @@ func (s *Server) handleGroupsCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load group")
 		return
 	}
-	s.emit("ers.group.created", "group", group.ID)
+	s.emit(r.Context(), "ers.group.created", "group", group.ID)
 	writeJSON(w, http.StatusCreated, view)
 }
 
@@ -190,7 +190,7 @@ func (s *Server) handleGroupsPatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load group")
 		return
 	}
-	s.emit("ers.group.updated", "group", id)
+	s.emit(r.Context(), "ers.group.updated", "group", id)
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -205,7 +205,7 @@ func (s *Server) handleGroupsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.group.deleted", "group", id)
+	s.emit(r.Context(), "ers.group.deleted", "group", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
@@ -230,7 +230,7 @@ func (s *Server) handleGroupsSetMembers(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to load group")
 		return
 	}
-	s.emit("ers.group.updated", "group", id)
+	s.emit(r.Context(), "ers.group.updated", "group", id)
 	writeJSON(w, http.StatusOK, view)
 }
 

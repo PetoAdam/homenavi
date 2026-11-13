@@ -13,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/PetoAdam/homenavi/shared/envx"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func (s *Server) composeEnabled() bool {
@@ -113,8 +115,11 @@ func (s *Server) runCompose(ctx context.Context, composeFile string, args ...str
 	if !s.composeEnabled() {
 		return nil
 	}
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(ctx, "integration.compose")
+	defer span.End()
 	base, err := s.composeBaseArgs(composeFile)
 	if err != nil {
+		span.SetStatus(codes.Error, "compose configuration invalid")
 		return err
 	}
 	bin := envx.String("INTEGRATIONS_COMPOSE_BIN", "")
@@ -125,6 +130,7 @@ func (s *Server) runCompose(ctx context.Context, composeFile string, args ...str
 	cmd.Env = os.Environ()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		span.SetStatus(codes.Error, "compose command failed")
 		return fmt.Errorf("compose %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return nil

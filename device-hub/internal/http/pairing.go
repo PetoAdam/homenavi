@@ -13,7 +13,9 @@ import (
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	dbinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/db"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/codes"
 
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
 )
@@ -144,7 +146,7 @@ func (s *Server) handlePairings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "protocol is required", http.StatusBadRequest)
 			return
 		}
-		session, err := s.startPairing(protocol, req.Timeout, req.Mode, req.FlowID, req.Inputs, req.Metadata)
+		session, err := s.startPairingWithContext(r.Context(), protocol, req.Timeout, req.Mode, req.FlowID, req.Inputs, req.Metadata)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, errPairingActive) {
@@ -163,7 +165,7 @@ func (s *Server) handlePairings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "protocol query parameter required", http.StatusBadRequest)
 			return
 		}
-		session, err := s.stopPairing(protocol, "stopped")
+		session, err := s.stopPairingWithContext(r.Context(), protocol, "stopped")
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, errPairingNotFound) {
@@ -235,6 +237,10 @@ func (s *Server) snapshotPairings() []pairingSession {
 }
 
 func (s *Server) startPairing(protocol string, timeout int, mode, flowID string, inputs map[string]any, metadata pairingMetadata) (*pairingSession, error) {
+	return s.startPairingWithContext(context.Background(), protocol, timeout, mode, flowID, inputs, metadata)
+}
+
+func (s *Server) startPairingWithContext(ctx context.Context, protocol string, timeout int, mode, flowID string, inputs map[string]any, metadata pairingMetadata) (*pairingSession, error) {
 	if err := s.ensurePairingSupported(protocol); err != nil {
 		return nil, err
 	}
@@ -267,12 +273,12 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 		if err != nil {
 			return nil, fmt.Errorf("encode pairing session: %w", err)
 		}
-		created, err := s.repo.CreatePairingLifecycle(context.Background(), dbinfra.PairingLifecycle{ID: session.ID, Protocol: session.Protocol, Status: session.Status, Active: true, Session: payload, StartedAt: session.StartedAt, ExpiresAt: session.ExpiresAt})
+		created, err := s.repo.CreatePairingLifecycle(ctx, dbinfra.PairingLifecycle{ID: session.ID, Protocol: session.Protocol, Status: session.Status, Active: true, Session: payload, StartedAt: session.StartedAt, ExpiresAt: session.ExpiresAt})
 		if err != nil {
 			return nil, fmt.Errorf("create pairing session: %w", err)
 		}
 		if !created {
-			lifecycle, found, err := s.repo.GetActivePairing(context.Background(), protocol)
+			lifecycle, found, err := s.repo.GetActivePairing(ctx, protocol)
 			if err != nil {
 				return nil, fmt.Errorf("load active pairing session: %w", err)
 			}
@@ -286,7 +292,7 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 			clone := existing.clone()
 			return &clone, nil
 		}
-		if err := s.publishPairingCommand(protocol, "start", timeout, mode, flowID, inputs); err != nil {
+		if err := s.publishPairingCommandWithContext(ctx, protocol, "start", timeout, mode, flowID, inputs); err != nil {
 			_, _, _ = s.mutatePersistentPairing(protocol, func(current *pairingSession) (bool, error) {
 				if current.ID != session.ID || !current.Active {
 					return false, nil
@@ -298,7 +304,7 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 			})
 			return nil, fmt.Errorf("failed to start pairing: %w", err)
 		}
-		s.emitPairingEvent(session.clone())
+		s.emitPairingEventWithContext(ctx, session.clone())
 		clone := session.clone()
 		return &clone, nil
 	}
@@ -328,7 +334,7 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 	s.pairings[protocol] = session
 	s.pairingMu.Unlock()
 	s.persistPairingLifecycle(session)
-	if err := s.publishPairingCommand(protocol, "start", timeout, mode, flowID, inputs); err != nil {
+	if err := s.publishPairingCommandWithContext(ctx, protocol, "start", timeout, mode, flowID, inputs); err != nil {
 		s.pairingMu.Lock()
 		delete(s.pairings, protocol)
 		s.pairingMu.Unlock()
@@ -336,13 +342,17 @@ func (s *Server) startPairing(protocol string, timeout int, mode, flowID string,
 	}
 	session.Status = "active"
 	session.Stage = "active"
-	s.emitPairingEvent(session.clone())
+	s.emitPairingEventWithContext(ctx, session.clone())
 	s.startPairingTimeout(protocol, session.ID, session.ExpiresAt)
 	clone := session.clone()
 	return &clone, nil
 }
 
 func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
+	return s.stopPairingWithContext(context.Background(), protocol, status)
+}
+
+func (s *Server) stopPairingWithContext(ctx context.Context, protocol, status string) (*pairingSession, error) {
 	if err := s.ensurePairingSupported(protocol); err != nil {
 		return nil, err
 	}
@@ -362,8 +372,8 @@ func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
 		if !changed {
 			return nil, errPairingNotFound
 		}
-		_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
-		s.emitPairingEvent(snapshot)
+		_ = s.publishPairingCommandWithContext(ctx, protocol, "stop", 0, "", "", nil)
+		s.emitPairingEventWithContext(ctx, snapshot)
 		s.completePairingLifecycle(snapshot)
 		return &snapshot, nil
 	}
@@ -382,8 +392,8 @@ func (s *Server) stopPairing(protocol, status string) (*pairingSession, error) {
 	session.ExpiresAt = time.Now().UTC()
 	clone := session.clone()
 	s.pairingMu.Unlock()
-	_ = s.publishPairingCommand(protocol, "stop", 0, "", "", nil)
-	s.emitPairingEvent(clone)
+	_ = s.publishPairingCommandWithContext(ctx, protocol, "stop", 0, "", "", nil)
+	s.emitPairingEventWithContext(ctx, clone)
 	s.completePairingLifecycle(clone)
 	return &clone, nil
 }
@@ -489,11 +499,21 @@ func (s *Server) handlePairingTimeout(protocol, sessionID string) {
 }
 
 func (s *Server) publishPairingCommand(protocol, action string, timeout int, mode, flowID string, inputs map[string]any) error {
+	return s.publishPairingCommandWithContext(context.Background(), protocol, action, timeout, mode, flowID, inputs)
+}
+
+func (s *Server) publishPairingCommandWithContext(ctx context.Context, protocol, action string, timeout int, mode, flowID string, inputs map[string]any) error {
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	hdpPayload := map[string]any{
 		"schema":   hdpSchema,
 		"type":     "pairing_command",
 		"protocol": protocol,
 		"action":   action,
+		"ts":       time.Now().UnixMilli(),
+	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, hdpPayload)
 	}
 	if timeout > 0 {
 		hdpPayload["timeout"] = timeout
@@ -510,9 +530,11 @@ func (s *Server) publishPairingCommand(protocol, action string, timeout int, mod
 	}
 	b, err := json.Marshal(hdpPayload)
 	if err != nil {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 		return err
 	}
 	if err := s.mqtt.Publish(hdpPairingCommandPrefix+protocol, b); err != nil {
+		span.SetStatus(codes.Error, "MQTT publish failed")
 		return err
 	}
 	return nil
@@ -537,6 +559,10 @@ func sanitizePairingInputs(inputs map[string]any) map[string]any {
 }
 
 func (s *Server) emitPairingEvent(session pairingSession) {
+	s.emitPairingEventWithContext(context.Background(), session)
+}
+
+func (s *Server) emitPairingEventWithContext(ctx context.Context, session pairingSession) {
 	data, err := json.Marshal(session)
 	if err != nil {
 		slog.Warn("encode pairing event failed", "error", err)
@@ -545,13 +571,15 @@ func (s *Server) emitPairingEvent(session pairingSession) {
 	if err := s.mqtt.Publish(hdpPairingProgressPrefix+session.Protocol, data); err != nil {
 		slog.Warn("pairing event publish failed", "error", err)
 	}
-	s.publishHDPPairingProgress(session)
+	s.publishHDPPairingProgress(ctx, session)
 }
 
-func (s *Server) publishHDPPairingProgress(session pairingSession) {
+func (s *Server) publishHDPPairingProgress(ctx context.Context, session pairingSession) {
 	if session.Protocol == "" {
 		return
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	envelope := map[string]any{
 		"id":         session.ID,
 		"schema":     hdpSchema,
@@ -564,6 +592,9 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 		"started_at": session.StartedAt,
 		"expires_at": session.ExpiresAt,
 		"ts":         time.Now().UnixMilli(),
+	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, envelope)
 	}
 	if session.Stage == "" {
 		envelope["stage"] = session.Status
@@ -603,8 +634,11 @@ func (s *Server) publishHDPPairingProgress(session pairingSession) {
 	}
 	if b, err := json.Marshal(envelope); err == nil {
 		if err := s.mqtt.Publish(hdpPairingProgressPrefix+session.Protocol, b); err != nil {
+			span.SetStatus(codes.Error, "MQTT publish failed")
 			slog.Warn("hdp pairing progress publish failed", "protocol", session.Protocol, "error", err)
 		}
+	} else {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 	}
 }
 
@@ -621,6 +655,12 @@ func (s *Server) handleHDPPairingProgressEvent(msg mqttinfra.Message) {
 	if strings.EqualFold(asString(evt["origin"]), "device-hub") {
 		return
 	}
+	ctx := context.Background()
+	if _, ok := evt["trace"]; ok {
+		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		defer span.End()
+		ctx = consumerCtx
+	}
 	if protoVal := asString(evt["protocol"]); protoVal != "" {
 		protocol = protoVal
 	}
@@ -636,7 +676,7 @@ func (s *Server) handleHDPPairingProgressEvent(msg mqttinfra.Message) {
 	if external == "" {
 		external = asString(evt["device_id"])
 	}
-	s.processPairingProgress(protocol, stage, status, external, pairingProgressUpdate{
+	s.processPairingProgressWithContext(ctx, protocol, stage, status, external, pairingProgressUpdate{
 		Message:        message,
 		ErrorCode:      errorCode,
 		Mode:           mode,
@@ -855,6 +895,10 @@ func multiDevicePairingNotice(count int) string {
 }
 
 func (s *Server) processPairingProgress(protocol, stage, status, externalID string, update pairingProgressUpdate) {
+	s.processPairingProgressWithContext(context.Background(), protocol, stage, status, externalID, update)
+}
+
+func (s *Server) processPairingProgressWithContext(ctx context.Context, protocol, stage, status, externalID string, update pairingProgressUpdate) {
 	proto := normalizeProtocol(protocol)
 	if proto == "" {
 		return
@@ -862,7 +906,7 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	stage = strings.TrimSpace(strings.ToLower(stage))
 	status = strings.TrimSpace(strings.ToLower(status))
 	if s.repo != nil {
-		s.processPersistentPairingProgress(proto, stage, status, externalID, update)
+		s.processPersistentPairingProgress(ctx, proto, stage, status, externalID, update)
 		return
 	}
 
@@ -931,11 +975,11 @@ func (s *Server) processPairingProgress(protocol, stage, status, externalID stri
 	}
 	snapshot := session.clone()
 	s.pairingMu.Unlock()
-	s.emitPairingEvent(snapshot)
+	s.emitPairingEventWithContext(ctx, snapshot)
 	s.completePairingLifecycle(snapshot)
 }
 
-func (s *Server) processPersistentPairingProgress(protocol, stage, status, externalID string, update pairingProgressUpdate) {
+func (s *Server) processPersistentPairingProgress(ctx context.Context, protocol, stage, status, externalID string, update pairingProgressUpdate) {
 	snapshot, changed, err := s.mutatePersistentPairing(protocol, func(session *pairingSession) (bool, error) {
 		if !session.Active {
 			return false, nil
@@ -997,7 +1041,7 @@ func (s *Server) processPersistentPairingProgress(protocol, stage, status, exter
 		return
 	}
 	if changed {
-		s.emitPairingEvent(snapshot)
+		s.emitPairingEventWithContext(ctx, snapshot)
 	}
 }
 
@@ -1271,5 +1315,5 @@ func (s *Server) applyPairingMetadata(deviceID string, meta pairingMetadata) {
 		slog.Warn("pairing metadata update failed", "device_id", deviceID, "error", err)
 		return
 	}
-	s.publishDeviceMetadata(dev)
+	s.publishDeviceMetadata(ctx, dev)
 }

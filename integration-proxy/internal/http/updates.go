@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/mod/semver"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
@@ -353,7 +355,14 @@ func (s *Server) loadIntegrationConfig(id string) (config.Config, int, error) {
 	return cfg, -1, fmt.Errorf("integration not installed")
 }
 
-func (s *Server) updateInstalledIntegration(ctx context.Context, id string, target *marketplaceIntegration) error {
+func (s *Server) updateInstalledIntegration(ctx context.Context, id string, target *marketplaceIntegration) (resultErr error) {
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(ctx, "integration.update")
+	defer func() {
+		if resultErr != nil {
+			span.SetStatus(codes.Error, "integration update failed")
+		}
+		span.End()
+	}()
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("missing id")
@@ -473,8 +482,11 @@ func (s *Server) runInstalledIntegrationUpdate(ctx context.Context, id string, t
 }
 
 func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(ctx, "integration.update_check")
+	defer span.End()
 	mode, modeErr := s.runtimeMode()
 	if modeErr != nil {
+		span.SetStatus(codes.Error, "integration update check failed")
 		return
 	}
 	if mode == runtimeGitOps {
@@ -485,6 +497,7 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 	}
 	cfg, err := config.Load(s.configPath)
 	if err != nil {
+		span.SetStatus(codes.Error, "integration update check failed")
 		return
 	}
 	for _, ic := range cfg.Integrations {
@@ -496,6 +509,7 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 		marketItem, fetchErr := s.targetIntegrationForUpdate(ctx, ic)
 		now := time.Now().UTC()
 		if fetchErr != nil {
+			span.SetStatus(codes.Error, "integration update check failed")
 			s.logger.Printf("integration update-check id=%s failed err=%v", id, fetchErr)
 			s.setUpdateState(id, func(state *integrationUpdateStatus) {
 				state.InstalledVersion = installed
@@ -519,6 +533,7 @@ func (s *Server) checkForUpdates(ctx context.Context, autoApply bool) {
 		if autoApply && ic.AutoUpdate && available {
 			s.logger.Printf("integration auto-update queued id=%s", id)
 			if err := s.updateInstalledIntegration(ctx, id, marketItem); err != nil {
+				span.SetStatus(codes.Error, "integration update failed")
 				s.setUpdateState(id, func(state *integrationUpdateStatus) {
 					state.Error = err.Error()
 				})
@@ -551,6 +566,8 @@ func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request)
 	if !s.requireAdmin(w, r) {
 		return
 	}
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(r.Context(), "integration.update_request")
+	defer span.End()
 	var req struct {
 		ID string `json:"id"`
 	}
@@ -571,14 +588,16 @@ func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request)
 	op.set("queued", 10, "Queued")
 	cfg, index, err := s.loadIntegrationConfig(id)
 	if err != nil {
+		span.SetStatus(codes.Error, "integration update failed")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "integration not installed", "code": http.StatusNotFound})
 		op.fail(err)
 		return
 	}
-	item, err := s.targetIntegrationForUpdate(r.Context(), cfg.Integrations[index])
+	item, err := s.targetIntegrationForUpdate(ctx, cfg.Integrations[index])
 	if err != nil {
+		span.SetStatus(codes.Error, "integration update failed")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to fetch marketplace integration", "code": http.StatusBadGateway, "detail": err.Error()})
@@ -586,7 +605,8 @@ func (s *Server) handleUpdateIntegration(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.logger.Printf("integration update requested id=%s target_version=%q", id, strings.TrimSpace(item.Version))
-	if err := s.updateInstalledIntegration(r.Context(), id, item); err != nil {
+	if err := s.updateInstalledIntegration(ctx, id, item); err != nil {
+		span.SetStatus(codes.Error, "integration update failed")
 		statusCode := http.StatusInternalServerError
 		errMsg := strings.TrimSpace(err.Error())
 		if strings.Contains(strings.ToLower(errMsg), "already in progress") {

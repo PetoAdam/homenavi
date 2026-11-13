@@ -33,7 +33,7 @@ func (h *VerificationHandler) HandleEmailVerifyRequest(w http.ResponseWriter, r 
 		return
 	}
 
-	user, err := h.userService.GetUser(req.UserID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(req.UserID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -52,7 +52,7 @@ func (h *VerificationHandler) HandleEmailVerifyRequest(w http.ResponseWriter, r 
 	}
 
 	// Send email
-	if err := h.emailService.SendVerificationEmail(user.Email, user.FirstName, code); err != nil {
+	if err := h.emailService.WithContext(r.Context()).SendVerificationEmail(user.Email, user.FirstName, code); err != nil {
 		slog.Error("failed to send verification email", "error", err)
 		slog.Info("mock verification email sent", "email", user.Email, "code", code)
 	}
@@ -98,7 +98,7 @@ func (h *VerificationHandler) HandleEmailVerifyConfirm(w http.ResponseWriter, r 
 		"email_confirmed": true,
 	}
 
-	if err := h.userService.UpdateUser(req.UserID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(req.UserID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}

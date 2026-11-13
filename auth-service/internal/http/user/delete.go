@@ -39,14 +39,14 @@ func (h *DeleteHandler) HandleDeleteUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Get user to verify they exist
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
 	}
 
 	// Delete user
-	if err := h.userService.DeleteUser(userID, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).DeleteUser(userID, token); err != nil {
 		slog.Error("failed to delete user", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to delete user", err))
 		return

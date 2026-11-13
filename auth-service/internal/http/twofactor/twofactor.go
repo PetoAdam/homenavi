@@ -44,7 +44,7 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -93,7 +93,7 @@ func (h *SetupHandler) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		"two_factor_enabled": false,
 	}
 
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}
@@ -116,7 +116,7 @@ func (h *SetupHandler) Handle2FASetupCancel(w http.ResponseWriter, r *http.Reque
 		errors.WriteError(w, authErr)
 		return
 	}
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -136,7 +136,7 @@ func (h *SetupHandler) Handle2FASetupCancel(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		updates := map[string]interface{}{"two_factor_enabled": false, "two_factor_type": "", "two_factor_secret": ""}
-		if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+		if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 			errors.WriteError(w, errors.InternalServerError("failed to cancel 2FA setup", err))
 			return
 		}
@@ -170,7 +170,7 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -214,7 +214,7 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		errors.WriteError(w, errors.InternalServerError("failed to generate recovery codes", err))
 		return
 	}
-	if err := h.userService.ReplaceRecoveryCodes(userID, recoveryCodeHashes, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).ReplaceRecoveryCodes(userID, recoveryCodeHashes, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to protect recovery codes", err))
 		return
 	}
@@ -224,7 +224,7 @@ func (h *VerifyHandler) Handle2FAVerify(w http.ResponseWriter, r *http.Request) 
 		"two_factor_enabled": true,
 	}
 
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}
@@ -252,7 +252,7 @@ func (h *VerifyHandler) Handle2FADisable(w http.ResponseWriter, r *http.Request)
 		errors.WriteError(w, authErr)
 		return
 	}
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -266,12 +266,12 @@ func (h *VerifyHandler) Handle2FADisable(w http.ResponseWriter, r *http.Request)
 		errors.WriteError(w, errors.InternalServerError("failed to authorize operation", err))
 		return
 	}
-	if err := h.userService.ReplaceRecoveryCodes(userID, []string{}, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).ReplaceRecoveryCodes(userID, []string{}, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to remove recovery codes", err))
 		return
 	}
 	updates := map[string]interface{}{"two_factor_enabled": false, "two_factor_type": "", "two_factor_secret": ""}
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to disable 2FA", err))
 		return
 	}
@@ -307,7 +307,7 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -321,7 +321,7 @@ func (h *EmailHandler) Handle2FAEmailRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.emailService.Send2FACode(user.Email, user.FirstName, code); err != nil {
+	if err := h.emailService.WithContext(r.Context()).Send2FACode(user.Email, user.FirstName, code); err != nil {
 		slog.Error("failed to send 2fa email", "error", err)
 		errors.WriteError(w, errors.ServiceUnavailable("2FA email delivery is temporarily unavailable", err))
 		return
@@ -367,7 +367,7 @@ func (h *EmailHandler) Handle2FAEmailVerify(w http.ResponseWriter, r *http.Reque
 		errors.WriteError(w, errors.InternalServerError("failed to generate recovery codes", err))
 		return
 	}
-	if err := h.userService.ReplaceRecoveryCodes(userID, recoveryCodeHashes, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).ReplaceRecoveryCodes(userID, recoveryCodeHashes, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to protect recovery codes", err))
 		return
 	}
@@ -378,7 +378,7 @@ func (h *EmailHandler) Handle2FAEmailVerify(w http.ResponseWriter, r *http.Reque
 		"two_factor_type":    "email",
 	}
 
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}

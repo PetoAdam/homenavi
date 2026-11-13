@@ -13,9 +13,14 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
+	"github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func MakeRestProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
@@ -28,6 +33,13 @@ func MakeRestProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slog.Info("proxy request", "method", r.Method, "path", r.URL.Path, "upstream", upstreamURL.String())
 		proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
+		proxy.Transport = observability.InstrumentHTTPTransport(nil)
+		proxy.ModifyResponse = func(response *http.Response) error {
+			if w.Header().Get("Trace-ID") != "" {
+				response.Header.Del("Trace-ID")
+			}
+			return nil
+		}
 		origDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
 			origDirector(req)
@@ -105,8 +117,12 @@ func MakeWebSocketProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 			dialHeader.Set("Sec-WebSocket-Protocol", sp)
 		}
 
-		backendConn, backendResp, err := websocket.DefaultDialer.Dial(u.String(), dialHeader)
+		dialCtx, span := otel.Tracer("homenavi/websocket").Start(r.Context(), "websocket.connect", trace.WithSpanKind(trace.SpanKindClient))
+		propagation.TraceContext{}.Inject(dialCtx, propagation.HeaderCarrier(dialHeader))
+		backendConn, backendResp, err := websocket.DefaultDialer.DialContext(dialCtx, u.String(), dialHeader)
 		if err != nil {
+			span.SetStatus(codes.Error, "websocket upstream connection failed")
+			span.End()
 			slog.Error("websocket backend dial failed", "upstream", u.String(), "error", err)
 			status := http.StatusBadGateway
 			if backendResp != nil && backendResp.StatusCode != 0 {
@@ -115,6 +131,7 @@ func MakeWebSocketProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 			http.Error(w, http.StatusText(status), status)
 			return
 		}
+		span.End()
 		defer backendConn.Close()
 
 		selectedProto := ""
@@ -134,6 +151,7 @@ func MakeWebSocketProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 			slog.Error("websocket upgrade failed", "error", err)
 			return
 		}
+		observability.FinishHTTPUpgrade(r.Context())
 		defer clientConn.Close()
 
 		// Pipe data both directions.
@@ -141,11 +159,8 @@ func MakeWebSocketProxyHandler(route gateway.RouteConfig) http.HandlerFunc {
 			wg          sync.WaitGroup
 			once        sync.Once
 			closeNormal = func() {
-				// Attempt graceful close frames (best effort)
-				_ = backendConn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-				_ = backendConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				_ = clientConn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-				_ = clientConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				_ = backendConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(100*time.Millisecond))
+				_ = clientConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(100*time.Millisecond))
 			}
 		)
 

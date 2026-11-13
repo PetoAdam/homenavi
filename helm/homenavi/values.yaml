@@ -12,7 +12,8 @@ global:
   imageTag: ""
   imagePullPolicy: IfNotPresent
   logLevel: info
-  otelExporterOtlpTracesEndpoint: ""
+  otelExporterOtlpTracesEndpoint: http://otel-collector:4318/v1/traces
+  mqttTracePropagationEnabled: true
   envFromSecrets: []
 
 storage:
@@ -225,6 +226,7 @@ services:
       USER_SERVICE_URL: http://user-service:8001
       REDIS_MODE: sentinel
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      HOMENAVI_BROWSER_OTEL_ENABLED: "true"
       LOG_LEVEL: info
     envFromSecrets: []
     dependsOn:
@@ -972,6 +974,12 @@ services:
       repository: ghcr.io/petoadam/homenavi-automation-service
       tag: ""
     containerPort: 8094
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8094
+      periodSeconds: 5
+      timeoutSeconds: 2
     service:
       enabled: true
       type: ClusterIP
@@ -1025,7 +1033,7 @@ services:
     resources: {}
 
   jaeger:
-    enabled: true
+    enabled: false
     replicas: 1
     image:
       repository: jaegertracing/all-in-one
@@ -1036,6 +1044,9 @@ services:
       type: ClusterIP
       port: 16686
       targetPort: 16686
+      extraPorts:
+        - name: otlp-http
+          port: 4318
     env: {}
     envFromSecrets: []
     resources: {}

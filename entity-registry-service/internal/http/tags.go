@@ -46,7 +46,7 @@ func (s *Server) handleTagsCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.tag.created", "tag", tag.ID)
+	s.emit(r.Context(), "ers.tag.created", "tag", tag.ID)
 	writeJSON(w, http.StatusCreated, tag)
 }
 
@@ -61,7 +61,7 @@ func (s *Server) handleTagsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.tag.deleted", "tag", id)
+	s.emit(r.Context(), "ers.tag.deleted", "tag", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
@@ -93,6 +93,6 @@ func (s *Server) handleTagsSetMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.tag.members_updated", "tag", id)
+	s.emit(r.Context(), "ers.tag.members_updated", "tag", id)
 	writeJSON(w, http.StatusOK, map[string]any{"updated": true})
 }

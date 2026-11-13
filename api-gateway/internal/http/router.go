@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
@@ -24,8 +25,9 @@ func NewRootRouter(wsRouter, mainRouter http.Handler) http.Handler {
 	return mux
 }
 
-func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, publicKeySet apiMiddleware.RSAPublicKeySet) http.Handler {
+func NewWebSocketRouter(cfg gateway.Config, redisClient redis.UniversalClient, publicKeySet apiMiddleware.RSAPublicKeySet, tracer oteltrace.Tracer) http.Handler {
 	r := chi.NewRouter()
+	r.Use(sharedobs.MetricsAndTracingMiddleware(tracer, "api-gateway"))
 	registerConfiguredRoutes(r, cfg, redisClient, publicKeySet)
 	return r
 }
@@ -49,6 +51,27 @@ func NewMainRouter(cfg gateway.Config, redisClient redis.UniversalClient, public
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	r.Get("/api/telemetry/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]bool{
+			"enabled": browserTraceEnabled(os.Getenv("HOMENAVI_BROWSER_OTEL_ENABLED")) && strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) != "",
+		})
+	})
+	if browserTraceEnabled(os.Getenv("HOMENAVI_BROWSER_OTEL_ENABLED")) {
+		validation := apiMiddleware.APIValidationConfig(cfg.JWTIssuer, cfg.JWTAPIAudience)
+		validation.SessionValidator = apiMiddleware.NewRedisSessionValidator(redisClient)
+		var handler http.Handler = browserTraceHandler(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"))
+		if redisClient == nil {
+			handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "trace rate limiter unavailable", http.StatusServiceUnavailable)
+			})
+		} else {
+			handler = ratelimit.New(redisClient, "browser-traces", ratelimit.LimiterConfig{RPS: 2, Burst: 5}).Middleware(ratelimit.KeyByUserOrIP)(handler)
+		}
+		handler = apiMiddleware.JWTAuthMiddlewareRS256KeySet(publicKeySet, validation)(handler)
+		r.Method(http.MethodPost, "/api/telemetry/traces", handler)
+	}
 
 	registerConfiguredRoutes(r, cfg, redisClient, publicKeySet)
 

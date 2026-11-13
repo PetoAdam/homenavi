@@ -42,7 +42,7 @@ func (h *ProfileHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get user
-	user, err := h.userService.GetUser(userID)
+	user, err := h.userService.WithContext(r.Context()).GetUser(userID)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -86,7 +86,7 @@ func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	avatarURL, err := h.profilePictureService.GenerateAvatar(userID)
+	avatarURL, err := h.profilePictureService.WithContext(r.Context()).GenerateAvatar(userID)
 	if err != nil {
 		slog.Error("failed to generate avatar", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to generate avatar", err))
@@ -98,7 +98,7 @@ func (h *AvatarHandler) HandleGenerateAvatar(w http.ResponseWriter, r *http.Requ
 		"profile_picture_url": avatarURL,
 	}
 
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		slog.Error("failed to update user profile picture url", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to update profile picture", err))
 		return
@@ -138,7 +138,7 @@ func (h *AvatarHandler) HandleCreateUploadURL(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	prepared, err := h.profilePictureService.CreateUploadURL(userID, payload.Filename, payload.ContentType)
+	prepared, err := h.profilePictureService.WithContext(r.Context()).CreateUploadURL(userID, payload.Filename, payload.ContentType)
 	if err != nil {
 		slog.Error("failed to create upload url", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to create upload url", err))
@@ -177,7 +177,7 @@ func (h *AvatarHandler) HandleCompleteProfilePictureUpload(w http.ResponseWriter
 		return
 	}
 
-	pictureURL, err := h.profilePictureService.CompleteUpload(userID, payload.ObjectKey)
+	pictureURL, err := h.profilePictureService.WithContext(r.Context()).CompleteUpload(userID, payload.ObjectKey)
 	if err != nil {
 		slog.Error("failed to complete profile picture upload", "user_id", userID, "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to complete profile picture upload", err))
@@ -185,7 +185,7 @@ func (h *AvatarHandler) HandleCompleteProfilePictureUpload(w http.ResponseWriter
 	}
 
 	updates := map[string]interface{}{"profile_picture_url": pictureURL}
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		slog.Error("failed to update user profile picture url", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to update profile picture", err))
 		return
@@ -233,7 +233,7 @@ func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *htt
 	}
 
 	// Call profile picture service to upload and process the image
-	pictureURL, err := h.profilePictureService.UploadProfilePicture(userID, file, header)
+	pictureURL, err := h.profilePictureService.WithContext(r.Context()).UploadProfilePicture(userID, file, header)
 	if err != nil {
 		slog.Error("failed to upload profile picture", "user_id", userID, "error", err)
 		writeProfilePictureClientError(w, "failed to upload profile picture", err)
@@ -245,7 +245,7 @@ func (h *AvatarHandler) HandleUploadProfilePicture(w http.ResponseWriter, r *htt
 		"profile_picture_url": pictureURL,
 	}
 
-	if err := h.userService.UpdateUser(userID, updates, token); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(userID, updates, token); err != nil {
 		slog.Error("failed to update user profile picture url", "error", err)
 		errors.WriteError(w, errors.InternalServerError("failed to update profile picture", err))
 		return

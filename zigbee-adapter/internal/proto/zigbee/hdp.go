@@ -1,11 +1,14 @@
 package zigbee
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/observability"
 	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func (z *ZigbeeAdapter) publishHello() error {
@@ -127,9 +130,7 @@ func (z *ZigbeeAdapter) publishHDPState(dev *model.Device, state map[string]any,
 	if corr != "" {
 		envelope["corr"] = corr
 	}
-	if b, err := json.Marshal(envelope); err == nil {
-		_ = z.client.PublishWith(hdpStatePrefix+deviceID, b, true)
-	}
+	z.publishHDPTelemetry(hdpStatePrefix+deviceID, envelope, true)
 }
 
 func (z *ZigbeeAdapter) publishHDPMeta(dev *model.Device) {
@@ -166,9 +167,7 @@ func (z *ZigbeeAdapter) publishHDPMeta(dev *model.Device) {
 			envelope["inputs"] = inputs
 		}
 	}
-	if b, err := json.Marshal(envelope); err == nil {
-		_ = z.client.PublishWith(hdpMetadataPrefix+deviceID, b, true)
-	}
+	z.publishHDPTelemetry(hdpMetadataPrefix+deviceID, envelope, true)
 }
 
 func (z *ZigbeeAdapter) publishHDPEvent(deviceID, event string, data map[string]any) {
@@ -186,12 +185,37 @@ func (z *ZigbeeAdapter) publishHDPEvent(deviceID, event string, data map[string]
 	if len(data) > 0 {
 		envelope["data"] = data
 	}
-	if b, err := json.Marshal(envelope); err == nil {
-		_ = z.client.Publish(hdpEventPrefix+id, b)
+	z.publishHDPTelemetry(hdpEventPrefix+id, envelope, false)
+}
+
+func (z *ZigbeeAdapter) publishHDPTelemetry(topic string, envelope map[string]any, retained bool) {
+	failed := func(string) {}
+	if observability.MessagePropagationEnabled() {
+		ctx, span := observability.StartMessageProducer(context.Background())
+		defer span.End()
+		observability.InjectMessageContext(ctx, envelope)
+		failed = func(message string) { span.SetStatus(codes.Error, message) }
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		failed("MQTT message encoding failed")
+		return
+	}
+	if retained {
+		err = z.client.PublishWith(topic, payload, true)
+	} else {
+		err = z.client.Publish(topic, payload)
+	}
+	if err != nil {
+		failed("MQTT publish failed")
 	}
 }
 
 func (z *ZigbeeAdapter) publishHDPCommandResult(dev *model.Device, corr string, success bool, status, errMsg string) {
+	z.publishHDPCommandResultWithContext(context.Background(), dev, corr, success, status, errMsg)
+}
+
+func (z *ZigbeeAdapter) publishHDPCommandResultWithContext(ctx context.Context, dev *model.Device, corr string, success bool, status, errMsg string) {
 	if dev == nil || corr == "" {
 		return
 	}
@@ -199,6 +223,8 @@ func (z *ZigbeeAdapter) publishHDPCommandResult(dev *model.Device, corr string, 
 	if deviceID == "" {
 		return
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	envelope := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command_result",
@@ -214,7 +240,14 @@ func (z *ZigbeeAdapter) publishHDPCommandResult(dev *model.Device, corr string, 
 	if errMsg != "" {
 		envelope["error"] = errMsg
 	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, envelope)
+	}
 	if b, err := json.Marshal(envelope); err == nil {
-		_ = z.client.Publish(hdpCommandResultPrefix+deviceID, b)
+		if err := z.client.Publish(hdpCommandResultPrefix+deviceID, b); err != nil {
+			span.SetStatus(codes.Error, "MQTT publish failed")
+		}
+	} else {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 	}
 }

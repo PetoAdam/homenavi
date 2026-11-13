@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dbinfra "github.com/PetoAdam/homenavi/entity-registry-service/internal/infra/db"
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 type hdpDeviceListItem struct {
@@ -40,6 +41,7 @@ func RunOnce(ctx context.Context, repo *dbinfra.Repository, deviceHubURL string,
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
+	hc = observability.InstrumentHTTPClient(hc)
 
 	url := base + "/api/hdp/devices"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -103,7 +105,9 @@ func Start(ctx context.Context, repo *dbinfra.Repository, deviceHubURL string, h
 	go func() {
 		delay := 2 * time.Second
 		for {
-			created, err := RunOnce(ctx, repo, deviceHubURL, httpClient)
+			runCtx, span := observability.StartBackgroundOperation(ctx, "registry.backfill")
+			created, err := RunOnce(runCtx, repo, deviceHubURL, httpClient)
+			observability.FinishBackgroundOperation(span, err)
 			if err == nil {
 				slog.Info("ers backfill complete", "created", created)
 				return

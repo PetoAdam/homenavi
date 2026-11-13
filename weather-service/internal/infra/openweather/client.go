@@ -3,6 +3,8 @@ package openweather
 import (
 	"net/http"
 	"time"
+
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // Client talks to the OpenWeather APIs and falls back to mock data when no key is configured.
@@ -23,7 +25,7 @@ func newClient(apiKey string, httpClient *http.Client, geocodingBase, weatherBas
 	}
 	return &Client{
 		apiKey:        apiKey,
-		httpClient:    httpClient,
+		httpClient:    observability.InstrumentExternalHTTPClient(httpClient),
 		geocodingBase: geocodingBase,
 		weatherBase:   weatherBase,
 	}

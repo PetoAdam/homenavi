@@ -8,6 +8,7 @@ import (
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/auth"
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
@@ -18,8 +19,11 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
+	parent := trace.SpanContextFromContext(r.Context())
 	go func() {
-		if err := s.ReloadFromConfig(); err != nil {
+		ctx, cancel := startRuntimeOperation(trace.ContextWithSpanContext(context.Background(), parent), "integration.reload_request", s.operationTimeout())
+		defer cancel()
+		if err := s.reloadFromConfig(ctx); err != nil {
 			s.logger.Printf("reload failed: %v", err)
 		}
 	}()
@@ -47,9 +51,11 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "runtime unavailable", "code": statusCode, "detail": modeErr.Error()})
 		return
 	}
+	parent := trace.SpanContextFromContext(r.Context())
 	go func() {
-		ctx := context.Background()
-		if err := s.ReloadFromConfig(); err != nil {
+		ctx, span := startBackgroundRuntimeOperation(parent, "integration.restart_all")
+		defer span.End()
+		if err := s.reloadFromConfig(ctx); err != nil {
 			s.logger.Printf("restart-all reload failed: %v", err)
 		}
 		cfg, cfgErr := config.Load(s.configPath)
@@ -144,8 +150,10 @@ func (s *Server) handleRestartIntegration(w http.ResponseWriter, r *http.Request
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "unknown integration", "code": http.StatusNotFound})
 		return
 	}
+	parent := trace.SpanContextFromContext(r.Context())
 	go func() {
-		ctx := context.Background()
+		ctx, span := startBackgroundRuntimeOperation(parent, "integration.restart")
+		defer span.End()
 		s.setInstallStatus(id, "restarting", 60, "Restarting integration")
 		if mode == runtimeCompose {
 			composeFile := s.defaultComposeFile(id)

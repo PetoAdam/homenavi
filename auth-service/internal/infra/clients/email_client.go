@@ -2,21 +2,31 @@ package clients
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // EmailClient wraps email-service HTTP calls.
 type EmailClient struct {
 	baseURL    string
 	httpClient *http.Client
+	ctx        context.Context
 }
 
 func NewEmailClient(baseURL string) *EmailClient {
-	return &EmailClient{baseURL: baseURL, httpClient: &http.Client{Timeout: 10 * time.Second}}
+	return &EmailClient{baseURL: baseURL, httpClient: observability.InstrumentHTTPClient(&http.Client{Timeout: 10 * time.Second})}
+}
+
+func (c *EmailClient) WithContext(ctx context.Context) *EmailClient {
+	client := *c
+	client.ctx = ctx
+	return &client
 }
 
 func (c *EmailClient) SendVerificationEmail(email, userName, code string) error {
@@ -37,7 +47,16 @@ func (c *EmailClient) postJSON(path string, payload map[string]interface{}) erro
 		return err
 	}
 
-	resp, err := c.httpClient.Post(c.baseURL+path, "application/json", bytes.NewReader(body))
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(request)
 	if err != nil {
 		return err
 	}

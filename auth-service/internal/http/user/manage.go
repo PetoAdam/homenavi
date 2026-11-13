@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	authdomain "github.com/PetoAdam/homenavi/auth-service/internal/auth"
-	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
+	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -72,7 +72,7 @@ func (h *ManageHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, meta, err := h.userService.ListUsers(r.URL.Query(), r.Header.Get("Authorization"))
+	users, meta, err := h.userService.WithContext(r.Context()).ListUsers(r.URL.Query(), r.Header.Get("Authorization"))
 	if err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to list users", err))
 		return
@@ -110,7 +110,7 @@ func (h *ManageHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		errors.WriteError(w, errors.Forbidden("forbidden"))
 		return
 	}
-	user, err := h.userService.GetUser(id)
+	user, err := h.userService.WithContext(r.Context()).GetUser(id)
 	if err != nil {
 		errors.WriteError(w, errors.NotFound("user not found"))
 		return
@@ -173,7 +173,7 @@ func (h *ManageHandler) HandlePatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bearer := r.Header.Get("Authorization")
-	if err := h.userService.UpdateUser(id, updates, strings.TrimPrefix(bearer, "Bearer ")); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(id, updates, strings.TrimPrefix(bearer, "Bearer ")); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update user", err))
 		return
 	}
@@ -209,7 +209,7 @@ func (h *ManageHandler) HandleLockout(w http.ResponseWriter, r *http.Request) {
 	}
 	updates := map[string]interface{}{"lockout_enabled": req.Lock}
 	bearer := r.Header.Get("Authorization")
-	if err := h.userService.UpdateUser(id, updates, strings.TrimPrefix(bearer, "Bearer ")); err != nil {
+	if err := h.userService.WithContext(r.Context()).UpdateUser(id, updates, strings.TrimPrefix(bearer, "Bearer ")); err != nil {
 		errors.WriteError(w, errors.InternalServerError("failed to update lockout", err))
 		return
 	}

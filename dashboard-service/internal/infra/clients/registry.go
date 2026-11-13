@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/dashboard-service/internal/dashboard"
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 type RegistryClient struct {
@@ -21,7 +22,7 @@ func NewRegistryClient(baseURL string, httpClient *http.Client) *RegistryClient 
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 3 * time.Second}
 	}
-	return &RegistryClient{baseURL: strings.TrimSpace(baseURL), httpClient: httpClient}
+	return &RegistryClient{baseURL: strings.TrimSpace(baseURL), httpClient: observability.InstrumentHTTPClient(httpClient)}
 }
 
 func (c *RegistryClient) Widgets(ctx context.Context, auth dashboard.AuthContext) ([]dashboard.WidgetType, error) {

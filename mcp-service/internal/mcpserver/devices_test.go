@@ -7,7 +7,39 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestDeviceClientContinuesMCPTrace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	var traceparent, authorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		traceparent = request.Header.Get("traceparent")
+		authorization = request.Header.Get("Authorization")
+		_, _ = writer.Write([]byte(`[]`))
+	}))
+	defer upstream.Close()
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "mcp")
+	client := &httpDeviceClient{readBaseURL: upstream.URL, client: newDownstreamHTTPClient()}
+	if _, err := client.List(ctx, "delegated-token"); err != nil {
+		t.Fatal(err)
+	}
+	parent.End()
+	spans := recorder.Ended()
+	if len(spans) != 2 || spans[0].Parent().SpanID() != parent.SpanContext().SpanID() || traceparent != "00-"+parent.SpanContext().TraceID().String()+"-"+spans[0].SpanContext().SpanID().String()+"-01" || authorization != "Bearer delegated-token" {
+		t.Fatal("MCP request did not preserve trace and delegated authorization")
+	}
+}
 
 func TestHTTPDeviceClientListsBoundedSafeFields(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

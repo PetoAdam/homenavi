@@ -16,9 +16,14 @@ import (
 
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 func normalizeSleepDurationSeconds(seconds float64) float64 {
@@ -73,9 +78,19 @@ func (e *Engine) StartWorkflowRun(ctx context.Context, wfID uuid.UUID, triggerNo
 
 	// Run asynchronously so HTTP can return immediately.
 	defCopy := d
-	go e.executeRun(context.Background(), run.ID, wfID, triggerNodeID, triggerEvent, defCopy, nodeByID, outgoing, start)
+	parent := trace.SpanContextFromContext(ctx)
+	go func() {
+		runContext, span := startWorkflowExecution(parent)
+		defer span.End()
+		e.executeRun(runContext, run.ID, wfID, triggerNodeID, triggerEvent, defCopy, nodeByID, outgoing, start)
+	}()
 
 	return run.ID, nil
+}
+
+func startWorkflowExecution(parent trace.SpanContext) (context.Context, trace.Span) {
+	ctx := trace.ContextWithSpanContext(context.Background(), parent)
+	return otel.Tracer("homenavi/automation").Start(ctx, "workflow.execute")
 }
 
 func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID, triggerNodeID string, triggerEvent map[string]any, d Definition, nodeByID map[string]NodeDef, outgoing map[string][]string, start []string) {
@@ -114,7 +129,9 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 
 		stepIn, _ := json.Marshal(map[string]any{"node": n})
 		runStep := &dbinfra.WorkflowRunStep{RunID: runID, NodeID: n.ID, Status: "running", Input: datatypes.JSON(stepIn), StartedAt: time.Now().UTC()}
-		_ = e.repo.CreateStep(ctx, runStep)
+		if err := e.repo.CreateStep(ctx, runStep); err != nil {
+			return fmt.Errorf("create workflow step: %w", err)
+		}
 
 		startedEvt := RunEvent{Type: "node_started", WorkflowID: wfID.String(), NodeID: n.ID, StepID: runStep.ID.String(), NodeKind: kind, Status: "running"}
 		if kind == "logic.sleep" {
@@ -127,26 +144,29 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		}
 		e.publishRunEvent(runID, startedEvt)
 
-		finish := func(status string, errMsg string) {
-			_ = e.repo.FinishStep(ctx, runStep.ID, status, errMsg)
+		finish := func(status string, errMsg string) error {
+			if err := e.repo.FinishStep(ctx, runStep.ID, status, errMsg); err != nil {
+				return fmt.Errorf("finish workflow step %s: %w", runStep.ID, err)
+			}
 			e.publishRunEvent(runID, RunEvent{Type: "node_finished", WorkflowID: wfID.String(), NodeID: n.ID, StepID: runStep.ID.String(), NodeKind: kind, Status: status, Error: errMsg})
+			return nil
+		}
+		fail := func(err error) error {
+			return errors.Join(err, finish("failed", err.Error()))
 		}
 
 		switch kind {
 		case "action.send_command":
 			var a ActionSendCommand
 			if err := json.Unmarshal(n.Data, &a); err != nil {
-				finish("failed", "invalid node data")
-				return errors.New("invalid node data")
+				return fail(errors.New("invalid node data"))
 			}
 			targets, err := e.resolveTargets(ctx, a.Targets)
 			if err != nil {
-				finish("failed", err.Error())
-				return err
+				return fail(err)
 			}
 			if len(targets) == 0 {
-				finish("success", "")
-				return nil
+				return finish("success", "")
 			}
 			cmdName := strings.TrimSpace(a.Command)
 			if cmdName == "" {
@@ -158,23 +178,40 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 			for _, target := range targets {
 				deviceID := target.ExternalID
 				corr := fmt.Sprintf("auto-%s-%s-%s-%d", wfID.String(), n.ID, deviceID, baseTS)
-				if err := e.dispatchCommand(ctx, deviceID, corr, cmdName, a); err != nil {
-					finish("failed", err.Error())
-					return err
-				}
-
 				if a.WaitForResult {
 					timeout := a.ResultTimeoutSec
 					if timeout <= 0 {
 						timeout = 15
 					}
-					exp := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
-					_ = e.repo.UpsertPendingCorr(ctx, &dbinfra.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, HDPDeviceID: target.HDPDeviceID, CreatedAt: time.Now().UTC(), ExpiresAt: exp})
-					finish("success", "")
+					now := time.Now().UTC()
+					pending := &dbinfra.PendingCorrelation{Corr: corr, RunID: runID, WorkflowID: wfID, DeviceID: deviceID, HDPDeviceID: target.HDPDeviceID, DispatchPending: true, CreatedAt: now, ExpiresAt: now.Add(time.Duration(timeout) * time.Second)}
+					if err := dispatchWithPendingCorrelation(ctx, e.repo, pending, func() error {
+						return e.dispatchCommand(ctx, deviceID, corr, cmdName, a)
+					}); err != nil {
+						if errors.Is(err, errCommandOutcomeUnknown) {
+							return errWaitForResult
+						}
+						return fail(err)
+					}
+					completed, err := retryPendingDispatch(ctx, time.Second, func() (*dbinfra.PendingCorrelation, error) {
+						return e.repo.FinishPendingDispatch(ctx, corr, runStep.ID, func() {
+							e.publishRunEvent(runID, RunEvent{Type: "node_finished", WorkflowID: wfID.String(), NodeID: n.ID, StepID: runStep.ID.String(), NodeKind: kind, Status: "success"})
+							e.publishRunEvent(runID, RunEvent{Type: "run_waiting", WorkflowID: wfID.String(), Status: "waiting"})
+						})
+					})
+					if err != nil {
+						return errWaitForResult
+					}
+					e.publishCompletedCommand(ctx, completed)
 					return errWaitForResult
 				}
+				if err := e.dispatchCommand(ctx, deviceID, corr, cmdName, a); err != nil {
+					return fail(err)
+				}
 			}
-			finish("success", "")
+			if err := finish("success", ""); err != nil {
+				return err
+			}
 
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {
@@ -185,14 +222,14 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		case "action.notify_email":
 			var a ActionNotifyEmail
 			if err := json.Unmarshal(n.Data, &a); err != nil {
-				finish("failed", "invalid node data")
-				return errors.New("invalid node data")
+				return fail(errors.New("invalid node data"))
 			}
 			if err := e.executeNotifyEmail(ctx, a); err != nil {
-				finish("failed", err.Error())
+				return fail(err)
+			}
+			if err := finish("success", ""); err != nil {
 				return err
 			}
-			finish("success", "")
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {
 					return err
@@ -202,16 +239,16 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		case "action.integration":
 			var a ActionIntegration
 			if err := json.Unmarshal(n.Data, &a); err != nil {
-				finish("failed", "invalid node data")
-				return errors.New("invalid node data")
+				return fail(errors.New("invalid node data"))
 			}
 			result, err := e.executeIntegrationAction(ctx, runID, n.ID, a)
 			if err != nil {
-				finish("failed", err.Error())
-				return err
+				return fail(err)
 			}
 			_ = result
-			finish("success", "")
+			if err := finish("success", ""); err != nil {
+				return err
+			}
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {
 					return err
@@ -221,11 +258,12 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		case "logic.sleep":
 			var s LogicSleep
 			if err := json.Unmarshal(n.Data, &s); err != nil {
-				finish("failed", "invalid node data")
-				return errors.New("invalid node data")
+				return fail(errors.New("invalid node data"))
 			}
 			time.Sleep(sleepDuration(s.DurationSec))
-			finish("success", "")
+			if err := finish("success", ""); err != nil {
+				return err
+			}
 			for _, next := range outgoing[n.ID] {
 				if err := exec(next); err != nil {
 					return err
@@ -235,11 +273,12 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		case "logic.if":
 			var c LogicIf
 			if err := json.Unmarshal(n.Data, &c); err != nil {
-				finish("failed", "invalid node data")
-				return errors.New("invalid node data")
+				return fail(errors.New("invalid node data"))
 			}
 			ok := evalIf(triggerEvent, c.Path, c.Op, c.Value)
-			finish("success", "")
+			if err := finish("success", ""); err != nil {
+				return err
+			}
 			outs := outgoing[n.ID]
 			if ok {
 				if len(outs) >= 1 {
@@ -254,13 +293,14 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 		case "logic.for":
 			var f LogicFor
 			if err := json.Unmarshal(n.Data, &f); err != nil {
-				finish("failed", "invalid node data")
-				return errors.New("invalid node data")
+				return fail(errors.New("invalid node data"))
 			}
 			if f.Count < 0 {
 				f.Count = 0
 			}
-			finish("success", "")
+			if err := finish("success", ""); err != nil {
+				return err
+			}
 			outs := outgoing[n.ID]
 			body := ""
 			after := ""
@@ -283,25 +323,92 @@ func (e *Engine) executeRun(ctx context.Context, runID uuid.UUID, wfID uuid.UUID
 			}
 			return nil
 		default:
-			finish("failed", "unsupported node kind")
-			return fmt.Errorf("unsupported node kind: %s", n.Kind)
+			return fail(fmt.Errorf("unsupported node kind: %s", n.Kind))
 		}
 	}
 
 	for _, nodeID := range start {
 		if err := exec(nodeID); err != nil {
 			if errors.Is(err, errWaitForResult) {
-				e.publishRunEvent(runID, RunEvent{Type: "run_waiting", WorkflowID: wfID.String(), Status: "waiting"})
 				return
 			}
-			_ = e.repo.FinishRun(ctx, runID, "failed", err.Error())
-			e.publishRunEvent(runID, RunEvent{Type: "run_finished", WorkflowID: wfID.String(), Status: "failed", Error: err.Error()})
+			e.failWorkflowRun(ctx, runID, wfID, err)
 			return
 		}
 	}
 
-	_ = e.repo.FinishRun(ctx, runID, "success", "")
+	if err := e.repo.FinishRun(ctx, runID, "success", ""); err != nil {
+		e.failWorkflowRun(ctx, runID, wfID, fmt.Errorf("finish workflow run: %w", err))
+		return
+	}
 	e.publishRunEvent(runID, RunEvent{Type: "run_finished", WorkflowID: wfID.String(), Status: "success"})
+}
+
+func (e *Engine) failWorkflowRun(ctx context.Context, runID, workflowID uuid.UUID, cause error) {
+	delay := time.Second
+	for {
+		steps, finished, err := e.repo.FailRun(ctx, runID, cause.Error())
+		if err == nil {
+			for _, step := range steps {
+				e.publishRunEvent(runID, RunEvent{Type: "node_finished", WorkflowID: workflowID.String(), NodeID: step.NodeID, StepID: step.ID.String(), Status: "failed", Error: cause.Error()})
+			}
+			if finished {
+				e.publishRunEvent(runID, RunEvent{Type: "run_finished", WorkflowID: workflowID.String(), Status: "failed", Error: cause.Error()})
+			}
+			return
+		}
+		slog.Warn("persist failed workflow run", "run_id", runID, "error", err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if delay < 30*time.Second {
+			delay = min(delay*2, 30*time.Second)
+		}
+	}
+}
+
+type pendingCorrelationRepository interface {
+	UpsertPendingCorr(context.Context, *dbinfra.PendingCorrelation) error
+	ConsumePendingCorr(context.Context, string) (*dbinfra.PendingCorrelation, error)
+}
+
+var errCommandOutcomeUnknown = errors.New("command outcome unknown")
+
+func retryPendingDispatch(ctx context.Context, delay time.Duration, finish func() (*dbinfra.PendingCorrelation, error)) (*dbinfra.PendingCorrelation, error) {
+	for {
+		completed, err := finish()
+		if err == nil || errors.Is(err, gorm.ErrRecordNotFound) {
+			return completed, err
+		}
+		slog.Warn("finalize command dispatch failed; retrying", "error", err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+		if delay < 30*time.Second {
+			delay = min(delay*2, 30*time.Second)
+		}
+	}
+}
+
+func dispatchWithPendingCorrelation(ctx context.Context, repo pendingCorrelationRepository, pending *dbinfra.PendingCorrelation, dispatch func() error) error {
+	if err := repo.UpsertPendingCorr(ctx, pending); err != nil {
+		return fmt.Errorf("record pending command: %w", err)
+	}
+	if err := dispatch(); err != nil {
+		if !errors.Is(err, errCommandOutcomeUnknown) {
+			_, _ = repo.ConsumePendingCorr(ctx, pending.Corr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (e *Engine) dispatchCommand(ctx context.Context, deviceID, correlationID, command string, action ActionSendCommand) error {
@@ -311,16 +418,33 @@ func (e *Engine) dispatchCommand(ctx context.Context, deviceID, correlationID, c
 		}
 		return e.dispatchCapabilityStatePatch(ctx, deviceID, correlationID, action.Args)
 	}
-	cmd := HDPCommand{Envelope: hdp.Envelope{Schema: hdp.SchemaV1, Type: "command", DeviceID: deviceID, Corr: correlationID, TS: time.Now().UTC().UnixMilli()}, Command: command, Args: action.Args}
-	payload, err := json.Marshal(cmd)
-	if err != nil {
-		return fmt.Errorf("marshal command: %w", err)
-	}
 	if e.mq == nil {
 		return errors.New("mqtt client unavailable")
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
+	cmd := HDPCommand{Envelope: hdp.Envelope{Schema: hdp.SchemaV1, Type: "command", DeviceID: deviceID, Corr: correlationID, TS: time.Now().UTC().UnixMilli()}, Command: command, Args: action.Args}
+	if observability.MessagePropagationEnabled() {
+		cmd.Trace = observability.CaptureTraceContext(ctx)
+	}
+	payload, err := json.Marshal(cmd)
+	if err != nil {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
+		return fmt.Errorf("marshal command: %w", err)
+	}
+	if action.WaitForResult && e.traceStore != nil {
+		if metadata := observability.CaptureTraceContext(ctx); metadata != nil {
+			e.tryTraceStore(ctx, func(traceCtx context.Context) {
+				_ = e.traceStore.Set(traceCtx, commandTraceKey(correlationID), pendingCommandTrace{DeviceID: deviceID, StartedAt: time.UnixMilli(cmd.TS), Trace: metadata}, observability.DeferredTraceMaxAge)
+			})
+		}
+	}
 	if err := e.mq.Publish(hdp.Topic(hdp.CommandPrefix, deviceID), payload); err != nil {
-		return err
+		if action.WaitForResult && e.traceStore != nil {
+			e.tryTraceStore(ctx, func(traceCtx context.Context) { _ = e.traceStore.Delete(traceCtx, commandTraceKey(correlationID)) })
+		}
+		span.SetStatus(codes.Error, "MQTT publish failed")
+		return fmt.Errorf("%w: mqtt publish failed: %v", errCommandOutcomeUnknown, err)
 	}
 	return nil
 }
@@ -341,11 +465,14 @@ func (e *Engine) dispatchCapabilityStatePatch(ctx context.Context, deviceID, cor
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("dispatch through device hub: %w", err)
+		return fmt.Errorf("%w: dispatch through device hub: %v", errCommandOutcomeUnknown, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return fmt.Errorf("%w: device hub rejected command: %s", errCommandOutcomeUnknown, strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("device hub rejected command: %s", strings.TrimSpace(string(body)))
 	}
 	return nil

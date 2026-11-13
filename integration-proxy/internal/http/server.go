@@ -18,6 +18,9 @@ import (
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
 	dbinfra "github.com/PetoAdam/homenavi/integration-proxy/internal/infra/db"
+	"github.com/PetoAdam/homenavi/shared/observability"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type Server struct {
@@ -70,7 +73,7 @@ func New(logger *log.Logger, validator *jsonschema.Schema, pubKey *rsa.PublicKey
 		installStat: make(map[string]installStatus),
 		updates:     make(map[string]integrationUpdateStatus),
 		updating:    make(map[string]bool),
-		client:      &http.Client{Timeout: 8 * time.Second},
+		client:      &http.Client{Timeout: 8 * time.Second, Transport: observability.InstrumentHTTPTransport(nil)},
 		validator:   validator,
 		pubKey:      pubKey,
 		schemaPath:  schemaPath,
@@ -124,6 +127,10 @@ func (s *Server) Routes() http.Handler {
 }
 
 func (s *Server) AddIntegration(ic config.IntegrationConfig) error {
+	return s.addIntegration(context.Background(), ic)
+}
+
+func (s *Server) addIntegration(ctx context.Context, ic config.IntegrationConfig) error {
 	id := strings.TrimSpace(ic.ID)
 	if id == "" {
 		return fmt.Errorf("missing id")
@@ -138,6 +145,7 @@ func (s *Server) AddIntegration(ic config.IntegrationConfig) error {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(u)
+	proxy.Transport = observability.InstrumentHTTPTransport(nil)
 	origDirector := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		origDirector(r)
@@ -216,7 +224,7 @@ func (s *Server) AddIntegration(ic config.IntegrationConfig) error {
 	s.upstreams[id] = u
 	s.mu.Unlock()
 
-	_ = s.refreshManifest(context.Background(), id, u)
+	_ = s.refreshManifest(ctx, id, u)
 	s.initUpdateState(ic)
 	return nil
 }
@@ -276,6 +284,17 @@ func (s *Server) StartRefreshLoop(ctx context.Context, every time.Duration) {
 }
 
 func (s *Server) ReloadFromConfig() error {
+	return s.reloadFromConfig(context.Background())
+}
+
+func (s *Server) reloadFromConfig(ctx context.Context) (resultErr error) {
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(ctx, "integration.reload")
+	defer func() {
+		if resultErr != nil {
+			span.SetStatus(codes.Error, "integration reload failed")
+		}
+		span.End()
+	}()
 	if strings.TrimSpace(s.configPath) == "" {
 		return fmt.Errorf("config path is empty")
 	}
@@ -295,7 +314,7 @@ func (s *Server) ReloadFromConfig() error {
 	s.mu.Unlock()
 
 	for _, ic := range cfg.Integrations {
-		if err := s.AddIntegration(ic); err != nil {
+		if err := s.addIntegration(ctx, ic); err != nil {
 			return err
 		}
 	}

@@ -2,6 +2,7 @@ package clients
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/PetoAdam/homenavi/auth-service/internal/errors"
 	authtransport "github.com/PetoAdam/homenavi/auth-service/internal/http/auth/transport"
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 type UserConfig struct {
@@ -26,10 +28,17 @@ type UserClient struct {
 	baseURL    string
 	issueToken func() (string, error)
 	httpClient *http.Client
+	ctx        context.Context
 }
 
 func NewUserClient(cfg UserConfig) *UserClient {
-	return &UserClient{baseURL: cfg.BaseURL, issueToken: cfg.IssueToken, httpClient: &http.Client{Timeout: 10 * time.Second}}
+	return &UserClient{baseURL: cfg.BaseURL, issueToken: cfg.IssueToken, httpClient: observability.InstrumentHTTPClient(&http.Client{Timeout: 10 * time.Second})}
+}
+
+func (c *UserClient) WithContext(ctx context.Context) *UserClient {
+	client := *c
+	client.ctx = ctx
+	return &client
 }
 
 func (c *UserClient) CreateUser(req *authtransport.SignupRequest) (*User, error) {
@@ -307,7 +316,11 @@ func (c *UserClient) makeRequest(method, path string, body []byte, jwtToken stri
 		reqBody = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, endpoint, reqBody)
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reqBody)
 	if err != nil {
 		return nil, err
 	}

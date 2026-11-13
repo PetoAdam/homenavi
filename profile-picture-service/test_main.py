@@ -3,10 +3,13 @@ from __future__ import annotations
 from io import BytesIO
 import importlib
 import sys
+import threading
 from urllib.parse import urlparse
 
 from PIL import Image
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 class FakeS3Storage:
@@ -83,6 +86,87 @@ def test_generate_avatar_returns_public_url_and_serves_image(monkeypatch, tmp_pa
     assert avatar_response.status_code == 200
     assert avatar_response.headers["content-type"].startswith("image/png")
     assert avatar_response.content
+
+
+def test_request_continues_trace_without_recording_user_data(monkeypatch, tmp_path):
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
+    client = _load_test_client(monkeypatch, tmp_path)
+    exporter = InMemorySpanExporter()
+    client.app.state.tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+    response = client.post(
+        "/generate/secret-user?token=secret-value",
+        headers={"traceparent": "00-11111111111111111111111111111111-2222222222222222-01", "baggage": "token=secret"},
+    )
+    assert response.status_code == 200
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    span = spans[0]
+    assert format(span.context.trace_id, "032x") == "11111111111111111111111111111111"
+    assert format(span.parent.span_id, "016x") == "2222222222222222"
+    assert response.headers["Trace-ID"] == "11111111111111111111111111111111"
+    assert "secret" not in str(span.attributes)
+    assert not span.events
+
+
+def test_exporter_setup_failure_does_not_prevent_requests(monkeypatch, tmp_path):
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://collector.example/v1/traces")
+
+    def fail_exporter(*args, **kwargs):
+        raise ValueError("collector credentials")
+
+    monkeypatch.setattr("tracing.OTLPSpanExporter", fail_exporter)
+    client = _load_test_client(monkeypatch, tmp_path)
+    assert client.post("/generate/user-1").status_code == 200
+
+
+def test_slow_tracing_shutdown_does_not_block_service(monkeypatch, tmp_path):
+    monkeypatch.setattr("tracing.TRACING_SHUTDOWN_TIMEOUT", 0.01)
+    client = _load_test_client(monkeypatch, tmp_path)
+    release = threading.Event()
+    finished = threading.Event()
+
+    def slow_shutdown():
+        release.wait()
+        finished.set()
+
+    monkeypatch.setattr(client.app.state.tracer_provider, "shutdown", slow_shutdown)
+    try:
+        with client:
+            assert client.get("/health").status_code == 200
+        assert not finished.is_set()
+    finally:
+        release.set()
+        assert finished.wait(1)
+
+
+def test_invalid_trace_and_error_response_are_redacted(monkeypatch, tmp_path):
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
+    client = _load_test_client(monkeypatch, tmp_path)
+    exporter = InMemorySpanExporter()
+    client.app.state.tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    def fail_upload(*args, **kwargs):
+        raise RuntimeError("secret-storage-error")
+
+    monkeypatch.setattr(client.app.state.profile_picture_service.storage, "put_bytes", fail_upload)
+    response = client.post("/generate/secret-user", headers={"traceparent": "invalid"})
+    assert response.status_code == 500
+    span = exporter.get_finished_spans()[0]
+    assert span.parent is None
+    assert span.status.description == "HTTP server error"
+    assert "secret" not in str(span.attributes)
+    assert not span.events
+
+
+def test_configuration_error_health_is_traced(monkeypatch):
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
+    monkeypatch.setenv("STORAGE_TYPE", "unsupported")
+    module = importlib.reload(importlib.import_module("main"))
+    exporter = InMemorySpanExporter()
+    module.app.state.tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+    response = TestClient(module.app).get("/health")
+    assert response.status_code == 500
+    assert exporter.get_finished_spans()[0].status.description == "HTTP server error"
 
 
 def test_presigned_upload_flow(monkeypatch, tmp_path):

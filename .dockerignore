@@ -1,6 +1,9 @@
 .env
 keys/
 postgres-data/
+postgres-data-corrupt-*/
+postgres-recovery-*/
+postgres-recovery-*.sql
 zigbee2mqtt-data/
 node_modules/
 .git/

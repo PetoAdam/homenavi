@@ -1,19 +1,23 @@
 package realtime
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/gorilla/websocket"
 )
 
 type Event struct {
-	Type   string    `json:"type"`
-	Entity string    `json:"entity,omitempty"`
-	ID     string    `json:"id,omitempty"`
-	At     time.Time `json:"at"`
+	Type   string            `json:"type"`
+	Entity string            `json:"entity,omitempty"`
+	ID     string            `json:"id,omitempty"`
+	At     time.Time         `json:"at"`
+	Trace  *hdp.TraceContext `json:"trace,omitempty"`
 }
 
 type Hub struct {
@@ -55,7 +59,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.readPump(c)
 }
 
-func (h *Hub) Broadcast(ev Event) {
+func (h *Hub) Broadcast(ctx context.Context, ev Event) {
+	ctx, span := observability.StartRealtimeProducer(ctx)
+	defer span.End()
+	if observability.MessagePropagationEnabled() {
+		ev.Trace = observability.CaptureTraceContext(ctx)
+	} else {
+		ev.Trace = nil
+	}
 	ev.At = time.Now().UTC()
 	b, err := json.Marshal(ev)
 	if err != nil {

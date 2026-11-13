@@ -1,11 +1,14 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/PetoAdam/homenavi/shared/hdp"
+	"github.com/PetoAdam/homenavi/shared/observability"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func (s *Service) publishHello() {
@@ -123,11 +126,13 @@ func (s *Service) publishStatus(status, reason string) {
 	}
 }
 
-func (s *Service) publishCommandResult(deviceID, corr string, success bool, status, errMsg string) {
+func (s *Service) publishCommandResult(ctx context.Context, deviceID, corr string, success bool, status, errMsg string) {
 	id := s.hdpDeviceID(deviceID)
 	if id == "" || corr == "" {
 		return
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	payload := map[string]any{
 		"schema":    hdp.SchemaV1,
 		"type":      "command_result",
@@ -141,15 +146,24 @@ func (s *Service) publishCommandResult(deviceID, corr string, success bool, stat
 	if errMsg != "" {
 		payload["error"] = errMsg
 	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, payload)
+	}
 	if b, err := json.Marshal(payload); err == nil {
-		_ = s.client.Publish(hdp.CommandResultPrefix+id, b)
+		if err := s.client.Publish(hdp.CommandResultPrefix+id, b); err != nil {
+			span.SetStatus(codes.Error, "MQTT publish failed")
+		}
+	} else {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 	}
 }
 
-func (s *Service) publishPairingProgress(stage, status, external string, extra map[string]any) {
+func (s *Service) publishPairingProgress(ctx context.Context, stage, status, external string, extra map[string]any) {
 	if stage == "" {
 		return
 	}
+	ctx, span := observability.StartMessageProducer(ctx)
+	defer span.End()
 	payload := map[string]any{
 		"schema":   hdp.SchemaV1,
 		"type":     "pairing_progress",
@@ -167,7 +181,14 @@ func (s *Service) publishPairingProgress(stage, status, external string, extra m
 		}
 		payload[key] = value
 	}
+	if observability.MessagePropagationEnabled() {
+		observability.InjectMessageContext(ctx, payload)
+	}
 	if b, err := json.Marshal(payload); err == nil {
-		_ = s.client.Publish(hdp.PairingProgressPrefix+"mock", b)
+		if err := s.client.Publish(hdp.PairingProgressPrefix+"mock", b); err != nil {
+			span.SetStatus(codes.Error, "MQTT publish failed")
+		}
+	} else {
+		span.SetStatus(codes.Error, "MQTT message encoding failed")
 	}
 }

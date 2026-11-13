@@ -54,7 +54,7 @@ func (s *Server) handleRoomsCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.room.created", "room", room.ID)
+	s.emit(r.Context(), "ers.room.created", "room", room.ID)
 	writeJSON(w, http.StatusCreated, room)
 }
 
@@ -107,7 +107,7 @@ func (s *Server) handleRoomsPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.room.updated", "room", id)
+	s.emit(r.Context(), "ers.room.updated", "room", id)
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -122,6 +122,6 @@ func (s *Server) handleRoomsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateInventoryCaches(r.Context())
-	s.emit("ers.room.deleted", "room", id)
+	s.emit(r.Context(), "ers.room.deleted", "room", id)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }

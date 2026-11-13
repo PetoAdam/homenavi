@@ -17,12 +17,23 @@ const (
 	runEventReplayLimit  = int64(200)
 	runEventReplayTTL    = 15 * time.Minute
 	runEventPollInterval = 100 * time.Millisecond
+	runEventQueueLimit   = 256
 )
 
 // RedisRunEventBus stores a bounded replay list in Redis so all automation
 // replicas can serve run-event WebSockets without Redis Pub/Sub.
 type RedisRunEventBus struct {
-	client redis.UniversalClient
+	client    redis.UniversalClient
+	queue     chan queuedRunEvent
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closeOnce sync.Once
+	closeErr  error
+}
+
+type queuedRunEvent struct {
+	runID uuid.UUID
+	event engine.RunEvent
 }
 
 func NewRedisRunEventBus(ctx context.Context, cfg redisx.Config) (*RedisRunEventBus, error) {
@@ -30,7 +41,10 @@ func NewRedisRunEventBus(ctx context.Context, cfg redisx.Config) (*RedisRunEvent
 	if err != nil {
 		return nil, err
 	}
-	return &RedisRunEventBus{client: client}, nil
+	workerCtx, cancel := context.WithCancel(context.Background())
+	bus := &RedisRunEventBus{client: client, queue: make(chan queuedRunEvent, runEventQueueLimit), ctx: workerCtx, cancel: cancel}
+	go bus.publishLoop()
+	return bus, nil
 }
 
 func runEventReplayKey(runID uuid.UUID) string {
@@ -41,6 +55,25 @@ func (b *RedisRunEventBus) Publish(runID uuid.UUID, evt engine.RunEvent) {
 	if b == nil || b.client == nil || runID == uuid.Nil {
 		return
 	}
+	select {
+	case <-b.ctx.Done():
+	case b.queue <- queuedRunEvent{runID: runID, event: evt}:
+	default:
+	}
+}
+
+func (b *RedisRunEventBus) publishLoop() {
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case queued := <-b.queue:
+			b.storeEvent(queued.runID, queued.event)
+		}
+	}
+}
+
+func (b *RedisRunEventBus) storeEvent(runID uuid.UUID, evt engine.RunEvent) {
 	if evt.EventID == "" {
 		evt.EventID = uuid.NewString()
 	}
@@ -56,12 +89,11 @@ func (b *RedisRunEventBus) Publish(runID uuid.UUID, evt engine.RunEvent) {
 		return
 	}
 
-	ctx := context.Background()
 	pipeline := b.client.TxPipeline()
-	pipeline.RPush(ctx, runEventReplayKey(runID), payload)
-	pipeline.LTrim(ctx, runEventReplayKey(runID), -runEventReplayLimit, -1)
-	pipeline.Expire(ctx, runEventReplayKey(runID), runEventReplayTTL)
-	if _, err := pipeline.Exec(ctx); err != nil {
+	pipeline.RPush(b.ctx, runEventReplayKey(runID), payload)
+	pipeline.LTrim(b.ctx, runEventReplayKey(runID), -runEventReplayLimit, -1)
+	pipeline.Expire(b.ctx, runEventReplayKey(runID), runEventReplayTTL)
+	if _, err := pipeline.Exec(b.ctx); err != nil && b.ctx.Err() == nil {
 		slog.Warn("automation run event store failed", "run_id", runID, "error", err)
 	}
 }
@@ -153,7 +185,11 @@ func (b *RedisRunEventBus) Close() error {
 	if b == nil || b.client == nil {
 		return nil
 	}
-	return b.client.Close()
+	b.closeOnce.Do(func() {
+		b.cancel()
+		b.closeErr = b.client.Close()
+	})
+	return b.closeErr
 }
 
 var _ engine.RunEventBus = (*RedisRunEventBus)(nil)

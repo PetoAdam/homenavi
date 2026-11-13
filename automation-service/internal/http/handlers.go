@@ -13,6 +13,7 @@ import (
 	"github.com/PetoAdam/homenavi/automation-service/internal/engine"
 	dbinfra "github.com/PetoAdam/homenavi/automation-service/internal/infra/db"
 	"github.com/PetoAdam/homenavi/shared/cachex"
+	"github.com/PetoAdam/homenavi/shared/observability"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -50,6 +51,9 @@ func NewServer(repo *dbinfra.Repository, eng *engine.Engine, pubKey *rsa.PublicK
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
+	client := *hc
+	client.Transport = observability.InstrumentHTTPTransport(client.Transport)
+	hc = &client
 	server := &Server{
 		repo:                repo,
 		engine:              eng,

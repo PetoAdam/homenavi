@@ -303,7 +303,7 @@ func (s *Server) handleDeviceCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateDeviceListCache(r.Context())
-	s.publishDeviceMetadata(dev)
+	s.publishDeviceMetadata(r.Context(), dev)
 	item, err := s.buildDeviceItem(r.Context(), dev)
 	if err != nil {
 		http.Error(w, "could not encode device", http.StatusInternalServerError)
@@ -429,7 +429,7 @@ func (s *Server) handleDevicePatch(w http.ResponseWriter, r *http.Request, devic
 		return
 	}
 	s.invalidateDeviceListCache(r.Context())
-	s.publishDeviceMetadata(dev)
+	s.publishDeviceMetadata(r.Context(), dev)
 	if hdpID == "" {
 		hdpID = canonicalHDPDeviceID(dev.Protocol, dev.ExternalID)
 	}
@@ -487,7 +487,7 @@ func (s *Server) handleDeviceDelete(w http.ResponseWriter, r *http.Request, devi
 	if force {
 		reason = "api-delete-force"
 	}
-	s.publishDeviceRemoval(dev, reason)
+	s.publishDeviceRemoval(r.Context(), dev, reason)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -629,8 +629,8 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		statePatch["transition_ms"] = *req.TransitionMs
 	}
 	baselineState := s.loadBaselineState(r.Context(), dev.ID.String())
-	s.beginCommandLifecycle(targetExternal, corr, statePatch, baselineState)
-	s.publishCommandLifecycle(targetExternal, corr, commandStatusAccepted, "", nil)
+	s.beginCommandLifecycleWithTimeout(r.Context(), targetExternal, corr, statePatch, baselineState, s.commandTimeout)
+	s.publishCommandLifecycleWithContext(r.Context(), targetExternal, corr, commandStatusAccepted, "", nil)
 	hdpCommand := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command",
@@ -641,13 +641,13 @@ func (s *Server) handleDeviceCommand(w http.ResponseWriter, r *http.Request, dev
 		"corr":      corr,
 	}
 	slog.Info("device command dispatch", "device_id", deviceID, "external", targetExternal, "corr", corr)
-	if err := s.publishHDPCommand(targetExternal, hdpCommand); err != nil {
+	if err := s.publishHDPCommand(r.Context(), targetExternal, hdpCommand); err != nil {
 		s.removePendingCommand(targetExternal, corr)
-		s.publishCommandLifecycle(targetExternal, corr, commandStatusFailed, err.Error(), nil)
+		s.publishCommandLifecycleWithContext(r.Context(), targetExternal, corr, commandStatusFailed, err.Error(), nil)
 		http.Error(w, "could not dispatch command", http.StatusBadGateway)
 		return
 	}
-	s.publishCommandLifecycle(targetExternal, corr, commandStatusQueued, "", nil)
+	s.publishCommandLifecycleWithContext(r.Context(), targetExternal, corr, commandStatusQueued, "", nil)
 	writeJSON(w, http.StatusAccepted, commandResponse{Status: "queued", DeviceID: targetExternal, TransitionMs: req.TransitionMs, CorrelationID: corr})
 }
 
@@ -703,7 +703,7 @@ func (s *Server) handleDeviceRefresh(w http.ResponseWriter, r *http.Request, dev
 		"state":      state,
 		"properties": props,
 	}
-	if err := s.publishHDPCommand(hdpID, cmd); err != nil {
+	if err := s.publishHDPCommand(r.Context(), hdpID, cmd); err != nil {
 		http.Error(w, "could not queue refresh", http.StatusBadGateway)
 		return
 	}
@@ -751,11 +751,11 @@ func (s *Server) handleDeviceReconfigure(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	corr := uuid.NewString()
-	if !s.beginExclusiveCommandLifecycle(hdpID, corr, nil, nil, reconfigureCommandLifecycleTimeout) {
+	if !s.beginExclusiveCommandLifecycle(r.Context(), hdpID, corr, nil, nil, reconfigureCommandLifecycleTimeout) {
 		http.Error(w, "another device action is already in progress", http.StatusConflict)
 		return
 	}
-	s.publishCommandLifecycle(hdpID, corr, commandStatusAccepted, "", map[string]any{"command": "reconfigure", "mode": mode})
+	s.publishCommandLifecycleWithContext(r.Context(), hdpID, corr, commandStatusAccepted, "", map[string]any{"command": "reconfigure", "mode": mode})
 	cmd := map[string]any{
 		"schema":    hdpSchema,
 		"type":      "command",
@@ -768,13 +768,13 @@ func (s *Server) handleDeviceReconfigure(w http.ResponseWriter, r *http.Request,
 	if len(req.Args) > 0 {
 		cmd["args"] = req.Args
 	}
-	if err := s.publishHDPCommand(hdpID, cmd); err != nil {
+	if err := s.publishHDPCommand(r.Context(), hdpID, cmd); err != nil {
 		s.removePendingCommand(hdpID, corr)
-		s.publishCommandLifecycle(hdpID, corr, commandStatusFailed, err.Error(), map[string]any{"command": "reconfigure", "mode": mode})
+		s.publishCommandLifecycleWithContext(r.Context(), hdpID, corr, commandStatusFailed, err.Error(), map[string]any{"command": "reconfigure", "mode": mode})
 		http.Error(w, "could not queue reconfigure request", http.StatusBadGateway)
 		return
 	}
-	s.publishCommandLifecycle(hdpID, corr, commandStatusQueued, "", map[string]any{"command": "reconfigure", "mode": mode})
+	s.publishCommandLifecycleWithContext(r.Context(), hdpID, corr, commandStatusQueued, "", map[string]any{"command": "reconfigure", "mode": mode})
 	writeJSON(w, http.StatusAccepted, deviceActionResponse{
 		Status:        "queued",
 		DeviceID:      hdpID,

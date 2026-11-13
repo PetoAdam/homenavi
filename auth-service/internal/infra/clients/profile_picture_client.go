@@ -2,6 +2,7 @@ package clients
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,12 +11,15 @@ import (
 	"net/http"
 	"net/textproto"
 	"time"
+
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 // ProfilePictureClient wraps profile-picture-service HTTP calls.
 type ProfilePictureClient struct {
 	baseURL    string
 	httpClient *http.Client
+	ctx        context.Context
 }
 
 type ProfilePictureUploadURL struct {
@@ -40,11 +44,24 @@ func newDownstreamHTTPError(statusCode int, body []byte) error {
 }
 
 func NewProfilePictureClient(baseURL string) *ProfilePictureClient {
-	return &ProfilePictureClient{baseURL: baseURL, httpClient: &http.Client{Timeout: 30 * time.Second}}
+	return &ProfilePictureClient{baseURL: baseURL, httpClient: observability.InstrumentHTTPClient(&http.Client{Timeout: 30 * time.Second})}
+}
+
+func (c *ProfilePictureClient) WithContext(ctx context.Context) *ProfilePictureClient {
+	client := *c
+	client.ctx = ctx
+	return &client
+}
+
+func (c *ProfilePictureClient) context() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
 }
 
 func (c *ProfilePictureClient) GenerateAvatar(userID string) (string, error) {
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/generate/"+userID, nil)
+	req, err := http.NewRequestWithContext(c.context(), http.MethodPost, c.baseURL+"/generate/"+userID, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
@@ -84,7 +101,7 @@ func (c *ProfilePictureClient) CreateUploadURL(userID, filename, contentType str
 	if err != nil {
 		return ProfilePictureUploadURL{}, fmt.Errorf("marshal upload-url request: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/profile-pictures/upload-url", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(c.context(), http.MethodPost, c.baseURL+"/profile-pictures/upload-url", bytes.NewReader(body))
 	if err != nil {
 		return ProfilePictureUploadURL{}, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -139,7 +156,7 @@ func (c *ProfilePictureClient) CompleteUpload(userID, objectKey string) (string,
 	if err != nil {
 		return "", fmt.Errorf("marshal upload completion request: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/profile-pictures/complete", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(c.context(), http.MethodPost, c.baseURL+"/profile-pictures/complete", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
@@ -195,7 +212,7 @@ func (c *ProfilePictureClient) UploadProfilePicture(userID string, file multipar
 		return "", fmt.Errorf("failed to close form writer: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/upload", body)
+	req, err := http.NewRequestWithContext(c.context(), http.MethodPost, c.baseURL+"/upload", body)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}

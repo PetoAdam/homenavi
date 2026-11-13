@@ -30,14 +30,14 @@ vi.mock('../../../services/realtime/sharedWebSocket', () => ({
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-function renderHarness() {
+function renderHarness(options) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   const state = { current: null };
 
   function Harness() {
-    state.current = useRunStream();
+    state.current = useRunStream(options);
     return null;
   }
 
@@ -71,6 +71,40 @@ describe('useRunStream', () => {
     messageHandler = null;
     statusHandler = null;
     document.body.innerHTML = '';
+  });
+
+  it('ignores waiting and duplicate completion events after a run finishes', async () => {
+    const onToast = vi.fn();
+    const view = renderHarness({ onToast });
+    await act(async () => {
+      await view.state.current.startRunStream({ runId: 'run-1', workflowId: 'wf-1' });
+    });
+    act(() => {
+      messageHandler?.({ data: JSON.stringify({ type: 'run_finished', run_id: 'run-1', status: 'success' }) });
+      messageHandler?.({ data: JSON.stringify({ type: 'run_waiting', run_id: 'run-1', status: 'waiting' }) });
+      messageHandler?.({ data: JSON.stringify({ type: 'run_finished', run_id: 'run-1', status: 'success' }) });
+    });
+    expect(onToast).toHaveBeenCalledTimes(1);
+    expect(onToast).toHaveBeenCalledWith('Run complete');
+    view.unmount();
+  });
+
+  it('reports an unknown command outcome without calling it a failure', async () => {
+    const onToast = vi.fn();
+    const onError = vi.fn();
+    const view = renderHarness({ onToast, onError });
+    await act(async () => {
+      await view.state.current.startRunStream({ runId: 'run-unknown', workflowId: 'wf-1' });
+    });
+    act(() => {
+      messageHandler?.({ data: JSON.stringify({ type: 'node_started', run_id: 'run-unknown', node_id: 'command', status: 'running' }) });
+      messageHandler?.({ data: JSON.stringify({ type: 'node_finished', run_id: 'run-unknown', node_id: 'command', status: 'unknown' }) });
+      messageHandler?.({ data: JSON.stringify({ type: 'run_finished', run_id: 'run-unknown', status: 'unknown' }) });
+    });
+    expect(onToast).toHaveBeenCalledWith('Run outcome unknown');
+    expect(onError).not.toHaveBeenCalled();
+    expect(view.state.current.liveRunNodeStates.command).not.toBe('failed');
+    view.unmount();
   });
 
   it('keeps trigger highlights visible until the post-run grace period expires', async () => {

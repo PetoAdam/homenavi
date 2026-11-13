@@ -152,6 +152,8 @@ export default function useRunStream({ onToast, onError } = {}) {
       liveRunRef.current = { ...liveRunRef.current, finished: true };
       if (status === 'success') {
         onToastRef.current?.('Run complete');
+      } else if (status === 'unknown') {
+        onToastRef.current?.('Run outcome unknown');
       } else {
         if (errorMessage) {
           onErrorRef.current?.(errorMessage);
@@ -189,7 +191,7 @@ export default function useRunStream({ onToast, onError } = {}) {
         }
 
         if (type === 'run_waiting') {
-          onToastRef.current?.('Waiting for result…');
+          if (!liveRunRef.current.finished) onToastRef.current?.('Waiting for result…');
           return;
         }
 
@@ -200,7 +202,7 @@ export default function useRunStream({ onToast, onError } = {}) {
         }
 
         if (type === 'node_finished') {
-          const terminalState = status === 'success' ? 'done' : 'failed';
+          const terminalState = status === 'success' ? 'done' : status === 'unknown' ? null : 'failed';
           // Trigger nodes complete synchronously. Defer their terminal state two
           // frames so the preceding node_started highlight is painted first.
           if (isTriggerRunEvent(msg)) {
@@ -226,7 +228,7 @@ export default function useRunStream({ onToast, onError } = {}) {
         }
 
         if (type === 'run_finished') {
-          finalizeRun(status, String(msg.error || 'Run failed'));
+          if (!liveRunRef.current.finished) finalizeRun(status, String(msg.error || 'Run failed'));
         }
       });
 

@@ -7,7 +7,44 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestResolveSelectorPropagatesTrace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(t.Context())
+	})
+	var downstreamTrace string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		downstreamTrace = propagation.HeaderCarrier(request.Header).Get("traceparent")
+		_, _ = writer.Write([]byte(`{"hdp_external_ids":["dev-1"]}`))
+	}))
+	defer server.Close()
+	originalClient := server.Client()
+	originalTransport := originalClient.Transport
+	engine := New(nil, nil, Options{HTTPClient: originalClient, ERSServiceURL: server.URL})
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "workflow")
+	if _, err := engine.resolveSelector(ctx, "tag:kitchen"); err != nil {
+		t.Fatal(err)
+	}
+	parent.End()
+	spans := recorder.Ended()
+	if downstreamTrace == "" || len(spans) != 2 || spans[0].Parent().SpanID() != spans[1].SpanContext().SpanID() {
+		t.Fatal("selector request did not propagate the workflow trace")
+	}
+	if originalClient.Transport != originalTransport {
+		t.Fatal("constructor modified the supplied HTTP client")
+	}
+}
 
 func TestResolveSelector_DedupAndCache(t *testing.T) {
 	var calls int32

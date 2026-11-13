@@ -2,12 +2,32 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
+
+func startRuntimeOperation(parent context.Context, name string, timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(parent))
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, span := otel.Tracer("homenavi/integration-proxy").Start(ctx, name)
+	return ctx, func() {
+		span.End()
+		cancel()
+	}
+}
+
+func startBackgroundRuntimeOperation(parent trace.SpanContext, name string) (context.Context, trace.Span) {
+	ctx := trace.ContextWithSpanContext(context.Background(), parent)
+	return otel.Tracer("homenavi/integration-proxy").Start(ctx, name)
+}
 
 type integrationOperation struct {
 	s    *Server

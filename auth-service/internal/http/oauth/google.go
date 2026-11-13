@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -12,7 +13,7 @@ import (
 
 type googleAuthService interface {
 	ValidateOAuthState(state string) error
-	ExchangeGoogleOAuthCode(code, redirectURI string) (*clientsinfra.GoogleUserInfo, error)
+	ExchangeGoogleOAuthCode(ctx context.Context, code, redirectURI string) (*clientsinfra.GoogleUserInfo, error)
 	IssueTokenPair(user *clientsinfra.User) (*authdomain.TokenPair, error)
 }
 
@@ -68,7 +69,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// Exchange Google OAuth code for user information
-	userInfo, err := h.authService.ExchangeGoogleOAuthCode(code, "/api/auth/oauth/google/callback")
+	userInfo, err := h.authService.ExchangeGoogleOAuthCode(r.Context(), code, "/api/auth/oauth/google/callback")
 	if err != nil {
 		slog.Error("oauth google exchange failed", "error", err)
 		http.Redirect(w, r, "/?error=oauth_exchange_failed", http.StatusTemporaryRedirect)
@@ -76,7 +77,11 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// Prefer email match first (link scenario where user signed up via password before OAuth)
-	user, err := h.userService.GetUserByEmail(userInfo.Email)
+	userService := h.userService
+	if client, ok := userService.(*clientsinfra.UserClient); ok {
+		userService = client.WithContext(r.Context())
+	}
+	user, err := userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
 		slog.Info("oauth google existing user by email", "email", userInfo.Email, "user_id", user.ID, "google_id", user.GoogleID)
 		if user.LockoutEnabled {
@@ -85,7 +90,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 			return
 		}
 		if user.GoogleID == "" {
-			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
+			if err := userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
 				slog.Error("oauth google link failure", "user_id", user.ID, "error", err)
 				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
 				return
@@ -111,7 +116,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// Fallback: lookup by Google ID (scenario: previously linked only via OAuth route)
-	user, err = h.userService.GetUserByGoogleID(userInfo.ID)
+	user, err = userService.GetUserByGoogleID(userInfo.ID)
 	if err == nil && user != nil {
 		slog.Info("oauth google existing user by google id", "google_id", userInfo.ID, "user_id", user.ID)
 		if user.LockoutEnabled {
@@ -132,7 +137,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 	}
 
 	// Try to find user by email
-	user, err = h.userService.GetUserByEmail(userInfo.Email)
+	user, err = userService.GetUserByEmail(userInfo.Email)
 	if err == nil && user != nil {
 		slog.Info("oauth google found existing user by email", "email", userInfo.Email, "user_id", user.ID, "google_id", user.GoogleID)
 		if user.LockoutEnabled {
@@ -141,7 +146,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 			return
 		}
 		if user.GoogleID == "" {
-			if err := h.userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
+			if err := userService.LinkGoogleID(user.ID, userInfo.ID); err != nil {
 				slog.Error("oauth google link failure", "user_id", user.ID, "error", err)
 				http.Redirect(w, r, "/?error=link_failed", http.StatusTemporaryRedirect)
 				return
@@ -170,7 +175,7 @@ func (h *GoogleHandler) HandleOAuthGoogleCallback(w http.ResponseWriter, r *http
 
 	// User doesn't exist, create new user
 	slog.Info("oauth google creating new user", "email", userInfo.Email)
-	user, err = h.userService.CreateGoogleUser(userInfo)
+	user, err = userService.CreateGoogleUser(userInfo)
 	if err != nil {
 		slog.Error("oauth google create user failed", "error", err)
 		http.Redirect(w, r, "/?error=user_creation_failed", http.StatusTemporaryRedirect)

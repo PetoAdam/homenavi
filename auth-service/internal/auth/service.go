@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	cacheinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/cache"
 	clientsinfra "github.com/PetoAdam/homenavi/auth-service/internal/infra/clients"
 	"github.com/PetoAdam/homenavi/shared/authx"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/oauth2"
@@ -603,14 +605,20 @@ func (s *Service) ExtractOAuthSession(tokenString string) (OAuthSession, error) 
 	return OAuthSession{Subject: userID, SessionID: sessionID, Role: role}, nil
 }
 
-func (s *Service) ExchangeGoogleOAuthCode(code, redirectURI string) (*clientsinfra.GoogleUserInfo, error) {
-	token, err := s.googleOAuthConfig.Exchange(context.Background(), code)
+func (s *Service) ExchangeGoogleOAuthCode(ctx context.Context, code, redirectURI string) (*clientsinfra.GoogleUserInfo, error) {
+	httpClient, _ := ctx.Value(oauth2.HTTPClient).(*http.Client)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, observability.InstrumentExternalHTTPClient(httpClient))
+	token, err := s.googleOAuthConfig.Exchange(ctx, code)
 	if err != nil {
 		return nil, errors.BadRequest("failed to exchange OAuth code")
 	}
 
-	client := s.googleOAuthConfig.Client(context.Background(), token)
-	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	client := s.googleOAuthConfig.Client(ctx, token)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	if err != nil {
+		return nil, errors.InternalServerError("failed to create Google user info request", err)
+	}
+	resp, err := client.Do(request)
 	if err != nil {
 		return nil, errors.InternalServerError("failed to get user info from Google", err)
 	}

@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -9,9 +10,230 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/PetoAdam/homenavi/integration-proxy/internal/config"
+	"github.com/PetoAdam/homenavi/shared/observability"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestRuntimeOperationPreservesTraceButNotRequestCancellation(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	requestCtx, cancelRequest := context.WithCancel(context.WithValue(context.Background(), "secret", "value"))
+	requestCtx, parent := provider.Tracer("test").Start(requestCtx, "request")
+	cancelRequest()
+	operationCtx, finish := startRuntimeOperation(requestCtx, "integration.install", time.Second)
+	if operationCtx.Err() != nil || operationCtx.Value("secret") != nil {
+		t.Fatal("runtime operation inherited request cancellation or values")
+	}
+	if _, ok := operationCtx.Deadline(); !ok {
+		t.Fatal("runtime operation must retain its timeout")
+	}
+	finish()
+	parent.End()
+	spans := recorder.Ended()
+	if len(spans) != 2 || spans[0].Name() != "integration.install" || spans[0].Parent().SpanID() != spans[1].SpanContext().SpanID() || spans[0].SpanContext().TraceID() != spans[1].SpanContext().TraceID() {
+		t.Fatal("runtime operation did not continue the request trace")
+	}
+}
+
+func TestProxySupportsIntegrationWithoutTelemetry(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/.well-known/homenavi-integration.json" {
+			_, _ = writer.Write([]byte(`{"id":"plain"}`))
+			return
+		}
+		writer.WriteHeader(http.StatusAccepted)
+		_, _ = writer.Write([]byte("integration response"))
+	}))
+	defer upstream.Close()
+	server := New(log.New(io.Discard, "", 0), nil, nil, "", "")
+	if err := server.AddIntegration(config.IntegrationConfig{ID: "plain", Upstream: upstream.URL}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	handler := observability.WrapHandler(provider.Tracer("proxy"), "integration-proxy", server.Routes())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/integrations/plain/action", nil))
+	if response.Code != http.StatusAccepted || response.Body.String() != "integration response" {
+		t.Fatalf("uninstrumented integration failed: %d %q", response.Code, response.Body.String())
+	}
+	spans := recorder.Ended()
+	if len(spans) != 2 || spans[0].Parent().SpanID() != spans[1].SpanContext().SpanID() || spans[0].SpanContext().TraceID() != spans[1].SpanContext().TraceID() {
+		t.Fatal("proxy did not record its own connected client span")
+	}
+}
+
+func TestRuntimeCommandSpansRedactArguments(t *testing.T) {
+	t.Setenv("INTEGRATIONS_HELM_BIN", "/bin/false")
+	t.Setenv("INTEGRATIONS_COMPOSE_BIN", "/bin/false")
+	t.Setenv("INTEGRATIONS_COMPOSE_ENABLED", "true")
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	server := New(nil, nil, nil, "", "")
+	ctx, parent := provider.Tracer("test").Start(context.Background(), "operation")
+	if server.runHelm(ctx, "secret-helm-argument") == nil || server.runCompose(ctx, "secret-compose-path", "secret-compose-argument") == nil {
+		t.Fatal("expected commands to fail")
+	}
+	parent.End()
+	spans := recorder.Ended()
+	if len(spans) != 3 {
+		t.Fatalf("expected command and parent spans, got %d", len(spans))
+	}
+	for _, span := range spans[:2] {
+		if span.Status().Code != codes.Error || span.Parent().SpanID() != parent.SpanContext().SpanID() || len(span.Attributes()) != 0 || len(span.Events()) != 0 {
+			t.Fatalf("command span is unconnected or exposes command details: %#v", span)
+		}
+	}
+}
+
+func TestUpdateRequestConnectsMarketplaceAndOperation(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")
+	marketplace := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("traceparent") == "" {
+			t.Error("marketplace request has no trace context")
+		}
+		_, _ = writer.Write([]byte(`{"id":"plain","version":"0.1.0"}`))
+	}))
+	defer marketplace.Close()
+	t.Setenv("INTEGRATIONS_MARKETPLACE_API_BASE", marketplace.URL)
+	path := filepath.Join(t.TempDir(), "installed.yaml")
+	if err := config.Save(path, config.Config{Integrations: []config.IntegrationConfig{{ID: "plain", Upstream: "http://plain:8099", Version: "0.1.0"}}}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	server := New(log.New(io.Discard, "", 0), nil, nil, "", path)
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "request")
+	response := httptest.NewRecorder()
+	server.handleUpdateIntegration(response, httptest.NewRequest(http.MethodPost, "/integrations/update", bytes.NewBufferString(`{"id":"plain"}`)).WithContext(ctx))
+	parent.End()
+	if response.Code != http.StatusOK {
+		t.Fatalf("update returned %d: %s", response.Code, response.Body.String())
+	}
+	spans := recorder.Ended()
+	if len(spans) != 4 || spans[0].Parent().SpanID() != spans[2].SpanContext().SpanID() || spans[1].Name() != "integration.update" || spans[1].Parent().SpanID() != spans[2].SpanContext().SpanID() || spans[2].Name() != "integration.update_request" || spans[2].Parent().SpanID() != parent.SpanContext().SpanID() {
+		t.Fatal("marketplace lookup and update operation are not connected to the request")
+	}
+}
+
+func TestReloadConnectsManifestRequest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("traceparent") == "" {
+			t.Error("manifest request has no trace context")
+		}
+		_, _ = writer.Write([]byte(`{"id":"plain"}`))
+	}))
+	defer upstream.Close()
+	path := filepath.Join(t.TempDir(), "installed.yaml")
+	if err := config.Save(path, config.Config{Integrations: []config.IntegrationConfig{{ID: "plain", Upstream: upstream.URL}}}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := tracetest.NewSpanRecorder()
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	server := New(log.New(io.Discard, "", 0), nil, nil, "", path)
+	ctx, parent := provider.Tracer("test").Start(t.Context(), "request")
+	if err := server.reloadFromConfig(ctx); err != nil {
+		t.Fatal(err)
+	}
+	parent.End()
+	spans := recorder.Ended()
+	if len(spans) != 3 || spans[0].Parent().SpanID() != spans[1].SpanContext().SpanID() || spans[1].Name() != "integration.reload" || spans[1].Parent().SpanID() != parent.SpanContext().SpanID() {
+		t.Fatal("manifest request was not connected to the reload operation")
+	}
+}
+
+type restartSpanRecorder struct {
+	*tracetest.SpanRecorder
+	finished chan struct{}
+}
+
+func (recorder *restartSpanRecorder) OnEnd(span trace.ReadOnlySpan) {
+	recorder.SpanRecorder.OnEnd(span)
+	if span.Name() == "integration.restart" {
+		close(recorder.finished)
+	}
+}
+
+func TestRestartBackgroundContinuesRequestTrace(t *testing.T) {
+	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")
+	t.Setenv("INTEGRATIONS_COMPOSE_ENABLED", "false")
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"id":"plain"}`))
+	}))
+	defer upstream.Close()
+	server := New(nil, nil, nil, "", "")
+	if err := server.AddIntegration(config.IntegrationConfig{ID: "plain", Upstream: upstream.URL}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &restartSpanRecorder{SpanRecorder: tracetest.NewSpanRecorder(), finished: make(chan struct{})}
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	requestCtx, cancel := context.WithCancel(context.Background())
+	requestCtx, parent := provider.Tracer("test").Start(requestCtx, "request")
+	response := httptest.NewRecorder()
+	server.handleRestartIntegration(response, httptest.NewRequest(http.MethodPost, "/integrations/restart/plain", nil).WithContext(requestCtx))
+	cancel()
+	parent.End()
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("restart returned %d", response.Code)
+	}
+	select {
+	case <-recorder.finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background restart did not finish")
+	}
+	spans := recorder.Ended()
+	var restart trace.ReadOnlySpan
+	for _, span := range spans {
+		if span.Name() == "integration.restart" {
+			restart = span
+		}
+	}
+	if restart == nil || restart.Parent().SpanID() != parent.SpanContext().SpanID() || restart.SpanContext().TraceID() != parent.SpanContext().TraceID() {
+		t.Fatal("background restart did not continue the request trace")
+	}
+}
 
 func TestInstallAcceptsLegacyComposeFileField(t *testing.T) {
 	t.Setenv("INTEGRATIONS_RUNTIME_MODE", "compose")

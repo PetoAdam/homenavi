@@ -43,7 +43,12 @@ func Open(cfg Config) (*gorm.DB, error) {
 }
 
 func New(database *gorm.DB) (*Repository, error) {
-	if err := ensureSchema(database); err != nil {
+	if err := database.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(0x484e4155544f)).Error; err != nil {
+			return fmt.Errorf("lock automation schema: %w", err)
+		}
+		return ensureSchema(tx)
+	}); err != nil {
 		return nil, err
 	}
 	return &Repository{db: database}, nil
@@ -101,6 +106,13 @@ func ensureSchema(database *gorm.DB) error {
 	if !m.HasColumn(&PendingCorrelation{}, "HDPDeviceID") {
 		if err := m.AddColumn(&PendingCorrelation{}, "HDPDeviceID"); err != nil {
 			return fmt.Errorf("add pending_correlations.hdp_device_id: %w", err)
+		}
+	}
+	for _, column := range []string{"DispatchPending", "ResultStatus", "ResultError"} {
+		if !m.HasColumn(&PendingCorrelation{}, column) {
+			if err := m.AddColumn(&PendingCorrelation{}, column); err != nil {
+				return fmt.Errorf("add pending_correlations.%s: %w", column, err)
+			}
 		}
 	}
 	if !m.HasConstraint(&WorkflowRun{}, "Workflow") {
@@ -324,7 +336,52 @@ func (r *Repository) GetRunByIdempotencyKey(ctx context.Context, key string) (*W
 func (r *Repository) FinishRun(ctx context.Context, runID uuid.UUID, status string, errMsg string) error {
 	now := time.Now().UTC()
 	updates := map[string]any{"status": status, "finished_at": &now, "error": errMsg}
-	return r.db.WithContext(ctx).Model(&WorkflowRun{}).Where("id = ?", runID).Updates(updates).Error
+	result := r.db.WithContext(ctx).Model(&WorkflowRun{}).
+		Where("id = ? AND status = ? AND NOT EXISTS (SELECT 1 FROM workflow_run_steps WHERE run_id = workflow_runs.id AND status = ?)", runID, "running", "running").Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("run is missing, already finished, or has unfinished steps")
+	}
+	return nil
+}
+
+func (r *Repository) FailRun(ctx context.Context, runID uuid.UUID, errMsg string) ([]WorkflowRunStep, bool, error) {
+	var steps []WorkflowRunStep
+	finished := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pending []PendingCorrelation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("run_id = ?", runID).Find(&pending).Error; err != nil {
+			return err
+		}
+		var run WorkflowRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&run, "id = ?", runID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if run.Status != "running" {
+			return nil
+		}
+		if err := tx.Where("run_id = ? AND status = ?", runID, "running").Find(&steps).Error; err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if err := tx.Model(&WorkflowRunStep{}).Where("run_id = ? AND status = ?", runID, "running").Updates(map[string]any{"status": "failed", "finished_at": &now, "error": errMsg}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&WorkflowRun{}).Where("id = ?", runID).Updates(map[string]any{"status": "failed", "finished_at": &now, "error": errMsg}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&PendingCorrelation{}, "run_id = ?", runID).Error; err != nil {
+			return err
+		}
+		finished = true
+		return nil
+	})
+	return steps, finished, err
 }
 
 func (r *Repository) CreateStep(ctx context.Context, step *WorkflowRunStep) error {
@@ -343,7 +400,14 @@ func (r *Repository) CreateStep(ctx context.Context, step *WorkflowRunStep) erro
 func (r *Repository) FinishStep(ctx context.Context, stepID uuid.UUID, status string, errMsg string) error {
 	now := time.Now().UTC()
 	updates := map[string]any{"status": status, "finished_at": &now, "error": errMsg}
-	return r.db.WithContext(ctx).Model(&WorkflowRunStep{}).Where("id = ?", stepID).Updates(updates).Error
+	result := r.db.WithContext(ctx).Model(&WorkflowRunStep{}).Where("id = ? AND status = ?", stepID, "running").Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("step is missing or already finished")
+	}
+	return nil
 }
 
 func (r *Repository) ListRuns(ctx context.Context, workflowID uuid.UUID, limit int) ([]WorkflowRun, error) {
@@ -395,7 +459,7 @@ func (r *Repository) ResolveHDPDeviceIDByExternalRef(ctx context.Context, extern
 func (r *Repository) ConsumePendingCorr(ctx context.Context, corr string) (*PendingCorrelation, error) {
 	var pending PendingCorrelation
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&pending, "corr = ?", corr).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pending, "corr = ?", corr).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&PendingCorrelation{}, "corr = ?", corr).Error
@@ -409,9 +473,144 @@ func (r *Repository) ConsumePendingCorr(ctx context.Context, corr string) (*Pend
 	return &pending, nil
 }
 
-func (r *Repository) PruneExpiredPending(ctx context.Context) error {
+func (r *Repository) ResolvePendingCommand(ctx context.Context, corr string, resultStatus *string, resultError string) (*PendingCorrelation, error) {
+	var completed *PendingCorrelation
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pending PendingCorrelation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pending, "corr = ?", corr).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if resultStatus != nil && pending.ResultStatus == nil {
+			pending.ResultStatus = resultStatus
+			pending.ResultError = resultError
+		}
+		if resultStatus == nil {
+			pending.DispatchPending = false
+		}
+		if pending.DispatchPending || pending.ResultStatus == nil {
+			return tx.Model(&PendingCorrelation{}).Where("corr = ?", corr).Updates(map[string]any{
+				"dispatch_pending": pending.DispatchPending, "result_status": pending.ResultStatus, "result_error": pending.ResultError,
+			}).Error
+		}
+		var err error
+		completed, err = completePendingCommand(tx, &pending)
+		return err
+	})
+	return completed, err
+}
+
+func completePendingCommand(tx *gorm.DB, pending *PendingCorrelation) (*PendingCorrelation, error) {
 	now := time.Now().UTC()
-	return r.db.WithContext(ctx).Where("expires_at < ?", now).Delete(&PendingCorrelation{}).Error
+	updated := tx.Model(&WorkflowRun{}).Where("id = ? AND status = ? AND NOT EXISTS (SELECT 1 FROM workflow_run_steps WHERE run_id = workflow_runs.id AND status = ?)", pending.RunID, "running", "running").Updates(map[string]any{
+		"status": *pending.ResultStatus, "finished_at": &now, "error": pending.ResultError,
+	})
+	if updated.Error != nil {
+		return nil, updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		var run WorkflowRun
+		if err := tx.First(&run, "id = ?", pending.RunID).Error; err == nil && run.Status == "running" {
+			return nil, errors.New("pending command run has unfinished steps")
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	if err := tx.Delete(&PendingCorrelation{}, "corr = ?", pending.Corr).Error; err != nil {
+		return nil, err
+	}
+	if updated.RowsAffected == 1 {
+		return pending, nil
+	}
+	return nil, nil
+}
+
+func (r *Repository) FinishPendingDispatch(ctx context.Context, corr string, stepID uuid.UUID, onStepFinished func()) (*PendingCorrelation, error) {
+	if onStepFinished == nil {
+		return nil, errors.New("step completion callback is required")
+	}
+	var completed *PendingCorrelation
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pending PendingCorrelation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pending, "corr = ?", corr).Error; err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		updated := tx.Model(&WorkflowRunStep{}).Where("id = ? AND run_id = ? AND status = ?", stepID, pending.RunID, "running").Updates(map[string]any{"status": "success", "finished_at": &now, "error": ""})
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return errors.New("command step is missing or already finished")
+		}
+		pending.DispatchPending = false
+		if pending.ResultStatus == nil {
+			return tx.Model(&PendingCorrelation{}).Where("corr = ?", corr).Update("dispatch_pending", false).Error
+		}
+		var err error
+		completed, err = completePendingCommand(tx, &pending)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	onStepFinished()
+	return completed, nil
+}
+
+type ExpiredPendingCommand struct {
+	Pending PendingCorrelation
+	Steps   []WorkflowRunStep
+	Status  string
+}
+
+func (r *Repository) ExpirePendingCommands(ctx context.Context, now time.Time) ([]ExpiredPendingCommand, bool, error) {
+	var expired []ExpiredPendingCommand
+	var more bool
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pendingRows []PendingCorrelation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("expires_at <= ?", now).Order("expires_at").Limit(100).Find(&pendingRows).Error; err != nil {
+			return err
+		}
+		more = len(pendingRows) == 100
+		for _, pending := range pendingRows {
+			var steps []WorkflowRunStep
+			if err := tx.Where("run_id = ? AND status = ?", pending.RunID, "running").Find(&steps).Error; err != nil {
+				return err
+			}
+			stepStatus, errMsg := "unknown", "command outcome unknown: dispatch or result timed out"
+			if pending.ResultStatus != nil {
+				stepStatus, errMsg = "success", ""
+			}
+			if err := tx.Model(&WorkflowRunStep{}).Where("run_id = ? AND status = ?", pending.RunID, "running").Updates(map[string]any{"status": stepStatus, "finished_at": &now, "error": errMsg}).Error; err != nil {
+				return err
+			}
+			if pending.ResultStatus != nil {
+				completed, err := completePendingCommand(tx, &pending)
+				if err != nil {
+					return err
+				}
+				if completed != nil {
+					expired = append(expired, ExpiredPendingCommand{Pending: *completed, Steps: steps, Status: *completed.ResultStatus})
+				}
+				continue
+			}
+			updated := tx.Model(&WorkflowRun{}).Where("id = ? AND status = ?", pending.RunID, "running").Updates(map[string]any{"status": "unknown", "finished_at": &now, "error": errMsg})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			if err := tx.Delete(&PendingCorrelation{}, "corr = ?", pending.Corr).Error; err != nil {
+				return err
+			}
+			if updated.RowsAffected == 1 {
+				expired = append(expired, ExpiredPendingCommand{Pending: pending, Steps: steps, Status: "unknown"})
+			}
+		}
+		return nil
+	})
+	return expired, more, err
 }
 
 // ClaimTriggerCooldown atomically allows one trigger firing during a cooldown window.

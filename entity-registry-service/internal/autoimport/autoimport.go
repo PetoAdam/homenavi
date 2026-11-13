@@ -13,6 +13,7 @@ import (
 	"github.com/PetoAdam/homenavi/entity-registry-service/internal/realtime"
 	"github.com/PetoAdam/homenavi/shared/hdp"
 	"github.com/PetoAdam/homenavi/shared/mqttx"
+	"github.com/PetoAdam/homenavi/shared/observability"
 )
 
 const (
@@ -109,7 +110,7 @@ func (r *Runner) handleMessage(ctx context.Context, topic string, payload []byte
 			}
 			r.seenMu.Unlock()
 			if r.hub != nil {
-				r.hub.Broadcast(realtime.Event{Type: "ers.device.deleted", Entity: "device", ID: deviceID.String()})
+				r.hub.Broadcast(msgCtx, realtime.Event{Type: "ers.device.deleted", Entity: "device", ID: deviceID.String()})
 			}
 			slog.Info("ers auto-deleted device", "device_id", hdpID)
 			return
@@ -125,7 +126,7 @@ func (r *Runner) handleMessage(ctx context.Context, topic string, payload []byte
 		}
 		r.seenMu.Unlock()
 		if r.hub != nil {
-			r.hub.Broadcast(realtime.Event{Type: "ers.device.bindings_updated", Entity: "device", ID: deviceID.String()})
+			r.hub.Broadcast(msgCtx, realtime.Event{Type: "ers.device.bindings_updated", Entity: "device", ID: deviceID.String()})
 		}
 		slog.Info("ers auto-unbound hdp id", "device_id", hdpID)
 		return
@@ -197,10 +198,23 @@ func (r *Runner) handleMessage(ctx context.Context, topic string, payload []byte
 	_ = deviceID
 	if created {
 		if r.hub != nil {
-			r.hub.Broadcast(realtime.Event{Type: "ers.device.created", Entity: "device", ID: deviceID.String()})
+			r.hub.Broadcast(msgCtx, realtime.Event{Type: "ers.device.created", Entity: "device", ID: deviceID.String()})
 		}
 		slog.Info("ers auto-imported device", "device_id", hdpID)
 	}
+}
+
+func (r *Runner) consumeMessage(ctx context.Context, msg mqttinfra.Message) {
+	payload := msg.Payload()
+	var envelope struct {
+		Trace *hdp.TraceContext `json:"trace"`
+	}
+	if json.Unmarshal(payload, &envelope) == nil && envelope.Trace != nil && envelope.Trace.Traceparent != "" {
+		consumerCtx, span := observability.StartMessageConsumer(ctx, payload, msg.Retained(), time.Now())
+		defer span.End()
+		ctx = consumerCtx
+	}
+	r.handleMessage(ctx, msg.Topic(), payload)
 }
 
 func Start(ctx context.Context, repo *dbinfra.Repository, mqttConfig mqttx.Config, sharedGroup string, hub *realtime.Hub) *Runner {
@@ -212,7 +226,7 @@ func Start(ctx context.Context, repo *dbinfra.Repository, mqttConfig mqttx.Confi
 	r.cli = cli
 
 	h := func(msg mqttinfra.Message) {
-		r.handleMessage(ctx, msg.Topic(), msg.Payload())
+		r.consumeMessage(ctx, msg)
 	}
 
 	subscribe := r.cli.Subscribe

@@ -8,7 +8,9 @@ import (
 
 	model "github.com/PetoAdam/homenavi/device-hub/internal/devices"
 	mqttinfra "github.com/PetoAdam/homenavi/device-hub/internal/infra/mqtt"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/google/uuid"
+	"time"
 )
 
 func (s *Server) handleHDPAdapterHello(msg mqttinfra.Message) {
@@ -36,7 +38,13 @@ func (s *Server) handleHDPMetadataEvent(msg mqttinfra.Message) {
 		slog.Debug("hdp metadata decode failed", "topic", msg.Topic(), "error", err)
 		return
 	}
-	s.upsertMetadataFromHDP(deviceID, payload)
+	ctx := context.Background()
+	if _, ok := payload["trace"]; ok {
+		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		defer span.End()
+		ctx = consumerCtx
+	}
+	s.upsertMetadataFromHDP(ctx, deviceID, payload)
 }
 
 func (s *Server) handleHDPEvent(msg mqttinfra.Message) {
@@ -48,6 +56,12 @@ func (s *Server) handleHDPEvent(msg mqttinfra.Message) {
 		slog.Debug("hdp event decode failed", "topic", msg.Topic(), "error", err)
 		return
 	}
+	ctx := context.Background()
+	if _, ok := evt["trace"]; ok {
+		consumerCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		defer span.End()
+		ctx = consumerCtx
+	}
 	deviceID := asString(evt["device_id"])
 	if deviceID == "" {
 		deviceID = strings.TrimPrefix(msg.Topic(), hdpEventPrefix)
@@ -56,7 +70,6 @@ func (s *Server) handleHDPEvent(msg mqttinfra.Message) {
 		return
 	}
 	if asString(evt["event"]) == "device_removed" {
-		ctx := context.Background()
 		dev, _, err := s.resolveDevice(ctx, deviceID)
 		if err != nil {
 			slog.Warn("hdp device remove lookup failed", "device_id", deviceID, "error", err)
@@ -69,11 +82,10 @@ func (s *Server) handleHDPEvent(msg mqttinfra.Message) {
 	}
 }
 
-func (s *Server) upsertMetadataFromHDP(deviceID string, payload map[string]any) {
+func (s *Server) upsertMetadataFromHDP(ctx context.Context, deviceID string, payload map[string]any) {
 	if deviceID == "" {
 		return
 	}
-	ctx := context.Background()
 	proto := normalizeProtocol(asString(payload["protocol"]))
 	external := strings.TrimSpace(deviceID)
 	if parsedProto, parsedExternal, ok := splitHDPDeviceID(deviceID); ok {
@@ -150,6 +162,13 @@ func (s *Server) handleHDPStateEvent(msg mqttinfra.Message) {
 		slog.Debug("hdp state decode failed", "topic", msg.Topic(), "error", err)
 		return
 	}
+	ctx := context.Background()
+	if _, ok := payload["trace"]; ok {
+		var spanCtx context.Context
+		spanCtx, span := observability.StartMessageConsumer(ctx, msg.Payload(), msg.Retained(), time.Now())
+		defer span.End()
+		ctx = spanCtx
+	}
 	deviceID := strings.TrimSpace(asString(payload["device_id"]))
 	if deviceID == "" {
 		deviceID = strings.TrimSpace(topic)
@@ -164,15 +183,14 @@ func (s *Server) handleHDPStateEvent(msg mqttinfra.Message) {
 		return
 	}
 	slog.Info("hdp state received", "device_id", deviceID, "corr", corr, "ts", ts, "keys", len(state))
-	s.consumeState(deviceID, state, corr, ts, false)
+	s.consumeState(ctx, deviceID, state, corr, ts, false)
 }
 
-func (s *Server) consumeState(deviceTopicID string, state map[string]any, corr string, ts int64, publishHDP bool) {
+func (s *Server) consumeState(ctx context.Context, deviceTopicID string, state map[string]any, corr string, ts int64, publishHDP bool) {
 	deviceKey := strings.TrimSpace(deviceTopicID)
 	if deviceKey == "" || len(state) == 0 {
 		return
 	}
-	ctx := context.Background()
 	deviceUUID := deviceKey
 	externalID := deviceKey
 	dev, hdpID, err := s.resolveDevice(ctx, deviceKey)
@@ -193,7 +211,7 @@ func (s *Server) consumeState(deviceTopicID string, state map[string]any, corr s
 		s.invalidateDeviceListCache(ctx)
 	}
 	slog.Info("state persisted", "device_id", deviceUUID, "external_id", externalID, "corr", corr, "ts", ts, "keys", len(state))
-	s.processCommandStateLifecycle(externalID, state, corr, ts)
+	s.processCommandStateLifecycle(ctx, externalID, state, corr, ts)
 	if !publishHDP {
 		return
 	}

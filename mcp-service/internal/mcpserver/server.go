@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/shared/authx"
+	"github.com/PetoAdam/homenavi/shared/observability"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -250,8 +251,12 @@ func (l *requestLimiter) Allow(key string) bool {
 	return true
 }
 
+func newDownstreamHTTPClient() *http.Client {
+	return observability.InstrumentHTTPClient(&http.Client{Timeout: 5 * time.Second})
+}
+
 func New(config Config) http.Handler {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := newDownstreamHTTPClient()
 	gatewayURL := strings.TrimRight(config.APIGatewayURL, "/")
 	devices := &httpDeviceClient{readBaseURL: gatewayURL + "/api/mcp/hdp", commandReadURL: gatewayURL + "/api/mcp/hdp/device-command-targets", commandBaseURL: gatewayURL + "/api/mcp/hdp/devices", client: client}
 	service := &server{config: config, clients: &readClients{devices: devices, gatewayURL: gatewayURL, authServiceURL: strings.TrimRight(config.AuthServiceURL, "/"), client: client}, limiter: newRequestLimiter(config.RateLimitPerMinute)}

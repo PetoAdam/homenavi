@@ -434,6 +434,8 @@ Rules:
 - The frontend compiles `ui` to canonical `command` and `args` before save.
 - Custom JSON mode stays supported.
 - `wait_for_result` remains limited to single-device targets.
+- Expired pending commands with no recorded result end with an unknown outcome; a recorded result is recovered even if dispatch finalization was interrupted. Expiry is checked approximately once per minute after `result_timeout_sec`. Run events are best effort and may arrive out of order when a command result races a step event; the database is the authoritative run state.
+- A step persistence failure stops downstream execution and retries an atomic failure update while the execution process is alive. If the process exits while PostgreSQL is unavailable, runs without pending commands require operational reconciliation; automatic recovery of arbitrary interrupted workflows is not provided.
 
 ## `LogicIf`
 

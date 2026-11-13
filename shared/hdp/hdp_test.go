@@ -1,9 +1,24 @@
 package hdp
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
+
+func TestStateIgnoresInvalidTraceMetadata(t *testing.T) {
+	for _, metadata := range []string{`"invalid"`, `42`, `[]`, `{"traceparent":42}`, `{"traceparent":"` + strings.Repeat("a", 1024) + `"}`} {
+		var state State
+		payload := `{"schema":"hdp.v1","type":"state","device_id":"zigbee/test","state":{"on":true},"trace":` + metadata + `}`
+		if err := json.Unmarshal([]byte(payload), &state); err != nil {
+			t.Fatalf("optional trace %s rejected the state: %v", metadata, err)
+		}
+		if state.DeviceID != "zigbee/test" || state.State["on"] != true || state.Trace == nil || state.Trace.Traceparent != "" {
+			t.Fatalf("invalid metadata changed the state: %#v", state)
+		}
+	}
+}
 
 func TestTopic(t *testing.T) {
 	if got := Topic(StatePrefix, "zigbee/device-1"); got != "homenavi/hdp/device/state/zigbee/device-1" {
