@@ -265,7 +265,10 @@ func (store *conversationStore) key(sessionID string) string {
 	if store.shared {
 		return "shared"
 	}
-	return sessionID
+	if sessionID == "" {
+		return ""
+	}
+	return "session:" + sessionID
 }
 
 func (store *conversationStore) load() error {

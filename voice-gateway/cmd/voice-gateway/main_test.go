@@ -278,7 +278,8 @@ func TestConversationStorePreservesSessionHistory(t *testing.T) {
 func TestConversationStoreExpiresSessionHistory(t *testing.T) {
 	store := &conversationStore{ttl: time.Minute, entries: map[string]conversation{}}
 	store.messages("living-room", "First request")
-	store.entries["living-room"] = conversation{messages: store.entries["living-room"].messages, expiresAt: time.Now().Add(-time.Second)}
+	key := store.key("living-room")
+	store.entries[key] = conversation{messages: store.entries[key].messages, expiresAt: time.Now().Add(-time.Second)}
 	messages := store.messages("living-room", "New request")
 
 	if len(messages) != 2 || messages[1]["content"] != "New request" {
@@ -308,6 +309,15 @@ func TestConversationStoreSeparatesSessions(t *testing.T) {
 	}
 }
 
+func TestConversationStoreSeparatesSharedAndSessionScopes(t *testing.T) {
+	store := &conversationStore{shared: true, entries: map[string]conversation{}}
+	store.messages("living-room", "Shared request")
+	store.shared = false
+	if messages := store.messages("shared", "Private request"); len(messages) != 2 {
+		t.Fatalf("session ID must not collide with shared history: %#v", messages)
+	}
+}
+
 func TestConversationTurnWaitsAndCancels(t *testing.T) {
 	store := &conversationStore{shared: true, entries: map[string]conversation{}}
 	release, err := store.acquireTurn(context.Background(), "living-room")
@@ -334,7 +344,7 @@ func TestConversationTurnFinishesAfterIdleTimeout(t *testing.T) {
 	defer release()
 	store.messages("living-room", "First request")
 	store.addAssistant("living-room", "First answer")
-	if got := store.entries["living-room"].messages; len(got) != 2 {
+	if got := store.entries[store.key("living-room")].messages; len(got) != 2 {
 		t.Fatalf("expected in-flight turn to be retained, got %#v", got)
 	}
 }
