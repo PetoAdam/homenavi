@@ -26,7 +26,7 @@ func (cfg config) chat(parent context.Context, transcript, sessionID string, sta
 		}()
 		turnID := fmt.Sprintf("voice-%d", time.Now().UnixNano())
 		userMessageID, assistantMessageID := turnID+"-user", turnID+"-assistant"
-		chatID, err := cfg.createVoiceChat(ctx, messages, userMessageID, assistantMessageID)
+		chatID, messages, err := cfg.prepareVoiceChat(ctx, sessionID, messages, userMessageID, assistantMessageID)
 		if err != nil {
 			yield("", err)
 			return

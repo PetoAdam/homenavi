@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +38,7 @@ type conversation struct {
 	messages  []map[string]string
 	expiresAt time.Time
 	updatedAt time.Time
+	chatID    string
 }
 
 type conversationStore struct {
@@ -52,6 +54,7 @@ type storedConversation struct {
 	Messages  []map[string]string `json:"messages"`
 	ExpiresAt time.Time           `json:"expires_at"`
 	UpdatedAt time.Time           `json:"updated_at"`
+	ChatID    string              `json:"chat_id,omitempty"`
 }
 
 type conversationTurn struct {
@@ -291,7 +294,7 @@ func (store *conversationStore) load() error {
 		if !entry.UpdatedAt.IsZero() {
 			expiresAt = store.expiry(entry.UpdatedAt)
 		}
-		store.entries[key] = conversation{messages: entry.Messages, expiresAt: expiresAt, updatedAt: entry.UpdatedAt}
+		store.entries[key] = conversation{messages: entry.Messages, expiresAt: expiresAt, updatedAt: entry.UpdatedAt, chatID: entry.ChatID}
 	}
 	return nil
 }
@@ -302,7 +305,7 @@ func (store *conversationStore) save() error {
 	}
 	saved := make(map[string]storedConversation, len(store.entries))
 	for key, entry := range store.entries {
-		saved[key] = storedConversation{Messages: entry.messages, ExpiresAt: entry.expiresAt, UpdatedAt: entry.updatedAt}
+		saved[key] = storedConversation{Messages: entry.messages, ExpiresAt: entry.expiresAt, UpdatedAt: entry.updatedAt, ChatID: entry.chatID}
 	}
 	data, err := json.Marshal(saved)
 	if err != nil {
@@ -381,16 +384,36 @@ func (store *conversationStore) messages(sessionID, transcript string) []map[str
 			delete(store.entries, id)
 		}
 	}
-	history := []map[string]string{}
-	if prior, ok := store.entries[sessionID]; ok {
-		history = append(history, prior.messages...)
-	}
+	prior := store.entries[sessionID]
+	history := append([]map[string]string{}, prior.messages...)
 	user := map[string]string{"role": "user", "content": transcript}
 	messages = append(messages, history...)
 	messages = append(messages, user)
-	store.entries[sessionID] = conversation{messages: append(history, user), expiresAt: store.expiry(now), updatedAt: now}
+	store.entries[sessionID] = conversation{messages: append(history, user), expiresAt: store.expiry(now), updatedAt: now, chatID: prior.chatID}
 	store.saveWithWarning()
 	return messages
+}
+
+func (store *conversationStore) chatID(sessionID string) string {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.entries[store.key(sessionID)].chatID
+}
+
+func (store *conversationStore) setChatID(sessionID, chatID string) error {
+	key := store.key(sessionID)
+	if key == "" {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	entry, ok := store.entries[key]
+	if !ok {
+		return errors.New("voice conversation no longer exists")
+	}
+	entry.chatID = chatID
+	store.entries[key] = entry
+	return store.save()
 }
 
 func (store *conversationStore) expiry(now time.Time) time.Time {
@@ -417,6 +440,103 @@ func (store *conversationStore) addAssistant(sessionID, text string) {
 	entry.expiresAt = store.expiry(entry.updatedAt)
 	store.entries[sessionID] = entry
 	store.saveWithWarning()
+}
+
+func (cfg config) prepareVoiceChat(ctx context.Context, sessionID string, messages []map[string]string, userMessageID, assistantMessageID string) (string, []map[string]string, error) {
+	chatID := cfg.Conversations.chatID(sessionID)
+	if chatID != "" {
+		updated, found, err := cfg.appendVoiceChat(ctx, chatID, messages, userMessageID, assistantMessageID)
+		if err != nil {
+			return "", nil, err
+		}
+		if found {
+			return chatID, updated, nil
+		}
+	}
+	chatID, err := cfg.createVoiceChat(ctx, messages, userMessageID, assistantMessageID)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := cfg.Conversations.setChatID(sessionID, chatID); err != nil {
+		return "", nil, fmt.Errorf("save Open WebUI chat ID: %w", err)
+	}
+	return chatID, messages, nil
+}
+
+func (cfg config) appendVoiceChat(ctx context.Context, chatID string, messages []map[string]string, userMessageID, assistantMessageID string) ([]map[string]string, bool, error) {
+	endpoint := cfg.openWebUIBaseURL() + "/api/v1/chats/" + url.PathEscape(chatID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	cfg.authorize(request)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, false, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusUnauthorized {
+		return nil, false, nil
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("Open WebUI chat lookup returned %s", response.Status)
+	}
+	var saved struct {
+		Chat struct {
+			History struct {
+				CurrentID string                    `json:"currentId"`
+				Messages  map[string]map[string]any `json:"messages"`
+			} `json:"history"`
+		} `json:"chat"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&saved); err != nil {
+		return nil, false, fmt.Errorf("decode Open WebUI chat: %w", err)
+	}
+	history := saved.Chat.History
+	if history.CurrentID == "" {
+		return nil, false, errors.New("Open WebUI chat has no current message")
+	}
+	var reversed []map[string]string
+	visited := map[string]bool{}
+	for id := history.CurrentID; id != ""; {
+		if visited[id] || history.Messages[id] == nil {
+			return nil, false, errors.New("Open WebUI chat history has an invalid message chain")
+		}
+		visited[id] = true
+		node := history.Messages[id]
+		role, _ := node["role"].(string)
+		content, _ := node["content"].(string)
+		if (role == "user" || role == "assistant") && strings.TrimSpace(content) != "" {
+			reversed = append(reversed, map[string]string{"role": role, "content": content})
+		}
+		id, _ = node["parentId"].(string)
+	}
+	updated := []map[string]string{messages[0]}
+	for index := len(reversed) - 1; index >= 0; index-- {
+		updated = append(updated, reversed[index])
+	}
+	updated = append(updated, messages[len(messages)-1])
+	user := map[string]any{"id": userMessageID, "role": "user", "content": messages[len(messages)-1]["content"], "parentId": history.CurrentID, "childrenIds": []string{assistantMessageID}, "timestamp": time.Now().Unix()}
+	assistant := map[string]any{"id": assistantMessageID, "role": "assistant", "content": "", "parentId": userMessageID, "childrenIds": []string{}, "done": false, "model": cfg.OpenWebUIModel}
+	body, err := json.Marshal(map[string]any{"chat": map[string]any{"history": map[string]any{"currentId": assistantMessageID, "messages": map[string]any{userMessageID: user, assistantMessageID: assistant}}}})
+	if err != nil {
+		return nil, false, err
+	}
+	request, err = http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, false, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	cfg.authorize(request)
+	updateResponse, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, false, err
+	}
+	defer updateResponse.Body.Close()
+	if updateResponse.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("Open WebUI chat update returned %s", updateResponse.Status)
+	}
+	return updated, true, nil
 }
 
 func (cfg config) createVoiceChat(ctx context.Context, messages []map[string]string, userMessageID, assistantMessageID string) (string, error) {

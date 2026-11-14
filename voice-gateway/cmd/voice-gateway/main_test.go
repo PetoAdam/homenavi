@@ -166,6 +166,73 @@ func TestLiveManagedChatStreamsReadOnly(t *testing.T) {
 	t.Fatal("managed chat ended without completion")
 }
 
+func TestLiveVoiceChatReuse(t *testing.T) {
+	baseURL := os.Getenv("OPEN_WEBUI_TEST_BASE_URL")
+	apiKey := os.Getenv("OPEN_WEBUI_TEST_API_KEY")
+	if baseURL == "" || apiKey == "" {
+		t.Skip("set OPEN_WEBUI_TEST_BASE_URL and OPEN_WEBUI_TEST_API_KEY")
+	}
+	cfg := config{OpenWebUIURL: strings.TrimRight(baseURL, "/") + "/api/chat/completions", OpenWebUIAPIKey: apiKey, OpenWebUIModel: "orion"}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	messages := []map[string]string{{"role": "system", "content": "Test"}, {"role": "user", "content": "Temporary voice test"}}
+	chatID, err := cfg.createVoiceChat(ctx, messages, "test-user-1", "test-assistant-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		request, err := http.NewRequestWithContext(cleanup, http.MethodDelete, cfg.openWebUIBaseURL()+"/api/v1/chats/"+chatID, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		cfg.authorize(request)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Errorf("delete temporary chat returned %s", response.Status)
+		}
+	}()
+	messages = append(messages, map[string]string{"role": "user", "content": "Second temporary voice test"})
+	updated, found, err := cfg.appendVoiceChat(ctx, chatID, messages, "test-user-2", "test-assistant-2")
+	if err != nil || !found || len(updated) != 3 || updated[1]["content"] != "Temporary voice test" {
+		t.Fatalf("append temporary chat: found=%v messages=%#v err=%v", found, updated, err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.openWebUIBaseURL()+"/api/v1/chats/"+chatID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.authorize(request)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var saved struct {
+		Chat struct {
+			History struct {
+				CurrentID string                    `json:"currentId"`
+				Messages  map[string]map[string]any `json:"messages"`
+			} `json:"history"`
+		} `json:"chat"`
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("read temporary chat returned %s", response.Status)
+	}
+	if err := json.NewDecoder(response.Body).Decode(&saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Chat.History.CurrentID != "test-assistant-2" || saved.Chat.History.Messages["test-user-2"]["parentId"] != "test-assistant-1" {
+		t.Fatalf("unexpected saved chat history: %#v", saved.Chat.History)
+	}
+}
+
 func serveMockSocket(t *testing.T, writer http.ResponseWriter, request *http.Request, packets <-chan string, ack string, pongs chan<- struct{}) {
 	t.Helper()
 	if request.URL.Query().Get("EIO") != "4" || request.URL.Query().Get("transport") != "websocket" {
@@ -278,12 +345,20 @@ func TestConversationStorePreservesSessionHistory(t *testing.T) {
 func TestConversationStoreExpiresSessionHistory(t *testing.T) {
 	store := &conversationStore{ttl: time.Minute, entries: map[string]conversation{}}
 	store.messages("living-room", "First request")
+	if err := store.setChatID("living-room", "old-chat"); err != nil {
+		t.Fatal(err)
+	}
 	key := store.key("living-room")
-	store.entries[key] = conversation{messages: store.entries[key].messages, expiresAt: time.Now().Add(-time.Second)}
+	entry := store.entries[key]
+	entry.expiresAt = time.Now().Add(-time.Second)
+	store.entries[key] = entry
 	messages := store.messages("living-room", "New request")
 
 	if len(messages) != 2 || messages[1]["content"] != "New request" {
 		t.Fatalf("expected expired history to be discarded, got %#v", messages)
+	}
+	if got := store.chatID("living-room"); got != "" {
+		t.Fatalf("expected expired chat ID to be discarded, got %q", got)
 	}
 }
 
@@ -353,12 +428,18 @@ func TestConversationStorePersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "history.json")
 	first := &conversationStore{shared: true, path: path, entries: map[string]conversation{}}
 	first.messages("living-room", "First request")
+	if err := first.setChatID("living-room", "openwebui-chat"); err != nil {
+		t.Fatal(err)
+	}
 	first.addAssistant("living-room", "First answer")
 	second := &conversationStore{shared: true, path: path, entries: map[string]conversation{}}
 	if err := second.load(); err != nil {
 		t.Fatal(err)
 	}
 	messages := second.messages("kitchen", "Next request")
+	if got := second.chatID("kitchen"); got != "openwebui-chat" {
+		t.Fatalf("expected persisted chat ID, got %q", got)
+	}
 	if len(messages) != 4 || messages[1]["content"] != "First request" || messages[2]["content"] != "First answer" {
 		t.Fatalf("expected persisted shared history, got %#v", messages)
 	}
@@ -420,6 +501,93 @@ func TestVoiceChatHistoryDoesNotRequireSystemMessage(t *testing.T) {
 	currentUser, ok := history["current-user"].(map[string]any)
 	if !ok || currentUser["content"] != "Hello" || currentUser["childrenIds"].([]string)[0] != "current-assistant" {
 		t.Fatalf("current user turn was not linked without a system message: %#v", history)
+	}
+}
+
+func TestPrepareVoiceChatReusesActiveOpenWebUIBranch(t *testing.T) {
+	created, updated := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer api-key" {
+			t.Error("chat request missing authorization")
+		}
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/chats/new":
+			created++
+			_, _ = writer.Write([]byte(`{"id":"chat-id"}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/chats/chat-id":
+			_, _ = writer.Write([]byte(`{"chat":{"history":{"currentId":"typed-answer","messages":{"first":{"role":"user","content":"Voice question"},"answer":{"role":"assistant","content":"Voice answer","parentId":"first"},"typed":{"role":"user","content":"Typed question","parentId":"answer"},"typed-answer":{"role":"assistant","content":"Typed answer","parentId":"typed"}}}}}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/chats/chat-id":
+			updated++
+			var payload struct {
+				Chat struct {
+					History struct {
+						CurrentID string                    `json:"currentId"`
+						Messages  map[string]map[string]any `json:"messages"`
+					} `json:"history"`
+				} `json:"chat"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Error(err)
+				return
+			}
+			if payload.Chat.History.CurrentID != "assistant-2" || len(payload.Chat.History.Messages) != 2 || payload.Chat.History.Messages["user-2"]["parentId"] != "typed-answer" {
+				t.Errorf("unexpected chat update: %#v", payload.Chat.History)
+			}
+			_, _ = writer.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	store := &conversationStore{shared: true, entries: map[string]conversation{}}
+	cfg := config{OpenWebUIURL: server.URL + "/api/chat/completions", OpenWebUIAPIKey: "api-key", OpenWebUIModel: "orion", Conversations: store}
+	first := store.messages("living-room", "Voice question")
+	chatID, _, err := cfg.prepareVoiceChat(context.Background(), "living-room", first, "user-1", "assistant-1")
+	if err != nil || chatID != "chat-id" {
+		t.Fatalf("create chat: %q, %v", chatID, err)
+	}
+	store.addAssistant("living-room", "Voice answer")
+	second := store.messages("kitchen", "Next voice question")
+	chatID, contextMessages, err := cfg.prepareVoiceChat(context.Background(), "kitchen", second, "user-2", "assistant-2")
+	if err != nil || chatID != "chat-id" || created != 1 || updated != 1 {
+		t.Fatalf("reuse chat: id=%q created=%d updated=%d err=%v", chatID, created, updated, err)
+	}
+	if len(contextMessages) != 6 || contextMessages[3]["content"] != "Typed question" || contextMessages[4]["content"] != "Typed answer" || contextMessages[5]["content"] != "Next voice question" {
+		t.Fatalf("expected active Open WebUI branch in model context, got %#v", contextMessages)
+	}
+}
+
+func TestPrepareVoiceChatRecreatesDeletedChat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet {
+			http.Error(writer, "not found", http.StatusUnauthorized)
+			return
+		}
+		_, _ = writer.Write([]byte(`{"id":"new-chat"}`))
+	}))
+	defer server.Close()
+	store := &conversationStore{shared: true, entries: map[string]conversation{}}
+	messages := store.messages("room", "Question")
+	if err := store.setChatID("room", "deleted-chat"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{OpenWebUIURL: server.URL + "/api/chat/completions", Conversations: store}
+	chatID, _, err := cfg.prepareVoiceChat(context.Background(), "room", messages, "user", "assistant")
+	if err != nil || chatID != "new-chat" || store.chatID("room") != "new-chat" {
+		t.Fatalf("expected replacement chat, got %q, %v", chatID, err)
+	}
+}
+
+func TestAppendVoiceChatRejectsInvalidHistory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte(`{"chat":{"history":{"currentId":"cycle","messages":{"cycle":{"role":"user","content":"Hi","parentId":"cycle"}}}}}`))
+	}))
+	defer server.Close()
+	cfg := config{OpenWebUIURL: server.URL + "/api/chat/completions"}
+	_, _, err := cfg.appendVoiceChat(context.Background(), "chat", []map[string]string{{"role": "system"}, {"role": "user", "content": "Hi"}}, "user", "assistant")
+	if err == nil {
+		t.Fatal("expected cyclic history to be rejected")
 	}
 }
 
