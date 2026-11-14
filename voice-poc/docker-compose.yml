@@ -11,7 +11,12 @@ services:
       OPEN_WEBUI_SOCKET_TOKEN: ${OPEN_WEBUI_SOCKET_TOKEN:-}
       OPEN_WEBUI_MODEL: ${OPEN_WEBUI_MODEL:-orion}
       OPEN_WEBUI_TOOL_IDS: ${OPEN_WEBUI_TOOL_IDS:-server:mcp:homenavi-mcp}
+      VOICE_CONVERSATION_SCOPE: ${VOICE_CONVERSATION_SCOPE:-shared}
+      VOICE_CONVERSATION_TTL: ${VOICE_CONVERSATION_TTL:-0s}
+      VOICE_CONVERSATION_FILE: /data/conversations.json
       VOICE_GATEWAY_LOG_CONTENT: ${VOICE_GATEWAY_LOG_CONTENT:-false}
+    volumes:
+      - voice-conversations:/data
     ports:
       - "${VOICE_GATEWAY_PORT:-8090}:8090"
     depends_on:
@@ -45,3 +50,4 @@ services:
 volumes:
   whisper-models:
   piper-models:
+  voice-conversations:

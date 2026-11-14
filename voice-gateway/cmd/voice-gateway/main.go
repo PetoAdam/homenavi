@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -35,12 +36,27 @@ type config struct {
 type conversation struct {
 	messages  []map[string]string
 	expiresAt time.Time
+	updatedAt time.Time
 }
 
 type conversationStore struct {
 	mu      sync.Mutex
 	ttl     time.Duration
+	shared  bool
 	entries map[string]conversation
+	turns   map[string]*conversationTurn
+	path    string
+}
+
+type storedConversation struct {
+	Messages  []map[string]string `json:"messages"`
+	ExpiresAt time.Time           `json:"expires_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
+}
+
+type conversationTurn struct {
+	busy chan struct{}
+	refs int
 }
 
 type chatResult struct {
@@ -49,6 +65,16 @@ type chatResult struct {
 }
 
 func main() {
+	ttl, err := time.ParseDuration(value("VOICE_CONVERSATION_TTL", "0s"))
+	if err != nil || ttl < 0 {
+		slog.Error("VOICE_CONVERSATION_TTL must be a non-negative duration")
+		os.Exit(1)
+	}
+	scope := value("VOICE_CONVERSATION_SCOPE", "shared")
+	if scope != "shared" && scope != "session" {
+		slog.Error("VOICE_CONVERSATION_SCOPE must be shared or session")
+		os.Exit(1)
+	}
 	cfg := config{
 		ListenAddr:           value("VOICE_GATEWAY_LISTEN_ADDR", ":8090"),
 		STTURL:               value("STT_URL", "http://faster-whisper:8000/v1/audio/transcriptions"),
@@ -61,7 +87,15 @@ func main() {
 		AccessToken:          os.Getenv("VOICE_GATEWAY_ACCESS_TOKEN"),
 		MaxAudioBytes:        15 << 20,
 		LogContent:           enabled("VOICE_GATEWAY_LOG_CONTENT"),
-		Conversations:        &conversationStore{ttl: duration("VOICE_CONVERSATION_TTL", 30*time.Second), entries: map[string]conversation{}},
+		Conversations:        &conversationStore{ttl: ttl, shared: scope == "shared", entries: map[string]conversation{}, path: strings.TrimSpace(os.Getenv("VOICE_CONVERSATION_FILE"))},
+	}
+	if err := cfg.Conversations.load(); err != nil {
+		slog.Error("cannot load voice conversation history", "error", err)
+		os.Exit(1)
+	}
+	if err := cfg.Conversations.save(); err != nil {
+		slog.Error("cannot initialize voice conversation history", "error", err)
+		os.Exit(1)
 	}
 	if cfg.OpenWebUIURL == "" {
 		slog.Error("OPEN_WEBUI_CHAT_URL is required")
@@ -109,6 +143,12 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 		slog.Info("voice transcript", "text", transcript)
 	}
 
+	sessionID := strings.TrimSpace(request.Header.Get("X-Orion-Session-ID"))
+	release, err := cfg.Conversations.acquireTurn(request.Context(), sessionID)
+	if err != nil {
+		return
+	}
+	defer release()
 	boundary := "voice-" + fmt.Sprintf("%d", time.Now().UnixNano())
 	writer.Header().Set("Content-Type", "multipart/mixed; boundary="+boundary)
 	writer.Header().Set("Cache-Control", "no-cache")
@@ -116,7 +156,6 @@ func (cfg config) handleTurn(writer http.ResponseWriter, request *http.Request) 
 	stream := multipart.NewWriter(writer)
 	_ = stream.SetBoundary(boundary)
 	defer stream.Close()
-	sessionID := strings.TrimSpace(request.Header.Get("X-Orion-Session-ID"))
 	var responseText strings.Builder
 	llmStarted := time.Now()
 	llmFirstResponse := true
@@ -222,16 +261,120 @@ func (cfg config) transcribe(ctx context.Context, audio []byte) (string, error) 
 	return strings.TrimSpace(decoded.Text), nil
 }
 
+func (store *conversationStore) key(sessionID string) string {
+	if store.shared {
+		return "shared"
+	}
+	return sessionID
+}
+
+func (store *conversationStore) load() error {
+	if store.path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(store.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var saved map[string]storedConversation
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return err
+	}
+	for key, entry := range saved {
+		expiresAt := entry.ExpiresAt
+		if !entry.UpdatedAt.IsZero() {
+			expiresAt = store.expiry(entry.UpdatedAt)
+		}
+		store.entries[key] = conversation{messages: entry.Messages, expiresAt: expiresAt, updatedAt: entry.UpdatedAt}
+	}
+	return nil
+}
+
+func (store *conversationStore) save() error {
+	if store.path == "" {
+		return nil
+	}
+	saved := make(map[string]storedConversation, len(store.entries))
+	for key, entry := range store.entries {
+		saved[key] = storedConversation{Messages: entry.messages, ExpiresAt: entry.expiresAt, UpdatedAt: entry.updatedAt}
+	}
+	data, err := json.Marshal(saved)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(store.path), ".voice-conversations-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), store.path)
+}
+
+func (store *conversationStore) saveWithWarning() {
+	if err := store.save(); err != nil {
+		slog.Error("cannot save voice conversation history", "error", err)
+	}
+}
+
+func (store *conversationStore) acquireTurn(ctx context.Context, sessionID string) (func(), error) {
+	key := store.key(sessionID)
+	if key == "" {
+		return func() {}, nil
+	}
+	store.mu.Lock()
+	if store.turns == nil {
+		store.turns = make(map[string]*conversationTurn)
+	}
+	turn := store.turns[key]
+	if turn == nil {
+		turn = &conversationTurn{busy: make(chan struct{}, 1)}
+		store.turns[key] = turn
+	}
+	turn.refs++
+	store.mu.Unlock()
+	cleanup := func(acquired bool) {
+		store.mu.Lock()
+		if acquired {
+			<-turn.busy
+		}
+		turn.refs--
+		if turn.refs == 0 {
+			delete(store.turns, key)
+		}
+		store.mu.Unlock()
+	}
+	select {
+	case turn.busy <- struct{}{}:
+		return func() { cleanup(true) }, nil
+	case <-ctx.Done():
+		cleanup(false)
+		return nil, ctx.Err()
+	}
+}
+
 func (store *conversationStore) messages(sessionID, transcript string) []map[string]string {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	messages := []map[string]string{{"role": "system", "content": "Respond for a voice assistant. Use concise plain spoken text only. Do not use Markdown, lists, headings, code formatting, links, or emoji. For device write commands, report only that the command was sent or queued; do not claim the requested state was achieved. Report errors and partial failures accurately."}}
+	sessionID = store.key(sessionID)
 	if sessionID == "" {
 		return append(messages, map[string]string{"role": "user", "content": transcript})
 	}
 	now := time.Now()
 	for id, entry := range store.entries {
-		if !now.Before(entry.expiresAt) {
+		if !entry.expiresAt.IsZero() && !now.Before(entry.expiresAt) && (id == sessionID || store.turns[id] == nil) {
 			delete(store.entries, id)
 		}
 	}
@@ -242,24 +385,35 @@ func (store *conversationStore) messages(sessionID, transcript string) []map[str
 	user := map[string]string{"role": "user", "content": transcript}
 	messages = append(messages, history...)
 	messages = append(messages, user)
-	store.entries[sessionID] = conversation{messages: append(history, user), expiresAt: now.Add(store.ttl)}
+	store.entries[sessionID] = conversation{messages: append(history, user), expiresAt: store.expiry(now), updatedAt: now}
+	store.saveWithWarning()
 	return messages
 }
 
+func (store *conversationStore) expiry(now time.Time) time.Time {
+	if store.ttl <= 0 {
+		return time.Time{}
+	}
+	return now.Add(store.ttl)
+}
+
 func (store *conversationStore) addAssistant(sessionID, text string) {
+	sessionID = store.key(sessionID)
 	if sessionID == "" || strings.TrimSpace(text) == "" {
 		return
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	entry, ok := store.entries[sessionID]
-	if !ok || !time.Now().Before(entry.expiresAt) {
+	if !ok || (!entry.expiresAt.IsZero() && !time.Now().Before(entry.expiresAt) && store.turns[sessionID] == nil) {
 		delete(store.entries, sessionID)
 		return
 	}
 	entry.messages = append(entry.messages, map[string]string{"role": "assistant", "content": strings.TrimSpace(text)})
-	entry.expiresAt = time.Now().Add(store.ttl)
+	entry.updatedAt = time.Now()
+	entry.expiresAt = store.expiry(entry.updatedAt)
 	store.entries[sessionID] = entry
+	store.saveWithWarning()
 }
 
 func (cfg config) createVoiceChat(ctx context.Context, messages []map[string]string, userMessageID, assistantMessageID string) (string, error) {
@@ -447,14 +601,6 @@ func value(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func duration(key string, fallback time.Duration) time.Duration {
-	parsed, err := time.ParseDuration(strings.TrimSpace(os.Getenv(key)))
-	if err != nil || parsed <= 0 {
-		return fallback
-	}
-	return parsed
 }
 
 func enabled(key string) bool {

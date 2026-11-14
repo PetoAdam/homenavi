@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -282,6 +283,102 @@ func TestConversationStoreExpiresSessionHistory(t *testing.T) {
 
 	if len(messages) != 2 || messages[1]["content"] != "New request" {
 		t.Fatalf("expected expired history to be discarded, got %#v", messages)
+	}
+}
+
+func TestConversationStoreSharesHistoryWithoutExpiry(t *testing.T) {
+	store := &conversationStore{shared: true, entries: map[string]conversation{}}
+	store.messages("living-room", "First request")
+	store.addAssistant("living-room", "First answer")
+	messages := store.messages("kitchen", "Next request")
+	if len(messages) != 4 || messages[1]["content"] != "First request" || messages[2]["content"] != "First answer" {
+		t.Fatalf("expected shared conversation history, got %#v", messages)
+	}
+	if !store.entries["shared"].expiresAt.IsZero() {
+		t.Fatal("zero timeout should not expire history")
+	}
+}
+
+func TestConversationStoreSeparatesSessions(t *testing.T) {
+	store := &conversationStore{ttl: time.Minute, entries: map[string]conversation{}}
+	store.messages("living-room", "First request")
+	messages := store.messages("kitchen", "Next request")
+	if len(messages) != 2 || messages[1]["content"] != "Next request" {
+		t.Fatalf("expected isolated session history, got %#v", messages)
+	}
+}
+
+func TestConversationTurnWaitsAndCancels(t *testing.T) {
+	store := &conversationStore{shared: true, entries: map[string]conversation{}}
+	release, err := store.acquireTurn(context.Background(), "living-room")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := store.acquireTurn(ctx, "kitchen"); err != context.Canceled {
+		t.Fatalf("expected canceled waiter, got %v", err)
+	}
+	release()
+	if len(store.turns) != 0 {
+		t.Fatalf("turn locks were not cleaned up: %#v", store.turns)
+	}
+}
+
+func TestConversationTurnFinishesAfterIdleTimeout(t *testing.T) {
+	store := &conversationStore{ttl: time.Nanosecond, entries: map[string]conversation{}}
+	release, err := store.acquireTurn(context.Background(), "living-room")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	store.messages("living-room", "First request")
+	store.addAssistant("living-room", "First answer")
+	if got := store.entries["living-room"].messages; len(got) != 2 {
+		t.Fatalf("expected in-flight turn to be retained, got %#v", got)
+	}
+}
+
+func TestConversationStorePersistsAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	first := &conversationStore{shared: true, path: path, entries: map[string]conversation{}}
+	first.messages("living-room", "First request")
+	first.addAssistant("living-room", "First answer")
+	second := &conversationStore{shared: true, path: path, entries: map[string]conversation{}}
+	if err := second.load(); err != nil {
+		t.Fatal(err)
+	}
+	messages := second.messages("kitchen", "Next request")
+	if len(messages) != 4 || messages[1]["content"] != "First request" || messages[2]["content"] != "First answer" {
+		t.Fatalf("expected persisted shared history, got %#v", messages)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("expected private history file, got %v, %v", info, err)
+	}
+}
+
+func TestConversationStoreRejectsCorruptHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	if err := os.WriteFile(path, []byte("not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &conversationStore{path: path, entries: map[string]conversation{}}
+	if err := store.load(); err == nil {
+		t.Fatal("expected invalid history to fail loading")
+	}
+}
+
+func TestConversationStoreAppliesChangedTimeoutAfterRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	first := &conversationStore{shared: true, path: path, entries: map[string]conversation{}}
+	first.messages("living-room", "Old request")
+	second := &conversationStore{ttl: time.Nanosecond, shared: true, path: path, entries: map[string]conversation{}}
+	if err := second.load(); err != nil {
+		t.Fatal(err)
+	}
+	if messages := second.messages("living-room", "New request"); len(messages) != 2 {
+		t.Fatalf("expected changed timeout to expire old history, got %#v", messages)
 	}
 }
 
