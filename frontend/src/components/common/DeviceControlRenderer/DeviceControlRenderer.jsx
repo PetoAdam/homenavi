@@ -55,7 +55,7 @@ function ControlLabel({ icon, label, displayValue, annotation }) {
         <span className="dcr-control-label-text">{label}</span>
         {annotation ? <span className="dcr-control-annotation">{annotation}</span> : null}
       </span>
-      {displayValue ? <span className="dcr-control-value">{displayValue}</span> : null}
+      {displayValue !== '' && displayValue !== undefined && displayValue !== null ? <span className="dcr-control-value">{displayValue}</span> : null}
     </div>
   );
 }
@@ -109,7 +109,7 @@ function SliderControl({ input, value, pending, onChange, onCommit, annotation, 
       <ControlLabel
         icon={icon}
         label={label}
-        displayValue={mixed || missing ? '' : value}
+        displayValue={mixed || missing ? '' : normalizeAlignedNumber(value, min, step)}
         annotation={annotation || (missing ? 'No reported value' : undefined)}
       />
       <div className="dcr-control-slider">
@@ -121,7 +121,7 @@ function SliderControl({ input, value, pending, onChange, onCommit, annotation, 
           value={safeValue}
           disabled={pending}
           onChange={e => {
-            const proposed = Number(e.target.value);
+            const proposed = normalizeAlignedNumber(Number(e.target.value), min, step);
             const next = isExcludedNumber(proposed, range) ? steppedValue(safeValue, proposed > safeValue ? 1 : -1, min, max, step, range) : proposed;
             dirty.current = next !== safeValue;
             pendingValue.current = dirty.current ? next : null;
@@ -260,6 +260,12 @@ function isStepAligned(value, min, step) {
   return Number.isFinite(position) && Number.isSafeInteger(Math.round(position)) && Math.abs(position - Math.round(position)) <= Number.EPSILON * Math.max(1, Math.abs(position)) * 4;
 }
 
+function normalizeAlignedNumber(value, min, step) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(step) || step <= 0 || !isStepAligned(value, min, step)) return value;
+  const precision = Math.min(100, Math.max(decimalPlaces(min ?? 0), decimalPlaces(step)));
+  return Number(value.toFixed(precision));
+}
+
 function isValidNumericField(field, min, max, step, range) {
   if (!field || field.value === '' || field.validity.badInput) return false;
   const value = field.valueAsNumber;
@@ -279,6 +285,7 @@ function NumberControl({ input, value, pending, onChange, onCommit, annotation, 
   const current = value === '' || value === null || value === undefined ? NaN : Number(value);
   const valid = Number.isFinite(current);
   const unit = input.capability?.unit || input.unit;
+  const displayValue = dirty.current ? value : normalizeAlignedNumber(value, min, step);
   const commit = (field) => {
     if (!dirty.current || !isValidNumericField(field, min, max, step, range)) return;
     dirty.current = false;
@@ -305,7 +312,7 @@ function NumberControl({ input, value, pending, onChange, onCommit, annotation, 
           min={min}
           max={max}
           step={step}
-          value={mixed && !dirty.current ? '' : value ?? ''}
+          value={mixed && !dirty.current ? '' : displayValue ?? ''}
           placeholder={mixed ? 'Mixed' : undefined}
           disabled={pending}
           onChange={e => {
@@ -340,6 +347,7 @@ function StepperControl({ input, value, pending, onChange, onCommit, annotation,
   const step = Number.isFinite(range.step) && range.step > 0 ? range.step : 1;
   const current = value === '' || value === null || value === undefined ? NaN : Number(value);
   const valid = Number.isFinite(current);
+  const displayValue = dirty.current ? value : normalizeAlignedNumber(value, min, step);
   const adjust = (direction) => {
     if (!valid || mixed) return;
     const bounded = steppedValue(current, direction, min, max, step, range);
@@ -363,7 +371,7 @@ function StepperControl({ input, value, pending, onChange, onCommit, annotation,
       <div className="dcr-stepper" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) commit(fieldRef.current); }}>
         <button type="button" title={`Decrease ${label}`} aria-label={`Decrease ${label}`} disabled={pending || mixed || !valid || (min !== undefined && current <= min)} onClick={() => adjust(-1)}><FontAwesomeIcon icon={faMinus} /></button>
         <div className="dcr-number-field dcr-stepper-value">
-          <input ref={fieldRef} type="number" aria-label={label} min={min} max={max} step={step} value={mixed && !dirty.current ? '' : value ?? ''} style={{ width: `${Math.max(3, String(value ?? '').length + 1)}ch` }} disabled={pending} onChange={event => { dirty.current = true; onChange(event.target.value === '' ? '' : Number(event.target.value)); }} onKeyUp={event => { if (event.key === 'Enter') commit(event.currentTarget); }} />
+          <input ref={fieldRef} type="number" aria-label={label} min={min} max={max} step={step} value={mixed && !dirty.current ? '' : displayValue ?? ''} style={{ width: `${Math.max(3, String(displayValue ?? '').length + 1)}ch` }} disabled={pending} onChange={event => { dirty.current = true; onChange(event.target.value === '' ? '' : Number(event.target.value)); }} onKeyUp={event => { if (event.key === 'Enter') commit(event.currentTarget); }} />
           {input.capability?.unit || input.unit ? <span className="dcr-number-unit">{input.capability?.unit || input.unit}</span> : null}
         </div>
         <button type="button" title={`Increase ${label}`} aria-label={`Increase ${label}`} disabled={pending || mixed || !valid || (max !== undefined && current >= max)} onClick={() => adjust(1)}><FontAwesomeIcon icon={faPlus} /></button>

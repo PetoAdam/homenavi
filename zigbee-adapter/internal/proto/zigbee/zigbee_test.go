@@ -8,7 +8,34 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
 )
+
+func TestNormalizeValueForCapabilityDecimalSteps(t *testing.T) {
+	cases := []struct {
+		name  string
+		value float64
+		step  float64
+		want  float64
+	}{
+		{"temperature min", 18.4, 0.1, 18.4},
+		{"temperature max", 27.2, 0.1, 27.2},
+		{"humidity min", 29.7, 0.1, 29.7},
+		{"fractional step", 1.24, 0.25, 1.25},
+		{"fine step", 0.00000000002, 0.00000000001, 0.00000000002},
+		{"negative", -2.31, 0.1, -2.3},
+		{"integer step", 13, 5, 15},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			capability := model.Capability{ValueType: "number", Range: &model.CapabilityRange{Step: tc.step}}
+			if got := normalizeValueForCapability(capability, tc.value); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestCanonicalExternalID(t *testing.T) {
 	cases := []struct {

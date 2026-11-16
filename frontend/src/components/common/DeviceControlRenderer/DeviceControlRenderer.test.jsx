@@ -40,6 +40,49 @@ describe('device presentation components', () => {
     expect(container.querySelector('input').value).toBe('20.5');
   });
 
+  it.each([
+    [18.400000000000002, 0.1, '18.4'],
+    [27.200000000000003, 0.1, '27.2'],
+    [29.700000000000003, 0.1, '29.7'],
+    [18.45, 0.1, '18.45'],
+    [0, 0.1, '0'],
+    [2e-11, 1e-11, '2e-11'],
+  ])('displays slider value %s at the appropriate precision', (value, step, expected) => {
+    render(<DeviceControlRenderer input={{ type: 'slider', label: 'Target', range: { min: 0, max: 60, step } }} value={value} onChange={() => {}} onCommit={() => {}} />);
+    expect(container.querySelector('.dcr-control-value').textContent).toBe(expected);
+  });
+
+  it('normalizes slider commands without rounding off-grid reported values', () => {
+    const commit = vi.fn();
+    function Example() {
+      const [value, setValue] = useState(18);
+      return <DeviceControlRenderer input={{ type: 'slider', label: 'Target', range: { min: 0, max: 60, step: 0.1 } }} value={value} onChange={setValue} onCommit={commit} />;
+    }
+    render(<Example />);
+    const field = container.querySelector('input[type="range"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, '18.400000000000002');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    });
+    expect(commit).toHaveBeenCalledWith(18.4);
+  });
+
+  it.each(['number', 'stepper'])('cleans reported %s values without rounding active edits', control => {
+    function Example() {
+      const [value, setValue] = useState(18.400000000000002);
+      return <DeviceControlRenderer input={{ type: 'number', label: 'Target', range: { min: 0, max: 60, step: 0.1 }, ui: { control } }} value={value} onChange={setValue} onCommit={() => {}} />;
+    }
+    render(<Example />);
+    const field = container.querySelector('input[type="number"]');
+    expect(field.value).toBe('18.4');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, '18.45');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(field.value).toBe('18.45');
+  });
+
   it.each(['number', 'stepper'])('preserves fine %s steps and skips excluded values', control => {
     const commit = vi.fn();
     function Example() {

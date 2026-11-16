@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	model "github.com/PetoAdam/homenavi/zigbee-adapter/internal/devices"
@@ -40,6 +41,12 @@ func normalizeValueForCapability(cap model.Capability, v any) any {
 			if cap.Range != nil && cap.Range.Step > 0 {
 				step := cap.Range.Step
 				f = math.Round(f/step) * step
+				stepText := strconv.FormatFloat(step, 'f', -1, 64)
+				if point := strings.IndexByte(stepText, '.'); point >= 0 {
+					if rounded, err := strconv.ParseFloat(strconv.FormatFloat(f, 'f', len(stepText)-point-1, 64), 64); err == nil {
+						f = rounded
+					}
+				}
 			}
 			return f
 		}
