@@ -83,6 +83,102 @@ func TestDeviceStatesInputValidation(t *testing.T) {
 	}
 }
 
+func TestGetDeviceInterfacesSeparatesObservationsFromCommands(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer delegated-token" {
+			t.Fatal("missing delegated read token")
+		}
+		switch r.URL.Path {
+		case "/api/mcp/hdp/device-interfaces:lookup":
+			_, _ = w.Write([]byte(`{"device_id":"thread/one","name":"private","state":{"secret":"ignored"},"capabilities":[{"id":"cover.position","property":"open_percent","value_type":"number","unit":"%","access":{"read":true,"write":true}},{"id":"cover.action","property":"action","value_type":"enum","enum":["open","stop"],"access":{"read":false,"write":true}},{"id":"cover.status","property":"status","value_type":"string","access":{"read":true,"write":false}}],"inputs":[{"id":"set_action","capability_id":"cover.action","property":"action","type":"select"}]}`))
+		case "/api/mcp/hdp/device-states:batch":
+			_, _ = w.Write([]byte(`{"results":[{"device_id":"thread/one","status":"ok","state":{"position":25,"open_percent":75,"password":"private"},"state_updated_at":"2026-11-16T00:00:00Z"}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	client := &readClients{devices: &httpDeviceClient{readBaseURL: upstream.URL + "/api/mcp/hdp"}, gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.GetDeviceInterfaces(context.Background(), "thread/one", "delegated-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.MetadataStatus != "ok" || result.StateStatus != "ok" || result.StateUpdatedAt != "2026-11-16T00:00:00Z" || len(result.Observations) != 3 || len(result.Commands) != 3 {
+		t.Fatalf("unexpected interfaces: %#v", result)
+	}
+	if result.Observations[0].Property != "open_percent" || result.Observations[0].Value != float64(75) || result.Observations[1].Property != "position" || result.Observations[1].Access != "unknown" || result.Observations[2].Property != "status" || result.Observations[2].HasValue {
+		t.Fatalf("unexpected observations: %#v", result.Observations)
+	}
+	if result.Commands[1].Operation != "action" || result.Commands[1].Access != "writable" || result.Commands[2].Access != "read_only" {
+		t.Fatalf("unexpected commands: %#v", result.Commands)
+	}
+	encoded, _ := json.Marshal(result)
+	if strings.Contains(string(encoded), "private") || strings.Contains(string(encoded), "password") {
+		t.Fatalf("private data leaked: %s", encoded)
+	}
+}
+
+func TestInterfaceDeviceIDValidation(t *testing.T) {
+	for _, test := range []struct {
+		id    string
+		valid bool
+	}{{"thread/one", true}, {"thread/one/endpoint", true}, {"thread", false}, {"thread/", false}, {"THREAD/one", false}, {"thread/../one", true}, {"thread/%2e", true}, {"thread/a?#\\b", true}} {
+		if got := validateInterfaceDeviceID(test.id) == nil; got != test.valid {
+			t.Errorf("id %q valid=%v, want %v", test.id, got, test.valid)
+		}
+	}
+}
+
+func TestGetDeviceInterfacesPreservesOpaqueID(t *testing.T) {
+	deviceID := `thread/../commands/%2e?x#y\z`
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		if request.Method != http.MethodPost || json.NewDecoder(request.Body).Decode(&body) != nil {
+			t.Fatal("expected JSON POST")
+		}
+		switch request.URL.Path {
+		case "/api/mcp/hdp/device-interfaces:lookup":
+			if body["device_id"] != deviceID || request.Header.Get("Authorization") != "Bearer delegated-token" {
+				t.Fatalf("unexpected metadata request: %#v", body)
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"device_id": deviceID, "capabilities": []any{}, "inputs": []any{}})
+		case "/api/mcp/hdp/device-states:batch":
+			ids, ok := body["device_ids"].([]any)
+			if !ok || len(ids) != 1 || ids[0] != deviceID {
+				t.Fatalf("unexpected state request: %#v", body)
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"results": []any{map[string]any{"device_id": deviceID, "status": "state_unavailable"}}})
+		default:
+			t.Fatalf("unexpected path: %s", request.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	client := &readClients{gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.GetDeviceInterfaces(context.Background(), deviceID, "delegated-token")
+	if err != nil || result.DeviceID != deviceID || result.StateStatus != "state_unavailable" {
+		t.Fatalf("result=%#v error=%v", result, err)
+	}
+}
+
+func TestGetDeviceInterfacesRejectsNonObjectState(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/mcp/hdp/device-interfaces:lookup":
+			_, _ = writer.Write([]byte(`{"device_id":"thread/one","capabilities":[{"id":"temperature","property":"temperature","value_type":"number","access":{"read":true,"write":false}}],"inputs":[]}`))
+		case "/api/mcp/hdp/device-states:batch":
+			_, _ = writer.Write([]byte(`{"results":[{"device_id":"thread/one","status":"ok","state":[1,2],"state_updated_at":"2026-11-16T00:00:00Z"}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", request.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	client := &readClients{devices: &httpDeviceClient{readBaseURL: upstream.URL + "/api/mcp/hdp"}, gatewayURL: upstream.URL, client: upstream.Client()}
+	result, err := client.GetDeviceInterfaces(context.Background(), "thread/one", "delegated-token")
+	if err != nil || result.StateStatus != "state_unavailable" || result.StateUpdatedAt != "" || len(result.Errors) != 1 || len(result.Observations) != 1 || result.Observations[0].HasValue {
+		t.Fatalf("unexpected result: %#v, error: %v", result, err)
+	}
+}
+
 func TestDiscoveryInputValidation(t *testing.T) {
 	for _, test := range []struct {
 		name         string

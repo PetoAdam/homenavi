@@ -1,0 +1,57 @@
+# MCP Device Interfaces and HDP Presentation Plan
+
+## Scope and status
+
+HDP device metadata is the source of truth for reported properties and commands. ERS owns names, rooms, and grouping. State is an observation, not a command schema; neither an observed property nor a UI hint grants write access.
+
+Implemented in this change: optional, type-checked frontend presentation hints, per-device ERS presentation preferences, common state and control components, a presentation JSON Schema with compatibility tests, an HDP contract example, group field-view settings, CI validation of opted-in integration metadata samples, the eModul temperature stepper hint, and scoped MCP interface discovery with a redacted write-only command-target route. Command preflight and device-hub enforcement changes remain unimplemented. The remaining sections include outstanding implementation and release checks, not claims of deployed behavior.
+
+The live Connector blind reports `position` and `closed_percent` as observations, while `open_percent` and `action` are writable. The MCP device struct currently omits device-hub capabilities and inputs. Two recent blind commands used `open_percent: 50` and reached lifecycle status `applied`; that status does not establish that the physical blind settled at the requested position. Failed validation may not create a lifecycle record.
+
+## Contract
+
+Keep `hdp.v1`, capability `value_type`, input `type`, property names, access, ranges, and command payloads unchanged. Add optional `capabilities[].ui.display` and `inputs[].ui.control`. The component matrix, example, defaults, and restrictions are in [hdp.md](hdp.md#optional-presentation-hints); the machine-readable local constraints are in [hdp-ui-presentation.schema.json](hdp-ui-presentation.schema.json). Presentation is declarative data only: never load integration-provided code, HTML, CSS, URLs, or components.
+
+The frontend validates the component against the input type and linked capability value type; state displays additionally check the actual value. Numeric sliders, meters, and progress displays require a finite increasing range. Select alternatives require nonempty string-valued options. Unknown or invalid hints fall back to the previous presentation and do not alter the original type or permission checks. Existing metadata without hints remains valid. The schema alone cannot express range ordering or cross-reference a linked capability, so those checks must also run in producer and consumer validation.
+
+For single devices, prefer a valid ERS device preference, then a valid integration hint, otherwise the existing default. Group controls retain a hint only if all members agree; mixed values cannot be relatively incremented. Device preferences are separate ERS-owned overrides, never persisted into adapter metadata. Treat hint values as untrusted display metadata and bound their sizes.
+
+The available controls are toggle, checkbox, slider, number input, stepper, select, segmented choices, radio choices, action buttons, text input, textarea, and color picker. Displays are metric, text, badge, progress, and gauge, in addition to the existing automatic binary and metric rendering. A stepper sends an absolute value, uses the declared min/max/step and unit, disables relative stepping for mixed or missing values, and observes pending/locked states. Decimal labels must not be rounded to integers. Inputs and capabilities without an explicit hint retain existing behavior.
+
+## MCP interface discovery
+
+The bounded single-device discovery tool and scoped command-target projection are implemented; their contract and limits are documented in [mcp.md](mcp.md#tool-surface). Deployment and end-to-end authorization, metadata freshness, and legacy compatibility still require the release checks below.
+
+Custom inputs use capability metadata without inferring access from the UI; mismatched button aliases do not create commands. The LG washer sample includes its writable operation-mode profile. Older contradictory LG metadata stays unknown until the updated integration republishes it.
+
+1. Define a bounded `get_device_interfaces` tool for known canonical HDP IDs, backed by authoritative device-hub metadata. Return separately:
+   - observed state properties, including name, declared type, unit, access and latest value/timestamp when authorized;
+   - command interfaces, including capability ID, input ID when present, exact command property, value type, access, enum/options, min/max/step, unit, and whether the operation is an action or a settable property.
+2. Link inputs to capabilities using explicit capability ID/property. Do not invent a writable command from a state key, infer permission from a UI component, or require a current state value for a write-only action. Surface missing, contradictory, or malformed metadata as `unknown`, separately from `read_only` and `writable`; do not guess a mapping. Return allowlisted fields only, with bounded response sizes and per-item errors.
+3. Keep existing `get_device`, `get_device_state`, and discovery contracts compatible. Consider an opt-in detail field or bounded batched interface read to reduce assistant round trips; do not make room discovery copy complete metadata into ERS. Document exact tool schemas, tool allowlists, and capability search semantics. Metadata freshness and authorization must be checked on every request.
+4. Require `home.devices.read` for state and general interface reads. Preserve write-only clients: expose the minimum command schema needed for preflight through the existing write-scoped command-target route, without leaking state or inventory names. Add gateway routes only if needed, and test grants, token exchange, revocation, redaction, and direct route access. Do not add a new scope without a separate security decision.
+
+## Command safety and outcomes
+
+1. Preflight single-device commands using the current command schema and keep device-hub as the authoritative final validation boundary. Validate exact writable property, type, enum, min/max, integer integrality, and step, including actions that have no matching state value. Never silently translate raw blind `position` into `open_percent`; expose the adapter's semantics instead. Keep idempotency and online checks.
+2. Device-hub currently fails open when capabilities are missing or malformed. Inventory legacy adapters and measure the impact first. Introduce explicit metadata-unknown errors for MCP writes behind a compatibility flag, migrate adapters, then make strict behavior the MCP default. Do not silently break existing UI and automation writes. Revalidate at dispatch so stale preflight data cannot bypass current metadata.
+3. Return bounded structured validation errors through the gateway and MCP, with safe property-specific reasons such as unsupported property, read-only, invalid type, or out-of-range. Avoid exposing arbitrary upstream response bodies. Document that a command response of `queued` means accepted for dispatch, not physical completion.
+4. Add a scoped, authorized lifecycle read by device and correlation ID, backed by the persisted command lifecycle, with explicit queued, applied, rejected, failed, and timeout states. Define retention and not-found behavior; avoid treating an adapter's `applied` as verified physical settling. State verification remains a separate timestamped read.
+5. Preflight every group member against its own schema before dispatch; define whether incompatibility rejects the whole request or explicitly allows partial execution. Return ordered per-device outcomes, retain per-device idempotency keys, and document that dispatch is not atomic. Do not suggest an unqualified group success when members differ.
+
+## Integration and Validation Rollout
+
+1. The shared verifier now checks the presentation schema, linked capability value types, range ordering, positive steps, option values, and integer constraints for exported test samples. Connector, eModul, and LG ThinQ opt in; other integrations warn when no samples are exported. Publish the updated shared action before enabling strict mode in dependent repositories. Expand sample coverage, integration-template guidance, and checks for mismatched property/access; JSON Schema alone does not enforce cross-references or compare min and max.
+2. Add device-hub ingest validation and diagnostics for hints from all adapters. Roll out in warning mode first; then ignore only invalid presentation hints while preserving all legacy state, command, and unrelated metadata. Never let a malformed hint drop a device or grant permission. Cover partial metadata updates and stale capabilities, and decide how to notify integration authors without logging secrets.
+3. Ensure retained MQTT metadata, device-hub storage/list/get and real-time frontend paths preserve valid hints without database migrations where JSON fields suffice. Verify startup, reconnect, updates, removal, multiple replicas, and older clients. Keep legacy `type` and `value_type` intact through every hop.
+4. eModul's HDP producer publishes `ui.control: "stepper"` for `set_target_temperature`, keeping its `slider` input type and existing 5–35 °C, 0.5 °C range. Independently verify the vendor's actual limits and step; this presentation change does not establish them. Apply state hints only where the integration has a clear presentation preference; adapters need not emit hints.
+5. Review the device tile, dashboard device widget, group page, group widget, detail views, automation editors, and widget settings for consistent normalization and fallback. Presentation must not change automation payloads, capability permissions, or group eligibility. Test narrow/mobile layouts, keyboard operation, focus, accessible labels, disabled/pending/error states, and display of null and unknown values.
+
+## Verification and release gates
+
+- Schema: old metadata, every supported component/type pair, unknown hints, malformed UI objects, incompatible linked capabilities, range ordering, numeric step/integer validation, absent values, and legacy partial updates.
+- UI: device tile and dashboard controls; decimal increments and bounds; disabled and mixed group states; enum selection; writable versus read-only fields; state displays; malformed hints; conflicting group hints; no duplicate command on blur/Enter; keyboard and screen-reader labels.
+- MCP: blind `position` and `closed_percent` rejected as commands, `open_percent` and action accepted, thermostat temperature read-only and target writable, action without state, unsupported/unknown metadata, range/step/enum errors, clear tool errors, read-only and write-only grants, idempotency, and group partial failures.
+- Lifecycle: queued versus applied versus failure/timeout, missing lifecycle, delayed/stale state, and physical state not assumed from adapter acknowledgement.
+- End to end: publish a retained integration metadata frame, read it through device-hub and MCP, render it in device and dashboard views, issue a valid command, and inspect its correlated result. Repeat with old producers/clients and malformed hints.
+- Rollout: deploy schema-aware consumers before hint producers, then producer validation, strict MCP preflight, and lifecycle tooling behind independent flags. Monitor rejected hints, unknown schemas, command failures, and interface response sizes. Roll back by disabling hints/new tools without removing legacy metadata or changing command semantics.

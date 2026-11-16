@@ -25,9 +25,12 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import GlassCard from '../common/GlassCard/GlassCard';
 import GlassSwitch from '../common/GlassSwitch/GlassSwitch';
-import GlassMetric from '../common/GlassMetric/GlassMetric';
 import GlassPill from '../common/GlassPill/GlassPill';
 import ColorPickerControl from '../common/ColorPickerControl/ColorPickerControl';
+import { DeviceControlRenderer } from '../common/DeviceControlRenderer/DeviceControlRenderer';
+import { isValidControlOverride, normalizeInputType, resolveControlComponent, resolveDisplayComponent } from '../common/DeviceControlRenderer/deviceControlUtils';
+import { StateBadge, StateMetric } from '../common/DeviceMetricsRenderer/DeviceMetricsRenderer';
+import { applyInputPresentation, inputIdentityKeys } from '../../utils/devicePresentation';
 import { normalizeColorHex } from '../../utils/colorHex';
 import { DEVICE_ICON_CHOICES, DEVICE_ICON_MAP } from './deviceIconChoices';
 import './DeviceTile.css';
@@ -353,25 +356,6 @@ function formatBinaryCapabilityValue(cap, raw) {
   return formatBinaryStateValue(key, raw);
 }
 
-function resolveBinaryTone(key, raw) {
-  const bool = toControlBoolean(raw);
-  const normalizedKey = (key || '').toString().toLowerCase();
-  switch (normalizedKey) {
-  case 'contact':
-    return bool ? 'success' : 'warning';
-  case 'tamper':
-  case 'smoke':
-  case 'water_leak':
-  case 'leak':
-    return bool ? 'danger' : 'success';
-  case 'battery_low':
-  case 'low_battery':
-    return bool ? 'warning' : 'success';
-  default:
-    return bool ? 'success' : 'warning';
-  }
-}
-
 function buildMetrics(device, capabilities = []) {
   const binaryMetrics = [];
   const numericMetrics = [];
@@ -403,13 +387,15 @@ function buildMetrics(device, capabilities = []) {
     if (kind === 'binary') {
       usedKeys.add(id);
       const formatted = formatBinaryCapabilityValue(cap, value);
-      if (BINARY_PILL_BLOCKLIST.has(id)) {
+      if (resolveDisplayComponent(cap, value) || BINARY_PILL_BLOCKLIST.has(id)) {
         numericMetrics.push({
           key: id,
           label: cap.name || cap.property || rawId,
           value: formatted,
           unit: '',
           icon,
+          rawValue: value,
+          capability: cap,
         });
       } else if (!isCapabilityWritable(cap)) {
         binaryMetrics.push({
@@ -431,6 +417,8 @@ function buildMetrics(device, capabilities = []) {
       value: metricValue,
       unit: cap.unit || cap.units || '',
       icon,
+      rawValue: value,
+      capability: cap,
     });
   });
 
@@ -523,32 +511,6 @@ function buildMetrics(device, capabilities = []) {
 function sanitizeInputKey(input) {
   if (!input) return '';
   return input.id || input.capability_id || input.capabilityId || input.property || '';
-}
-
-function buildInputIdentityKeys(input) {
-  if (!input) return [];
-  const rawValues = [
-    input.property,
-    input.capability_id,
-    input.capabilityId,
-    input.capabilityID,
-    input.id,
-  ];
-  const out = new Set();
-  rawValues.forEach(value => {
-    const normalized = (value || '').toString().trim().toLowerCase();
-    if (!normalized) return;
-    out.add(normalized);
-    const suffix = normalized.split('.').pop();
-    if (suffix) out.add(suffix);
-    if (normalized.startsWith('set_')) {
-      out.add(normalized.slice(4));
-    }
-    if (suffix && suffix.startsWith('set_')) {
-      out.add(suffix.slice(4));
-    }
-  });
-  return Array.from(out);
 }
 
 function resolveInputLabel(input) {
@@ -710,9 +672,6 @@ function buildInitialControlValues(device, inputs) {
     if (raw === undefined && input.type === 'toggle' && typeof device.toggleState === 'boolean') {
       raw = device.toggleState;
     }
-    if (raw === undefined && input.type === 'slider' && input.range && typeof input.range.min === 'number') {
-      raw = input.range.min;
-    }
     if (raw === undefined && input.type === 'select' && input.options?.length) {
       raw = input.options[0].value;
     }
@@ -722,7 +681,7 @@ function buildInitialControlValues(device, inputs) {
       break;
     case 'slider':
     case 'number':
-      values[key] = typeof raw === 'number' ? raw : Number(raw ?? 0);
+      values[key] = raw == null || raw === '' ? '' : Number(raw);
       break;
     case 'color':
       values[key] = extractStateColorHex(raw) || '#FFFFFF';
@@ -846,17 +805,17 @@ export default function DeviceTile({
     }
     const normalized = rawList
       .map(input => {
-        const originalType = (input.type || '').toLowerCase();
+        const originalType = normalizeInputType(input.type);
         const capabilityId = input.capability_id || input.capabilityId || input.capabilityID || '';
         const property = input.property || capabilityId || input.id || '';
         const propertyLower = property.toString().toLowerCase();
         const options = Array.isArray(input.options) ? input.options : [];
         const hasOnOffOptions = options.some(opt => String(opt?.value || '').toLowerCase() === 'on')
           && options.some(opt => String(opt?.value || '').toLowerCase() === 'off');
-        const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOnOffOptions;
+        const capability = resolveCapabilityForInput(capabilityLookup, input);
+        const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOnOffOptions && !isValidControlOverride({ ...input, capability });
         const type = isPowerSelect ? 'toggle' : originalType;
         const id = input.id || capabilityId || property;
-        const capability = resolveCapabilityForInput(capabilityLookup, input);
         const access = {
           ...(capability?.access || {}),
           ...(input.metadata?.access || {}),
@@ -886,25 +845,25 @@ export default function DeviceTile({
       })
       .filter(input => {
         if (!input.id || input.readOnly) return false;
-        if (!['toggle', 'slider', 'number', 'select', 'color'].includes(input.type)) return false;
+        if (!['toggle', 'slider', 'number', 'select', 'color', 'text'].includes(input.type)) return false;
         const propertyKey = (input.property || input.id || '').toString().toLowerCase();
         if (suppressedProperties.has(propertyKey)) return false;
         return true;
       });
     const seenKeys = new Set();
     normalized.forEach(item => {
-      buildInputIdentityKeys(item).forEach(key => seenKeys.add(key));
+      inputIdentityKeys(item).forEach(key => seenKeys.add(key));
     });
     const fallbackInputs = buildInputsFromCapabilities(capabilities);
     fallbackInputs.forEach(fallback => {
-      const identityKeys = buildInputIdentityKeys(fallback);
+      const identityKeys = inputIdentityKeys(fallback);
       if (identityKeys.length === 0) return;
       if (identityKeys.some(key => seenKeys.has(key))) return;
       if (!['toggle', 'slider', 'number', 'select', 'color'].includes(fallback.type)) return;
       const propertyKey = (fallback.property || fallback.id || '').toString().toLowerCase();
       if (suppressedProperties.has(propertyKey)) return;
       identityKeys.forEach(key => seenKeys.add(key));
-      normalized.push({
+      normalized.push(applyInputPresentation({
         ...fallback,
         options: Array.isArray(fallback.options) ? fallback.options : [],
         metadata: fallback.metadata || {},
@@ -913,14 +872,14 @@ export default function DeviceTile({
         capability_id: fallback.capability_id,
         access: fallback.access || {},
         readOnly: false,
-      });
+      }, device.meta));
     });
     return normalized;
-  }, [device.inputs, capabilityLookup, capabilities]);
+  }, [device.inputs, device.meta, capabilityLookup, capabilities]);
 
   const primaryToggleInput = useMemo(() => {
     return normalizedInputs.find(input => {
-      if (input.type !== 'toggle') return false;
+      if (input.type !== 'toggle' || resolveControlComponent(input) !== 'toggle') return false;
       const key = sanitizeInputKey(input).toLowerCase();
       return key === 'state' || key === 'on' || key === 'power';
     }) || null;
@@ -1073,16 +1032,6 @@ export default function DeviceTile({
   const handleSelectChange = useCallback((input, optionValue) => {
     updateControlValue(input, optionValue);
     handleInputCommand(input, optionValue);
-  }, [handleInputCommand, updateControlValue]);
-
-  const handleNumberCommit = useCallback((input, raw) => {
-    if (raw === '' || raw === null || raw === undefined) {
-      return;
-    }
-    const numeric = Number(raw);
-    if (Number.isNaN(numeric)) return;
-    updateControlValue(input, numeric);
-    handleInputCommand(input, numeric);
   }, [handleInputCommand, updateControlValue]);
 
   const handlePrimaryToggle = useCallback((next) => {
@@ -1558,12 +1507,7 @@ export default function DeviceTile({
         {binaryMetrics.length > 0 ? (
           <div className="device-state-pills">
             {binaryMetrics.map(metric => (
-              <GlassPill
-                key={metric.key}
-                icon={metric.icon}
-                tone={resolveBinaryTone(metric.key, metric.rawValue)}
-                text={`${formatDisplayLabel(metric.label)}: ${metric.value}`}
-              />
+              <StateBadge key={metric.key} metric={{ ...metric, label: formatDisplayLabel(metric.label) }} binary />
             ))}
           </div>
         ) : null}
@@ -1582,6 +1526,9 @@ export default function DeviceTile({
               const max = typeof range?.max === 'number' ? range.max : (input.type === 'slider' ? 255 : undefined);
               const step = typeof range?.step === 'number' ? range.step : (input.type === 'slider' ? 1 : undefined);
               const label = resolveInputLabel(input);
+              if (input.type === 'text' || resolveControlComponent(input) === 'number' || resolveControlComponent(input) !== input.type) {
+                return <DeviceControlRenderer key={key} input={input} value={value} pending={pending || controlsLocked} onChange={next => updateControlValue(input, next)} onCommit={next => handleInputCommand(input, next)} />;
+              }
               switch (input.type) {
               case 'toggle':
                 return (
@@ -1604,7 +1551,7 @@ export default function DeviceTile({
                     <div className="device-control-label">
                       <FontAwesomeIcon icon={icon} />
                       <span>{label}</span>
-                      <span className="device-control-value">{Math.round(value ?? min)}</span>
+                      <span className="device-control-value">{value ?? min}</span>
                     </div>
                     <div className="device-control-slider">
                       <input
@@ -1649,37 +1596,6 @@ export default function DeviceTile({
                     </select>
                   </div>
                 );
-              case 'number':
-                return (
-                  <div className="device-control" key={key}>
-                    <div className="device-control-label">
-                      <FontAwesomeIcon icon={icon} />
-                      <span>{label}</span>
-                    </div>
-                    <input
-                      type="number"
-                      className="device-control-number"
-                      min={min}
-                      max={max}
-                      step={step || 1}
-                      value={value === '' ? '' : value ?? ''}
-                      disabled={pending || controlsLocked}
-                      onChange={e => {
-                        const raw = e.target.value;
-                        if (raw === '') {
-                          updateControlValue(input, '');
-                          return;
-                        }
-                        const numeric = Number(raw);
-                        if (!Number.isNaN(numeric)) {
-                          updateControlValue(input, numeric);
-                        }
-                      }}
-                      onBlur={e => handleNumberCommit(input, e.target.value)}
-                      onKeyUp={e => { if (e.key === 'Enter') handleNumberCommit(input, e.target.value); }}
-                    />
-                  </div>
-                );
               case 'color': {
                 const draft = colorDrafts[key];
                 const normalizedValue = normalizeColorHex(draft?.current ?? value);
@@ -1716,13 +1632,7 @@ export default function DeviceTile({
 
         <div className="device-metrics">
           {visibleMetrics.map(metric => (
-            <GlassMetric
-              key={metric.key}
-              icon={metric.icon}
-              label={metric.label}
-              value={metric.value}
-              unit={metric.unit}
-            />
+            <StateMetric key={metric.key} metric={metric} />
           ))}
           {hasExtraMetrics ? (
             <button

@@ -1,6 +1,7 @@
-import { sanitizeInputKey, toControlBoolean } from '../components/common/DeviceControlRenderer/deviceControlUtils';
+import { getDisplayPresentationOptions, isValidControlOverride, normalizeInputType, sanitizeInputKey, toControlBoolean } from '../components/common/DeviceControlRenderer/deviceControlUtils';
 import { normalizeColorHex } from './colorHex';
 import { collectDeviceStateFieldKeys } from './deviceFields';
+import { applyInputPresentation, inputIdentityKeys } from './devicePresentation';
 
 function arrayOrEmpty(value) {
   return Array.isArray(value) ? value : [];
@@ -169,7 +170,6 @@ export function buildInitialControlValues(device, inputs) {
     if (!key) return;
     let raw = getStateValueForInput(device, input);
     if (raw === undefined && input.type === 'toggle' && typeof device?.toggleState === 'boolean') raw = device.toggleState;
-    if (raw === undefined && input.type === 'slider' && input.range && typeof input.range.min === 'number') raw = input.range.min;
     if (raw === undefined && input.type === 'select' && input.options?.length) raw = input.options[0].value;
     switch (input.type) {
     case 'toggle':
@@ -177,7 +177,7 @@ export function buildInitialControlValues(device, inputs) {
       break;
     case 'slider':
     case 'number':
-      values[key] = typeof raw === 'number' ? raw : Number(raw ?? 0);
+      values[key] = raw == null || raw === '' ? '' : Number(raw);
       break;
     case 'color':
       values[key] = extractStateColorHex(raw) || '#FFFFFF';
@@ -236,7 +236,7 @@ export function buildPayloadForInput(input, value) {
   return { state };
 }
 
-function buildNormalizedInputs(device) {
+export function buildNormalizedInputs(device) {
   const capabilities = collectCapabilities(device);
   const capabilityLookup = buildCapabilityLookup(capabilities);
   const rawList = arrayOrEmpty(device?.inputs);
@@ -247,17 +247,17 @@ function buildNormalizedInputs(device) {
   }
   const normalized = rawList
     .map((input) => {
-      const originalType = (input.type || '').toLowerCase();
+      const originalType = normalizeInputType(input.type);
       const capabilityId = input.capability_id || input.capabilityId || input.capabilityID || '';
       const property = input.property || capabilityId || input.id || '';
       const propertyLower = property.toString().toLowerCase();
       const options = Array.isArray(input.options) ? input.options : [];
       const hasOn = options.some((opt) => String(opt?.value || '').toLowerCase() === 'on');
       const hasOff = options.some((opt) => String(opt?.value || '').toLowerCase() === 'off');
-      const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOn && hasOff;
+      const capability = resolveCapabilityForInput(capabilityLookup, input);
+      const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOn && hasOff && !isValidControlOverride({ ...input, capability });
       const type = isPowerSelect ? 'toggle' : originalType;
       const id = input.id || capabilityId || property;
-      const capability = resolveCapabilityForInput(capabilityLookup, input);
       const access = {
         ...(capability?.access || {}),
         ...(input.metadata?.access || {}),
@@ -287,19 +287,19 @@ function buildNormalizedInputs(device) {
     })
     .filter((input) => {
       if (!input.id || input.readOnly) return false;
-      if (!['toggle', 'slider', 'number', 'select', 'color'].includes(input.type)) return false;
+      if (!['toggle', 'slider', 'number', 'select', 'color', 'text'].includes(input.type)) return false;
       const propertyKey = (input.property || input.id || '').toString().toLowerCase();
       if (suppressedProperties.has(propertyKey)) return false;
       return true;
     });
-  const seenKeys = new Set(normalized.map((item) => sanitizeInputKey(item).toLowerCase()));
+  const seenKeys = new Set(normalized.flatMap(inputIdentityKeys));
   buildInputsFromCapabilities(capabilities).forEach((fallback) => {
-    const key = sanitizeInputKey(fallback).toLowerCase();
-    if (!key || seenKeys.has(key)) return;
+    const keys = inputIdentityKeys(fallback);
+    if (!keys.length || keys.some(key => seenKeys.has(key))) return;
     const propertyKey = (fallback.property || fallback.id || '').toString().toLowerCase();
     if (suppressedProperties.has(propertyKey)) return;
-    seenKeys.add(key);
-    normalized.push({
+    keys.forEach(key => seenKeys.add(key));
+    normalized.push(applyInputPresentation({
       ...fallback,
       options: Array.isArray(fallback.options) ? fallback.options : [],
       metadata: fallback.metadata || {},
@@ -308,9 +308,16 @@ function buildNormalizedInputs(device) {
       capability_id: fallback.capability_id,
       access: fallback.access || {},
       readOnly: false,
-    });
+    }, device?.meta));
   });
   return normalized;
+}
+
+export function buildPresentationInputs(device) {
+  return buildNormalizedInputs(device).map(input => {
+    const raw = arrayOrEmpty(device?.inputs).find(item => sanitizeInputKey(item) === sanitizeInputKey(input));
+    return raw && input.metadata?.togglePowerString ? { ...input, ...raw, capability: input.capability } : input;
+  });
 }
 
 export function findToggleInput(device) {
@@ -350,6 +357,67 @@ function buildMixedControlAnnotation(input, values) {
   return prefix;
 }
 
+export function intersectNumericRanges(candidates) {
+  if (!candidates.length) return null;
+  const ranges = candidates.map(candidate => candidate.range || {});
+  if (ranges.some(range => range.except !== undefined && (!Array.isArray(range.except) || range.except.some(value => value === '' || !Number.isFinite(Number(value)))))) return null;
+  const excluded = [...new Set(ranges.flatMap(range => (range.except || []).map(Number)))];
+  const numbers = ranges.flatMap(range => [range.min, range.max, range.step].filter(value => value !== undefined));
+  if (numbers.some(value => typeof value !== 'number' || !Number.isFinite(value)) || ranges.some(range => range.step !== undefined && range.step <= 0)) return null;
+  let scale = 1;
+  while (scale <= 1000000000000000 && numbers.some(value => Math.round(value * scale) / scale !== value)) scale *= 10;
+  if (scale > 1000000000000000 || numbers.some(value => !Number.isSafeInteger(Math.round(value * scale)))) return null;
+  const scaled = ranges.map(range => ({
+    min: range.min === undefined ? undefined : BigInt(Math.round(range.min * scale)),
+    max: range.max === undefined ? undefined : BigInt(Math.round(range.max * scale)),
+    step: BigInt(Math.round((range.step ?? 1) * scale)),
+  }));
+  if (scaled.some(range => range.step <= 0n)) return null;
+  const mins = scaled.map(range => range.min).filter(value => value !== undefined);
+  const maxes = scaled.map(range => range.max).filter(value => value !== undefined);
+  const lower = mins.length ? mins.reduce((left, right) => left > right ? left : right) : undefined;
+  const upper = maxes.length ? maxes.reduce((left, right) => left < right ? left : right) : undefined;
+  if (lower !== undefined && upper !== undefined && lower > upper) return null;
+  const modulo = (value, modulus) => ((value % modulus) + modulus) % modulus;
+  const extendedGcd = (left, right) => {
+    let previous = 1n;
+    let current = 0n;
+    while (right !== 0n) {
+      const quotient = left / right;
+      [left, right] = [right, left % right];
+      [previous, current] = [current, previous - quotient * current];
+    }
+    return [left, previous];
+  };
+  let origin = modulo(scaled[0].min ?? 0n, scaled[0].step);
+  let step = scaled[0].step;
+  for (const range of scaled.slice(1)) {
+    const [divisor, inverse] = extendedGcd(step, range.step);
+    const difference = (range.min ?? 0n) - origin;
+    if (difference % divisor !== 0n) return null;
+    const multiplier = modulo((difference / divisor) * inverse, range.step / divisor);
+    origin += step * multiplier;
+    step = (step / divisor) * range.step;
+    origin = modulo(origin, step);
+  }
+  const first = lower !== undefined ? lower + modulo(origin - lower, step)
+    : upper !== undefined ? upper - modulo(upper - origin, step) : origin;
+  if ((upper !== undefined && first > upper) || step > BigInt(Number.MAX_SAFE_INTEGER)
+    || first > BigInt(Number.MAX_SAFE_INTEGER) || first < BigInt(Number.MIN_SAFE_INTEGER)) return null;
+  if (lower !== undefined && upper !== undefined) {
+    let available = first;
+    while (available <= upper && excluded.includes(Number(available) / scale)) available += step;
+    if (available > upper) return null;
+  }
+  return {
+    ...(candidates[0].range || {}),
+    ...(lower !== undefined ? { min: Number(first) / scale } : {}),
+    ...(upper !== undefined ? { max: Number(upper) / scale } : {}),
+    step: Number(step) / scale,
+    ...(excluded.length ? { except: excluded } : {}),
+  };
+}
+
 export function intersectSharedInputs(devices) {
   const members = arrayOrEmpty(devices);
   if (!members.length) return { inputs: [], values: {}, mixedKeys: [], mixedAnnotations: {} };
@@ -361,21 +429,33 @@ export function intersectSharedInputs(devices) {
     const map = new Map();
     entry.inputs.forEach((input) => {
       const key = sanitizeInputKey(input).toLowerCase();
-      if (key) map.set(key, input);
+      if (key) map.set(key, map.has(key) ? null : input);
     });
     return map;
   });
-  const sharedKeys = Array.from(maps[0].keys()).filter((key) => maps.every((map) => map.has(key)));
+  const sharedKeys = Array.from(maps[0].keys()).filter((key) => maps.every((map) => map.get(key)));
   const sharedInputs = [];
   const sharedValues = {};
   const mixedKeys = [];
   const mixedAnnotations = {};
 
   sharedKeys.forEach((key) => {
-    const candidates = maps.map((map) => map.get(key)).filter(Boolean);
+    let candidates = maps.map((map) => map.get(key)).filter(Boolean);
     if (!candidates.length) return;
+    if (!candidates.every(candidate => candidate.property === candidates[0].property)) return;
+    if (!candidates.every(candidate => candidate.type === candidates[0].type) && candidates.every(candidate => (
+      (candidate.type === 'toggle' && candidate.metadata?.togglePowerString)
+      || (candidate.type === 'select' && String(candidate.property).toLowerCase() === 'power'
+        && ['on', 'off'].every(value => candidate.options.some(option => String(option.value).toLowerCase() === value)))
+    ))) {
+      candidates = candidates.map(candidate => ({ ...candidate, type: 'toggle', ui: { ...candidate.ui, control: undefined }, metadata: { ...candidate.metadata, togglePowerString: true } }));
+    }
     const base = { ...candidates[0] };
     if (!candidates.every((candidate) => candidate.type === base.type)) return;
+    if (base.type === 'toggle' && !candidates.every(candidate => JSON.stringify(buildPayloadForInput(candidate, true)) === JSON.stringify(buildPayloadForInput(base, true)))) return;
+    if (!candidates.every((candidate) => candidate.ui?.control === base.ui?.control)) {
+      base.ui = { ...base.ui, control: undefined };
+    }
     if (base.type === 'select') {
       const optionSets = candidates.map((candidate) => new Map(arrayOrEmpty(candidate.options).map((option) => [String(option.value).toLowerCase(), option])));
       const intersectedOptions = arrayOrEmpty(base.options).filter((option) => optionSets.every((set) => set.has(String(option.value).toLowerCase())));
@@ -383,22 +463,13 @@ export function intersectSharedInputs(devices) {
       base.options = intersectedOptions;
     }
     if (base.type === 'slider' || base.type === 'number') {
-      const mins = candidates.map((candidate) => candidate.range?.min).filter((value) => typeof value === 'number');
-      const maxes = candidates.map((candidate) => candidate.range?.max).filter((value) => typeof value === 'number');
-      const steps = candidates.map((candidate) => candidate.range?.step).filter((value) => typeof value === 'number');
-      const min = mins.length ? Math.max(...mins) : undefined;
-      const max = maxes.length ? Math.min(...maxes) : undefined;
-      if (typeof min === 'number' && typeof max === 'number' && max < min) return;
-      base.range = {
-        ...(base.range || {}),
-        ...(typeof min === 'number' ? { min } : {}),
-        ...(typeof max === 'number' ? { max } : {}),
-        ...(steps.length ? { step: Math.max(...steps) } : {}),
-      };
+      base.range = intersectNumericRanges(candidates);
+      if (!base.range) return;
     }
     sharedInputs.push(base);
     const memberValues = normalizedByDevice.map(({ device }) => getStateValueForInput(device, base));
-    const comparableValues = memberValues.filter((value) => value !== undefined);
+    const numericInput = ['slider', 'number'].includes(base.type);
+    const comparableValues = memberValues.filter((value) => value !== undefined && (!numericInput || value !== null && value !== ''));
     const initialValues = buildInitialControlValues(normalizedByDevice[0].device, [base]);
     const baseValue = comparableValues.length ? comparableValues[0] : initialValues[sanitizeInputKey(base)];
     sharedValues[sanitizeInputKey(base)] = base.type === 'color'
@@ -406,10 +477,11 @@ export function intersectSharedInputs(devices) {
       : base.type === 'toggle'
         ? toControlBoolean(baseValue)
         : baseValue;
-    if (comparableValues.length > 1 && !comparableValues.every((value) => valuesEqualByType(base.type, comparableValues[0], value))) {
+    const missingNumeric = numericInput && comparableValues.length !== memberValues.length;
+    if (missingNumeric || (comparableValues.length > 1 && !comparableValues.every((value) => valuesEqualByType(base.type, comparableValues[0], value)))) {
       const inputKey = sanitizeInputKey(base);
       mixedKeys.push(inputKey);
-      mixedAnnotations[inputKey] = buildMixedControlAnnotation(base, comparableValues);
+      mixedAnnotations[inputKey] = missingNumeric ? 'Some devices have no reported value' : buildMixedControlAnnotation(base, comparableValues);
       base.mixed = true;
       base.annotation = mixedAnnotations[inputKey];
     }
@@ -448,4 +520,20 @@ export function buildSharedFieldState(devices, selectedFields = null) {
     state[key] = values.every((value) => valuesEqual(values[0], value)) ? values[0] : 'Mixed';
   });
   return state;
+}
+
+export function buildSharedFieldCapabilities(devices, fields) {
+  const members = arrayOrEmpty(devices);
+  if (!members.length) return [];
+  return arrayOrEmpty(fields).flatMap(field => {
+    const capabilities = members.map(device => collectCapabilities(device).find(cap => cap.id === field || cap.property === field));
+    const first = capabilities[0];
+    const display = first?.ui?.display;
+    if (!display || !capabilities.every(cap => cap && cap.ui?.display === display
+      && getDisplayPresentationOptions(cap).includes(display)
+      && (cap.value_type || cap.valueType) === (first.value_type || first.valueType)
+      && cap.unit === first.unit
+      && cap.range?.min === first.range?.min && cap.range?.max === first.range?.max)) return [];
+    return [first];
+  });
 }

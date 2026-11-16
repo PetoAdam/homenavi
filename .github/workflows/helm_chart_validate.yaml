@@ -5,12 +5,16 @@ on:
     paths:
       - "helm/homenavi/**"
       - ".github/workflows/helm_chart_validate.yaml"
+      - ".github/workflows/helm_chart_release.yaml"
+      - ".github/scripts/chart-release-gate*.cjs"
   push:
     branches:
       - main
     paths:
       - "helm/homenavi/**"
       - ".github/workflows/helm_chart_validate.yaml"
+      - ".github/workflows/helm_chart_release.yaml"
+      - ".github/scripts/chart-release-gate*.cjs"
 
 jobs:
   lint-template:
@@ -30,3 +34,8 @@ jobs:
 
       - name: Test ingress routes
         run: sh helm/homenavi/tests/test_ingress_routes.sh
+
+      - name: Test release image gate
+        run: |
+          npm ci --ignore-scripts --prefix frontend
+          node --test .github/scripts/chart-release-gate.test.cjs

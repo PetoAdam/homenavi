@@ -18,6 +18,11 @@
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+.dmr-state-badge { align-self: start; justify-self: start; width: fit-content; max-width: 100%; gap: 0.4rem; padding: 0.3rem 0.6rem; white-space: normal; }
+.dmr-state-badge > span { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem; min-width: 0; }
+.dmr-badge-label { opacity: 0.8; overflow-wrap: anywhere; }
+.dmr-badge-value { font-weight: 650; overflow-wrap: anywhere; }
+.dmr-badge-value::before { content: ''; display: inline-block; width: 0.35rem; height: 0.35rem; margin-right: 0.35rem; border-radius: 50%; vertical-align: middle; background: currentColor; }
 
 /* ─────────────────────────────────────────────────────────────────────
    Numeric Metrics
@@ -55,6 +60,14 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
 }
+
+.dmr-state-text { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; font-size: 0.85rem; }
+.dmr-state-text strong { min-width: 0; color: var(--color-text); overflow-wrap: anywhere; text-align: right; }
+.dmr-state-meter { min-width: 100px; display: flex; flex-direction: column; gap: 0.4rem; }
+.dmr-meter-semantic { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.dmr-meter-track { display: block; width: 100%; height: 0.45rem; overflow: hidden; border-radius: 999px; background: var(--color-glass-bg-light); }
+.dmr-meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); transition: width 0.32s ease; }
+@media (prefers-reduced-motion: reduce) { .dmr-meter-fill { transition: none; } }
 
 /* ─────────────────────────────────────────────────────────────────────
    Toggle for showing more metrics

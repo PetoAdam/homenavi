@@ -25,7 +25,8 @@ import WidgetShell from '../../../common/WidgetShell/WidgetShell';
 import GlassSwitch from '../../../common/GlassSwitch/GlassSwitch';
 import DeviceControlList from '../../../common/DeviceControlRenderer/DeviceControlRenderer';
 import DeviceMetricsRenderer from '../../../common/DeviceMetricsRenderer/DeviceMetricsRenderer';
-import { sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
+import { isValidControlOverride, normalizeInputType, resolveControlComponent, sanitizeInputKey, toControlBoolean } from '../../../common/DeviceControlRenderer/deviceControlUtils';
+import { applyInputPresentation, inputIdentityKeys } from '../../../../utils/devicePresentation';
 import {
   applyPendingStateToDevice,
   clearPendingTimeout,
@@ -280,9 +281,6 @@ function buildInitialControlValues(device, inputs) {
     if (raw === undefined && input.type === 'toggle' && typeof device.toggleState === 'boolean') {
       raw = device.toggleState;
     }
-    if (raw === undefined && input.type === 'slider' && input.range && typeof input.range.min === 'number') {
-      raw = input.range.min;
-    }
     if (raw === undefined && input.type === 'select' && input.options?.length) {
       raw = input.options[0].value;
     }
@@ -292,7 +290,7 @@ function buildInitialControlValues(device, inputs) {
       break;
     case 'slider':
     case 'number':
-      values[key] = typeof raw === 'number' ? raw : Number(raw ?? 0);
+      values[key] = raw == null || raw === '' ? '' : Number(raw);
       break;
     case 'color':
       values[key] = extractStateColorHex(raw) || '#FFFFFF';
@@ -453,15 +451,15 @@ export default function DeviceWidget({
     
     const normalized = rawList
       .map(input => {
-        const originalType = (input.type || '').toLowerCase();
+        const originalType = normalizeInputType(input.type);
         const capabilityId = input.capability_id || input.capabilityId || input.capabilityID || '';
         const property = input.property || capabilityId || input.id || '';
         const propertyLower = property.toString().toLowerCase();
         const options = Array.isArray(input.options) ? input.options : [];
-        const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOnOffOptions(options);
+        const capability = resolveCapabilityForInput(capabilityLookup, input);
+        const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOnOffOptions(options) && !isValidControlOverride({ ...input, capability });
         const type = isPowerSelect ? 'toggle' : originalType;
         const id = input.id || capabilityId || property;
-        const capability = resolveCapabilityForInput(capabilityLookup, input);
         const access = {
           ...(capability?.access || {}),
           ...(input.metadata?.access || {}),
@@ -491,22 +489,22 @@ export default function DeviceWidget({
       })
       .filter(input => {
         if (!input.id || input.readOnly) return false;
-        if (!['toggle', 'slider', 'number', 'select', 'color'].includes(input.type)) return false;
+        if (!['toggle', 'slider', 'number', 'select', 'color', 'text'].includes(input.type)) return false;
         const propertyKey = (input.property || input.id || '').toString().toLowerCase();
         if (suppressedProperties.has(propertyKey)) return false;
         return true;
       });
     
-    const seenKeys = new Set(normalized.map(item => sanitizeInputKey(item).toLowerCase()));
+    const seenKeys = new Set(normalized.flatMap(inputIdentityKeys));
     const fallbackInputs = buildInputsFromCapabilities(capabilities);
     fallbackInputs.forEach(fallback => {
-      const key = sanitizeInputKey(fallback).toLowerCase();
-      if (!key || seenKeys.has(key)) return;
+      const keys = inputIdentityKeys(fallback);
+      if (!keys.length || keys.some(key => seenKeys.has(key))) return;
       if (!['toggle', 'slider', 'number', 'select', 'color'].includes(fallback.type)) return;
       const propertyKey = (fallback.property || fallback.id || '').toString().toLowerCase();
       if (suppressedProperties.has(propertyKey)) return;
-      seenKeys.add(key);
-      normalized.push(fallback);
+      keys.forEach(key => seenKeys.add(key));
+      normalized.push(applyInputPresentation(fallback, device.meta));
     });
     
     return normalized;
@@ -525,7 +523,7 @@ export default function DeviceWidget({
   // Find primary toggle for header switch
   const primaryToggleInput = useMemo(() => {
     return filteredInputs.find(input => {
-      if (input.type !== 'toggle') return false;
+      if (input.type !== 'toggle' || resolveControlComponent(input) !== 'toggle') return false;
       const key = sanitizeInputKey(input).toLowerCase();
       return key === 'state' || key === 'on' || key === 'power';
     }) || null;

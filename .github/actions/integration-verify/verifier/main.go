@@ -59,6 +59,9 @@ func main() {
 		repoRoot     = flag.String("repo-root", ".", "path to the integration repo root")
 		manifestPath = flag.String("manifest", "manifest/homenavi-integration.json", "path to manifest")
 		schemaPath   = flag.String("schema", "homenavi-integration.schema.json", "path to schema")
+		hdpDir       = flag.String("hdp-metadata-dir", "", "directory containing generated HDP metadata samples")
+		hdpSchema    = flag.String("hdp-schema", "", "path to the HDP presentation schema")
+		hdpRequired  = flag.Bool("require-hdp-metadata", false, "require at least one generated metadata sample")
 	)
 	flag.Parse()
 
@@ -117,6 +120,13 @@ func main() {
 	}
 	if err := schema.Validate(raw); err != nil {
 		fail("manifest does not match schema: %v", err)
+	}
+	if *hdpDir != "" {
+		if err := validateHDPMetadataDir(*hdpDir, *hdpSchema, *hdpRequired); err != nil {
+			fail("HDP metadata validation: %v", err)
+		}
+	} else if *hdpRequired {
+		fail("HDP metadata directory is required")
 	}
 
 	var m Manifest

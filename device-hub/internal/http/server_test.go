@@ -112,6 +112,76 @@ func TestDeviceStateBatchReadsPersistedStates(t *testing.T) {
 	}
 }
 
+func TestCommandTargetDoesNotExposeStateOrReadOnlyMetadata(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&model.Device{}); err != nil {
+		t.Fatal(err)
+	}
+	device := model.Device{Protocol: "thread", ExternalID: "one", Online: true, Name: "Private name", Description: "Private description", Capabilities: datatypes.JSON(`[{"id":"sensor","property":"secret_reading","value_type":"string","access":{"read":true,"write":false}},{"id":"target","property":"target","value_type":"number","access":{"read":true,"write":true}}]`), Inputs: datatypes.JSON(`[]`)}
+	if err := database.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dbinfra.New(database), nil)
+	response := httptest.NewRecorder()
+	server.handleDeviceCommandTarget(response, httptest.NewRequest(http.MethodGet, "/api/hdp/device-command-targets/thread/one", nil))
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	text := response.Body.String()
+	for _, forbidden := range []string{"Private", "secret_reading", `"state"`, `"sensor"`} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("command target leaked %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, `"property":"target"`) || !strings.Contains(text, `"online":true`) {
+		t.Fatalf("missing command schema: %s", text)
+	}
+	response = httptest.NewRecorder()
+	server.handleDeviceCommandTarget(response, httptest.NewRequest(http.MethodGet, "/api/hdp/device-command-targets/not-canonical", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("noncanonical target status=%d", response.Code)
+	}
+}
+
+func TestDeviceInterfaceLookupPreservesOpaqueIDs(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&model.Device{}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dbinfra.New(database), nil)
+	for _, externalID := range []string{"../commands", "%2e", "one?two#three\\four", "action/refresh"} {
+		device := model.Device{Protocol: "thread", ExternalID: externalID, Name: "private", Capabilities: datatypes.JSON(`[{"id":"sensor"}]`), Inputs: datatypes.JSON(`[]`)}
+		if err := database.Create(&device).Error; err != nil {
+			t.Fatal(err)
+		}
+		body, err := json.Marshal(map[string]string{"device_id": "thread/" + externalID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := httptest.NewRecorder()
+		server.handleDeviceInterfaceLookup(response, httptest.NewRequest(http.MethodPost, "/api/hdp/device-interfaces:lookup", strings.NewReader(string(body))))
+		var result struct {
+			DeviceID string `json:"device_id"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusOK || result.DeviceID != "thread/"+externalID || strings.Contains(response.Body.String(), "private") || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("id=%q status=%d body=%s error=%v", externalID, response.Code, response.Body.String(), err)
+		}
+	}
+	for _, body := range []string{`{}`, `{"device_id":"THREAD/one"}`, `{"device_id":"thread/one","extra":true}`, `{"device_id":"thread/one"} {}`} {
+		response := httptest.NewRecorder()
+		server.handleDeviceInterfaceLookup(response, httptest.NewRequest(http.MethodPost, "/api/hdp/device-interfaces:lookup", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, response.Code)
+		}
+	}
+}
+
 func TestDeviceMetadataPage(t *testing.T) {
 	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

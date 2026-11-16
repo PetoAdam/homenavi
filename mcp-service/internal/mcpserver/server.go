@@ -333,6 +333,19 @@ func (s *server) mcpServerFor(principal *mcpPrincipal) *mcp.Server {
 				return nil, device, err
 			})
 		}
+		if s.toolEnabled("get_device_interfaces") {
+			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device_interfaces", Description: "Read bounded observed properties and declared command interfaces for one canonical device ID."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceInput) (*mcp.CallToolResult, interfacesOutput, error) {
+				if err := validateInterfaceDeviceID(input.DeviceID); err != nil {
+					return nil, interfacesOutput{}, err
+				}
+				token, err := s.clients.exchangeDelegatedToken(ctx, principal.token, s.config.Resource, "home.devices.read")
+				if err != nil {
+					return nil, interfacesOutput{}, err
+				}
+				result, err := s.clients.GetDeviceInterfaces(ctx, input.DeviceID, token)
+				return nil, result, err
+			})
+		}
 		if s.toolEnabled("get_device_states") {
 			mcp.AddTool(mcpServer, &mcp.Tool{Name: "get_device_states", Description: "Read the latest persisted states of up to 100 devices in one request."}, func(ctx context.Context, _ *mcp.CallToolRequest, input deviceStatesInput) (*mcp.CallToolResult, dataOutput, error) {
 				if err := validateDeviceStatesInput(input); err != nil {
@@ -580,6 +593,7 @@ func (s *server) availableReadTools(principal *mcpPrincipal) []string {
 	add("home.devices.read", "list_devices")
 	add("home.devices.read", "get_device")
 	add("home.devices.read", "get_device_state")
+	add("home.devices.read", "get_device_interfaces")
 	add("home.devices.read", "get_device_states")
 	add("home.devices.read", "list_device_integrations")
 	add("home.devices.read", "list_pairings")

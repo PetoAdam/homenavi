@@ -12,6 +12,7 @@ import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../hooks/useErsInventory';
 import { useAuth } from '../../context/AuthContext';
 import DeviceTile from './DeviceTile';
+import DevicePresentationSettings from './DevicePresentationSettings';
 import { deleteDevice, reconfigureDevice, sendDeviceCommand, setDeviceIcon } from '../../services/deviceHubService';
 import { patchErsDevice } from '../../services/entityRegistryService';
 import HistoryChart from '../History/HistoryChart';
@@ -1228,6 +1229,8 @@ export default function DeviceDetail() {
               </div>
             ) : null}
           </GlassCard>
+
+          <DevicePresentationSettings device={ersDevice} accessToken={accessToken} refresh={refreshErs} />
 
           <GlassCard className="device-ers-meta-card" interactive={false}>
             <div className="device-history-header">

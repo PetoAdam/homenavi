@@ -1212,6 +1212,24 @@ function GroupControlSettings({ settings, updateSetting, ersGroups, ersLoading }
             </h3>
 
             <div className="widget-settings__field">
+              <label className="widget-settings__label">Field View</label>
+              <div className="widget-settings__toggle-row" role="radiogroup" aria-label="Field view">
+                {[
+                  { value: 'cards', label: 'Cards' },
+                  { value: 'list', label: 'List' },
+                ].map((option) => {
+                  const active = (settings.fields_layout || 'cards') === option.value;
+                  return (
+                    <button key={option.value} type="button" className={`widget-settings__toggle-btn${active ? ' active' : ''}`} onClick={() => updateSetting('fields_layout', option.value)}>
+                      {active && <FontAwesomeIcon icon={faCheck} className="widget-settings__toggle-check" />}
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="widget-settings__field">
               <label className="widget-settings__label">Visible Controls</label>
               <div className="widget-settings__picker-list">
                 {selectedControls.length === 0 ? (

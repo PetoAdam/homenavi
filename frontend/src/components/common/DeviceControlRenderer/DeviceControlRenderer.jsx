@@ -2,19 +2,23 @@
  * Shared device control rendering components.
  * Used by both DeviceTile (Devices page) and DeviceWidget (Dashboard).
  */
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBolt,
+  faChevronDown,
+  faChevronUp,
   faGaugeHigh,
+  faMinus,
   faPalette,
+  faPlus,
   faSliders,
   faTicket,
 } from '@fortawesome/free-solid-svg-icons';
 import GlassSwitch from '../GlassSwitch/GlassSwitch';
 import GlassSelect from '../GlassSelect/GlassSelect';
 import ColorPickerControl from '../ColorPickerControl/ColorPickerControl';
-import { resolveInputLabel, sanitizeInputKey, toControlBoolean } from './deviceControlUtils';
+import { isValidControlOverride, resolveControlComponent, resolveInputLabel, sanitizeInputKey, toControlBoolean } from './deviceControlUtils';
 import './DeviceControlRenderer.css';
 
 // ────────────────────────────────────────────────────────────────────
@@ -83,20 +87,30 @@ function SliderControl({ input, value, pending, onChange, onCommit, annotation, 
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.slider;
   const label = resolveInputLabel(input);
+  const dirty = useRef(false);
+  const pendingValue = useRef(null);
   const range = input.range || {};
   const min = typeof range?.min === 'number' ? range.min : 0;
   const max = typeof range?.max === 'number' ? range.max : 255;
   const step = typeof range?.step === 'number' ? range.step : 1;
   const safeValue = typeof value === 'number' ? value : min;
   const fillPercent = min === max ? 0 : Math.max(0, Math.min(100, ((safeValue - min) / (max - min)) * 100));
+  const missing = value === '' || value === null || value === undefined;
+  const commit = () => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    const next = pendingValue.current;
+    pendingValue.current = null;
+    if (!isExcludedNumber(next, range)) onCommit(next);
+  };
 
   return (
     <div className={`dcr-control dcr-control-wide${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
       <ControlLabel
         icon={icon}
         label={label}
-        displayValue={mixed ? '' : Math.round(value ?? min)}
-        annotation={annotation}
+        displayValue={mixed || missing ? '' : value}
+        annotation={annotation || (missing ? 'No reported value' : undefined)}
       />
       <div className="dcr-control-slider">
         <input
@@ -106,11 +120,17 @@ function SliderControl({ input, value, pending, onChange, onCommit, annotation, 
           step={step}
           value={safeValue}
           disabled={pending}
-          onChange={e => onChange(Number(e.target.value))}
-          onMouseUp={e => onCommit(Number(e.target.value))}
-          onTouchEnd={e => onCommit(Number(e.target.value))}
-          onKeyUp={e => { if (e.key === 'Enter') onCommit(Number(e.target.value)); }}
-          onBlur={e => onCommit(Number(e.target.value))}
+          onChange={e => {
+            const proposed = Number(e.target.value);
+            const next = isExcludedNumber(proposed, range) ? steppedValue(safeValue, proposed > safeValue ? 1 : -1, min, max, step, range) : proposed;
+            dirty.current = next !== safeValue;
+            pendingValue.current = dirty.current ? next : null;
+            if (dirty.current) onChange(next);
+          }}
+          onMouseUp={e => commit(e.currentTarget)}
+          onTouchEnd={e => commit(e.currentTarget)}
+          onKeyUp={e => { if (e.key === 'Enter') commit(e.currentTarget); }}
+          onBlur={e => commit(e.currentTarget)}
           className="dcr-control-range"
           style={{ '--dcr-fill': `${fillPercent}%` }}
         />
@@ -208,40 +228,213 @@ function OnOffSelectControl({ input, value, pending, onChange, annotation, mixed
   );
 }
 
+function isExcludedNumber(value, range) {
+  return Array.isArray(range?.except) && range.except.some(excluded => Number(excluded) === value);
+}
+
+function decimalPlaces(value) {
+  const [mantissa, exponent = '0'] = String(value).toLowerCase().split('e');
+  return Math.max(0, (mantissa.split('.')[1]?.length || 0) - Number(exponent));
+}
+
+function steppedValue(current, direction, min, max, step, range) {
+  const base = min ?? 0;
+  const position = (current - base) / step;
+  let index = direction > 0 ? Math.floor(position + 1e-9) + 1 : Math.ceil(position - 1e-9) - 1;
+	if (min !== undefined) index = Math.max(0, index);
+	if (max !== undefined) index = Math.min(Math.floor((max - base) / step + 1e-9), index);
+  const precision = Math.min(100, Math.max(decimalPlaces(base), decimalPlaces(step)));
+  const exclusions = Array.isArray(range?.except) ? range.except.length : 0;
+  for (let attempt = 0; attempt <= exclusions; attempt++) {
+    if (min !== undefined && index < 0) return current;
+    if (max !== undefined && index > Math.floor((max - base) / step + 1e-9)) return current;
+    const next = Number((base + index * step).toFixed(precision));
+    if (!isExcludedNumber(next, range)) return next;
+    index += direction;
+  }
+  return current;
+}
+
+function isStepAligned(value, min, step) {
+  const position = (value - (min ?? 0)) / step;
+  return Number.isFinite(position) && Number.isSafeInteger(Math.round(position)) && Math.abs(position - Math.round(position)) <= Number.EPSILON * Math.max(1, Math.abs(position)) * 4;
+}
+
+function isValidNumericField(field, min, max, step, range) {
+  if (!field || field.value === '' || field.validity.badInput) return false;
+  const value = field.valueAsNumber;
+  return Number.isFinite(value) && (min === undefined || value >= min) && (max === undefined || value <= max) && isStepAligned(value, min, step) && !isExcludedNumber(value, range);
+}
+
 function NumberControl({ input, value, pending, onChange, onCommit, annotation, mixed }) {
   const key = sanitizeInputKey(input);
   const icon = ICON_BY_INPUT_TYPE.number;
   const label = resolveInputLabel(input);
+  const dirty = useRef(false);
+  const fieldRef = useRef(null);
   const range = input.range || {};
-  const min = typeof range?.min === 'number' ? range.min : undefined;
-  const max = typeof range?.max === 'number' ? range.max : undefined;
-  const step = typeof range?.step === 'number' ? range.step : 1;
+  const min = Number.isFinite(range.min) ? range.min : undefined;
+  const max = Number.isFinite(range.max) ? range.max : undefined;
+  const step = Number.isFinite(range.step) && range.step > 0 ? range.step : 1;
+  const current = value === '' || value === null || value === undefined ? NaN : Number(value);
+  const valid = Number.isFinite(current);
+  const unit = input.capability?.unit || input.unit;
+  const commit = (field) => {
+    if (!dirty.current || !isValidNumericField(field, min, max, step, range)) return;
+    dirty.current = false;
+    onCommit(field.value);
+  };
+  const adjust = direction => {
+    if (!valid || mixed) return;
+    const next = steppedValue(current, direction, min, max, step, range);
+    if (next === current) return;
+    dirty.current = false;
+    onChange(next);
+    onCommit(next);
+  };
 
   return (
     <div className={`dcr-control${mixed ? ' dcr-control-mixed' : ''}`} data-key={key}>
       <ControlLabel icon={icon} label={label} annotation={annotation} />
-      <input
-        type="number"
-        className="dcr-control-number"
-        min={min}
-        max={max}
-        step={step}
-        value={value === '' ? '' : value ?? ''}
-        disabled={pending}
-        onChange={e => {
-          const raw = e.target.value;
-          if (raw === '') {
-            onChange('');
-            return;
-          }
-          const numeric = Number(raw);
-          if (!Number.isNaN(numeric)) {
-            onChange(numeric);
-          }
-        }}
-        onBlur={e => onCommit(e.target.value)}
-        onKeyUp={e => { if (e.key === 'Enter') onCommit(e.target.value); }}
-      />
+      <div className="dcr-number-field" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) commit(fieldRef.current); }}>
+        <input
+          ref={fieldRef}
+          type="number"
+          aria-label={label}
+          className="dcr-control-number"
+          min={min}
+          max={max}
+          step={step}
+          value={mixed && !dirty.current ? '' : value ?? ''}
+          placeholder={mixed ? 'Mixed' : undefined}
+          disabled={pending}
+          onChange={e => {
+            dirty.current = true;
+            const raw = e.target.value;
+            if (raw === '') {
+              onChange('');
+              return;
+            }
+            const numeric = Number(raw);
+            if (!Number.isNaN(numeric)) onChange(numeric);
+          }}
+          onKeyUp={e => { if (e.key === 'Enter') commit(e.currentTarget); }}
+        />
+        {unit ? <span className="dcr-number-unit">{unit}</span> : null}
+        <div className="dcr-number-arrows">
+          <button type="button" title={`Increase ${label}`} aria-label={`Increase ${label}`} disabled={pending || mixed || !valid || (max !== undefined && current >= max)} onClick={() => adjust(1)}><FontAwesomeIcon icon={faChevronUp} /></button>
+          <button type="button" title={`Decrease ${label}`} aria-label={`Decrease ${label}`} disabled={pending || mixed || !valid || (min !== undefined && current <= min)} onClick={() => adjust(-1)}><FontAwesomeIcon icon={faChevronDown} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepperControl({ input, value, pending, onChange, onCommit, annotation, mixed }) {
+  const label = resolveInputLabel(input);
+  const dirty = useRef(false);
+  const fieldRef = useRef(null);
+  const range = input.range || {};
+  const min = Number.isFinite(range.min) ? range.min : undefined;
+  const max = Number.isFinite(range.max) ? range.max : undefined;
+  const step = Number.isFinite(range.step) && range.step > 0 ? range.step : 1;
+  const current = value === '' || value === null || value === undefined ? NaN : Number(value);
+  const valid = Number.isFinite(current);
+  const adjust = (direction) => {
+    if (!valid || mixed) return;
+    const bounded = steppedValue(current, direction, min, max, step, range);
+    if (bounded === current) return;
+    dirty.current = false;
+    onChange(bounded);
+    onCommit(bounded);
+  };
+  const commit = (field) => {
+    if (!dirty.current || !isValidNumericField(field, min, max, step, range)) return;
+    const next = field.valueAsNumber;
+    if (!Number.isFinite(next)) return;
+    dirty.current = false;
+    onChange(next);
+    onCommit(next);
+  };
+
+  return (
+    <div className={`dcr-control dcr-control-wide${mixed ? ' dcr-control-mixed' : ''}`} data-key={sanitizeInputKey(input)}>
+      <ControlLabel icon={faGaugeHigh} label={label} annotation={annotation} />
+      <div className="dcr-stepper" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) commit(fieldRef.current); }}>
+        <button type="button" title={`Decrease ${label}`} aria-label={`Decrease ${label}`} disabled={pending || mixed || !valid || (min !== undefined && current <= min)} onClick={() => adjust(-1)}><FontAwesomeIcon icon={faMinus} /></button>
+        <div className="dcr-number-field dcr-stepper-value">
+          <input ref={fieldRef} type="number" aria-label={label} min={min} max={max} step={step} value={mixed && !dirty.current ? '' : value ?? ''} style={{ width: `${Math.max(3, String(value ?? '').length + 1)}ch` }} disabled={pending} onChange={event => { dirty.current = true; onChange(event.target.value === '' ? '' : Number(event.target.value)); }} onKeyUp={event => { if (event.key === 'Enter') commit(event.currentTarget); }} />
+          {input.capability?.unit || input.unit ? <span className="dcr-number-unit">{input.capability?.unit || input.unit}</span> : null}
+        </div>
+        <button type="button" title={`Increase ${label}`} aria-label={`Increase ${label}`} disabled={pending || mixed || !valid || (max !== undefined && current >= max)} onClick={() => adjust(1)}><FontAwesomeIcon icon={faPlus} /></button>
+      </div>
+    </div>
+  );
+}
+
+function CheckboxControl({ input, value, pending, onChange, annotation, mixed }) {
+  const label = resolveInputLabel(input);
+  return (
+    <label className="dcr-control" data-key={sanitizeInputKey(input)}>
+      <ControlLabel icon={faBolt} label={label} annotation={annotation} />
+      <input type="checkbox" aria-label={label} aria-checked={mixed ? 'mixed' : undefined} ref={element => { if (element) element.indeterminate = mixed; }} checked={!mixed && toControlBoolean(value)} disabled={pending} onChange={event => onChange(event.target.checked)} />
+    </label>
+  );
+}
+
+function ChoiceControl({ input, value, pending, onChange, annotation, mixed, component }) {
+  const label = resolveInputLabel(input);
+  const groupName = useId();
+  const options = Array.isArray(input.options) ? input.options : [];
+  return (
+    <div className={`dcr-control dcr-control-wide${mixed ? ' dcr-control-mixed' : ''}`} data-key={sanitizeInputKey(input)}>
+      <ControlLabel icon={faTicket} label={label} annotation={annotation} />
+      <div className={`dcr-choices dcr-choices-${component}`} role="radiogroup" aria-label={label}>
+        {options.map(option => (
+          <label key={String(option.value)}>
+            <input type="radio" name={groupName} checked={!mixed && String(value) === String(option.value)} disabled={pending} onChange={() => onChange(option.value)} />
+            <span>{option.label || String(option.value)}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActionButtonsControl({ input, pending, onCommit, annotation }) {
+  const label = resolveInputLabel(input);
+  return (
+    <div className="dcr-control dcr-control-wide" data-key={sanitizeInputKey(input)}>
+      <ControlLabel icon={faTicket} label={label} annotation={annotation} />
+      <div className="dcr-choices" role="group" aria-label={label}>
+        {input.options.map(option => <button className="dcr-action-button" type="button" key={option.value} disabled={pending} onClick={() => onCommit(option.value)}>{option.label || option.value}</button>)}
+      </div>
+    </div>
+  );
+}
+
+function TextControl({ input, value, pending, onChange, onCommit, annotation, component, mixed }) {
+  const dirty = useRef(false);
+  const label = resolveInputLabel(input);
+  const commit = () => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    onCommit(value ?? '');
+  };
+  const props = {
+    'aria-label': label,
+    className: 'dcr-text-input',
+    disabled: pending,
+    value: mixed && !dirty.current ? '' : value ?? '',
+    placeholder: mixed ? 'Mixed' : undefined,
+    onChange: event => { dirty.current = true; onChange(event.target.value); },
+    onBlur: commit,
+    onKeyUp: event => { if (component === 'text' && event.key === 'Enter') commit(); },
+  };
+  return (
+    <div className="dcr-control dcr-control-wide" data-key={sanitizeInputKey(input)}>
+      <ControlLabel icon={faTicket} label={label} annotation={annotation} />
+      {component === 'textarea' ? <textarea {...props} /> : <input type="text" {...props} />}
     </div>
   );
 }
@@ -286,7 +479,21 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
   const annotation = input.annotation || '';
   const mixed = input.mixed === true;
 
-  switch (input.type) {
+  switch (resolveControlComponent(input)) {
+  case 'checkbox':
+    return <CheckboxControl input={input} value={value} pending={pending} annotation={annotation} mixed={mixed} onChange={next => { onChange(next); onCommit(next); }} />;
+  case 'stepper':
+    return <StepperControl input={input} value={value} pending={pending} annotation={annotation} mixed={mixed} onChange={onChange} onCommit={onCommit} />;
+  case 'buttons':
+    return <ActionButtonsControl input={input} pending={pending} annotation={annotation} onCommit={onCommit} />;
+  case 'text':
+  case 'textarea':
+    return <TextControl input={input} value={value} pending={pending} annotation={annotation} mixed={mixed} component={resolveControlComponent(input)} onChange={onChange} onCommit={onCommit} />;
+  case 'segmented':
+  case 'radio': {
+    const component = resolveControlComponent(input);
+    return <ChoiceControl input={input} value={value} pending={pending} annotation={annotation} mixed={mixed} component={component} onChange={next => { onChange(next); onCommit(next); }} />;
+  }
   case 'toggle':
     return (
       <ToggleControl
@@ -314,7 +521,7 @@ export function DeviceControlRenderer({ input, value, pending, onChange, onCommi
       />
     );
   case 'select':
-    if (isOnOffSelectInput(input)) {
+    if (!isValidControlOverride(input) && isOnOffSelectInput(input)) {
       return (
         <OnOffSelectControl
           input={input}

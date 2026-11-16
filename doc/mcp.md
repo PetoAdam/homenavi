@@ -39,7 +39,7 @@ Tools are advertised only when their OAuth scope is granted and the optional `MC
 
 | Scope | Tools |
 | --- | --- |
-| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `get_device_states`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: device inventory also includes entity names, descriptions, rooms, and tags, plus `get_device_group_state` |
+| `home.devices.read` | `list_devices`, `get_device`, `get_device_state`, `get_device_states`, `get_device_interfaces`, `list_device_integrations`, `list_pairings`; with `home.inventory.read`: device inventory also includes entity names, descriptions, rooms, and tags, plus `get_device_group_state` |
 | `home.devices.write` | `send_device_command`; with `home.inventory.read`: `send_device_group_command` |
 | `home.inventory.read` | `list_rooms`, `list_device_groups`, `get_device_group`; with `home.devices.read`: `search_devices`, `get_room_state`, `get_device_group_state`; with `home.devices.write`: `send_device_group_command` |
 | `home.inventory.write` | `create_device_group` |
@@ -49,6 +49,16 @@ Tools are advertised only when their OAuth scope is granted and the optional `MC
 | Any authenticated MCP session | `describe_homenavi_api`, `list_event_channels`, `get_write_policy` |
 
 `get_device_states` accepts 1 to 100 unique canonical `device_ids` and optional `fields` (`online`, `last_seen`, `state`, `state_updated_at`). It returns ordered results with `device_id`, `status`, and selected fields. The default includes online status, state, and the persisted state timestamp. `not_found` and `state_unavailable` are reported per device. The result is the latest state stored by device-hub, not a physical device poll; `read_at` is the response time. An oversized response fails instead of being truncated.
+
+`get_device_interfaces` accepts one canonical `device_id` and requires `home.devices.read`. It returns `metadata_status`, `metadata_read_at`, `state_status`, optional `state_updated_at`, and separate `observations` and `commands` arrays. Observations include declared readable properties and reported state keys; a state-only property has unknown access and never creates a command. `has_value` distinguishes an unavailable value from an observed JSON null. Values are from persisted state, not a physical poll, and sensitive state keys are redacted. A persisted state that is not a JSON object is reported as unavailable. Metadata and state are separate reads and are not an atomic snapshot.
+
+Commands expose only the capability ID, input ID, exact command property, value type, access (`writable`, `read_only`, or `unknown`), readable flag when declared, unit, range, options, declared boolean string mappings, and operation (`settable`, `action`, or `unknown`). Input links use explicit capability IDs or exact properties; malformed, missing, ambiguous, or conflicting metadata produces unknown entries and bounded errors. A declared read/write capability is classified as settable; a write-only capability explicitly identified as an action is classified as an action. Other write-only operation types remain unknown. No state value or presentation hint grants write access. Discovery is informational and does not add command preflight enforcement.
+
+Numeric ranges include declared `except` values when present; clients must not choose excluded values.
+
+Custom inputs use their linked capability's declared type and access. Button inputs with a different property are UI aliases and do not create or alter command schemas. Boolean string mappings are reported only for boolean capabilities. Older LG washer metadata with contradictory properties remains unknown until its integration publishes corrected metadata.
+
+The tool accepts at most 128 capabilities, 128 inputs, and 128 observed properties, limits each metadata array to 128 KiB and each observed value to 4 KiB, and fails if the complete response exceeds 256 KiB. An oversized individual value is marked unavailable. An empty, absent, or malformed capability array is unknown, not evidence that the device has no commands. Every call performs a new scoped token exchange and fetches current device-hub metadata. The `MCP_ENABLED_TOOLS` allowlist controls this tool independently of other device reads.
 
 `search_devices` accepts optional `room_id` or exact case-insensitive `room`, a case-insensitive literal `name` substring, exact `device_type` and `capability`, plus `limit` and `cursor`. Filters are combined. `get_room_state` takes the same filters but requires a room. Both require `home.devices.read` and `home.inventory.read`; a room name matching multiple rooms returns candidate IDs instead of choosing one. Default pages contain 25 devices, at most 100. Follow `next_cursor` until absent; a changed inventory invalidates a cursor and requires restarting the search. Unbound devices remain searchable by canonical ID. A device with several bindings appears once for each bound HDP ID; conflicting entities bound to the same HDP device produce an error.
 
@@ -70,17 +80,24 @@ MCP domain operations are not a general external REST API. mcp-service is their 
 | --- | --- | --- |
 | Device, integration, and pairing reads | `GET /api/mcp/hdp/devices*`, `/integrations`, `/pairings` | `home.devices.read` |
 | Batched device states | `POST /api/mcp/hdp/device-states:batch` | `home.devices.read` |
+| Device interface metadata | `POST /api/mcp/hdp/device-interfaces:lookup` | `home.devices.read` |
 | Filtered search and room state | `POST /api/mcp/ers/discovery:search`, `/discovery:room-state` | `home.devices.read` and `home.inventory.read` |
 | Rooms and device-group reads | `GET /api/mcp/ers/rooms/`, `/groups/*` | `home.inventory.read` |
 | Device-group state | Device-group read plus device reads | `home.inventory.read` and `home.devices.read` |
 | Historical state | `GET /api/mcp/history/state` | `home.history.read` |
-| Device command and online-target preflight | `GET /api/mcp/hdp/device-command-targets/*`; `POST|PATCH /api/mcp/hdp/devices/*/commands` | `home.devices.write` |
+| Device command and online-target lookup | `GET /api/mcp/hdp/device-command-targets/*`; `POST|PATCH /api/mcp/hdp/devices/*/commands` | `home.devices.write` |
 | Device-group command | Group read plus device command | `home.inventory.read` and `home.devices.write` |
 | Group creation | `POST /api/mcp/ers/group-creates` | `home.inventory.write` |
 | Workflow reads | `GET /api/mcp/automation/workflows*` | `home.automation.read` |
 | Workflow run | `POST /api/mcp/automation/workflows/*/run` | `home.automation.execute` |
 
 For the full trust-boundary diagram and token contract, see [MCP Gateway Delegation Plan](mcp_gateway_delegation_plan.md).
+
+The write-scoped command-target route returns only the canonical ID, online status, metadata status, and validated writable command schemas. It does not expose device state, names, descriptions, or read-only properties. Existing command dispatch uses its online status; schema preflight and fail-closed dispatch remain planned work.
+
+When deploying these changes, update device-hub before applying the gateway route changes, then update mcp-service. Until device-hub serves the new target endpoint, the updated gateway cannot complete MCP command online checks. Discovery also requires the new metadata lookup endpoint and gateway route. The lookup sends canonical IDs in JSON rather than a URL path, preserving opaque ID characters and path segments.
+
+Backend image release workflows require the backend quality gate on the tagged commit before publishing. GitHub Release publishing runs independently; Helm chart publishing waits up to one hour for successful release workflows and available tagged images referenced by the default rendered chart. Publish the shared integration verifier before enabling its required metadata checks in integration repositories.
 
 ## Connected Applications
 

@@ -45,43 +45,6 @@ func init() {
 }
 
 func SetupObservability(serviceName string) (shutdown func(), promHandler http.Handler, tracer oteltrace.Tracer, err error) {
-	return setupObservability(serviceName, func(ctx context.Context, endpoint string) (trace.SpanExporter, error) {
-		if err := validateCollectorConfig(endpoint); err != nil {
-			return nil, err
-		}
-		return otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
-	})
-}
-
-func validateCollectorConfig(endpoint string) error {
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Fragment != "" {
-		return errors.New("invalid trace collector endpoint")
-	}
-	for _, prefix := range []string{"OTEL_EXPORTER_OTLP_", "OTEL_EXPORTER_OTLP_TRACES_"} {
-		if path := os.Getenv(prefix + "CERTIFICATE"); path != "" {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return errors.New("invalid trace collector CA certificate")
-			}
-			if !x509.NewCertPool().AppendCertsFromPEM(data) {
-				return errors.New("invalid trace collector CA certificate")
-			}
-		}
-		cert, key := os.Getenv(prefix+"CLIENT_CERTIFICATE"), os.Getenv(prefix+"CLIENT_KEY")
-		if (cert == "") != (key == "") {
-			return errors.New("trace collector client certificate and key must be configured together")
-		}
-		if cert != "" {
-			if _, err := tls.LoadX509KeyPair(cert, key); err != nil {
-				return errors.New("invalid trace collector client certificate")
-			}
-		}
-	}
-	return nil
-}
-
-func setupObservability(serviceName string, newExporter func(context.Context, string) (trace.SpanExporter, error)) (shutdown func(), promHandler http.Handler, tracer oteltrace.Tracer, err error) {
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	otel.SetTextMapPropagator(propagator)
 
@@ -102,7 +65,11 @@ func setupObservability(serviceName string, newExporter func(context.Context, st
 	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
 	var tp *trace.TracerProvider
 	if otlpEndpoint != "" {
-		exp, err := newExporter(context.Background(), otlpEndpoint)
+		var exp trace.SpanExporter
+		err := validateCollectorConfig(otlpEndpoint)
+		if err == nil {
+			exp, err = otlptracehttp.New(context.Background(), otlptracehttp.WithEndpointURL(otlpEndpoint))
+		}
 		if err != nil {
 			slog.Warn("OpenTelemetry trace export unavailable; continuing without trace export")
 			tp = trace.NewTracerProvider(trace.WithResource(res))
@@ -122,6 +89,31 @@ func setupObservability(serviceName string, newExporter func(context.Context, st
 	promHandler = promhttp.Handler()
 	tracer = otel.Tracer(serviceName)
 	return shutdown, promHandler, tracer, nil
+}
+
+func validateCollectorConfig(endpoint string) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("invalid trace collector endpoint")
+	}
+	for _, prefix := range []string{"OTEL_EXPORTER_OTLP_", "OTEL_EXPORTER_OTLP_TRACES_"} {
+		if path := os.Getenv(prefix + "CERTIFICATE"); path != "" {
+			data, err := os.ReadFile(path)
+			if err != nil || !x509.NewCertPool().AppendCertsFromPEM(data) {
+				return errors.New("invalid trace collector CA certificate")
+			}
+		}
+		cert, key := os.Getenv(prefix+"CLIENT_CERTIFICATE"), os.Getenv(prefix+"CLIENT_KEY")
+		if (cert == "") != (key == "") {
+			return errors.New("trace collector client certificate and key must be configured together")
+		}
+		if cert != "" {
+			if _, err := tls.LoadX509KeyPair(cert, key); err != nil {
+				return errors.New("invalid trace collector client certificate")
+			}
+		}
+	}
+	return nil
 }
 
 func StartBackgroundOperation(ctx context.Context, name string) (context.Context, oteltrace.Span) {
@@ -191,7 +183,7 @@ func MetricsAndTracingMiddleware(tracer oteltrace.Tracer, serviceName string) fu
 					))
 				}
 			}
-			ctx, span := tracer.Start(ctx, "HTTP "+method, options...)
+			ctx, span := tracer.Start(ctx, "HTTP "+metricMethod, options...)
 			if chi.RouteContext(ctx) == nil {
 				if routes, ok := next.(chi.Routes); ok {
 					routeContext := chi.NewRouteContext()
@@ -213,12 +205,12 @@ func MetricsAndTracingMiddleware(tracer oteltrace.Tracer, serviceName string) fu
 					if routeContext := chi.RouteContext(ctx); routeContext != nil {
 						pattern = routeContext.RoutePattern()
 					}
-					if pattern != "" {
-						pattern = strings.TrimPrefix(pattern, method+" ")
-						span.SetName(method + " " + pattern)
-						span.SetAttributes(attribute.String("http.route", pattern))
-					} else {
+					if pattern == "" {
 						pattern = "unmatched"
+					} else {
+						pattern = strings.TrimPrefix(pattern, method+" ")
+						span.SetName(metricMethod + " " + pattern)
+						span.SetAttributes(attribute.String("http.route", pattern))
 					}
 					span.SetAttributes(attribute.Int("http.status_code", status))
 					requestCounter.WithLabelValues(serviceName, pattern, metricMethod, strconv.Itoa(status)).Inc()

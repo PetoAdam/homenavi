@@ -13,6 +13,10 @@ inputs:
     description: 'Relative path to the integration frontend package'
     required: false
     default: 'src/frontend'
+  require_hdp_metadata:
+    description: 'Require tests to export HDP metadata samples for presentation validation'
+    required: false
+    default: 'false'
 runs:
   using: 'composite'
   steps:
@@ -28,14 +32,28 @@ runs:
     - name: Run integration test checklist
       if: ${{ inputs.run_tests == 'true' }}
       shell: bash
+      env:
+        REQUIRE_HDP_METADATA: ${{ inputs.require_hdp_metadata }}
       run: |
         set -euo pipefail
         cd "${GITHUB_WORKSPACE}"
 
+        metadata_dir="$(mktemp -d)"
+
         if [ -f "go.mod" ]; then
           echo "Running go test ./..."
-          go test ./...
+          HOMENAVI_HDP_METADATA_OUTPUT_DIR="$metadata_dir" go test -count=1 ./...
         fi
+
+        cd "${GITHUB_ACTION_PATH}"
+        go run ./verifier \
+          --repo-root "${GITHUB_WORKSPACE}" \
+          --manifest "${GITHUB_WORKSPACE}/${{ inputs.manifest_path }}" \
+          --schema "${GITHUB_ACTION_PATH}/homenavi-integration.schema.json" \
+          --hdp-metadata-dir "$metadata_dir" \
+          --hdp-schema "${GITHUB_ACTION_PATH}/../../../doc/hdp-ui-presentation.schema.json" \
+          --require-hdp-metadata="${REQUIRE_HDP_METADATA}"
+        cd "${GITHUB_WORKSPACE}"
 
         if [ -f "cmd/validate-manifest/main.go" ]; then
           echo "Running manifest validator"
@@ -49,3 +67,9 @@ runs:
           npm run build
           popd > /dev/null
         fi
+    - name: Require tests for HDP validation
+      if: ${{ inputs.run_tests != 'true' && inputs.require_hdp_metadata == 'true' }}
+      shell: bash
+      run: |
+        echo 'HDP metadata validation requires run_tests=true' >&2
+        exit 1

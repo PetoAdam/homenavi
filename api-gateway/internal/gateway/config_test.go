@@ -91,3 +91,35 @@ func TestDiscoveryRoutesRequireBothScopes(t *testing.T) {
 		t.Fatalf("missing discovery routes: %v", expected)
 	}
 }
+
+func TestCommandTargetRouteIsWriteScopedAndRedacted(t *testing.T) {
+	cfg, err := LoadConfig("../../config/gateway.yaml", "../../config/routes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range cfg.Routes {
+		if route.Path == "/api/mcp/hdp/device-command-targets/*" {
+			if route.Access != "delegated" || route.Scope != "home.devices.write" || route.Upstream != "http://device-hub:8090/api/hdp/device-command-targets/*" || len(route.Methods) != 1 || route.Methods[0] != "GET" {
+				t.Fatalf("unsafe command target route: %+v", route)
+			}
+			return
+		}
+	}
+	t.Fatal("command target route missing")
+}
+
+func TestDeviceInterfaceLookupRouteRequiresRead(t *testing.T) {
+	cfg, err := LoadConfig("../../config/gateway.yaml", "../../config/routes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range cfg.Routes {
+		if route.Path == "/api/mcp/hdp/device-interfaces:lookup" {
+			if route.Access != "delegated" || route.Scope != "home.devices.read" || route.Upstream != "http://device-hub:8090/api/hdp/device-interfaces:lookup" || len(route.Methods) != 1 || route.Methods[0] != "POST" {
+				t.Fatalf("unsafe interface lookup route: %+v", route)
+			}
+			return
+		}
+	}
+	t.Fatal("interface lookup route missing")
+}

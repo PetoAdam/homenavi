@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HDP UI presentation hints",
+  "type": "object",
+  "properties": {
+    "capabilities": { "type": "array", "items": { "$ref": "#/definitions/capability" } },
+    "inputs": { "type": "array", "items": { "$ref": "#/definitions/input" } }
+  },
+  "definitions": {
+    "range": {
+      "type": "object",
+      "required": ["min", "max"],
+      "properties": { "min": { "type": "number" }, "max": { "type": "number" }, "step": { "type": "number", "exclusiveMinimum": 0 } }
+    },
+    "capability": {
+      "type": "object",
+      "properties": {
+        "ui": { "type": "object", "properties": { "display": { "enum": ["metric", "text", "badge", "progress", "gauge"] } } }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["ui"], "properties": { "ui": { "required": ["display"] } } },
+          "then": { "required": ["value_type"], "properties": { "value_type": { "enum": ["number", "integer", "float", "double", "int", "boolean", "bool", "string", "enum"] } } }
+        },
+        {
+          "if": { "required": ["ui"], "properties": { "ui": { "required": ["display"], "properties": { "display": { "enum": ["progress", "gauge"] } } } } },
+          "then": { "required": ["value_type", "range"], "properties": { "value_type": { "enum": ["number", "integer", "float", "double", "int"] }, "range": { "$ref": "#/definitions/range" } } }
+        }
+      ]
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "ui": { "type": "object", "properties": { "control": { "enum": ["toggle", "checkbox", "slider", "number", "stepper", "select", "segmented", "radio", "buttons", "color", "text", "textarea"] } } }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["ui"], "properties": { "ui": { "required": ["control"] } } },
+          "then": {
+            "required": ["type"],
+            "oneOf": [
+              { "properties": { "type": { "const": "toggle" }, "ui": { "properties": { "control": { "enum": ["toggle", "checkbox"] } } } } },
+              { "properties": { "type": { "enum": ["slider", "number"] }, "ui": { "properties": { "control": { "enum": ["slider", "number", "stepper"] } } } } },
+              { "properties": { "type": { "const": "select" }, "ui": { "properties": { "control": { "enum": ["select", "segmented", "radio", "buttons"] } } } } },
+              { "properties": { "type": { "const": "color" }, "ui": { "properties": { "control": { "const": "color" } } } } },
+              { "properties": { "type": { "const": "text" }, "ui": { "properties": { "control": { "enum": ["text", "textarea"] } } } } }
+            ]
+          }
+        },
+        {
+          "if": { "required": ["ui"], "properties": { "ui": { "required": ["control"], "properties": { "control": { "enum": ["slider", "number", "stepper"] } } } } },
+          "then": { "properties": { "range": { "anyOf": [{ "type": "null" }, { "type": "object", "properties": { "min": { "type": "number" }, "max": { "type": "number" }, "step": { "type": "number", "exclusiveMinimum": 0 } } }] } } }
+        },
+        {
+          "if": { "required": ["ui"], "properties": { "ui": { "required": ["control"], "properties": { "control": { "const": "slider" } } } } },
+          "then": { "required": ["range"], "properties": { "range": { "$ref": "#/definitions/range" } } }
+        },
+        {
+          "if": { "required": ["ui"], "properties": { "ui": { "required": ["control"], "properties": { "control": { "enum": ["segmented", "radio", "buttons"] } } } } },
+          "then": { "required": ["options"], "properties": { "options": { "type": "array", "minItems": 1, "items": { "type": "object", "required": ["value"], "properties": { "value": { "type": "string" } } } } } }
+        }
+      ]
+    }
+  }
+}

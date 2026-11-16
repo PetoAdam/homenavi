@@ -34,6 +34,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  min-width: 0;
 }
 
 .device-tile-header {
@@ -48,6 +49,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .device-title-row {
@@ -406,28 +408,9 @@
 
 .device-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 0.75rem;
   padding: 0.25rem 0;
-  max-height: 22rem;
-  overflow-y: auto;
-  padding-right: 0.35rem;
-  scroll-behavior: smooth;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-.device-controls::-webkit-scrollbar {
-  width: 0.4rem;
-}
-
-.device-controls::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.device-controls::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .device-controls-toggle {
@@ -460,11 +443,10 @@
   border-radius: 0.85rem;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
 }
 
-.device-control-wide {
-  grid-column: span 2;
-}
+.device-control-wide { grid-column: 1 / -1; }
 
 .device-color-control {
   position: relative;
@@ -695,26 +677,18 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  max-height: 220px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
+  min-width: 0;
 }
 
-.device-metrics::-webkit-scrollbar {
-  width: 4px;
-}
-
-.device-metrics::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-}
+.device-metrics .glass-metric-label { flex: 1 1 40%; align-items: flex-start; overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+.device-metrics .glass-metric-icon { flex-shrink: 0; }
+.device-metrics .glass-metric-value { flex: 1 1 55%; justify-content: flex-end; text-align: right; overflow-wrap: anywhere; word-break: break-word; }
+.device-controls > .dcr-control { min-width: 0; }
+.device-controls > .dcr-control-wide { grid-column: 1 / -1; }
 
 @media (max-width: 720px) {
   .device-controls {
     grid-template-columns: minmax(0, 1fr);
-    max-height: none;
-    overflow: visible;
-    padding-right: 0;
   }
 
   .device-control-wide,

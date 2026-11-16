@@ -25,7 +25,12 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  quality:
+    if: ${{ inputs.service != 'frontend' }}
+    uses: ./.github/workflows/mcp_oauth_gateway_quality_gate.yaml
   release:
+    needs: quality
+    if: ${{ !cancelled() && (needs.quality.result == 'success' || (inputs.service == 'frontend' && needs.quality.result == 'skipped')) }}
     runs-on: ubuntu-latest
 
     steps:

@@ -27,7 +27,9 @@ import SearchBar from '../common/SearchBar/SearchBar';
 import Button from '../common/Button/Button';
 import DeviceTile from '../Devices/DeviceTile';
 import DeviceControlList from '../common/DeviceControlRenderer/DeviceControlRenderer';
-import { sanitizeInputKey, toControlBoolean } from '../common/DeviceControlRenderer/deviceControlUtils';
+import { isValidControlOverride, sanitizeInputKey, toControlBoolean } from '../common/DeviceControlRenderer/deviceControlUtils';
+import { applyInputPresentation, inputIdentityKeys } from '../../utils/devicePresentation';
+import { intersectNumericRanges } from '../../utils/groupControls';
 import { DEVICE_ICON_MAP } from '../Devices/deviceIconChoices';
 import useDeviceHubDevices from '../../hooks/useDeviceHubDevices';
 import useErsInventory from '../../hooks/useErsInventory';
@@ -256,7 +258,6 @@ function buildInitialControlValues(device, inputs) {
     if (!key) return;
     let raw = getStateValueForInput(device, input);
     if (raw === undefined && input.type === 'toggle' && typeof device.toggleState === 'boolean') raw = device.toggleState;
-    if (raw === undefined && input.type === 'slider' && input.range && typeof input.range.min === 'number') raw = input.range.min;
     if (raw === undefined && input.type === 'select' && input.options?.length) raw = input.options[0].value;
     switch (input.type) {
     case 'toggle':
@@ -264,7 +265,7 @@ function buildInitialControlValues(device, inputs) {
       break;
     case 'slider':
     case 'number':
-      values[key] = typeof raw === 'number' ? raw : Number(raw ?? 0);
+      values[key] = raw == null || raw === '' ? '' : Number(raw);
       break;
     case 'color':
       values[key] = extractStateColorHex(raw) || '#FFFFFF';
@@ -341,10 +342,10 @@ function buildNormalizedInputs(device) {
       const options = Array.isArray(input.options) ? input.options : [];
       const hasOn = options.some((opt) => String(opt?.value || '').toLowerCase() === 'on');
       const hasOff = options.some((opt) => String(opt?.value || '').toLowerCase() === 'off');
-      const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOn && hasOff;
+      const capability = resolveCapabilityForInput(capabilityLookup, input);
+      const isPowerSelect = originalType === 'select' && propertyLower === 'power' && hasOn && hasOff && !isValidControlOverride({ ...input, capability });
       const type = isPowerSelect ? 'toggle' : originalType;
       const id = input.id || capabilityId || property;
-      const capability = resolveCapabilityForInput(capabilityLookup, input);
       const access = {
         ...(capability?.access || {}),
         ...(input.metadata?.access || {}),
@@ -374,19 +375,19 @@ function buildNormalizedInputs(device) {
     })
     .filter((input) => {
       if (!input.id || input.readOnly) return false;
-      if (!['toggle', 'slider', 'number', 'select', 'color'].includes(input.type)) return false;
+      if (!['toggle', 'slider', 'number', 'select', 'color', 'text'].includes(input.type)) return false;
       const propertyKey = (input.property || input.id || '').toString().toLowerCase();
       if (suppressedProperties.has(propertyKey)) return false;
       return true;
     });
-  const seenKeys = new Set(normalized.map((item) => sanitizeInputKey(item).toLowerCase()));
+  const seenKeys = new Set(normalized.flatMap(inputIdentityKeys));
   buildInputsFromCapabilities(capabilities).forEach((fallback) => {
-    const key = sanitizeInputKey(fallback).toLowerCase();
-    if (!key || seenKeys.has(key)) return;
+    const keys = inputIdentityKeys(fallback);
+    if (!keys.length || keys.some(key => seenKeys.has(key))) return;
     const propertyKey = (fallback.property || fallback.id || '').toString().toLowerCase();
     if (suppressedProperties.has(propertyKey)) return;
-    seenKeys.add(key);
-    normalized.push({
+    keys.forEach(key => seenKeys.add(key));
+    normalized.push(applyInputPresentation({
       ...fallback,
       options: Array.isArray(fallback.options) ? fallback.options : [],
       metadata: fallback.metadata || {},
@@ -395,7 +396,7 @@ function buildNormalizedInputs(device) {
       capability_id: fallback.capability_id,
       access: fallback.access || {},
       readOnly: false,
-    });
+    }, device?.meta));
   });
   return normalized;
 }
@@ -440,20 +441,32 @@ function intersectSharedInputs(devices) {
     const map = new Map();
     entry.inputs.forEach((input) => {
       const key = sanitizeInputKey(input).toLowerCase();
-      if (key) map.set(key, input);
+      if (key) map.set(key, map.has(key) ? null : input);
     });
     return map;
   });
-  const sharedKeys = Array.from(maps[0].keys()).filter((key) => maps.every((map) => map.has(key)));
+  const sharedKeys = Array.from(maps[0].keys()).filter((key) => maps.every((map) => map.get(key)));
   const sharedInputs = [];
   const sharedValues = {};
   const mixedKeys = [];
   const mixedAnnotations = {};
   sharedKeys.forEach((key) => {
-    const candidates = maps.map((map) => map.get(key)).filter(Boolean);
+    let candidates = maps.map((map) => map.get(key)).filter(Boolean);
     if (!candidates.length) return;
-    const base = candidates[0];
+    if (!candidates.every(candidate => candidate.property === candidates[0].property)) return;
+    if (!candidates.every(candidate => candidate.type === candidates[0].type) && candidates.every(candidate => (
+      (candidate.type === 'toggle' && candidate.metadata?.togglePowerString)
+      || (candidate.type === 'select' && String(candidate.property).toLowerCase() === 'power'
+        && ['on', 'off'].every(value => candidate.options.some(option => String(option.value).toLowerCase() === value)))
+    ))) {
+      candidates = candidates.map(candidate => ({ ...candidate, type: 'toggle', ui: { ...candidate.ui, control: undefined }, metadata: { ...candidate.metadata, togglePowerString: true } }));
+    }
+    const base = { ...candidates[0] };
     if (!candidates.every((candidate) => candidate.type === base.type)) return;
+    if (base.type === 'toggle' && !candidates.every(candidate => JSON.stringify(buildPayloadForInput(candidate, true)) === JSON.stringify(buildPayloadForInput(base, true)))) return;
+    if (!candidates.every((candidate) => candidate.ui?.control === base.ui?.control)) {
+      base.ui = { ...base.ui, control: undefined };
+    }
     if (base.type === 'select') {
       const optionSets = candidates.map((candidate) => new Map(arrayOrEmpty(candidate.options).map((option) => [String(option.value).toLowerCase(), option])));
       const intersectedOptions = arrayOrEmpty(base.options).filter((option) => optionSets.every((set) => set.has(String(option.value).toLowerCase())));
@@ -461,22 +474,13 @@ function intersectSharedInputs(devices) {
       base.options = intersectedOptions;
     }
     if (base.type === 'slider' || base.type === 'number') {
-      const mins = candidates.map((candidate) => candidate.range?.min).filter((value) => typeof value === 'number');
-      const maxes = candidates.map((candidate) => candidate.range?.max).filter((value) => typeof value === 'number');
-      const steps = candidates.map((candidate) => candidate.range?.step).filter((value) => typeof value === 'number');
-      const min = mins.length ? Math.max(...mins) : undefined;
-      const max = maxes.length ? Math.min(...maxes) : undefined;
-      if (typeof min === 'number' && typeof max === 'number' && max < min) return;
-      base.range = {
-        ...(base.range || {}),
-        ...(typeof min === 'number' ? { min } : {}),
-        ...(typeof max === 'number' ? { max } : {}),
-        ...(steps.length ? { step: Math.max(...steps) } : {}),
-      };
+      base.range = intersectNumericRanges(candidates);
+      if (!base.range) return;
     }
     sharedInputs.push(base);
     const memberValues = normalizedByDevice.map(({ device }) => getStateValueForInput(device, base));
-    const comparableValues = memberValues.filter((value) => value !== undefined);
+    const numericInput = ['slider', 'number'].includes(base.type);
+    const comparableValues = memberValues.filter((value) => value !== undefined && (!numericInput || value !== null && value !== ''));
     const initialValues = buildInitialControlValues(normalizedByDevice[0].device, [base]);
     const baseValue = comparableValues.length ? comparableValues[0] : initialValues[sanitizeInputKey(base)];
     sharedValues[sanitizeInputKey(base)] = base.type === 'color'
@@ -484,10 +488,11 @@ function intersectSharedInputs(devices) {
       : base.type === 'toggle'
         ? toControlBoolean(baseValue)
         : baseValue;
-    if (comparableValues.length > 1 && !comparableValues.every((value) => valuesEqualByType(base.type, comparableValues[0], value))) {
+    const missingNumeric = numericInput && comparableValues.length !== memberValues.length;
+    if (missingNumeric || (comparableValues.length > 1 && !comparableValues.every((value) => valuesEqualByType(base.type, comparableValues[0], value)))) {
       const inputKey = sanitizeInputKey(base);
       mixedKeys.push(inputKey);
-      mixedAnnotations[inputKey] = buildMixedControlAnnotation(base, comparableValues);
+      mixedAnnotations[inputKey] = missingNumeric ? 'Some devices have no reported value' : buildMixedControlAnnotation(base, comparableValues);
       base.mixed = true;
       base.annotation = mixedAnnotations[inputKey];
     }

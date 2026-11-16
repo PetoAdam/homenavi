@@ -2,11 +2,57 @@ package http
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
 )
+
+func (s *Server) handleDeviceInterfaceLookup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct {
+		DeviceID string `json:"device_id"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&request) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		http.Error(w, "invalid lookup request", http.StatusBadRequest)
+		return
+	}
+	if _, ok := deviceStateKeys([]string{request.DeviceID}); !ok {
+		http.Error(w, "canonical device ID required", http.StatusBadRequest)
+		return
+	}
+	device, canonical, err := s.resolveDevice(r.Context(), request.DeviceID)
+	if err != nil {
+		http.Error(w, "device lookup unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if device == nil || canonical != request.DeviceID {
+		http.NotFound(w, r)
+		return
+	}
+	capabilities, inputs := json.RawMessage(device.Capabilities), json.RawMessage(device.Inputs)
+	if len(capabilities) > 128<<10 || !json.Valid(capabilities) {
+		capabilities = json.RawMessage("null")
+	}
+	if len(inputs) > 128<<10 || !json.Valid(inputs) {
+		inputs = json.RawMessage("null")
+	}
+	response, err := json.Marshal(map[string]any{"device_id": canonical, "capabilities": capabilities, "inputs": inputs})
+	if err != nil || len(response) > 256<<10 {
+		http.Error(w, "metadata exceeds size limit", http.StatusRequestEntityTooLarge)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(response)
+}
 
 func (s *Server) handleDeviceMetadataPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

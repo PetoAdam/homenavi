@@ -5,6 +5,7 @@ import { listErsDevices, listErsGroups, listErsRooms, listErsTags } from '../ser
 import { getSharedWebSocket, wsUrlForPath } from '../services/realtime/sharedWebSocket';
 import { clearStaleResourceCache, readStaleResourceCache, writeStaleResourceCache } from '../utils/staleResourceCache';
 import { queryKeys } from '../state/queryKeys';
+import { applyDevicePresentation } from '../utils/devicePresentation';
 
 const ERS_INVENTORY_CACHE_TTL_MS = 30 * 1000;
 
@@ -60,7 +61,7 @@ export function ersInventoryQueryOptions(accessToken, { enabled = true, initialD
   };
 }
 
-function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
+export function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
   const ersId = safeString(device?.id);
   const hdpIds = normalizeArray(device?.hdp_external_ids || device?.hdpIds).map(safeString).filter(Boolean);
   const hdpId = hdpIds.find((id) => realtimeByHdpId.has(id)) || hdpIds[0] || '';
@@ -70,7 +71,7 @@ function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
   const room = roomId ? roomById.get(roomId) : null;
   const name = safeString(device?.name) || hdpId || ersId;
 
-  return {
+  return applyDevicePresentation({
     ...rt,
     ...device,
     ersId,
@@ -83,7 +84,7 @@ function mergeErsDeviceWithRealtime(device, realtimeByHdpId, roomById) {
     room,
     roomName: safeString(room?.name),
     tags: normalizeArray(device?.tags),
-  };
+  });
 }
 
 export default function useErsInventory({ enabled, accessToken, realtimeDevices }) {

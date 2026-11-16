@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -19,7 +20,10 @@ import (
 	"time"
 
 	"github.com/PetoAdam/homenavi/api-gateway/internal/gateway"
+	apiMiddleware "github.com/PetoAdam/homenavi/api-gateway/internal/middleware"
+	"github.com/PetoAdam/homenavi/shared/authx"
 	"github.com/PetoAdam/homenavi/shared/observability"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -33,6 +37,54 @@ import (
 	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestDeviceInterfaceRoutesEnforceScopesAndRevocation(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyID, err := authx.KeyIDForRSAPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation := apiMiddleware.DelegatedValidationConfig("https://auth.example.test", authx.AudienceAPI)
+	validation.SessionValidator = func(context.Context, string) (bool, error) { return true, nil }
+	activeGrant := true
+	validation.GrantValidator = func(context.Context, string) (bool, error) { return activeGrant, nil }
+	keys := apiMiddleware.RSAPublicKeySet{keyID: &privateKey.PublicKey}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	read := wrapWithAccessControl(keys, validation, validation, gateway.RouteConfig{Access: "delegated", Scope: "home.devices.read"}, next)
+	write := wrapWithAccessControl(keys, validation, validation, gateway.RouteConfig{Access: "delegated", Scope: "home.devices.write"}, next)
+	for _, test := range []struct {
+		name, scope string
+		handler     http.Handler
+		active      bool
+		status      int
+	}{
+		{"read route with read grant", "home.devices.read", read, true, http.StatusNoContent},
+		{"read route with write-only grant", "home.devices.write", read, true, http.StatusForbidden},
+		{"write target with write grant", "home.devices.write", write, true, http.StatusNoContent},
+		{"write target with read-only grant", "home.devices.read", write, true, http.StatusForbidden},
+		{"revoked grant", "home.devices.write", write, false, http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			activeGrant = test.active
+			token := jwt.NewWithClaims(jwt.SigningMethodRS256, apiMiddleware.Claims{Role: authx.RoleResident, Scope: test.scope, SessionID: "session-1", MCPGrantID: "grant-1", TokenType: authx.TokenTypeDelegated, RegisteredClaims: jwt.RegisteredClaims{Issuer: validation.Issuer, Subject: "user-1", Audience: []string{validation.Audience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)), NotBefore: jwt.NewNumericDate(time.Now()), IssuedAt: jwt.NewNumericDate(time.Now()), ID: "token-1"}})
+			token.Header["kid"] = keyID
+			signed, err := token.SignedString(privateKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "/api/mcp/hdp/devices/thread/one", nil)
+			request.Header.Set("Authorization", "Bearer "+signed)
+			response := httptest.NewRecorder()
+			test.handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status=%d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
 
 func TestMainRouterHealth(t *testing.T) {
 	router := NewMainRouter(gateway.Config{}, nil, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), otel.Tracer("test"), "")

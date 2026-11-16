@@ -17,6 +17,7 @@ import {
 import GlassMetric from '../GlassMetric/GlassMetric';
 import GlassPill from '../GlassPill/GlassPill';
 import { formatBinaryStateValue, formatMetricValueAndUnitForKey } from '../../../utils/stateFormat';
+import { resolveDisplayComponent } from '../DeviceControlRenderer/deviceControlUtils';
 import './DeviceMetricsRenderer.css';
 
 // ────────────────────────────────────────────────────────────────────
@@ -152,12 +153,14 @@ function buildMetricsFromState(state = {}, selectedFields = null, capabilities =
     usedKeys.add(key);
     const icon = getIconForKey(key);
     const label = formatDisplayLabel(key);
+    const capability = Array.isArray(capabilities) ? capabilities.find(cap => cap?.property === key || cap?.id === key) : null;
+    const component = resolveDisplayComponent(capability, value);
 
     // Detect binary values
     const isBinary = typeof value === 'boolean' || 
       (typeof value === 'string' && ['on', 'off', 'true', 'false', 'open', 'closed'].includes(value.toLowerCase()));
 
-    if (isBinary && !BINARY_PILL_BLOCKLIST.has(key.toLowerCase())) {
+    if (isBinary && !component && !BINARY_PILL_BLOCKLIST.has(key.toLowerCase())) {
       binaryMetrics.push({
         key,
         label,
@@ -178,6 +181,8 @@ function buildMetricsFromState(state = {}, selectedFields = null, capabilities =
       value: valueText === '' ? normalizeValueLabel(value) : valueText,
       unit: unit || (isBinary ? '' : getUnitForKey(key)),
       icon,
+      rawValue: value,
+      capability,
     });
   });
 
@@ -214,20 +219,48 @@ export function DeviceBinaryMetrics({ metrics = [] }) {
   return (
     <div className="dmr-binary-metrics">
       {metrics.map(metric => (
-        <GlassPill
-          key={metric.key}
-          icon={metric.icon}
-          tone={resolveBinaryTone(metric.key, metric.rawValue)}
-          text={`${metric.label}: ${metric.value}`}
-        />
+        <StateBadge key={metric.key} metric={metric} binary />
       ))}
     </div>
+  );
+}
+
+export function StateBadge({ metric, binary = false }) {
+  return (
+    <GlassPill icon={metric.icon} tone={binary ? resolveBinaryTone(metric.key, metric.rawValue) : 'default'} className="dmr-state-badge">
+      <span className="dmr-badge-label">{metric.label}</span>
+      <span className="dmr-badge-value">{metric.value}{metric.unit ? ` ${metric.unit}` : ''}</span>
+    </GlassPill>
   );
 }
 
 /**
  * Renders numeric/general metrics as GlassMetric cards.
  */
+export function StateMetric({ metric }) {
+  const component = resolveDisplayComponent(metric.capability, metric.rawValue);
+  if (component === 'badge') {
+    return <StateBadge metric={metric} />;
+  }
+  if (component === 'text') {
+    return <div className="dmr-state-text"><span>{metric.label}</span><strong>{String(metric.value ?? '')}{metric.unit ? ` ${metric.unit}` : ''}</strong></div>;
+  }
+  if (component === 'progress' || component === 'gauge') {
+    const { min, max } = metric.capability.range;
+    const value = Math.max(min, Math.min(max, metric.rawValue));
+    return (
+      <div className="dmr-state-meter">
+        <div className="dmr-state-text"><span>{metric.label}</span><strong>{metric.value}{metric.unit ? ` ${metric.unit}` : ''}</strong></div>
+        {component === 'progress'
+          ? <progress className="dmr-meter-semantic" aria-label={metric.label} max={max - min} value={value - min} />
+          : <meter className="dmr-meter-semantic" aria-label={metric.label} min={min} max={max} value={value} />}
+        <span className="dmr-meter-track" aria-hidden="true"><span className="dmr-meter-fill" style={{ width: `${((value - min) / (max - min)) * 100}%` }} /></span>
+      </div>
+    );
+  }
+  return <GlassMetric icon={metric.icon} label={metric.label} value={metric.value} unit={metric.unit} />;
+}
+
 export function DeviceNumericMetrics({ metrics = [], layout = 'cards', collapseAfter = 5 }) {
   const [showAll, setShowAll] = useState(false);
   const hasExtra = metrics.length > collapseAfter;
@@ -242,13 +275,7 @@ export function DeviceNumericMetrics({ metrics = [], layout = 'cards', collapseA
   return (
     <div className={`dmr-numeric-metrics dmr-layout-${layout}`}>
       {visibleMetrics.map(metric => (
-        <GlassMetric
-          key={metric.key}
-          icon={metric.icon}
-          label={metric.label}
-          value={metric.value}
-          unit={metric.unit}
-        />
+        <StateMetric key={metric.key} metric={metric} />
       ))}
       {hasExtra && (
         <button

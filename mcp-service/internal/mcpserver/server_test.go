@@ -219,8 +219,54 @@ func TestMCPToolDiscoveryIsScoped(t *testing.T) {
 	for _, tool := range result.Result.Tools {
 		names[tool.Name] = true
 	}
-	if !names["list_devices"] || !names["get_device_states"] || names["list_rooms"] || names["query_state_history"] {
+	if !names["list_devices"] || !names["get_device_states"] || !names["get_device_interfaces"] || names["list_rooms"] || names["query_state_history"] {
 		t.Fatalf("unexpected scoped tools: %#v", names)
+	}
+}
+
+func TestMCPInterfaceDiscoveryRequiresReadAndDelegates(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.URL.Path {
+		case "/api/auth/oauth/token":
+			if err := r.ParseForm(); err != nil || r.Form.Get("scope") != "home.devices.read" {
+				t.Fatalf("invalid scope exchange: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"access_token":"delegated-token"}`))
+		case "/api/mcp/hdp/device-interfaces:lookup":
+			if r.Header.Get("Authorization") != "Bearer delegated-token" {
+				t.Fatal("missing delegated token")
+			}
+			_, _ = w.Write([]byte(`{"device_id":"thread/one","capabilities":[],"inputs":[]}`))
+		case "/api/mcp/hdp/device-states:batch":
+			_, _ = w.Write([]byte(`{"results":[{"device_id":"thread/one","status":"ok","state":{"position":25},"state_updated_at":"2026-11-16T00:00:00Z"}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+	config := Config{Enabled: true, Issuer: "https://auth.example.test", Resource: "https://mcp.example.test/mcp", PublicKey: &privateKey.PublicKey, AuthServiceURL: upstream.URL, APIGatewayURL: upstream.URL}
+	for _, scopes := range []string{"home.devices.read", "home.devices.write"} {
+		before := requests
+		request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_device_interfaces","arguments":{"device_id":"thread/one"}}}`))
+		request.Header.Set("Authorization", "Bearer "+signedTokenWithScopes(t, privateKey, config, scopes))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		request.Header.Set("MCP-Protocol-Version", "2025-03-26")
+		response := httptest.NewRecorder()
+		New(config).ServeHTTP(response, request)
+		if scopes == "home.devices.read" {
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"position"`) || strings.Contains(response.Body.String(), `"isError":true`) || requests-before != 3 {
+				t.Fatalf("read call status=%d body=%s requests=%d", response.Code, response.Body.String(), requests-before)
+			}
+		} else if requests != before || strings.Contains(response.Body.String(), `"position"`) {
+			t.Fatalf("write-only call leaked data or accessed upstream: %s", response.Body.String())
+		}
 	}
 }
 

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HomeNavi Presentation Demo</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; color: #f5faf7; background: var(--gradient-bg); font-family: "Segoe UI", sans-serif; }
+      main { width: min(1120px, calc(100% - 32px)); margin: 36px auto; }
+      .demo-card > .card-content { padding: clamp(20px, 4%, 40px); }
+      .demo-header { display: flex; justify-content: space-between; align-items: end; gap: 20px; border-bottom: 1px solid var(--color-glass-border-light); padding-bottom: 24px; }
+      .demo-brand { color: var(--color-primary-light); font-size: 13px; font-weight: 700; text-transform: uppercase; }
+      h1 { margin: 8px 0 0; font-size: 28px; }
+      h2 { margin: 0 0 16px; font-size: 18px; }
+      .demo-status { color: var(--color-secondary-xlight); font-size: 13px; overflow-wrap: anywhere; text-align: right; }
+      .demo-section { margin-top: 32px; }
+      .demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; align-items: stretch; }
+      .demo-grid > * { min-width: 0; }
+      .demo-device { width: min(100%, 340px); }
+      @media (max-width: 600px) { main { margin: 16px auto; } .demo-header { align-items: start; flex-direction: column; } .demo-status { text-align: left; } }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React, { useState } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import './src/index.css';
+      import './src/colors.css';
+      import GlassCard from './src/components/common/GlassCard/GlassCard.jsx';
+      import { DeviceControlRenderer } from './src/components/common/DeviceControlRenderer/DeviceControlRenderer.jsx';
+      import DeviceMetricsRenderer from './src/components/common/DeviceMetricsRenderer/DeviceMetricsRenderer.jsx';
+      import DeviceTile from './src/components/Devices/DeviceTile.jsx';
+
+      const h = React.createElement;
+      const options = [{ value: 'auto', label: 'Auto' }, { value: 'heat', label: 'Heat' }, { value: 'cool', label: 'Cool' }];
+      const range = { min: 5, max: 35, step: 0.5 };
+      const controls = [
+        { id: 'toggle', label: 'Toggle', type: 'toggle' },
+        { id: 'checkbox', label: 'Checkbox', type: 'toggle', ui: { control: 'checkbox' } },
+        { id: 'slider', label: 'Slider', type: 'slider', range },
+        { id: 'number', label: 'Number', type: 'number', range, capability: { value_type: 'number', unit: '°C' } },
+        { id: 'stepper', label: 'Stepper', type: 'slider', range, capability: { value_type: 'number', unit: '°C' }, ui: { control: 'stepper' } },
+        { id: 'select', label: 'Select', type: 'select', options },
+        { id: 'segmented', label: 'Segmented', type: 'select', options, ui: { control: 'segmented' } },
+        { id: 'radio', label: 'Radio', type: 'select', options, ui: { control: 'radio' } },
+        { id: 'buttons', label: 'Action buttons', type: 'select', options, ui: { control: 'buttons' } },
+        { id: 'color', label: 'Color', type: 'color' },
+        { id: 'text', label: 'Text', type: 'text' },
+        { id: 'textarea', label: 'Textarea', type: 'text', ui: { control: 'textarea' } },
+      ];
+      const device = {
+        state: { metric: 21.5, text: 'Ready', badge: 'Online', progress: 68, gauge: 42, binary: true },
+        capabilities: [
+          { id: 'metric', property: 'metric', value_type: 'number', unit: '°C', ui: { display: 'metric' } },
+          { id: 'text', property: 'text', value_type: 'string', ui: { display: 'text' } },
+          { id: 'badge', property: 'badge', value_type: 'string', ui: { display: 'badge' } },
+          { id: 'progress', property: 'progress', value_type: 'number', unit: '%', range: { min: 0, max: 100 }, ui: { display: 'progress' } },
+          { id: 'gauge', property: 'gauge', value_type: 'number', unit: '%', range: { min: 0, max: 100 }, ui: { display: 'gauge' } },
+        ],
+      };
+      const tileDevice = {
+        id: 'demo/tile', name: 'Living room thermostat', displayName: 'Living room thermostat', protocol: 'demo', online: true,
+        state: { on: true, target: 22, brightness: 70, mode: 'auto', details: { profile: 'long_unbroken_configuration_value_12345678901234567890', revision: 42 }, connected: true },
+        inputs: [
+          { id: 'on', property: 'on', label: 'Power', type: 'toggle' },
+          { id: 'target', property: 'target', label: 'Target temperature', type: 'slider', range: { min: 5, max: 35, step: 0.5 } },
+          { id: 'brightness', property: 'brightness', label: 'Brightness', type: 'slider', range: { min: 0, max: 100 } },
+          { id: 'mode', property: 'mode', label: 'Mode', type: 'select', options, ui: { control: 'radio' } },
+        ],
+        capabilities: [
+          { id: 'target', value_type: 'number', access: { write: true }, range },
+          { id: 'brightness', value_type: 'number', access: { write: true }, range: { min: 0, max: 100 } },
+          { id: 'mode', value_type: 'enum', access: { write: true } },
+          { id: 'details', name: 'Device details', value_type: 'object' },
+          { id: 'connected', name: 'Connected', kind: 'binary', value_type: 'boolean', access: { readOnly: true } },
+        ],
+      };
+
+      function Demo() {
+        const [values, setValues] = useState({ toggle: true, checkbox: false, slider: 22, number: 20, stepper: 21.5, select: 'auto', segmented: 'heat', radio: 'cool', color: '#39aa79', text: 'Living room', textarea: 'A sample note' });
+        const [lastAction, setLastAction] = useState('No commands sent');
+        const change = (key, value) => setValues(previous => ({ ...previous, [key]: value }));
+        return h('main', null, h(GlassCard, { className: 'demo-card', interactive: false },
+          h('header', { className: 'demo-header' },
+            h('div', null, h('div', { className: 'demo-brand' }, 'HomeNavi'), h('h1', null, 'Presentation demo')),
+            h('div', { className: 'demo-status', 'aria-live': 'polite' }, lastAction)),
+          h('section', { className: 'demo-section' }, h('h2', null, 'State displays'), h(DeviceMetricsRenderer, { device, layout: 'list', collapseAfter: 20 })),
+          h('section', { className: 'demo-section' }, h('h2', null, 'Narrow device card'), h('div', { className: 'demo-device' }, h(DeviceTile, { device: tileDevice, onCommand: (_, payload) => setLastAction(JSON.stringify(payload)) }))),
+          h('section', { className: 'demo-section' }, h('h2', null, 'Controls'), h('div', { className: 'demo-grid' }, controls.map(input =>
+            h(DeviceControlRenderer, { key: input.id, input, value: values[input.id], onChange: value => change(input.id, value), onCommit: value => { change(input.id, value); setLastAction(`${input.label}: ${String(value)}`); } }))))));
+      }
+
+      createRoot(document.getElementById('root')).render(h(Demo));
+    </script>
+  </body>
+</html>

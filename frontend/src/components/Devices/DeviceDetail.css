@@ -40,6 +40,11 @@
   padding: 0.65rem 0.7rem 0.75rem;
 }
 
+.device-presentation-controls { display: flex; flex-direction: column; align-items: stretch; }
+.device-presentation-section { width: 100%; min-width: 0; }
+.device-presentation-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 0.65rem; margin-top: 0.4rem; }
+.device-presentation-options .device-history-field { min-width: 0; }
+
 .device-history-controls-card {
   padding: 0.65rem 0.7rem 0.75rem;
 }

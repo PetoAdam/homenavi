@@ -37,6 +37,13 @@ routes:
     scope: home.devices.read
     tool: get_device_states
     type: rest
+  - path: /api/mcp/hdp/device-interfaces:lookup
+    upstream: http://device-hub:8090/api/hdp/device-interfaces:lookup
+    methods: [POST]
+    access: delegated
+    scope: home.devices.read
+    tool: get_device_interfaces
+    type: rest
   - path: /api/mcp/hdp/pairings
     upstream: http://device-hub:8090/api/hdp/pairings
     methods: [GET]
@@ -94,7 +101,7 @@ routes:
     tool: query_state_history
     type: rest
   - path: /api/mcp/hdp/device-command-targets/*
-    upstream: http://device-hub:8090/api/hdp/devices/*
+    upstream: http://device-hub:8090/api/hdp/device-command-targets/*
     methods: [GET]
     access: delegated
     scope: home.devices.write

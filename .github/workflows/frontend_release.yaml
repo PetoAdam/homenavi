@@ -9,7 +9,10 @@ permissions:
   packages: write
 
 jobs:
+  quality:
+    uses: ./.github/workflows/frontend_quality.yaml
   release:
+    needs: quality
     uses: ./.github/workflows/service_release.yml
     with:
       service: frontend

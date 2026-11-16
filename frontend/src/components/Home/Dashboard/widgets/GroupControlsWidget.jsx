@@ -8,6 +8,7 @@ import { sendDeviceCommand } from '../../../../services/deviceHubService';
 import { resolveCommandDeviceId } from '../../../../utils/deviceIdentity';
 import {
   buildPayloadForInput,
+  buildSharedFieldCapabilities,
   buildSharedFieldState,
   intersectSharedInputs,
 } from '../../../../utils/groupControls';
@@ -47,6 +48,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
   });
 
   const selectedGroupId = settings.group_id || (Array.isArray(settings.group_ids) ? settings.group_ids[0] : '');
+  const fieldsLayout = settings.fields_layout === 'list' ? 'list' : 'cards';
   const commandsReady = Boolean(connectionInfo?.commandsReady);
   const commandLockReason = connectionInfo?.commandLockReason || 'Preparing live controls…';
   const loading = hdpLoading || ersLoading;
@@ -117,8 +119,8 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
     );
     const primaryToggle = visibleInputs.find((input) => {
       const key = String(input?.id || input?.property || '').trim().toLowerCase();
-      return input?.type === 'toggle' && (key === 'on' || key === 'state' || key === 'power');
-    }) || visibleInputs.find((input) => input?.type === 'toggle') || null;
+      return input?.type === 'toggle' && input?.ui?.control !== 'checkbox' && (key === 'on' || key === 'state' || key === 'power');
+    }) || visibleInputs.find((input) => input?.type === 'toggle' && input?.ui?.control !== 'checkbox') || null;
     return {
       ...selectedGroup,
       devices,
@@ -127,6 +129,7 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
       visibleValues,
       visibleFieldState,
       visibleFields: Object.keys(visibleFieldState),
+      visibleCapabilities: buildSharedFieldCapabilities(devices, Object.keys(visibleFieldState)),
       primaryToggle,
     };
   }, [ersGroups, selectedGroupId, settings.controls, settings.fields]);
@@ -301,16 +304,16 @@ export default function GroupControlsWidget({ settings = {}, editMode, onSetting
                   pending={pending || bootstrapping}
                   onValueChange={(key, nextValue) => handleGroupValueChange(resolvedGroup.id, key, nextValue)}
                   onCommand={(input, nextValue) => handleGroupCommand(resolvedGroup, input, nextValue)}
-                  layout="cards"
+                  layout={fieldsLayout}
                   collapseAfter={4}
                 />
               ) : null}
 
               {resolvedGroup.visibleFields.length ? (
                 <DeviceMetricsRenderer
-                  device={{ state: resolvedGroup.visibleFieldState }}
+                  device={{ state: resolvedGroup.visibleFieldState, capabilities: resolvedGroup.visibleCapabilities }}
                   selectedFields={resolvedGroup.visibleFields}
-                  layout="cards"
+                  layout={fieldsLayout}
                   collapseAfter={5}
                 />
               ) : null}
