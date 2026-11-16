@@ -106,6 +106,8 @@
   background: rgba(255, 255, 255, 0.04);
   border-radius: 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 400;
   transition: border-color 0.32s ease, background-color 0.32s ease;
 }
 
@@ -119,7 +121,8 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.88rem;
-  color: var(--color-text);
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
   flex: 1;
   min-width: 0;
 }
@@ -155,6 +158,7 @@
   margin-left: auto;
   opacity: 0.7;
   font-size: 0.82rem;
+  font-weight: 400;
   min-width: 0;
   max-width: 50%;
   overflow-wrap: anywhere;
@@ -266,6 +270,12 @@ select.dcr-control-select:focus {
   font-size: 0.85rem;
 }
 
+.dcr-control-select .glass-select__value {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
 /* ─────────────────────────────────────────────────────────────────────
    Number Control
    ───────────────────────────────────────────────────────────────────── */
@@ -285,7 +295,7 @@ select.dcr-control-select:focus {
   transition: border-color 0.32s ease, background-color 0.32s ease, box-shadow 0.32s ease;
 }
 .dcr-number-field:focus-within { border-color: var(--color-primary); background: rgba(0, 0, 0, 0.24); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent); }
-.dcr-number-field input { min-width: 0; width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--color-white); font: inherit; font-size: 1rem; font-weight: 650; text-align: right; appearance: textfield; }
+.dcr-number-field input { min-width: 0; width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: rgba(255, 255, 255, 0.88); font: inherit; font-size: 0.9rem; font-weight: 500; text-align: right; appearance: textfield; }
 .dcr-number-field input::-webkit-inner-spin-button, .dcr-number-field input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .dcr-number-unit { margin-left: 0.35rem; color: var(--color-secondary-light); font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
 .dcr-number-arrows { display: flex; flex: 0 0 1.8rem; flex-direction: column; align-self: stretch; margin: 0 -0.7rem 0 0.45rem; border-left: 1px solid var(--color-glass-border-xlight); }
@@ -295,7 +305,7 @@ select.dcr-control-select:focus {
 .dcr-number-arrows button:disabled { opacity: 0.35; cursor: not-allowed; }
 .dcr-number-arrows button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 .dcr-control:has(.dcr-number-arrows) .dcr-control-label-text { white-space: normal; overflow-wrap: anywhere; }
-.dcr-layout-cards .dcr-number-field { max-width: none; }
+.dcr-layout-cards .dcr-number-field { flex: 0 1 auto; max-width: none; }
 .dcr-stepper { display: flex; align-items: stretch; gap: 0.5rem; width: 100%; }
 .dcr-stepper-value { flex: 1; width: auto; max-width: none; justify-content: center; }
 .dcr-stepper-value input { max-width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
@@ -328,7 +338,7 @@ select.dcr-control-select:focus {
 .dcr-choices-radio label:has(input:checked) { border-color: transparent; background: transparent; color: var(--color-primary-light); }
 .dcr-choices label:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
 .dcr-action-button { min-height: 2.25rem; padding: 0.4rem 0.75rem; }
-.dcr-text-input { width: 100%; min-width: 0; padding: 0.6rem 0.7rem; border: 1px solid var(--color-glass-border-xlight); border-radius: 6px; background: rgba(0, 0, 0, 0.17); color: var(--color-text); transition: border-color 0.32s ease, background-color 0.32s ease, box-shadow 0.32s ease; }
+.dcr-text-input { width: 100%; min-width: 0; padding: 0.6rem 0.7rem; border: 1px solid var(--color-glass-border-xlight); border-radius: 6px; background: rgba(0, 0, 0, 0.17); color: rgba(255, 255, 255, 0.85); font: inherit; font-size: 0.85rem; transition: border-color 0.32s ease, background-color 0.32s ease, box-shadow 0.32s ease; }
 .dcr-text-input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent); }
 .dcr-control-select .glass-select__trigger { transition: background-color 0.32s ease, border-color 0.32s ease; }
 .dcr-control-select .glass-select__trigger:hover { border-color: var(--color-primary); }
